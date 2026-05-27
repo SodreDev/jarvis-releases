@@ -1,0 +1,67 @@
+# =========================================================
+# JARVIS — config.user.toml (exemplo)
+# Copie este arquivo para %APPDATA%/JARVIS/config.user.toml
+# (Windows) ou ~/.config/jarvis/config.user.toml (Linux/macOS).
+# Tudo aqui é OPCIONAL — campos ausentes herdam os defaults.
+# =========================================================
+
+[general]
+language = "pt-BR"
+tts_voice = "pt-BR-AntonioNeural"
+user_name = "Senhor"
+
+[voice]
+wake_word_enabled = false
+ptt_enabled = true
+mic_device = "default"
+
+[features]
+# Default OFF para tudo — habilite somente o que for usar.
+spotify = false
+whatsapp = false
+instagram = false
+discord = false
+telegram = false
+gmail = false
+panel_stark = false
+documents_generation = false
+ocr = false
+embeddings = false
+mcp_server = false
+browser_pool = false
+
+[security]
+profile = "normal"            # normal | paranoid | kiosk
+confirm_destructive = true
+allowed_dirs = ["~/Downloads", "~/Documents", "~/Desktop"]
+vault_encrypted = false
+vault_os_keyring = false
+
+[llm]
+provider = "groq"             # groq | lmstudio | ollama
+groq_model = "llama-3.3-70b-versatile"
+classifier_model = "llama-3.1-8b-instant"
+lmstudio_url = "http://127.0.0.1:1234/v1"
+temperature = 0.7
+
+[messaging]
+default_profile = "jarvis"    # jarvis | user
+ambiguity_policy = "ask_user" # ask_user | prefer_default | abort
+
+[browser]
+engine = "chromium"
+headless_after_login = true
+max_contexts = 3
+share_user_profile = false
+stealth = true
+off_screen_position = true
+human_typing_wpm = 280
+human_click_jitter_px = 6
+human_pause_min_ms = 120
+human_pause_max_ms = 480
+
+[panel]
+enabled = false
+host = "127.0.0.1"
+port = 8765
+remote_access = false

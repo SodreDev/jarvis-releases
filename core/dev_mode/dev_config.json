@@ -1,0 +1,16 @@
+{
+    "ws_port": 6589,
+    "projects": [
+        {
+            "path": "b:\\GranaFacil\\J.A.R.V.I.S",
+            "name": "J.A.R.V.I.S",
+            "language": "Python",
+            "description": "Assistente IA pessoal com controle por voz"
+        }
+    ],
+    "prompt_defaults": {
+        "execution_mode": "autonomous",
+        "prompt_language": "pt-BR",
+        "max_workflow_steps": 7
+    }
+}

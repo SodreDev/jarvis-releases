@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S — Gesture Interface</title>
+    <link rel="stylesheet" href="../static/css/jarvis.css">
+</head>
+<body>
+    <!-- ── Navigation ──────────────────────────────────────────────── -->
+    <nav class="nav">
+        <div class="nav-brand">J.A.R.V.I.S · GESTURE</div>
+        <a class="nav-link active" data-page="index.html">Dashboard</a>
+        <a class="nav-link" data-page="canvas2d.html">Canvas 2D</a>
+        <a class="nav-link" data-page="workspace3d.html">Workspace 3D</a>
+        <a class="nav-link" data-page="controls.html">Controles</a>
+    </nav>
+
+    <div class="main">
+        <!-- ── Sidebar ─────────────────────────────────────────────── -->
+        <aside class="sidebar">
+            <!-- Tracker status -->
+            <div class="card">
+                <div class="card-title">Hand Tracker</div>
+                <div class="stat-row">
+                    <span class="stat-label">Status</span>
+                    <span><span id="tracker-dot" class="status-dot"></span></span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">FPS</span>
+                    <span id="stat-fps" class="stat-value">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Mãos</span>
+                    <span id="stat-hands" class="stat-value">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Frames</span>
+                    <span id="stat-frames" class="stat-value">-</span>
+                </div>
+                <div class="btn-group" style="margin-top: 12px;">
+                    <button id="btn-start" class="btn btn-success">Iniciar</button>
+                    <button id="btn-stop" class="btn btn-danger">Parar</button>
+                </div>
+            </div>
+
+            <!-- Mode selector -->
+            <div class="card">
+                <div class="card-title">Modo de Interação</div>
+                <div class="mode-grid">
+                    <div class="mode-btn active" data-mode="full">
+                        <div class="mode-name">Completo</div>
+                        <div class="mode-desc">Desktop + 2D + 3D</div>
+                    </div>
+                    <div class="mode-btn" data-mode="desktop">
+                        <div class="mode-name">Desktop</div>
+                        <div class="mode-desc">Controle de tela</div>
+                    </div>
+                    <div class="mode-btn" data-mode="desktop_2d">
+                        <div class="mode-name">Desenho</div>
+                        <div class="mode-desc">Desktop + Canvas 2D</div>
+                    </div>
+                    <div class="mode-btn" data-mode="design3d">
+                        <div class="mode-name">Design 3D</div>
+                        <div class="mode-desc">Workspace 3D</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active modules -->
+            <div class="card">
+                <div class="card-title">Módulos Ativos</div>
+                <div class="stat-row">
+                    <span class="stat-label">Modo</span>
+                    <span id="module-status" class="stat-value">D+2D+3D</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ── Main content ────────────────────────────────────────── -->
+        <div class="content">
+            <!-- Hand visualization -->
+            <div class="card" style="flex: 1;">
+                <div class="card-title">Visualização de Mãos</div>
+                <div class="hand-canvas-container">
+                    <canvas id="hand-canvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Gesture log -->
+            <div class="card">
+                <div class="card-title">Log de Gestos</div>
+                <div id="gesture-log" class="gesture-log">
+                    <div class="gesture-log-entry">Aguardando gestos...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../static/js/main.js"></script>
+</body>
+</html>

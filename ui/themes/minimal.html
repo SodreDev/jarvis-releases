@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J.A.R.V.I.S — Minimal Pro</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   J.A.R.V.I.S — Tema Minimal Pro (imersivo, orb animado, foco no chat)
+   ═══════════════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #06080d;
+  --bg-2:      #0c1019;
+  --txt:       #ecedf2;
+  --txt-mute:  #8e92a3;
+  --line:      rgba(255,255,255,0.07);
+  --line-hi:   rgba(255,255,255,0.16);
+  --cyan:      #5ad8ff;
+  --purple:    #b794ff;
+  --pink:      #ff6b9e;
+  --green:     #3cff7c;
+}
+
+html, body {
+  height: 100%; background: var(--bg); color: var(--txt); overflow: hidden;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01","cv11";
+}
+
+/* ───────── Glow de fundo difuso ───────── */
+.bg-glow {
+  position: fixed; top: 50%; left: 50%;
+  width: 720px; height: 720px;
+  transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 0;
+  filter: blur(80px); opacity: .35;
+  background: radial-gradient(circle at 30% 30%, rgba(90,216,255,0.55) 0%, transparent 55%),
+              radial-gradient(circle at 70% 65%, rgba(183,148,255,0.55) 0%, transparent 60%),
+              radial-gradient(circle at 50% 80%, rgba(255,107,158,0.30) 0%, transparent 65%);
+}
+.veil {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 0%, var(--bg) 78%);
+}
+
+/* ───────── Átomo 3D (núcleo + anéis orbitais + elétrons) ───────── */
+.atom-stage {
+  position: fixed; top: 50%; left: 50%;
+  width: 460px; height: 460px;
+  transform: translate(-50%, -50%);
+  perspective: 1200px;
+  pointer-events: none; z-index: 0;
+  transition: filter .6s ease, transform .6s ease;
+}
+.atom-stage.active { filter: drop-shadow(0 0 28px rgba(90,216,255,0.55)); }
+
+.atom {
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  animation: atomSpin 22s linear infinite;
+}
+@keyframes atomSpin {
+  from { transform: rotateX(68deg) rotateZ(0deg);   }
+  to   { transform: rotateX(68deg) rotateZ(360deg); }
+}
+
+/* Núcleo central */
+.nucleus {
+  position: absolute; top: 50%; left: 50%;
+  width: 44px; height: 44px; margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, #eaffff 0%, var(--cyan) 38%, #2766a8 78%, #0e2a44 100%);
+  box-shadow: 0 0 30px rgba(90,216,255,0.85),
+              0 0 80px rgba(90,216,255,0.45),
+              inset 0 0 16px rgba(255,255,255,0.5);
+  animation: nucleusPulse 3.6s ease-in-out infinite;
+  transform: translateZ(0);
+}
+@keyframes nucleusPulse {
+  0%,100% { box-shadow: 0 0 30px rgba(90,216,255,0.85),
+                       0 0 80px rgba(90,216,255,0.45),
+                       inset 0 0 16px rgba(255,255,255,0.5); }
+  50%     { box-shadow: 0 0 42px rgba(183,148,255,0.95),
+                       0 0 110px rgba(183,148,255,0.55),
+                       inset 0 0 20px rgba(255,255,255,0.65); }
+}
+
+/* Anel orbital base */
+.orbit {
+  position: absolute; top: 50%; left: 50%;
+  width: 380px; height: 380px; margin: -190px 0 0 -190px;
+  border-radius: 50%;
+  border: 1px solid rgba(90,216,255,0.35);
+  box-shadow: 0 0 18px rgba(90,216,255,0.18) inset,
+              0 0 14px rgba(90,216,255,0.18);
+  transform-style: preserve-3d;
+}
+.orbit.o1 { transform: rotateX(0deg) rotateY(0deg); animation: ringSpin1 9s linear infinite; }
+.orbit.o2 { width: 320px; height: 320px; margin: -160px 0 0 -160px;
+            border-color: rgba(183,148,255,0.38);
+            box-shadow: 0 0 18px rgba(183,148,255,0.20) inset, 0 0 14px rgba(183,148,255,0.20);
+            transform: rotateX(60deg) rotateY(30deg);
+            animation: ringSpin2 7s linear infinite; }
+.orbit.o3 { width: 420px; height: 420px; margin: -210px 0 0 -210px;
+            border-color: rgba(255,107,158,0.32);
+            box-shadow: 0 0 18px rgba(255,107,158,0.18) inset, 0 0 14px rgba(255,107,158,0.18);
+            transform: rotateX(-55deg) rotateY(-25deg);
+            animation: ringSpin3 11s linear infinite reverse; }
+.orbit.o4 { width: 260px; height: 260px; margin: -130px 0 0 -130px;
+            border-color: rgba(60,255,124,0.28);
+            box-shadow: 0 0 16px rgba(60,255,124,0.18) inset, 0 0 12px rgba(60,255,124,0.18);
+            transform: rotateX(75deg) rotateY(-45deg);
+            animation: ringSpin4 6s linear infinite; }
+@keyframes ringSpin1 { from { transform: rotateX(0)    rotateY(0)   rotateZ(0);   } to { transform: rotateX(0)    rotateY(0)   rotateZ(360deg); } }
+@keyframes ringSpin2 { from { transform: rotateX(60deg)  rotateY(30deg)  rotateZ(0);   } to { transform: rotateX(60deg)  rotateY(30deg)  rotateZ(360deg); } }
+@keyframes ringSpin3 { from { transform: rotateX(-55deg) rotateY(-25deg) rotateZ(0);   } to { transform: rotateX(-55deg) rotateY(-25deg) rotateZ(360deg); } }
+@keyframes ringSpin4 { from { transform: rotateX(75deg)  rotateY(-45deg) rotateZ(0);   } to { transform: rotateX(75deg)  rotateY(-45deg) rotateZ(360deg); } }
+
+/* Elétron preso na borda do anel */
+.electron {
+  position: absolute; top: 50%; left: 0;
+  width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ffffff, var(--cyan) 60%, #1f4a78 100%);
+  box-shadow: 0 0 14px rgba(90,216,255,0.95),
+              0 0 28px rgba(90,216,255,0.55);
+}
+.orbit.o2 .electron { background: radial-gradient(circle at 30% 30%, #fff, var(--purple) 60%, #3a1f78 100%);
+                      box-shadow: 0 0 14px rgba(183,148,255,0.95), 0 0 28px rgba(183,148,255,0.55); }
+.orbit.o3 .electron { background: radial-gradient(circle at 30% 30%, #fff, var(--pink) 60%, #781f44 100%);
+                      box-shadow: 0 0 14px rgba(255,107,158,0.95), 0 0 26px rgba(255,107,158,0.55); }
+.orbit.o4 .electron { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+                      background: radial-gradient(circle at 30% 30%, #fff, var(--green) 60%, #144d2a 100%);
+                      box-shadow: 0 0 12px rgba(60,255,124,0.95), 0 0 24px rgba(60,255,124,0.55); }
+
+/* Ativação do wake-word: acelera + intensifica */
+.atom-stage.active .atom    { animation-duration: 8s; }
+.atom-stage.active .orbit.o1 { animation-duration: 3.5s; }
+.atom-stage.active .orbit.o2 { animation-duration: 2.8s; }
+.atom-stage.active .orbit.o3 { animation-duration: 4.2s; }
+.atom-stage.active .orbit.o4 { animation-duration: 2.4s; }
+.atom-stage.active .nucleus  { animation-duration: 1.4s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .atom, .orbit, .nucleus { animation: none !important; }
+}
+
+/* ───────── Layout principal ───────── */
+#shell {
+  position: relative; z-index: 1;
+  height: 100vh; max-width: 820px; margin: 0 auto;
+  display: grid; grid-template-rows: auto 1fr auto;
+  padding: 24px 20px 22px;
+}
+
+/* ── Header ── */
+#header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.brand {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 8px 16px 8px 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+.brand-orb {
+  position: relative; width: 28px; height: 28px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--cyan), var(--purple) 70%);
+  box-shadow: 0 0 18px rgba(90,216,255,0.5);
+}
+.brand-orb::after {
+  content: ""; position: absolute; inset: -6px; border-radius: 50%;
+  border: 1px solid rgba(90,216,255,0.5);
+  animation: halo 2.4s ease-out infinite;
+}
+@keyframes halo {
+  from { transform: scale(.8); opacity: 1; }
+  to   { transform: scale(1.6); opacity: 0; }
+}
+.brand-name { font-size: 14px; font-weight: 600; letter-spacing: .02em; }
+.brand-name small { color: var(--txt-mute); font-weight: 400; margin-left: 8px; }
+
+.head-actions { display: flex; gap: 8px; align-items: center; }
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--line);
+  color: var(--txt-mute); cursor: pointer; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s; backdrop-filter: blur(20px);
+}
+.icon-btn:hover { color: var(--cyan); border-color: var(--line-hi);
+                  background: rgba(90,216,255,0.06); }
+
+/* ── Chat ── */
+#chat-area {
+  overflow-y: auto; padding: 8px 4px;
+  display: flex; flex-direction: column; gap: 18px;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 36px,
+                              #000 calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 36px,
+                                     #000 calc(100% - 24px), transparent 100%);
+}
+#chat-area::-webkit-scrollbar { width: 6px; }
+#chat-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 3px; }
+
+.jb-msg { animation: msgIn .4s cubic-bezier(.4,0,.2,1); display: flex; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(10px); }
+                   to   { opacity: 1; transform: none; } }
+.jb-user    { justify-content: flex-end; }
+.jb-jarvis  { justify-content: flex-start; }
+.jb-system  { justify-content: center; }
+
+.jb-bubble {
+  max-width: 76%; padding: 14px 18px;
+  font-size: 15px; line-height: 1.65;
+  border-radius: 18px; word-wrap: break-word;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+.jb-bub-u {
+  background: rgba(90,216,255,0.10);
+  border: 1px solid rgba(90,216,255,0.22);
+  border-bottom-right-radius: 4px; color: #eaf7ff;
+}
+.jb-bub-j {
+  background: rgba(255,255,255,0.035);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cyan);
+  border-bottom-left-radius: 4px;
+}
+.jb-name {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--cyan);
+}
+.jb-bub-u .jb-name { color: var(--purple); }
+.jb-ts { font-size: 9px; color: var(--txt-mute); margin-left: 8px; }
+.jb-body { margin-top: 6px; white-space: pre-wrap; color: var(--txt); }
+.jb-sys {
+  font-size: 11px; color: var(--txt-mute); padding: 5px 14px;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+/* ── Voice strip ── */
+.voice-strip {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--line);
+  border-radius: 16px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+#mic-btn {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--cyan), var(--purple));
+  color: #021; border: none; cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 18px rgba(90,216,255,0.4); transition: all .25s;
+}
+#mic-btn:hover { transform: scale(1.05); }
+#mic-btn.jb-recording {
+  background: linear-gradient(135deg, var(--pink), #ffb054);
+  animation: micRec 1s ease-in-out infinite;
+}
+@keyframes micRec { 0%,100% { box-shadow: 0 4px 18px rgba(255,107,158,0.5); }
+                    50%     { box-shadow: 0 4px 28px rgba(255,176,84,0.8); } }
+.voice-meta { flex: 1; font-size: 12px; color: var(--txt-mute); display: flex; gap: 14px; }
+.voice-meta b { color: var(--txt); font-weight: 600; }
+#mode-badge { color: var(--cyan); font-weight: 600; }
+#timer-text { font-family: "JetBrains Mono","SF Mono", monospace;
+              font-variant-numeric: tabular-nums; color: var(--cyan); }
+
+/* ── Input flutuante ── */
+#input-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 6px 6px 18px;
+  background: rgba(255,255,255,0.045);
+  border: 1px solid var(--line-hi);
+  border-radius: 18px; backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
+  transition: all .25s; box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+}
+#input-bar:focus-within {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 4px rgba(90,216,255,0.12), 0 10px 40px rgba(0,0,0,0.4);
+}
+#msg-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--txt); font-size: 14px; font-family: inherit; padding: 12px 4px;
+}
+#msg-input::placeholder { color: var(--txt-mute); }
+#send-btn {
+  width: 40px; height: 40px; border-radius: 14px; border: none; cursor: pointer;
+  background: var(--cyan); color: #021; font-weight: 800; font-size: 16px;
+  display: flex; align-items: center; justify-content: center; transition: all .2s;
+}
+#send-btn:hover { background: var(--purple); color: #fff; transform: translateY(-1px); }
+.icon-btn svg, #mic-btn svg, #send-btn svg { display: block; }
+.icon-btn:hover svg { color: var(--cyan); }
+
+/* ── Status line ── */
+.status-line {
+  text-align: center; font-size: 10.5px; letter-spacing: 1.5px;
+  color: var(--txt-mute); text-transform: uppercase; margin-top: 10px;
+}
+.status-line .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+                    background: var(--green); box-shadow: 0 0 8px var(--green);
+                    margin-right: 6px; vertical-align: middle;
+                    animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* ── Setup banner ── */
+#setup-banner {
+  display: none; position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  background: rgba(255,176,84,0.12); border: 1px solid rgba(255,176,84,0.4);
+  border-radius: 14px; padding: 10px 18px; z-index: 99;
+  backdrop-filter: blur(20px); align-items: center; gap: 14px; font-size: 13px;
+}
+#setup-banner button { background: #ffb054; color: #021; border: none;
+  padding: 6px 14px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 12px; }
+
+/* ── Log oculto (mantém ID para evaluate_js, mas não exibe) ── */
+#log-area { display: none; }
+#status-text, #ptt-label { display: none; }
+
+/* ── Modal de tema ── */
+#theme-modal {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.65); backdrop-filter: blur(10px);
+  align-items: center; justify-content: center;
+}
+#theme-modal.open { display: flex; }
+.tm-card {
+  width: min(720px, 92vw); background: var(--bg-2);
+  border: 1px solid var(--line-hi); border-radius: 24px; padding: 28px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+}
+.tm-card h2 { font-size: 18px; margin-bottom: 6px; }
+.tm-card p  { color: var(--txt-mute); font-size: 13px; margin-bottom: 22px; }
+.tm-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+.tm-opt {
+  padding: 18px; border-radius: 16px; cursor: pointer;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--line);
+  transition: all .2s;
+}
+.tm-opt:hover { border-color: var(--cyan); transform: translateY(-2px); }
+.tm-opt.active { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(90,216,255,0.25); }
+.tm-opt h3 { font-size: 14px; margin-bottom: 4px; }
+.tm-opt small { color: var(--txt-mute); font-size: 11px; }
+.tm-close { margin-top: 18px; padding: 8px 18px; background: transparent;
+            color: var(--txt-mute); border: 1px solid var(--line); border-radius: 8px;
+            cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div class="bg-glow"></div>
+<div class="veil"></div>
+
+<!-- ÁTOMO 3D (núcleo + 4 anéis orbitais com elétrons) -->
+<div class="atom-stage" id="atom-stage">
+  <div class="atom">
+    <div class="nucleus"></div>
+    <div class="orbit o1"><div class="electron"></div></div>
+    <div class="orbit o2"><div class="electron"></div></div>
+    <div class="orbit o3"><div class="electron"></div></div>
+    <div class="orbit o4"><div class="electron"></div></div>
+  </div>
+</div>
+
+<div id="setup-banner">
+  <span>⚠ Algumas credenciais ainda não foram configuradas.</span>
+  <button onclick="openSetupTab()">Configurar agora</button>
+</div>
+
+<div id="shell">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div class="brand">
+      <div class="brand-orb"></div>
+      <div class="brand-name">JARVIS <small id="brand-sub">pronto</small></div>
+    </div>
+    <div class="head-actions">
+      <div id="mic-state" style="font-size:11px;color:var(--txt-mute);margin-right:4px">Aguardando</div>
+      <button class="icon-btn" title="Histórico" onclick="openSettings('history')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+      </button>
+      <button class="icon-btn" title="Alarmes" onclick="openSettings('alarmes')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </button>
+      <button class="icon-btn" title="Trocar tema" onclick="openSettings('theme')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2a10 10 0 1 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2.5a3.5 3.5 0 0 0 3.5-3.5A10 10 0 0 0 12 2z"/></svg>
+      </button>
+      <button class="icon-btn" title="Guia de Setup / Ajuda" onclick="openSetupGuide()" style="font-size:14px;font-weight:700;color:var(--txt-mute)">?</button>
+      <button class="icon-btn" title="Configurações" onclick="openSettings()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="icon-btn" title="Minimizar" onclick="pyApi('minimize_window')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- CHAT -->
+  <div id="chat-area"></div>
+
+  <!-- FOOTER (voice + input) -->
+  <div>
+    <div class="voice-strip">
+      <button id="mic-btn" onclick="pyApi('toggle_mic')" title="Microfone">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>
+      </button>
+      <div class="voice-meta">
+        <span><b>Modo:</b> <span id="mode-badge">Manual</span></span>
+        <span id="timer-text"></span>
+      </div>
+    </div>
+    <div id="input-bar">
+      <input id="msg-input" type="text" placeholder="O que posso fazer por você?">
+      <button id="send-btn" title="Enviar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+    <div class="status-line"><span class="dot"></span><span id="val-cpu" style="display:none"></span><span id="val-ram" style="display:none"></span><span id="val-disk" style="display:none"></span><span id="val-uptime" style="display:none"></span>JARVIS · Sistema Online</div>
+  </div>
+</div>
+
+<script>
+document.body.dataset.theme = 'minimal';
+// Ativa visual do átomo quando o JARVIS está ouvindo / wake-word disparou.
+(function(){
+  var stage = document.getElementById('atom-stage');
+  var micEl = document.getElementById('mic-state');
+  var brand = document.getElementById('brand-sub');
+  if (!stage || !micEl) return;
+  function isActive(txt){
+    txt = (txt || '').toLowerCase();
+    return /ouvindo|escutando|listening|gravando|recording|wake|ativad/.test(txt);
+  }
+  function sync(){
+    var on = isActive(micEl.textContent) || isActive(brand ? brand.textContent : '');
+    stage.classList.toggle('active', on);
+  }
+  new MutationObserver(sync).observe(micEl, {childList:true, characterData:true, subtree:true});
+  if (brand) new MutationObserver(sync).observe(brand, {childList:true, characterData:true, subtree:true});
+  sync();
+})();
+</script>
+<!-- Log oculto + IDs auxiliares (bridge faz no-op via DOM lookup) -->
+<div id="log-area" style="display:none"></div>
+<div id="status-text" style="display:none"></div>
+<div id="ptt-label" style="display:none"></div>
+<script src="../core/jarvis-bridge.js"></script>
+</body>
+</html>

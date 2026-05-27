@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S — Controles & Treinamento</title>
+    <link rel="stylesheet" href="../static/css/jarvis.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">J.A.R.V.I.S · CONTROLES</div>
+        <a class="nav-link" data-page="index.html">Dashboard</a>
+        <a class="nav-link" data-page="canvas2d.html">Canvas 2D</a>
+        <a class="nav-link" data-page="workspace3d.html">Workspace 3D</a>
+        <a class="nav-link active" data-page="controls.html">Controles</a>
+    </nav>
+
+    <div class="main">
+        <aside class="sidebar">
+            <!-- Gesture reference -->
+            <div class="card">
+                <div class="card-title">Gestos Padrão</div>
+                <div class="stat-row"><span class="stat-label">✌ Pinch</span><span class="stat-value">Polegar + Indicador</span></div>
+                <div class="stat-row"><span class="stat-label">✋ Open Hand</span><span class="stat-value">5 dedos abertos</span></div>
+                <div class="stat-row"><span class="stat-label">✊ Fist</span><span class="stat-value">Punho fechado</span></div>
+                <div class="stat-row"><span class="stat-label">👆 Point</span><span class="stat-value">Apenas indicador</span></div>
+                <div class="stat-row"><span class="stat-label">✌ Two Fingers</span><span class="stat-value">Indicador + Médio</span></div>
+                <div class="stat-row"><span class="stat-label">↔ Swipe</span><span class="stat-value">Movimento rápido</span></div>
+                <div class="stat-row"><span class="stat-label">↻ Circle</span><span class="stat-value">Movimento circular</span></div>
+            </div>
+
+            <!-- Desktop shortcuts -->
+            <div class="card">
+                <div class="card-title">Desktop Control</div>
+                <div class="stat-row"><span class="stat-label">Swipe L/R</span><span class="stat-value">Virtual Desktop</span></div>
+                <div class="stat-row"><span class="stat-label">Open Hand</span><span class="stat-value">Task View</span></div>
+                <div class="stat-row"><span class="stat-label">Fist</span><span class="stat-value">Fechar Janela</span></div>
+                <div class="stat-row"><span class="stat-label">Point</span><span class="stat-value">Mover Cursor</span></div>
+                <div class="stat-row"><span class="stat-label">Pinch Drag</span><span class="stat-value">Arrastar Janela</span></div>
+                <div class="stat-row"><span class="stat-label">Circle</span><span class="stat-value">Minimizar Tudo</span></div>
+            </div>
+
+            <!-- Voice activation -->
+            <div class="card">
+                <div class="card-title">Ativação por Voz</div>
+                <div class="stat-row"><span class="stat-label">Completo</span><span class="stat-value" style="font-size: 11px;">modo completo</span></div>
+                <div class="stat-row"><span class="stat-label">Desktop</span><span class="stat-value" style="font-size: 11px;">modo controle</span></div>
+                <div class="stat-row"><span class="stat-label">Desenho</span><span class="stat-value" style="font-size: 11px;">modo desenho</span></div>
+                <div class="stat-row"><span class="stat-label">Design 3D</span><span class="stat-value" style="font-size: 11px;">modo design</span></div>
+            </div>
+        </aside>
+
+        <div class="content">
+            <!-- Training panel -->
+            <div class="card">
+                <div class="card-title">Treinar Gesto Customizado</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div class="input-group">
+                        <label class="input-label">Nome do Gesto</label>
+                        <input id="gesture-name" class="input" type="text" placeholder="Ex: acenar">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">Ação Associada</label>
+                        <input id="gesture-action" class="input" type="text" placeholder="Ex: open_task_view">
+                    </div>
+                </div>
+
+                <div class="btn-group" style="margin-bottom: 12px;">
+                    <button id="btn-record-start" class="btn btn-success">● Gravar</button>
+                    <button id="btn-record-stop" class="btn btn-danger" disabled>■ Parar</button>
+                </div>
+
+                <div id="record-status" style="font-size: 13px; color: var(--text-dim); min-height: 20px;">
+                    Pronto para gravar.
+                </div>
+            </div>
+
+            <!-- Registered gestures -->
+            <div class="card" style="flex: 1;">
+                <div class="card-title">Gestos Registrados</div>
+                <div id="gesture-list" class="gesture-list">
+                    <div style="color: var(--text-dim); font-size: 13px; padding: 12px;">
+                        Nenhum gesto customizado registrado.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../static/js/main.js"></script>
+    <script src="../static/js/controls.js"></script>
+</body>
+</html>

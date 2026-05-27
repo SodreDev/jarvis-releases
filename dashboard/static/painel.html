@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>J.A.R.V.I.S — Painel Global</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════ RESET & VARS ═══════════════════ */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#04060c;--panel:#0a0e1a;--panel2:#0c1120;
+  --accent:#00d8ff;--accent-dim:rgba(0,216,255,.2);--accent-glow:rgba(0,216,255,.1);
+  --green:#00e88a;--warn:#ffb347;--red:#ff4d6d;--purple:#c77dff;
+  --text:#d9e7ff;--text-dim:#6a7fa5;--border:rgba(0,216,255,.12);
+  --font-hud:'Orbitron',sans-serif;--font-body:'Rajdhani',sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:14px;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--accent-dim);border-radius:2px}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(circle,rgba(0,216,255,.032) 1px,transparent 1px);background-size:30px 30px}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse 700px 500px at 5% 95%,rgba(0,80,140,.05),transparent),
+             radial-gradient(ellipse 500px 400px at 90% 10%,rgba(0,100,160,.04),transparent)}
+
+/* ═══════════════════ LAYOUT ═══════════════════ */
+#app{display:flex;flex-direction:column;height:100vh;position:relative;z-index:1}
+
+/* ═══════════════════ NAVBAR ═══════════════════ */
+#navbar{height:54px;min-height:54px;flex-shrink:0;display:flex;align-items:center;
+  padding:0 20px;gap:14px;background:rgba(4,6,12,.96);
+  border-bottom:1px solid var(--border);backdrop-filter:blur(14px)}
+.nav-reactor{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--accent);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 0 14px var(--accent-glow)}
+.nav-reactor::after{content:'';width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 7px var(--accent)}
+.nav-title{font-family:var(--font-hud);font-size:16px;font-weight:700;color:var(--accent);letter-spacing:3px;line-height:1}
+.nav-sub{font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-top:2px}
+.nav-sep{width:1px;height:26px;background:var(--border)}
+.nav-live{display:flex;align-items:center;gap:6px;font-size:9px;color:var(--text-dim);letter-spacing:.5px}
+.dot-live{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+#ws-dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:background .5s}
+#ws-dot.on{background:var(--green)}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.nav-clock{font-family:var(--font-hud);font-size:14px;color:var(--accent);letter-spacing:2px}
+.nav-btn{background:none;border:1px solid var(--accent-dim);color:var(--accent);
+  font-size:9px;font-family:var(--font-hud);letter-spacing:1px;padding:5px 12px;
+  border-radius:2px;cursor:pointer;transition:all .2s}
+.nav-btn:hover{background:var(--accent-glow);border-color:var(--accent)}
+.nav-btn.ghost{border-color:transparent;color:var(--text-dim)}
+.nav-btn.ghost:hover{color:var(--accent);border-color:var(--accent-dim)}
+
+/* ═══════════════════ BODY ═══════════════════ */
+#body{display:flex;flex:1;overflow:hidden}
+
+/* ═══════════════════ GRID AREA ═══════════════════ */
+#grid-wrap{flex:1;overflow-y:auto;padding:10px 12px;min-width:0}
+#grid{display:grid;grid-template-columns:repeat(12,1fr);grid-auto-rows:minmax(190px,auto);gap:10px}
+#grid-empty{grid-column:span 12;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:10px;padding:80px 0;opacity:.22}
+.empty-icon{font-size:52px}
+.empty-title{font-family:var(--font-hud);font-size:11px;letter-spacing:2px;color:var(--text-dim)}
+.empty-hint{font-size:10px;color:var(--text-dim);opacity:.7}
+
+/* ═══════════════════ CARD BASE ═══════════════════ */
+.pcard{background:rgba(10,14,26,.88);border:1px solid var(--border);border-radius:3px;
+  display:flex;flex-direction:column;overflow:hidden;backdrop-filter:blur(8px);
+  transition:box-shadow .2s}
+.pcard:hover{border-color:rgba(0,216,255,.28);box-shadow:0 0 16px rgba(0,216,255,.05)}
+
+/* grid spans */
+.pcard[data-cols="3"]{grid-column:span 3}.pcard[data-cols="4"]{grid-column:span 4}
+.pcard[data-cols="5"]{grid-column:span 5}.pcard[data-cols="6"]{grid-column:span 6}
+.pcard[data-cols="7"]{grid-column:span 7}.pcard[data-cols="8"]{grid-column:span 8}
+.pcard[data-cols="9"]{grid-column:span 9}.pcard[data-cols="10"]{grid-column:span 10}
+.pcard[data-cols="12"]{grid-column:span 12}
+.pcard[data-rows="1"]{grid-row:span 1}.pcard[data-rows="2"]{grid-row:span 2}
+.pcard[data-rows="3"]{grid-row:span 3}.pcard[data-rows="4"]{grid-row:span 4}
+.pcard[data-rows="5"]{grid-row:span 5}
+
+.pcard-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;flex-shrink:0;
+  background:rgba(0,216,255,.045);border-bottom:1px solid rgba(0,216,255,.09)}
+.pcard-icon{font-size:12px;flex-shrink:0;line-height:1}
+.pcard-title{font-family:var(--font-body);font-size:10px;font-weight:700;color:var(--accent);
+  letter-spacing:.5px;text-transform:uppercase;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard-meta{font-size:9px;color:var(--text-dim);flex-shrink:0}
+.pcard-actions{display:flex;gap:3px;flex-shrink:0}
+.pcard-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:10px;
+  padding:2px 6px;border-radius:2px;transition:all .15s;line-height:1}
+.pcard-btn:hover{color:var(--accent);background:var(--accent-glow)}
+
+.pcard-body{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.pcard-body.scroll{overflow-y:auto}
+
+/* ═══════════════════ NEWS CARD ═══════════════════ */
+.news-list{list-style:none;overflow-y:auto;height:100%}
+.news-item{display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid rgba(0,216,255,.06);
+  cursor:pointer;transition:background .15s}
+.news-item:hover{background:rgba(0,216,255,.05);text-decoration:none}
+.news-thumb{width:58px;height:44px;object-fit:cover;border-radius:2px;flex-shrink:0;
+  background:var(--panel2);border:1px solid var(--border)}
+.news-info{flex:1;min-width:0}
+.news-info h4{font-size:11px;font-weight:600;color:var(--text);line-height:1.4;
+  margin-bottom:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.news-info p{font-size:10px;color:var(--text-dim);line-height:1.45;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.news-meta{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:9px;color:var(--text-dim)}
+.news-source{color:var(--accent);font-weight:700}
+
+/* ═══════════════════ YOUTUBE CARD ═══════════════════ */
+.yt-frame{width:100%;height:100%;border:none;display:block;min-height:190px;flex:1}
+
+/* ═══════════════════ PORTFOLIO CARD ═══════════════════ */
+.portfolio-inner{padding:10px 12px;overflow-y:auto;height:100%}
+.pf-section{margin-bottom:12px}
+.pf-section-hdr{font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);
+  text-transform:uppercase;padding-bottom:4px;margin-bottom:4px;
+  border-bottom:1px solid rgba(0,216,255,.1)}
+.asset-row{display:flex;align-items:center;gap:6px;padding:4px 0;
+  border-bottom:1px solid rgba(0,216,255,.04)}
+.asset-sym{font-family:var(--font-hud);font-size:10px;font-weight:700;color:var(--accent);width:62px;flex-shrink:0}
+.asset-name{font-size:10px;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asset-price{font-family:var(--font-hud);font-size:11px;color:var(--text);font-weight:600;flex-shrink:0}
+.asset-chg{font-size:9px;font-weight:700;padding:1px 5px;border-radius:2px;flex-shrink:0}
+.chg-up{color:var(--green);background:rgba(0,232,138,.1)}
+.chg-dn{color:var(--red);background:rgba(255,77,109,.1)}
+.chg-eq{color:var(--text-dim)}
+.fi-row{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid rgba(0,216,255,.04)}
+.fi-name{font-size:10px;color:var(--text);flex:1}
+.fi-emissor{font-size:9px;color:var(--text-dim)}
+.fi-taxa{font-family:var(--font-hud);font-size:10px;color:var(--warn);font-weight:700;flex-shrink:0}
+.fi-valor{font-size:10px;color:var(--text-dim);flex-shrink:0}
+.pf-footer{font-size:9px;color:var(--text-dim);text-align:right;padding:6px 0 2px;opacity:.6;
+  border-top:1px solid rgba(0,216,255,.07);margin-top:4px}
+
+/* ═══════════════════ TICKER CARD ═══════════════════ */
+.ticker-outer{overflow:hidden;height:100%;display:flex;align-items:center}
+.ticker-track{display:flex;gap:30px;animation:scroll-l 32s linear infinite;white-space:nowrap}
+.ticker-outer:hover .ticker-track{animation-play-state:paused}
+@keyframes scroll-l{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.tick-chip{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.tick-sym{font-family:var(--font-hud);font-size:11px;font-weight:700;color:var(--accent)}
+.tick-val{font-size:11px;color:var(--text)}
+.tick-chg{font-size:10px;font-weight:600}
+.t-up{color:var(--green)}.t-dn{color:var(--red)}.t-eq{color:var(--text-dim)}
+
+/* ═══════════════════ SUMMARY CARD ═══════════════════ */
+.sum-inner{padding:14px 16px;overflow-y:auto;height:100%}
+.sum-text{font-size:12px;line-height:1.75;color:var(--text);white-space:pre-wrap}
+.sum-sources-hdr{font-size:9px;font-weight:700;letter-spacing:1px;color:var(--text-dim);
+  text-transform:uppercase;margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border)}
+.sum-sources{list-style:none}
+.sum-sources li{padding:3px 0}
+.sum-sources a{font-size:10px;color:var(--accent);text-decoration:none;display:flex;align-items:center;gap:5px}
+.sum-sources a::before{content:'●';font-size:7px;color:var(--accent-dim)}
+.sum-sources a:hover{text-decoration:underline}
+
+/* ═══════════════════ IMAGE CARD ═══════════════════ */
+.img-body{display:flex;align-items:center;justify-content:center;padding:8px;height:100%}
+.img-body img{max-width:100%;max-height:100%;object-fit:contain;border-radius:2px}
+
+/* ═══════════════════ TEXT / GENERIC CARD ═══════════════════ */
+.txt-body{padding:12px 14px;overflow-y:auto;height:100%;font-size:12px;
+  line-height:1.7;color:var(--text);white-space:pre-wrap}
+
+/* ═══════════════════ CHAT SIDEBAR ═══════════════════ */
+#chat-side{width:276px;min-width:276px;flex-shrink:0;background:rgba(4,6,12,.97);
+  border-left:1px solid var(--border);display:flex;flex-direction:column}
+.chat-hdr{padding:11px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
+.chat-hdr-title{font-family:var(--font-hud);font-size:11px;color:var(--accent);letter-spacing:1.5px}
+.chat-hdr-sub{font-size:9px;color:var(--text-dim);margin-top:2px}
+
+#chat-msgs{flex:1;overflow-y:auto;padding:6px 0}
+.cmsg{padding:7px 14px;animation:fade-in .25s ease}
+@keyframes fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.cmsg-who{font-size:8px;font-weight:700;letter-spacing:.5px;margin-bottom:3px}
+.cmsg.user .cmsg-who{color:var(--warn)}
+.cmsg.jarvis .cmsg-who{color:var(--accent)}
+.cmsg-text{font-size:11px;color:var(--text);line-height:1.55}
+.cmsg-ts{font-size:8px;color:var(--text-dim);margin-top:3px}
+
+.chat-footer{padding:10px;border-top:1px solid var(--border);flex-shrink:0}
+.chat-row{display:flex;gap:8px}
+#chat-in{flex:1;background:rgba(0,216,255,.06);border:1px solid var(--accent-dim);color:var(--text);
+  font-family:var(--font-body);font-size:11px;padding:7px 10px;border-radius:2px;outline:none}
+#chat-in:focus{border-color:var(--accent);background:rgba(0,216,255,.1)}
+#chat-send{background:var(--accent-glow);border:1px solid var(--accent-dim);color:var(--accent);
+  font-family:var(--font-hud);font-size:9px;letter-spacing:1px;padding:7px 12px;
+  border-radius:2px;cursor:pointer;transition:all .2s;white-space:nowrap}
+#chat-send:hover{background:rgba(0,216,255,.2);border-color:var(--accent)}
+
+/* ═══════════════════ STATUS BAR ═══════════════════ */
+#statusbar{height:26px;min-height:26px;flex-shrink:0;display:flex;align-items:center;
+  padding:0 16px;gap:18px;background:rgba(4,6,12,.98);
+  border-top:1px solid rgba(0,216,255,.08);font-size:9px;color:var(--text-dim);letter-spacing:.4px}
+.sb-item{display:flex;align-items:center;gap:5px}
+.sb-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+
+/* ═══════════════════ SHIMMER ═══════════════════ */
+@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+.shim{background:linear-gradient(90deg,rgba(0,216,255,.04) 0%,rgba(0,216,255,.1) 50%,rgba(0,216,255,.04) 100%);
+  background-size:400px 100%;animation:shimmer 1.6s ease infinite;height:12px;border-radius:2px;margin:4px 0}
+
+/* ═══════════════════ RESIZE OVERLAY ═══════════════════ */
+.pcard.resizing{border-color:var(--accent) !important;box-shadow:0 0 20px rgba(0,216,255,.15) !important}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── NAVBAR ── -->
+  <div id="navbar">
+    <div class="nav-reactor"></div>
+    <div>
+      <div class="nav-title">J.A.R.V.I.S</div>
+      <div class="nav-sub">PAINEL GLOBAL</div>
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-live">
+      <span class="dot-live"></span>
+      <span id="ws-label">Conectando…</span>
+    </div>
+    <div id="ws-dot"></div>
+    <div class="nav-right">
+      <span class="nav-clock" id="nav-clock">--:--:--</span>
+      <button class="nav-btn ghost" onclick="autoBalance()" title="Rebalancear layout">⊞ BALANCEAR</button>
+      <button class="nav-btn ghost" onclick="clearAll()" title="Remover todos os cards">LIMPAR</button>
+    </div>
+  </div>
+
+  <!-- ── BODY ── -->
+  <div id="body">
+
+    <!-- ── GRID ── -->
+    <div id="grid-wrap">
+      <div id="grid">
+        <div id="grid-empty">
+          <div class="empty-icon">⬡</div>
+          <div class="empty-title">PAINEL AGUARDANDO JARVIS</div>
+          <div class="empty-hint">Diga: "mostrar notícias sobre tecnologia" · "abrir YouTube no painel" · "montar carteira de investimentos"</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CHAT SIDEBAR ── -->
+    <div id="chat-side">
+      <div class="chat-hdr">
+        <div class="chat-hdr-title">◈ JARVIS CHAT</div>
+        <div class="chat-hdr-sub">Histórico · Envie comandos pelo painel</div>
+      </div>
+      <div id="chat-msgs"></div>
+      <div class="chat-footer">
+        <div class="chat-row">
+          <input type="text" id="chat-in" placeholder="Fale com o JARVIS…" autocomplete="off">
+          <button id="chat-send" onclick="sendCmd()">ENVIAR</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /body -->
+
+  <!-- ── STATUS BAR ── -->
+  <div id="statusbar">
+    <div class="sb-item">
+      <span class="sb-dot" id="sd-ws" style="background:var(--red)"></span>
+      <span id="sb-conn">Desconectado</span>
+    </div>
+    <div class="sb-item">
+      <span class="sb-dot" style="background:var(--accent)"></span>
+      <span id="sb-cards">0 cards</span>
+    </div>
+    <div class="sb-item">
+      <span class="sb-dot" style="background:var(--green)"></span>
+      <span id="sb-stocks">cotações prontas</span>
+    </div>
+    <div class="sb-item">
+      <span class="sb-dot" style="background:var(--warn)"></span>
+      <span id="sb-ts">—</span>
+    </div>
+    <div style="margin-left:auto;font-family:var(--font-hud);font-size:8px;opacity:.3;letter-spacing:1px">
+      STARK INDUSTRIES · JARVIS PAINEL GLOBAL
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+"use strict";
+// ═══════════════════════════════════════════════════════════════
+//  J.A.R.V.I.S — Painel Global Client JS
+// ═══════════════════════════════════════════════════════════════
+
+const CARDS = {};          // id → card object
+const STOCK_TIMERS = {};   // cardId → intervalId
+
+// ── TYPE CONFIG ──────────────────────────────────────────────────
+const TYPE_ICON = {
+  news:'📰', youtube:'▶️', portfolio:'📊', summary:'📝',
+  ticker:'📈', image:'🖼️', text:'◈', generic:'⬡', web:'🌐'
+};
+
+// Size presets: [cols, rows]
+const SIZE_PRESETS = {
+  xs:[3,1], sm:[4,2], md:[4,3], lg:[6,4],
+  wide:[6,2], tall:[3,4], xl:[8,4], full:[12,3]
+};
+
+// Default sizes by card type
+const TYPE_DEFAULT_SIZE = {
+  news:[4,3], youtube:[6,3], portfolio:[5,3], summary:[6,3],
+  ticker:[12,1], image:[4,3], text:[4,2], generic:[4,2]
+};
+
+// ── CLOCK ────────────────────────────────────────────────────────
+setInterval(() => {
+  const d = new Date();
+  document.getElementById('nav-clock').textContent =
+    d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}, 1000);
+
+// ── WEBSOCKET ────────────────────────────────────────────────────
+let _ws = null;
+let _wsReady = false;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  try { _ws = new WebSocket(`${proto}://${location.host}/ws`); }
+  catch(e) { setTimeout(connectWS, 2000); return; }
+
+  _ws.onopen = () => {
+    _wsReady = true;
+    setWsStatus(true);
+  };
+  _ws.onclose = () => {
+    _wsReady = false;
+    setWsStatus(false);
+    setTimeout(connectWS, 1800);
+  };
+  _ws.onerror = () => {};
+  _ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    handleMsg(msg);
+  };
+}
+
+function setWsStatus(on) {
+  document.getElementById('ws-dot').className = on ? 'on' : '';
+  document.getElementById('ws-label').textContent = on ? 'Online' : 'Reconectando…';
+  document.getElementById('sd-ws').style.background = on ? 'var(--green)' : 'var(--red)';
+  document.getElementById('sb-conn').textContent = on ? 'Conectado' : 'Desconectado';
+}
+
+function handleMsg(msg) {
+  if (msg.type === 'snapshot') {
+    (msg.state.cards || []).forEach(upsertCard);
+    (msg.state.logs || [])
+      .filter(l => l.level === 'chat')
+      .forEach(l => appendChat(l.source === 'user' ? 'user' : 'jarvis', l.msg, l.ts));
+  }
+  else if (msg.type === 'card')        upsertCard(msg.card);
+  else if (msg.type === 'card_remove') deleteCard(msg.id);
+  else if (msg.type === 'chat')        appendChat(msg.role || 'jarvis', msg.text, msg.ts);
+  else if (msg.type === 'log') {
+    const e = msg.entry || {};
+    if (e.level === 'chat') appendChat(e.source === 'user' ? 'user' : 'jarvis', e.msg, e.ts);
+  }
+}
+
+// ── CARD MANAGEMENT ─────────────────────────────────────────────
+function upsertCard(c) {
+  if (!c || !c.id) return;
+  CARDS[c.id] = c;
+
+  // Determine grid span
+  let cols, rows;
+  if (c.size && SIZE_PRESETS[c.size]) {
+    [cols, rows] = SIZE_PRESETS[c.size];
+  } else {
+    const def = TYPE_DEFAULT_SIZE[(c.type || 'generic').toLowerCase()] || [4,2];
+    cols = c.cols || def[0];
+    rows = c.rows || def[1];
+  }
+
+  // Remove empty placeholder
+  const emp = document.getElementById('grid-empty');
+  if (emp) emp.remove();
+
+  let el = document.querySelector(`.pcard[data-id="${CSS.escape(c.id)}"]`);
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'pcard';
+    el.dataset.id = c.id;
+    document.getElementById('grid').appendChild(el);
+  }
+
+  el.dataset.cols = cols;
+  el.dataset.rows = rows;
+  el.style.gridColumn = `span ${cols}`;
+  el.style.gridRow    = `span ${rows}`;
+
+  const type = (c.type || 'text').toLowerCase();
+  const icon = TYPE_ICON[type] || TYPE_ICON.generic;
+  const ts   = c.ts ? new Date(c.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+
+  el.innerHTML = `
+    <div class="pcard-hdr">
+      <span class="pcard-icon">${icon}</span>
+      <span class="pcard-title">${h(c.title || type.toUpperCase())}</span>
+      <span class="pcard-meta">${ts}</span>
+      <div class="pcard-actions">
+        <button class="pcard-btn" title="Encolher" onclick="resizeCard('${eid(c.id)}',-1)">◂</button>
+        <button class="pcard-btn" title="Expandir" onclick="resizeCard('${eid(c.id)}',+1)">▸</button>
+        <button class="pcard-btn" title="Fechar" onclick="closeCard('${eid(c.id)}')">✕</button>
+      </div>
+    </div>
+    <div class="pcard-body" id="pb-${eid(c.id)}"></div>
+  `;
+
+  renderBody(c, document.getElementById(`pb-${eid(c.id)}`));
+  updateStats();
+}
+
+function deleteCard(id) {
+  delete CARDS[id];
+  if (STOCK_TIMERS[id]) { clearInterval(STOCK_TIMERS[id]); delete STOCK_TIMERS[id]; }
+  const el = document.querySelector(`.pcard[data-id="${CSS.escape(id)}"]`);
+  if (el) {
+    el.style.transition = 'opacity .3s,transform .3s';
+    el.style.opacity = '0'; el.style.transform = 'scale(.96)';
+    setTimeout(() => { el.remove(); if (!document.querySelector('.pcard')) showEmpty(); }, 320);
+  }
+  updateStats();
+}
+
+// ── CARD RENDERERS ───────────────────────────────────────────────
+function renderBody(c, el) {
+  const type = (c.type || 'text').toLowerCase();
+  if      (type === 'news')      renderNews(c, el);
+  else if (type === 'youtube')   renderYoutube(c, el);
+  else if (type === 'portfolio') renderPortfolio(c, el);
+  else if (type === 'ticker')    renderTicker(c, el);
+  else if (type === 'summary')   renderSummary(c, el);
+  else if (type === 'image')     renderImage(c, el);
+  else                           renderText(c, el);
+}
+
+/* ---- NEWS ---- */
+function renderNews(c, el) {
+  const arts = (c.content && c.content.articles) || [];
+  if (!arts.length) {
+    el.innerHTML = `<div class="txt-body" style="color:var(--text-dim)">Sem artigos disponíveis.</div>`;
+    return;
+  }
+  el.className += ' scroll';
+  el.innerHTML = `<ul class="news-list">${arts.map(a => `
+    <li class="news-item" onclick="safeOpen(${JSON.stringify(a.url||'')})">
+      ${a.image ? `<img class="news-thumb" src="${attr(a.image)}" loading="lazy" onerror="this.style.display='none'">` : ''}
+      <div class="news-info">
+        <h4>${h(a.title||'')}</h4>
+        <p>${h(a.summary||a.body||'')}</p>
+        <div class="news-meta">
+          <span class="news-source">${h(a.source||'')}</span>
+          ${a.date ? `<span>· ${h(a.date)}</span>` : ''}
+        </div>
+      </div>
+    </li>`).join('')}</ul>`;
+}
+
+/* ---- YOUTUBE ---- */
+function renderYoutube(c, el) {
+  const vid = (c.content && c.content.video_id) || c.video_id || '';
+  if (!vid) {
+    el.innerHTML = `<div class="txt-body" style="color:var(--text-dim)">ID do vídeo não especificado.</div>`;
+    return;
+  }
+  el.style.padding = '0';
+  el.style.overflow = 'hidden';
+  // iframe sandbox allows scripts for YouTube embed but not external navigation
+  el.innerHTML = `<iframe class="yt-frame" 
+    src="https://www.youtube.com/embed/${encodeURIComponent(vid)}?rel=0&autoplay=1&mute=1&modestbranding=1&playsinline=1"
+    allow="autoplay; encrypted-media; picture-in-picture"
+    allowfullscreen
+    sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"></iframe>`;
+}
+
+/* ---- PORTFOLIO ---- */
+function renderPortfolio(c, el) {
+  const stocks = (c.content && c.content.acoes)     || [];
+  const fi     = (c.content && c.content.renda_fixa)|| [];
+  el.className += ' scroll';
+  el.innerHTML = `<div class="portfolio-inner">
+    ${stocks.length ? `
+      <div class="pf-section">
+        <div class="pf-section-hdr">Renda Variável</div>
+        <div id="pfstocks-${eid(c.id)}">${buildStockRows(stocks)}</div>
+      </div>` : ''}
+    ${fi.length ? `
+      <div class="pf-section">
+        <div class="pf-section-hdr">Renda Fixa</div>
+        ${fi.map(f => `
+          <div class="fi-row">
+            <div style="flex:1">
+              <div class="fi-name">${h(f.nome||f.tipo||'')}</div>
+              ${f.emissor ? `<div class="fi-emissor">${h(f.emissor)}</div>` : ''}
+            </div>
+            <span class="fi-taxa">${h(f.taxa||'')}</span>
+            ${f.valor ? `<span class="fi-valor">R$ ${Number(f.valor).toLocaleString('pt-BR')}</span>` : ''}
+          </div>`).join('')}
+      </div>` : ''}
+    <div class="pf-footer" id="pfts-${eid(c.id)}">— atualizando cotações…</div>
+  </div>`;
+  if (stocks.length) startStockRefresh(c.id, stocks);
+}
+
+function buildStockRows(stocks) {
+  return stocks.map(s => {
+    const chg = parseFloat(s.change_pct || s.variacao || 0);
+    const cls = chg > 0.01 ? 'chg-up' : chg < -0.01 ? 'chg-dn' : 'chg-eq';
+    const sign = chg > 0 ? '+' : '';
+    const price = s.price || s.preco
+      ? 'R$ ' + Number(s.price || s.preco).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+      : '—';
+    return `<div class="asset-row">
+      <span class="asset-sym">${h(s.symbol||s.simbolo||'')}</span>
+      <span class="asset-name">${h(s.name||s.nome||'')}</span>
+      <span class="asset-price">${price}</span>
+      <span class="asset-chg ${cls}">${sign}${chg.toFixed(2)}%</span>
+    </div>`;
+  }).join('');
+}
+
+function startStockRefresh(cardId, stocks) {
+  if (STOCK_TIMERS[cardId]) clearInterval(STOCK_TIMERS[cardId]);
+  const syms = stocks.map(s => s.symbol || s.simbolo || '').filter(Boolean);
+  if (!syms.length) return;
+  const doFetch = () => {
+    fetch(`/api/stocks?s=${syms.map(encodeURIComponent).join(',')}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data || !data.quotes) return;
+        const rowsEl = document.getElementById(`pfstocks-${eid(cardId)}`);
+        const tsEl   = document.getElementById(`pfts-${eid(cardId)}`);
+        if (!rowsEl) { clearInterval(STOCK_TIMERS[cardId]); return; }
+        const merged = stocks.map(s => {
+          const sym  = s.symbol || s.simbolo || '';
+          const live = data.quotes[sym] || {};
+          return Object.assign({}, s, live);
+        });
+        rowsEl.innerHTML = buildStockRows(merged);
+        document.getElementById('sb-stocks').textContent = 'cotações ' +
+          new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+        if (tsEl) tsEl.textContent = 'atualizado ' +
+          new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      })
+      .catch(() => {});
+  };
+  doFetch();
+  STOCK_TIMERS[cardId] = setInterval(doFetch, 60000);
+}
+
+/* ---- TICKER ---- */
+function renderTicker(c, el) {
+  const items = (c.content && c.content.items) || [];
+  if (!items.length) {
+    el.innerHTML = `<div class="txt-body" style="color:var(--text-dim)">Sem itens no ticker.</div>`;
+    return;
+  }
+  const doubled = [...items, ...items]; // seamless loop
+  el.style.padding = '0 10px';
+  el.innerHTML = `<div class="ticker-outer"><div class="ticker-track">${
+    doubled.map(i => {
+      const chg = parseFloat(i.change_pct || i.variacao || 0);
+      const cls = chg > 0.01 ? 't-up' : chg < -0.01 ? 't-dn' : 't-eq';
+      const sign = chg > 0 ? '+' : '';
+      return `<span class="tick-chip">
+        <span class="tick-sym">${h(i.symbol||i.simbolo||'')}</span>
+        <span class="tick-val">${h(String(i.value||i.price||i.preco||''))}</span>
+        <span class="tick-chg ${cls}">${sign}${chg.toFixed(2)}%</span>
+      </span>`;
+    }).join('')
+  }</div></div>`;
+}
+
+/* ---- SUMMARY ---- */
+function renderSummary(c, el) {
+  const text    = (c.content && c.content.text) || c.body || '';
+  const sources = (c.content && c.content.sources) || [];
+  el.className += ' scroll';
+  el.innerHTML = `<div class="sum-inner">
+    <div class="sum-text">${h(text)}</div>
+    ${sources.length ? `
+      <div class="sum-sources-hdr">Fontes</div>
+      <ul class="sum-sources">${sources.map(s =>
+        `<li><a href="${attr(s.url||'#')}" target="_blank" rel="noopener noreferrer">${h(s.title||s.url||'')}</a></li>`
+      ).join('')}</ul>` : ''}
+  </div>`;
+}
+
+/* ---- IMAGE ---- */
+function renderImage(c, el) {
+  const src = (c.content && c.content.url) || c.url || '';
+  el.className += ' img-body';
+  el.innerHTML = src
+    ? `<img src="${attr(src)}" alt="${attr(c.title||'Imagem gerada pelo JARVIS')}">`
+    : `<div class="txt-body" style="color:var(--text-dim)">Imagem indisponível.</div>`;
+}
+
+/* ---- TEXT / FALLBACK ---- */
+function renderText(c, el) {
+  el.className += ' scroll';
+  el.innerHTML = `<div class="txt-body">${h((c.content && c.content.text) || c.body || '')}</div>`;
+}
+
+// ── CARD ACTIONS ─────────────────────────────────────────────────
+const SIZE_STEPS = [[3,1],[3,2],[4,2],[4,3],[6,3],[6,4],[8,4],[9,4],[12,4]];
+
+function resizeCard(id, dir) {
+  const el = document.querySelector(`.pcard[data-id="${CSS.escape(id)}"]`);
+  if (!el) return;
+  const curCols = parseInt(el.dataset.cols) || 4;
+  const curRows = parseInt(el.dataset.rows) || 2;
+  const idx = SIZE_STEPS.findIndex(([c]) => c >= curCols) + (dir > 0 ? 1 : -1);
+  const step = SIZE_STEPS[Math.max(0, Math.min(SIZE_STEPS.length - 1, idx))];
+  el.dataset.cols = step[0]; el.dataset.rows = step[1];
+  el.style.gridColumn = `span ${step[0]}`;
+  el.style.gridRow    = `span ${step[1]}`;
+  el.classList.add('resizing');
+  setTimeout(() => el.classList.remove('resizing'), 500);
+}
+
+function closeCard(id) {
+  deleteCard(id);
+  fetch(`/api/cards/${encodeURIComponent(id)}`, {method:'DELETE'}).catch(() => {});
+}
+
+function clearAll() {
+  Object.keys(CARDS).forEach(id => closeCard(id));
+}
+
+function showEmpty() {
+  const grid = document.getElementById('grid');
+  if (document.getElementById('grid-empty')) return;
+  const d = document.createElement('div');
+  d.id = 'grid-empty';
+  d.innerHTML = `
+    <div class="empty-icon">⬡</div>
+    <div class="empty-title">PAINEL VAZIO</div>
+    <div class="empty-hint">Fale com o JARVIS para adicionar conteúdo</div>`;
+  grid.appendChild(d);
+}
+
+// ── AUTO-BALANCE ─────────────────────────────────────────────────
+function autoBalance() {
+  const ids = Object.keys(CARDS);
+  const n = ids.length;
+  if (!n) return;
+
+  // Assign sizes based on count and type
+  ids.forEach((id, i) => {
+    const c = CARDS[id];
+    const type = (c.type || 'text').toLowerCase();
+    const el = document.querySelector(`.pcard[data-id="${CSS.escape(id)}"]`);
+    if (!el) return;
+
+    let cols, rows;
+    if (type === 'ticker') {
+      cols = 12; rows = 1;
+    } else if (n === 1) {
+      cols = 12; rows = 4;
+    } else if (n === 2) {
+      cols = 6; rows = 3;
+    } else if (n <= 4) {
+      cols = type === 'youtube' ? 6 : 4;
+      rows = type === 'summary' ? 2 : 3;
+    } else if (n <= 6) {
+      cols = type === 'youtube' ? 6 : 4;
+      rows = 2;
+    } else {
+      cols = 4; rows = 2;
+    }
+
+    el.dataset.cols = cols; el.dataset.rows = rows;
+    el.style.gridColumn = `span ${cols}`;
+    el.style.gridRow    = `span ${rows}`;
+    el.classList.add('resizing');
+    setTimeout(() => el.classList.remove('resizing'), 600);
+  });
+}
+
+// ── CHAT ─────────────────────────────────────────────────────────
+function appendChat(role, text, ts) {
+  const container = document.getElementById('chat-msgs');
+  const div = document.createElement('div');
+  div.className = `cmsg ${role}`;
+  const timeStr = ts
+    ? new Date(ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})
+    : '';
+  div.innerHTML = `
+    <div class="cmsg-who">${role === 'user' ? '◉ VOCÊ' : '◈ JARVIS'}</div>
+    <div class="cmsg-text">${h(text)}</div>
+    ${timeStr ? `<div class="cmsg-ts">${timeStr}</div>` : ''}`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function sendCmd() {
+  const inp = document.getElementById('chat-in');
+  const txt = inp.value.trim();
+  if (!txt) return;
+  inp.value = '';
+  appendChat('user', txt);
+  fetch('/api/cmd', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({cmd: txt, source: 'painel', ts: Date.now()})
+  }).catch(() => {});
+}
+
+document.getElementById('chat-in').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendCmd();
+});
+
+// ── STATS ─────────────────────────────────────────────────────────
+function updateStats() {
+  const n = Object.keys(CARDS).length;
+  document.getElementById('sb-cards').textContent = `${n} card${n !== 1 ? 's' : ''} ativo${n !== 1 ? 's' : ''}`;
+  document.getElementById('sb-ts').textContent =
+    'sync ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────
+function h(s)   { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function attr(s){ return String(s).replace(/"/g,'&quot;').replace(/[<>]/g,''); }
+function eid(s) { return String(s).replace(/['"\\]/g,''); }  // safe for html attr
+function safeOpen(url) {
+  // Only allow http/https URLs to prevent javascript: injection
+  if (url && /^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+// ── BOOT ─────────────────────────────────────────────────────────
+connectWS();
+fetch('/api/state')
+  .then(r => r.ok ? r.json() : null)
+  .then(s => { if (s) handleMsg({type:'snapshot', state:s}); })
+  .catch(() => {});
+</script>
+</body>
+</html>

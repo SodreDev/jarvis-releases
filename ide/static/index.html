@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>JARVIS IDE</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="stylesheet" href="/static/stark.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+<style>
+  body { display: grid; grid-template-rows: auto 1fr; height: 100vh; overflow: hidden; }
+  main.ide {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    grid-template-rows: 1fr 280px;
+    gap: 6px;
+    padding: 8px;
+    height: calc(100vh - 52px);
+  }
+  .sidebar { grid-row: 1 / span 2; background: var(--panel); border: 1px solid var(--accent-dim); padding: 8px; overflow:auto; display:flex; flex-direction:column; gap:4px; }
+  .editor  { background: #0a0e1a; border: 1px solid var(--accent-dim); border-radius: 4px; overflow:hidden; }
+  .term-area { background: #000; border: 1px solid var(--accent-dim); border-radius: 4px; overflow:hidden; display:flex; flex-direction:column; }
+  .proj { padding: 5px 8px; cursor: pointer; border-radius: 3px; font-size: 12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .proj:hover, .proj.active { background: var(--accent-glow); }
+  .tree-item { padding: 2px 6px; cursor: pointer; font-size: 12px; font-family: Consolas, monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:2px; }
+  .tree-item:hover { background: var(--accent-glow); color: var(--accent); }
+  .tree-item.dir { color: var(--warn); }
+  .tree-item.selected { background: var(--accent-dim); color: var(--accent); }
+  .ide-bar { display:flex; gap:4px; }
+  .ide-bar input { flex:1; background: var(--bg-0); border: 1px solid var(--accent-dim); color: var(--text); padding: 3px 6px; font-size: 11px; border-radius:3px; }
+  .ide-bar button { font-size: 11px; padding: 3px 8px; }
+  .editor-bar { display:flex; gap:8px; padding: 5px 10px; background: rgba(0,216,255,0.04); border-bottom: 1px solid var(--accent-dim); font-size: 12px; align-items:center; }
+  #editor { width: 100%; height: calc(100% - 33px); }
+  /* Terminal tabs */
+  .term-tabs { display:flex; gap:2px; padding:4px 6px; background:rgba(0,0,0,0.5); border-bottom:1px solid var(--accent-dim); align-items:center; min-height:28px; }
+  .term-tab { padding:2px 10px; font-size:11px; cursor:pointer; border-radius:3px; border:1px solid var(--accent-dim); color:var(--text-dim); }
+  .term-tab.active { background:var(--accent-glow); color:var(--accent); border-color:var(--accent); }
+  .term-tab .close-tab { margin-left:5px; color:var(--text-dim); cursor:pointer; }
+  .term-tab .close-tab:hover { color:#ff4466; }
+  #term-container { flex:1; overflow:hidden; position:relative; }
+  .xterm-viewport { background:#000 !important; }
+  /* Context menu */
+  #ctx-menu { position:fixed; display:none; z-index:9999; background:var(--panel); border:1px solid var(--accent-dim); border-radius:4px; min-width:160px; box-shadow:0 4px 16px rgba(0,0,0,0.5); }
+  #ctx-menu div { padding:7px 14px; font-size:12px; cursor:pointer; }
+  #ctx-menu div:hover { background:var(--accent-glow); color:var(--accent); }
+  #ctx-menu hr { border:none; border-top:1px solid var(--accent-dim); margin:2px 0; }
+  /* Runner bar */
+  .run-bar { display:flex; gap:6px; padding:4px 8px; background:rgba(0,48,0,0.4); border-bottom:1px solid var(--accent-dim); align-items:center; font-size:11px; }
+  #run-url a { color:var(--accent); text-decoration:underline; }
+  /* Section headers in sidebar */
+  .sec-hdr { font-size:10px; letter-spacing:2px; color:var(--accent); margin:10px 0 4px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="logo">
+      <span class="ring"></span>
+      <span class="title">J.A.R.V.I.S IDE</span>
+      <span class="sub" id="ws-sub">Workspace isolado</span>
+    </div>
+    <div class="status" style="display:flex;gap:8px;align-items:center">
+      <button class="ghost" id="runBtn" style="font-size:11px">▶ Executar</button>
+      <button class="ghost" id="stopBtn" style="font-size:11px;display:none">⏹ Parar</button>
+      <span id="run-url"></span>
+      <a href="/" style="color:var(--accent);text-decoration:none;font-size:12px">← Painel</a>
+    </div>
+  </header>
+
+  <main class="ide">
+    <aside class="sidebar">
+      <div class="sec-hdr">Projetos</div>
+      <div class="ide-bar">
+        <input id="newProj" placeholder="Novo projeto..." />
+        <button class="ghost" id="createProj">+</button>
+      </div>
+      <div id="projects"></div>
+
+      <div class="sec-hdr" style="margin-top:12px">Arquivos</div>
+      <div class="ide-bar">
+        <input id="newFile" placeholder="caminho/arquivo.py" />
+        <button class="ghost" id="createFile" title="Criar arquivo">+</button>
+        <button class="ghost" id="mkdirBtn" title="Nova pasta">📂</button>
+      </div>
+      <div id="tree"></div>
+    </aside>
+
+    <section class="editor">
+      <div class="editor-bar">
+        <span id="curFile" style="color:var(--accent);flex:1">Nenhum arquivo</span>
+        <button class="ghost" id="saveBtn" style="font-size:11px">💾 Salvar (Ctrl+S)</button>
+        <button class="ghost" id="explorerBtn" style="font-size:11px" title="Abrir no Explorer">🗂</button>
+        <button class="ghost" id="deleteBtn" style="font-size:11px;color:#ff4466" title="Excluir arquivo">🗑</button>
+      </div>
+      <div id="editor"></div>
+    </section>
+
+    <section class="term-area">
+      <div class="run-bar">
+        <span style="color:var(--text-dim)">TERMINAL</span>
+        <button class="ghost" id="addTermBtn" style="font-size:10px">+ Novo</button>
+        <span style="flex:1"></span>
+        <span id="run-status" style="color:var(--text-dim)"></span>
+      </div>
+      <div class="term-tabs" id="term-tabs"></div>
+      <div id="term-container"></div>
+    </section>
+  </main>
+
+  <!-- Context menu -->
+  <div id="ctx-menu">
+    <div id="ctx-rename">✏️ Renomear</div>
+    <div id="ctx-move">📋 Mover para...</div>
+    <div id="ctx-explorer">🗂 Abrir no Explorer</div>
+    <hr/>
+    <div id="ctx-delete" style="color:#ff4466">🗑 Excluir</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+  <script src="/ide/static/ide.js"></script>
+</body>
+</html>

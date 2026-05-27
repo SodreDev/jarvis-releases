@@ -1,0 +1,72 @@
+{
+    "name": "jarvis-dev-bridge",
+    "displayName": "Jarvis Dev Bridge",
+    "description": "Conecta o J.A.R.V.I.S. ao VSCode para enviar prompts estruturados ao GitHub Copilot Agent via WebSocket.",
+    "version": "1.0.0",
+    "publisher": "stark-industries",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "jarvis.devBridge.connect",
+                "title": "Jarvis: Connect Dev Bridge"
+            },
+            {
+                "command": "jarvis.devBridge.disconnect",
+                "title": "Jarvis: Disconnect Dev Bridge"
+            },
+            {
+                "command": "jarvis.devBridge.status",
+                "title": "Jarvis: Dev Bridge Status"
+            }
+        ],
+        "configuration": {
+            "title": "Jarvis Dev Bridge",
+            "properties": {
+                "jarvis.devBridge.port": {
+                    "type": "number",
+                    "default": 6589,
+                    "description": "Porta do servidor WebSocket do Jarvis Dev Mode."
+                },
+                "jarvis.devBridge.host": {
+                    "type": "string",
+                    "default": "127.0.0.1",
+                    "description": "Host do servidor WebSocket do Jarvis."
+                },
+                "jarvis.devBridge.autoConnect": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Conectar automaticamente ao Jarvis quando o VSCode iniciar."
+                },
+                "jarvis.devBridge.reconnectInterval": {
+                    "type": "number",
+                    "default": 5000,
+                    "description": "Intervalo de reconexão em milissegundos."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.85.0",
+        "@types/node": "^20.0.0",
+        "@types/ws": "^8.5.0",
+        "typescript": "^5.3.0"
+    },
+    "dependencies": {
+        "ws": "^8.16.0"
+    }
+}

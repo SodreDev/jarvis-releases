@@ -1,0 +1,53 @@
+{
+    "gesture_mappings": {
+        "desktop": {
+            "swipe_left": "switch_desktop_left",
+            "swipe_right": "switch_desktop_right",
+            "open_hand": "open_task_view",
+            "fist": "close_window",
+            "pinch": "start_drag",
+            "pinch_hold": "continue_drag",
+            "pinch_release": "end_drag",
+            "point": "move_cursor",
+            "circle": "minimize_all"
+        },
+        "canvas2d": {
+            "pinch": "start_stroke",
+            "pinch_hold": "continue_stroke",
+            "pinch_release": "end_stroke",
+            "fist": "erase",
+            "circle": "clear",
+            "two_fingers": "undo",
+            "open_hand": "cycle_color"
+        },
+        "workspace3d": {
+            "swipe_up": "create_primitive",
+            "swipe_down": "delete_selected",
+            "pinch": "select_or_grab",
+            "pinch_hold": "manipulate",
+            "pinch_release": "release",
+            "open_hand": "push_surface",
+            "fist": "pull_compress",
+            "circle": "rotate_object",
+            "two_fingers": "scale_mode"
+        }
+    },
+    "voice_modes": {
+        "full": {
+            "phrases": ["modo completo", "interface total", "ativar interface total"],
+            "modules": ["desktop", "canvas2d", "workspace3d"]
+        },
+        "desktop": {
+            "phrases": ["modo controle", "controlar tela"],
+            "modules": ["desktop"]
+        },
+        "desktop_2d": {
+            "phrases": ["modo desenho", "controle com desenho"],
+            "modules": ["desktop", "canvas2d"]
+        },
+        "design3d": {
+            "phrases": ["modo design", "abrir estúdio 3d"],
+            "modules": ["workspace3d"]
+        }
+    }
+}

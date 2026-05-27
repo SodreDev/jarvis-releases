@@ -1,0 +1,10 @@
+{
+  "name": "hello",
+  "version": "0.1.0",
+  "entry": "main",
+  "description": "Plugin de exemplo — saudação simples.",
+  "permissions": [],
+  "tools": [
+    {"name": "hello.greet", "fn": "greet", "description": "Cumprimenta um nome"}
+  ]
+}

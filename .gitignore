@@ -1,0 +1,130 @@
+# Segredos e dados pessoais — TUDO em credentials/ é ignorado.
+# Apenas o template (.env.example) e o README ficam versionados.
+credentials/*
+!credentials/.env.example
+!credentials/README.md
+!credentials/.gitkeep
+
+# Legado (caso ainda existam na raiz por engano)
+.env
+.env.*
+!.env.example
+contatos.json
+condicionais.json
+alarmes.json
+jarvis_prefs.json
+jarvis_modo.json
+gmail_credentials.json
+gmail_token.json
+
+# ── Contatos / agenda (NUNCA subir) ───────────────────────────────────────
+*.vcf
+arquivos.vcf
+contatos*.txt
+contatos_*.json
+data/memoria_contatos/
+
+# ── Cookies / sessões de navegador / WhatsApp / Instagram / Discord ───────
+*cookies*.json
+*cookies*.txt
+*.cookie
+cookies/
+session.json
+*_session.json
+*.session
+instagram_session.json
+whatsapp_session/
+discord_token*
+
+# ── Perfis Chromium / Edge / Chrome (do JARVIS e do usuário) ──────────────
+# Perfis de browser pool, automação Playwright/Selenium, etc.
+chrome_profile/
+chrome_profiles/
+chromium_profile/
+chromium_profiles/
+browser_profile/
+browser_profiles/
+data/browser_profiles/
+data/chrome_profile/
+data/chromium/
+.playwright/
+playwright/.cache/
+selenium_profile/
+profile_*/
+User Data/
+
+# ── Tokens OAuth / API caches diversos ────────────────────────────────────
+*token*.json
+*credentials*.json
+!credentials/README.md
+.spotify_cache
+.google_credentials/
+.youtube_oauth*
+.gmail_oauth*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Sessões / cache
+temp/
+*.jsonl
+VozIa/kokoro_cache/
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+
+# Dados gerados em runtime (Fases 2-6 — mensageria, perfis web, memória de pessoas)
+data/browser_profiles/
+data/people_memory/
+data/people.json
+data/jarvis_workspace/
+data/temp_charts/
+data/image_cache/
+data/ocr_cache/
+data/panel_state.json
+data/permissions_grants.json
+data/mcp_servers.json
+.spotify_cache
+notif_history.jsonl
+historico.jsonl
+vision_cache.jsonl
+
+# Logs
+logs/
+*.log
+run_error.txt
+build_log*.txt
+@AutomationLog.txt
+
+# Build artifacts adicionais
+installer/output/
+*.exe
+JARVIS.spec.bak
+
+# Documentos gerados (apresentações, PDFs, planilhas do usuário)
+data/documents/
+
+# Backups acidentais
+*.bak
+*.tmp
+
+# Workspaces de planejamento privados
+planning/SECRETS_AUDIT.md
+/memories/
+
+# IDE caches
+.vscode/
+.idea/
+
+# Node / extensão VS Code
+node_modules/
+*.vsix
+.npm/
+package-lock.json.bak

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>JARVIS — Stark Panel</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="stylesheet" href="/static/stark.css" />
+</head>
+<body>
+  <header class="bar">
+    <div class="logo">
+      <span class="ring"></span>
+      <span class="title">J.A.R.V.I.S</span>
+      <span class="sub">Stark Industries Panel</span>
+    </div>
+    <div class="status" id="status">
+      <span class="dot live"></span>
+      <span id="statusText">Online</span>
+      <span class="sep">•</span>
+      <span id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <main>
+    <section id="monitorsSection" class="panel">
+      <h2>Monitores</h2>
+      <div id="monitors" class="monitors"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Cards <button class="ghost" id="refreshBtn">↻</button></h2>
+      <div id="cards" class="cards"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Logs em tempo real</h2>
+      <div id="logs" class="logs"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Janelas</h2>
+      <div id="windows" class="windows"></div>
+    </section>
+  </main>
+
+  <div class="scanlines"></div>
+  <canvas id="bg"></canvas>
+
+  <script src="/static/stark.js"></script>
+</body>
+</html>

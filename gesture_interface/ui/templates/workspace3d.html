@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S — Workspace 3D</title>
+    <link rel="stylesheet" href="../static/css/jarvis.css">
+    <!-- Three.js via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">J.A.R.V.I.S · WORKSPACE 3D</div>
+        <a class="nav-link" data-page="index.html">Dashboard</a>
+        <a class="nav-link" data-page="canvas2d.html">Canvas 2D</a>
+        <a class="nav-link active" data-page="workspace3d.html">Workspace 3D</a>
+        <a class="nav-link" data-page="controls.html">Controles</a>
+    </nav>
+
+    <div class="main">
+        <aside class="sidebar">
+            <!-- Create objects -->
+            <div class="card">
+                <div class="card-title">Criar Objeto</div>
+                <div class="btn-group" style="flex-direction: column;">
+                    <button class="btn" data-create="cube">◻ Cubo</button>
+                    <button class="btn" data-create="sphere">● Esfera</button>
+                    <button class="btn" data-create="cylinder">▮ Cilindro</button>
+                </div>
+            </div>
+
+            <!-- Scene info -->
+            <div class="card">
+                <div class="card-title">Cena</div>
+                <div class="stat-row">
+                    <span class="stat-label">Objetos</span>
+                    <span id="object-count" class="stat-value">0</span>
+                </div>
+            </div>
+
+            <!-- Gesture mappings -->
+            <div class="card">
+                <div class="card-title">Mapeamento Gestual</div>
+                <div class="stat-row"><span class="stat-label">Swipe Up</span><span class="stat-value">Criar</span></div>
+                <div class="stat-row"><span class="stat-label">Swipe Down</span><span class="stat-value">Deletar</span></div>
+                <div class="stat-row"><span class="stat-label">Pinch</span><span class="stat-value">Selecionar</span></div>
+                <div class="stat-row"><span class="stat-label">Pinch Hold</span><span class="stat-value">Mover</span></div>
+                <div class="stat-row"><span class="stat-label">Open Hand</span><span class="stat-value">Empurrar</span></div>
+                <div class="stat-row"><span class="stat-label">Fist</span><span class="stat-value">Puxar</span></div>
+                <div class="stat-row"><span class="stat-label">Circle</span><span class="stat-value">Rotacionar</span></div>
+                <div class="stat-row"><span class="stat-label">Two Fingers</span><span class="stat-value">Escalar</span></div>
+            </div>
+        </aside>
+
+        <div class="content">
+            <div class="card" style="flex: 1; display: flex; flex-direction: column;">
+                <div class="card-title">Viewport 3D — Particle Mesh Engine</div>
+                <div id="viewport-3d" class="viewport-3d"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../static/js/main.js"></script>
+    <script src="../static/js/workspace3d.js"></script>
+</body>
+</html>

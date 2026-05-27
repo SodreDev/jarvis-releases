@@ -1,0 +1,16 @@
+{
+  "high": [
+    "desligar",
+    "reiniciar_pc",
+    "proc_matar",
+    "limpar_temp",
+    "esvaziar_lixeira"
+  ],
+  "medium": [
+    "sleep",
+    "bloquear",
+    "alarme_cancelar",
+    "fechar_janela",
+    "proc_listar"
+  ]
+}

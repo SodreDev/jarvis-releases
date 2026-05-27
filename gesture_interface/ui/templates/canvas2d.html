@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S — Canvas 2D</title>
+    <link rel="stylesheet" href="../static/css/jarvis.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">J.A.R.V.I.S · CANVAS 2D</div>
+        <a class="nav-link" data-page="index.html">Dashboard</a>
+        <a class="nav-link active" data-page="canvas2d.html">Canvas 2D</a>
+        <a class="nav-link" data-page="workspace3d.html">Workspace 3D</a>
+        <a class="nav-link" data-page="controls.html">Controles</a>
+    </nav>
+
+    <div class="main">
+        <aside class="sidebar">
+            <!-- Toolbar -->
+            <div class="card">
+                <div class="card-title">Ferramentas</div>
+
+                <div style="margin-bottom: 12px;">
+                    <div class="input-label">Cor Ativa</div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                        <div id="current-color" style="width: 24px; height: 24px; border-radius: 50%; background: #00e6ff; border: 2px solid rgba(255,255,255,0.2);"></div>
+                        <span class="stat-value" style="font-size: 12px;">#00e6ff</span>
+                    </div>
+                </div>
+
+                <div class="input-label" style="margin-bottom: 6px;">Paleta</div>
+                <div class="btn-group" style="margin-bottom: 12px;">
+                    <button class="btn" style="background: #00e6ff20; min-width: 36px;" onclick="Canvas2D.setColor('#00e6ff')">●</button>
+                    <button class="btn" style="background: #ff006e20; color: #ff006e; min-width: 36px;" onclick="Canvas2D.setColor('#ff006e')">●</button>
+                    <button class="btn" style="background: #00ff8820; color: #00ff88; min-width: 36px;" onclick="Canvas2D.setColor('#00ff88')">●</button>
+                    <button class="btn" style="background: #ffaa0020; color: #ffaa00; min-width: 36px;" onclick="Canvas2D.setColor('#ffaa00')">●</button>
+                    <button class="btn" style="background: #aa00ff20; color: #aa00ff; min-width: 36px;" onclick="Canvas2D.setColor('#aa00ff')">●</button>
+                    <button class="btn" style="background: #ffffff20; color: #fff; min-width: 36px;" onclick="Canvas2D.setColor('#ffffff')">●</button>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn" onclick="Canvas2D.undo()">↩ Desfazer</button>
+                    <button class="btn btn-danger" onclick="Canvas2D.clear()">✕ Limpar</button>
+                </div>
+            </div>
+
+            <!-- Gesture mappings -->
+            <div class="card">
+                <div class="card-title">Mapeamento Gestual</div>
+                <div class="stat-row"><span class="stat-label">Pinch</span><span class="stat-value">Desenhar</span></div>
+                <div class="stat-row"><span class="stat-label">Fist</span><span class="stat-value">Apagar</span></div>
+                <div class="stat-row"><span class="stat-label">Circle</span><span class="stat-value">Limpar</span></div>
+                <div class="stat-row"><span class="stat-label">Two Fingers</span><span class="stat-value">Desfazer</span></div>
+                <div class="stat-row"><span class="stat-label">Open Hand</span><span class="stat-value">Mudar Cor</span></div>
+            </div>
+        </aside>
+
+        <div class="content">
+            <div class="card" style="flex: 1; display: flex; flex-direction: column;">
+                <div class="card-title">Área de Desenho</div>
+                <div class="canvas-2d-container" style="flex: 1;">
+                    <canvas id="draw-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../static/js/main.js"></script>
+    <script src="../static/js/canvas2d.js"></script>
+</body>
+</html>
