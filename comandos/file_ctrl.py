@@ -34,7 +34,8 @@ _ALIAS: list[tuple[str, Path]] = sorted([
 def _resolver_caminho(texto: str) -> Path | None:
     """
     Extrai um caminho de uma frase em linguagem natural.
-    Aceita caminhos absolutos (C:\\...) ou aliases de pastas comuns.
+    Aceita caminhos absolutos (C:\\...), aliases de pastas comuns ou
+    nomes previamente aprendidos (learned_locations + quick_scan).
     """
     t = texto.strip()
 
@@ -55,6 +56,22 @@ def _resolver_caminho(texto: str) -> Path | None:
     for alias, caminho in _ALIAS:
         if alias in tl:
             return caminho
+
+    # 4. Nomes aprendidos / quick scan no FS
+    try:
+        from core import filesystem_indexer as _fsi
+        # Extrai o "alvo" — palavras após "pasta/projeto/jogo X"
+        m2 = re.search(
+            r"(?:pasta|projeto|jogo|diret[oó]rio|folder)\s+(?:do\s+|da\s+|de\s+)?(.+?)(?:\s+(?:no|na|em|do|da)\b|$)",
+            t, re.I,
+        )
+        candidato = (m2.group(1) if m2 else t).strip(" .,;!?\"'")
+        if candidato and len(candidato) >= 2:
+            hit = _fsi.find_path(candidato)
+            if hit and Path(hit["path"]).exists():
+                return Path(hit["path"])
+    except Exception:
+        pass
 
     return None
 

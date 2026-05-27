@@ -334,6 +334,25 @@ LLM_USE_MODULAR_CLIENT = False
 MESSAGING_SEND_METHOD = "browser"
 MESSAGING_PYAUTOGUI_DELAY_MS = 40  # ms entre teclas (humanização)
 
+# ─── Contas DO PRÓPRIO USUÁRIO (eu / Caique) ─────────────────────────────
+# Usado para filtrar mensagens "minhas" no monitor — JARVIS não deve
+# disparar notificação/IA proativa ou responder via #Jarvis quando o
+# remetente é o próprio usuário (login em outro dispositivo). Use o handle
+# canônico de cada plataforma (telefone WA, @ Instagram, username#0000 Discord).
+DISCORD_MY_USER_ID    = _os.environ.get("JARVIS_DISCORD_MY_ID", "") or ""
+DISCORD_MY_USERNAME   = _os.environ.get("JARVIS_DISCORD_MY_USER", "") or ""
+WHATSAPP_MY_PHONE     = _os.environ.get("JARVIS_WHATSAPP_MY_PHONE", "") or ""
+INSTAGRAM_MY_USERNAME = _os.environ.get("JARVIS_INSTAGRAM_MY_USER", "") or ""
+TELEGRAM_MY_USERNAME  = _os.environ.get("JARVIS_TELEGRAM_MY_USER", "") or ""
+
+# Mapa platform → handle do próprio usuário (helper interno)
+SELF_ACCOUNTS = {
+    "discord":   [h for h in (DISCORD_MY_USER_ID, DISCORD_MY_USERNAME) if h],
+    "whatsapp":  [h for h in (WHATSAPP_MY_PHONE,) if h],
+    "instagram": [h for h in (INSTAGRAM_MY_USERNAME,) if h],
+    "telegram":  [h for h in (TELEGRAM_MY_USERNAME,) if h],
+}
+
 # Inbox Watcher (Fase 2) — polling de mensagens não lidas
 INBOX_WATCHER_ENABLED = True
 INBOX_POLL_INTERVAL_S = 30          # mínimo 10s no código
@@ -428,6 +447,14 @@ AWAY_REPLY_PROMPT = (
 # O JARVIS aguarda entre INSTAGRAM_AWAY_REPLY_COOLDOWN_MIN e MAX minutos antes de responder.
 INSTAGRAM_AWAY_REPLY_COOLDOWN_MIN: float = 5.0   # minutos mínimos antes de responder
 INSTAGRAM_AWAY_REPLY_COOLDOWN_MAX: float = 30.0  # minutos máximos antes de responder
+
+# Cooldown do WhatsApp em modo away (mesma lógica do IG — humanização)
+WHATSAPP_AWAY_REPLY_COOLDOWN_MIN: float = 5.0
+WHATSAPP_AWAY_REPLY_COOLDOWN_MAX: float = 30.0
+
+# Cooldown do Discord em modo away — usa DiscordMonitor.cooldown_min (default 5 min)
+# Não é aleatório porque DM tem expectativa de resposta mais rápida.
+DISCORD_AWAY_REPLY_COOLDOWN_MIN_FIXED: float = 5.0
 
 # ==========================================
 # �🎨 INTERFACE (cores e fontes)

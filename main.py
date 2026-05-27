@@ -1552,6 +1552,19 @@ class JarvisApi:
         """Chamado pelo JS quando o usuário clica em Cancelar no banner."""
         self._app._processar_texto("cancelar", origem="ui_button")
 
+    def show_long_text(self, title: str = "Texto", content: str = "", language: str = ""):
+        """Exibe um texto longo no viewer HTML do JARVIS (substitui Notepad).
+
+        Pode ser chamado por tools/comandos. Retorna {'ok': bool}.
+        """
+        try:
+            ok = self._app._mostrar_texto_longo(str(title or "Texto"),
+                                                str(content or ""),
+                                                str(language or ""))
+            return {"ok": bool(ok)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Seleção de modelos (UI configurações) ────────────────────────────────
     def list_lm_models(self):
         """Lista modelos baixados no LM Studio (GET /api/v1/models)."""
@@ -2774,6 +2787,43 @@ class JarvisApp:
                 w.evaluate_js(f"setStatus({t},{c})")
         except Exception:
             pass
+
+    def _mostrar_texto_longo(self, title: str, content: str, language: str = "") -> bool:
+        """Exibe texto longo no viewer HTML embutido (substitui Notepad).
+
+        Retorna True se conseguiu exibir no webview; False se caiu para Notepad
+        (modo headless/sem janela).
+        """
+        try:
+            w = self._window
+            if w:
+                t_j = _json_mod.dumps(str(title or "Texto"))
+                c_j = _json_mod.dumps(str(content or ""))
+                l_j = _json_mod.dumps(str(language or ""))
+                def _do():
+                    try:
+                        w.evaluate_js(f"showLongText({t_j},{c_j},{l_j})")
+                    except Exception:
+                        pass
+                self.root.after(0, _do)
+                return True
+        except Exception:
+            pass
+        # Fallback: grava em arquivo e abre Notepad (modo headless / janela ausente)
+        try:
+            base_dir = _data("temp")
+            os.makedirs(base_dir, exist_ok=True)
+            safe = re.sub(r"[^\w\-. ]+", "_", str(title or "jarvis_text"))[:60].strip("_ ") or "jarvis_text"
+            path = os.path.join(base_dir, f"{safe}.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(str(content or ""))
+            try:
+                subprocess.Popen(["notepad.exe", path], close_fds=True)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return False
 
     def _notify_recording(self, on: bool):
         try:
@@ -6372,9 +6422,51 @@ class JarvisApp:
                 return
 
             if app_key == "whatsapp":
-                # O sender vem direto da notificação — é o nome exato como aparece no WA.
-                # Usa busca por nome no app (sem precisar do número na agenda).
-                resultado = _ms.enviar_whatsapp_por_nome(sender, reply_text)
+                # ── Cooldown por remetente: 5–30 min aleatório (paridade com IG) ──
+                import time as _t_wa
+                import random as _rnd_wa
+                _wa_cd_map: dict[str, float] = getattr(self, "_away_wa_cooldowns", {})
+                if not hasattr(self, "_away_wa_cooldowns"):
+                    self._away_wa_cooldowns = _wa_cd_map
+
+                _now_wa = _t_wa.time()
+                _wa_last = _wa_cd_map.get(sender, 0.0)
+                _wa_cd_min = getattr(_cfg_send, "WHATSAPP_AWAY_REPLY_COOLDOWN_MIN", 5.0)
+                _wa_cd_max = getattr(_cfg_send, "WHATSAPP_AWAY_REPLY_COOLDOWN_MAX", 30.0)
+
+                if _now_wa < _wa_last:
+                    _restante_wa = int(_wa_last - _now_wa)
+                    print(f"[AWAY] WA cooldown ativo para '{sender}' — faltam {_restante_wa}s.")
+                    return
+
+                _cd_seg_wa = _rnd_wa.uniform(_wa_cd_min * 60, _wa_cd_max * 60)
+                _wa_cd_map[sender] = _now_wa + _cd_seg_wa
+                print(f"[AWAY] WA: aguardando {_cd_seg_wa/60:.1f} min antes de responder '{sender}'.")
+
+                def _wa_delayed_reply():
+                    import time as _td_wa, random as _rd_wa
+                    _td_wa.sleep(_cd_seg_wa)
+                    _td_wa.sleep(_rd_wa.uniform(1.5, 4.0))
+                    try:
+                        res_wa = _ms.enviar_whatsapp_por_nome(sender, reply_text)
+                        _wa_cd_map.pop(sender, None)
+                        self._away_replies_count += 1
+                        print(f"[AWAY] WA delayed reply ({sender}): {reply_text[:60]!r} → {res_wa}")
+                        try:
+                            from comandos.notif_history import salvar as _h_salvar_wa
+                            _h_salvar_wa(app_key, sender, msgs,
+                                          auto_replied=True, reply_text=reply_text)
+                        except Exception:
+                            pass
+                    except Exception as _wae:
+                        print(f"[AWAY] WA delayed reply falhou para '{sender}': {_wae}")
+
+                threading.Thread(
+                    target=_wa_delayed_reply,
+                    daemon=True,
+                    name=f"AwayWA-{sender[:14]}",
+                ).start()
+                return  # salvamento no histórico ocorre dentro da thread
 
             elif app_key == "instagram":
                 # ── Cooldown por remetente: 5–30 min aleatório ───────────────
@@ -6573,6 +6665,44 @@ class JarvisApp:
         auto_read=True em modo conversa: lê automaticamente sem perguntar.
         auto_read=False: anuncia e aguarda sim/não (com opção de 15 min).
         """
+        # ── Prefixo #Jarvis em DM: responde direto ao remetente e sai ──────
+        try:
+            _full_text = " ".join(
+                (m.get("content") or "") for m in msgs if m.get("type") == "text"
+            ).strip()
+            if _full_text:
+                from core import jarvis_prefix_router as _jpr
+                # Heurística DM: discord precisa sender sem '#' (não é canal);
+                # demais plataformas (wa/ig/telegram) são sempre DM.
+                _is_dm = True if app_key != "discord" else ("#" not in (sender or ""))
+                if _jpr.should_handle(app_key, sender, _full_text, is_dm=_is_dm):
+                    def _bg_jarvis_reply():
+                        try:
+                            from comandos import msg_sender as _ms_jpr
+                            def _send(dest: str, content: str):
+                                if app_key == "whatsapp":
+                                    return _ms_jpr.enviar_whatsapp_por_nome(dest, content)
+                                if app_key == "discord":
+                                    return _ms_jpr.enviar_discord_por_nome(dest, content)
+                                if app_key == "instagram":
+                                    return _ms_jpr.enviar_instagram_pyautogui(dest, content)
+                                return None
+                            _jpr.handle_incoming(
+                                app_key, sender, _full_text, is_dm=_is_dm,
+                                send_fn=_send, groq_client=getattr(self, "_groq", None),
+                                llm_model=globals().get("GROQ_MODELO_CHAT",
+                                                          "llama-3.1-8b-instant"),
+                            )
+                        except Exception as _je:
+                            print(f"[#JARVIS] reply err: {_je}")
+                    threading.Thread(
+                        target=_bg_jarvis_reply, daemon=True,
+                        name=f"JarvisPrefix-{app_key}-{sender[:12]}"
+                    ).start()
+                    return  # NÃO anuncia / NÃO entra em fluxo normal
+        except Exception as _jpge:
+            print(f"[#JARVIS] gate err: {_jpge}")
+
         # Salva no histórico persistente (IG: 30d, WA: 7d, Discord: ignora)
         try:
             from comandos.notif_history import salvar as _hist_salvar
@@ -6916,7 +7046,7 @@ class JarvisApp:
             f"Contato {nome} salvo com o número {phone_salvo}, senhor.")
 
     def _abrir_notepad_contatos(self, busca: str, opcoes: list[dict]):
-        """Abre o Bloco de Notas com a lista numerada de contatos encontrados."""
+        """Mostra a lista numerada de contatos encontrados no viewer HTML."""
         linhas = [
             f"J.A.R.V.I.S. — Contatos encontrados para \"{busca}\"",
             f"{'=' * 50}",
@@ -6928,14 +7058,10 @@ class JarvisApp:
         linhas.append("Diga o número do contato desejado.")
         conteudo = "\n".join(linhas)
 
-        # Salva em arquivo temporário e abre no notepad
-        path = os.path.join(PASTA_TEMP, "contatos_encontrados.txt")
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(conteudo)
         try:
-            subprocess.Popen(["notepad.exe", path])
+            self._mostrar_texto_longo(f"Contatos: {busca}", conteudo, "text")
         except Exception as e:
-            _log.warn(f"NOTEPAD: Erro ao abrir: {e}", exc_info=e)
+            _log.warn(f"VIEWER: Erro ao exibir contatos: {e}", exc_info=e)
 
     def _executar_envio(self, cmd: dict):
         """Executa o envio de mensagem detectado por _detectar_comando_envio."""
@@ -11279,19 +11405,14 @@ class JarvisApp:
             return texto
         try:
             corpo = self._LONG_MARKER_RE.sub("", texto).strip()
-            base_dir = _data("temp")
-            os.makedirs(base_dir, exist_ok=True)
-            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = os.path.join(base_dir, f"jarvis_response_{ts}.txt")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(corpo)
-            # Abre no Notepad em background
-            try:
-                import subprocess as _sp
-                _sp.Popen(["notepad.exe", path], close_fds=True)
-            except Exception as e:
-                print(f"[LONGO] Falha ao abrir notepad: {e}")
-            print(f"[LONGO] Texto extenso salvo em {path} ({len(corpo)} chars)")
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            ok = self._mostrar_texto_longo(
+                f"JARVIS — Resposta ({ts})", corpo, "text"
+            )
+            if ok:
+                print(f"[LONGO] Texto extenso exibido no viewer ({len(corpo)} chars)")
+            else:
+                print(f"[LONGO] Viewer indisponível — fallback notepad executado ({len(corpo)} chars)")
             return "Coloquei na sua tela, Senhor."
         except Exception as e:
             print(f"[LONGO] Erro ao processar: {e}")

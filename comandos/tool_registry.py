@@ -1530,3 +1530,186 @@ def _t_gerar_imagem(app, descricao: str = "") -> str:
         return "Gerando imagem, Senhor. Aguarde alguns instantes enquanto processo via Pollinations.ai…"
     except Exception as e:
         return f"ERRO: {e}"
+
+# ─────────────────────────────────────────────────────────────────────────
+# display_text — viewer HTML para textos longos (substitui Notepad)
+# ─────────────────────────────────────────────────────────────────────────
+
+@register(
+    name="display_text",
+    description=(
+        "Exibe um texto longo no viewer interno do JARVIS (substitui Notepad). "
+        "Use para mostrar listas grandes, código, conteúdo de arquivo, sumários "
+        "extensos — qualquer texto com mais de ~15 linhas que o usuário precise "
+        "VER em vez de ouvir. NÃO use para respostas curtas conversacionais."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Título curto (ex: 'main.py')."},
+            "content": {"type": "string", "description": "Texto completo a exibir."},
+            "language": {"type": "string", "description": "Linguagem opcional (python, json, text...)."},
+        },
+        "required": ["title", "content"],
+    },
+)
+def _t_display_text(app, title: str = "Texto", content: str = "", language: str = "") -> str:
+    try:
+        ok = app._mostrar_texto_longo(str(title or "Texto"),
+                                       str(content or ""),
+                                       str(language or ""))
+        if ok:
+            return f"Texto exibido no viewer: '{title}'."
+        return "Viewer indisponível; abri no Notepad como fallback."
+    except Exception as e:
+        return f"ERRO: {e}"
+
+# ─────────────────────────────────────────────────────────────────────────
+# Filesystem awareness — drives, locations aprendidos, busca de pastas
+# ─────────────────────────────────────────────────────────────────────────
+
+@register(
+    name="listar_drives",
+    description=(
+        "Lista todas as letras de drive (SSDs/HDs) do computador com espaço "
+        "total e livre. Use quando o Senhor pedir 'quais discos eu tenho', "
+        "'lista os SSDs', 'mostra os drives', 'quanto espaço sobra no D:', etc."
+    ),
+    parameters={"type": "object", "properties": {}, "required": []},
+)
+def _t_listar_drives(app) -> str:
+    try:
+        from core import filesystem_indexer as _fsi
+        drives = _fsi.list_drives()
+        if not drives:
+            return "Não consegui detectar nenhum drive."
+        linhas = []
+        for d in drives:
+            tot = d.get("total_gb") or 0.0
+            fre = d.get("free_gb") or 0.0
+            fs  = d.get("fstype") or "?"
+            mp  = d.get("mountpoint") or d.get("letter") or "?"
+            tag = " (removível)" if d.get("removable") else ""
+            linhas.append(f"{mp}  [{fs}]  livre {fre:.1f} GB / total {tot:.1f} GB{tag}")
+        return "Drives detectados:\n" + "\n".join(linhas)
+    except Exception as e:
+        return f"ERRO: {e}"
+
+
+@register(
+    name="procurar_pasta",
+    description=(
+        "Localiza uma pasta ou diretório no PC pelo nome, usando primeiro o "
+        "cache de locais aprendidos e depois um quick-scan dos drives. "
+        "Use quando o Senhor disser 'onde está a pasta X', 'acha o diretório Y', "
+        "'cadê o projeto Z'. Retorna o caminho completo se encontrado. "
+        "Resultados positivos são gravados automaticamente para uso futuro."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "nome": {"type": "string", "description": "Nome ou parte do nome da pasta."},
+        },
+        "required": ["nome"],
+    },
+)
+def _t_procurar_pasta(app, nome: str = "") -> str:
+    try:
+        from core import filesystem_indexer as _fsi
+        if not nome:
+            return "ERRO: preciso do nome da pasta."
+        hit = _fsi.find_path(nome)
+        if not hit:
+            return f"Não encontrei pasta com '{nome}', Senhor."
+        origem = "cache aprendido" if hit["source"] == "learned" else "scan dos drives"
+        return f"Encontrei em {hit['path']} (via {origem})."
+    except Exception as e:
+        return f"ERRO: {e}"
+
+# ─────────────────────────────────────────────────────────────────────────
+# Games — descobrir/listar/abrir/instalar via launcher
+# ─────────────────────────────────────────────────────────────────────────
+
+@register(
+    name="listar_jogos",
+    description=(
+        "Lista todos os jogos instalados no PC, agrupados por launcher (Steam, "
+        "Epic, EA, Battle.net, Ubisoft, Xbox). Use quando o Senhor disser "
+        "'quais jogos eu tenho', 'lista meus jogos', 'mostra a biblioteca'. "
+        "Opcionalmente filtra por plataforma."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "plataforma": {
+                "type": "string",
+                "description": "Filtrar por: steam, epic, ea, battlenet, ubisoft, xbox.",
+            },
+            "atualizar": {
+                "type": "boolean",
+                "description": "Força re-scan ignorando cache (24h).",
+            },
+        },
+        "required": [],
+    },
+)
+def _t_listar_jogos(app, plataforma: str = "", atualizar: bool = False) -> str:
+    try:
+        from comandos import games_ctrl as _gc
+        return _gc.listar_jogos(plataforma or None, force_refresh=bool(atualizar))
+    except Exception as e:
+        return f"ERRO: {e}"
+
+
+@register(
+    name="abrir_jogo",
+    description=(
+        "Abre/lança um jogo instalado, escolhendo o launcher correto "
+        "automaticamente. Use para 'joga X', 'abre o jogo X', 'inicia X'. "
+        "Aceita plataforma opcional para desempate."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "nome": {"type": "string", "description": "Nome do jogo."},
+            "plataforma": {
+                "type": "string",
+                "description": "Plataforma opcional: steam, epic, ea, battlenet, ubisoft, xbox.",
+            },
+        },
+        "required": ["nome"],
+    },
+)
+def _t_abrir_jogo(app, nome: str = "", plataforma: str = "") -> str:
+    try:
+        from comandos import games_ctrl as _gc
+        return _gc.abrir_jogo(nome, plataforma or None)
+    except Exception as e:
+        return f"ERRO: {e}"
+
+
+@register(
+    name="instalar_jogo",
+    description=(
+        "Abre a tela de instalação de um jogo no launcher informado. Use para "
+        "'instala X no steam', 'baixa Y no epic'. Se já estiver instalado, "
+        "avisa. Se não souber o jogo, abre a loja do launcher."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "nome": {"type": "string", "description": "Nome do jogo."},
+            "plataforma": {
+                "type": "string",
+                "description": "Plataforma: steam, epic, ea, battlenet, ubisoft, xbox.",
+            },
+        },
+        "required": ["nome"],
+    },
+)
+def _t_instalar_jogo(app, nome: str = "", plataforma: str = "") -> str:
+    try:
+        from comandos import games_ctrl as _gc
+        return _gc.instalar_jogo(nome, plataforma or None)
+    except Exception as e:
+        return f"ERRO: {e}"

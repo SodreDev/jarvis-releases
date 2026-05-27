@@ -16,6 +16,58 @@ _CONTATOS_FILE = PATHS["contatos"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ROUTER CHROMIUM — tenta usar jarvis.messaging.router primeiro quando
+# MESSAGING_SEND_METHOD = "browser" (default). Falha silenciosa = fallback
+# para o fluxo legado (pyautogui).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _send_method() -> str:
+    try:
+        import config as _cfg
+        m = str(getattr(_cfg, "MESSAGING_SEND_METHOD", "browser") or "browser")
+        m = m.lower().strip()
+        return m if m in ("browser", "pyautogui", "auto") else "browser"
+    except Exception:
+        return "browser"
+
+
+def _try_browser_send(platform: str, dest: str, mensagem: str,
+                      *, profile: str = "user") -> str | None:
+    """Tenta enviar via Chromium humano. Retorna a string final pronta para o
+    LLM, ou None se browser está desabilitado/indisponível/falhou e o caller
+    deve seguir com o fluxo legado."""
+    method = _send_method()
+    if method == "pyautogui":
+        return None
+    try:
+        from jarvis.messaging.router import get_router
+        router = get_router()
+        res = router.send(platform, dest, mensagem, profile_hint=profile)  # type: ignore[arg-type]
+        if res and getattr(res, "ok", False):
+            preview = mensagem[:60] + ("..." if len(mensagem) > 60 else "")
+            plat_pt = {
+                "whatsapp": "WhatsApp", "instagram": "Instagram",
+                "discord": "Discord", "telegram": "Telegram", "gmail": "Gmail",
+            }.get(platform, platform)
+            return f"Mensagem '{preview}' enviada para '{dest}' no {plat_pt}, senhor."
+        # browser falhou
+        if method == "browser":
+            # NÃO faz fallback — usuário pediu browser
+            err = (res.error if res else "erro desconhecido") or "erro desconhecido"
+            plat_pt = {
+                "whatsapp": "WhatsApp", "instagram": "Instagram",
+                "discord": "Discord",
+            }.get(platform, platform)
+            return f"Falha ao enviar no {plat_pt} via Chromium: {err}"
+        # auto: deixa o caller tentar pyautogui
+        return None
+    except Exception as e:
+        if method == "browser":
+            return f"Falha no roteador Chromium ({platform}): {e}"
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # AGENDA DE CONTATOS
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -507,9 +559,14 @@ def enviar_discord_usuario(guild_id: str, channel_id: str, mensagem: str) -> str
 def enviar_discord_por_nome(nome: str, mensagem: str) -> str:
     """
     Envia mensagem no Discord pelo nome da pessoa/canal/servidor.
-    Usa Ctrl+K Quick Switcher + pyautogui (sem bot, sem token de usuário).
+    Estratégia preferida (MESSAGING_SEND_METHOD=browser): Chromium humano via
+    jarvis.messaging.router. Fallback: Ctrl+K Quick Switcher + pyautogui.
     """
-    # ── Ctrl+K desktop automation ─────────────────────────────────────────────
+    # 1) Chromium humano (Playwright)
+    routed = _try_browser_send("discord", nome, mensagem)
+    if routed is not None:
+        return routed
+    # 2) Fallback desktop (Ctrl+K)
     try:
         import pyautogui
         import pyperclip
@@ -637,12 +694,14 @@ def enviar_whatsapp_por_nome(nome_contato: str, mensagem: str) -> str:
     Envia mensagem no WhatsApp para um contato pelo nome de exibição,
     sem precisar do número de telefone.
 
-    Estratégia:
-      1. Abre o WhatsApp Desktop
-      2. Usa Ctrl+F (pesquisa) para buscar pelo nome
-      3. Clica no primeiro resultado
-      4. Cola e envia a mensagem via pyautogui (foco temporário mínimo)
+    Estratégia preferida (MESSAGING_SEND_METHOD=browser): Chromium humano.
+    Fallback: WhatsApp Desktop via Ctrl+F + pyautogui.
     """
+    # 1) Chromium humano (Playwright)
+    routed = _try_browser_send("whatsapp", nome_contato, mensagem)
+    if routed is not None:
+        return routed
+    # 2) Fallback desktop
     try:
         import pyautogui, pyperclip
 
@@ -708,8 +767,16 @@ def enviar_whatsapp_por_nome(nome_contato: str, mensagem: str) -> str:
 
 def enviar_instagram_pyautogui(destinatario: str, mensagem: str) -> str:
     """
-    Envia mensagem direta no Instagram via automação do navegador web.
-    Não usa instagrapi — zero sessão de API, zero risco de bloqueio de conta.
+    Envia mensagem direta no Instagram.
+    Estratégia preferida (MESSAGING_SEND_METHOD=browser): Chromium humano via
+    jarvis.messaging.router. Fallback: automação do navegador padrão + pyautogui.
+    Não usa instagrapi — zero sessão de API, zero risco de bloqueio de conta."""
+    # 1) Chromium humano (Playwright)
+    routed = _try_browser_send("instagram", destinatario.lstrip("@").strip(), mensagem)
+    if routed is not None:
+        return routed
+    # 2) Fallback pyautogui (legado abaixo)
+    _LEGACY_DOC = """
 
     Estratégia:
       1. Abre instagram.com/direct/new/ no browser padrão

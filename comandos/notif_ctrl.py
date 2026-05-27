@@ -131,6 +131,20 @@ class _DebounceBuffer:
     # ── add / fire ───────────────────────────────────────────────────────────
 
     def add(self, app_key: str, sender: str, msg_type: str, content: str):
+        # Filtro: ignora mensagens que o PRÓPRIO usuário enviou de outro
+        # device (parecem "novas" porque o desktop só vê o eco). Mapeia
+        # app_key→platform e consulta person_registry.is_self_account.
+        try:
+            _PLAT = {"whatsapp": "whatsapp", "discord": "discord",
+                     "instagram": "instagram", "telegram": "telegram"}
+            plat = _PLAT.get((app_key or "").lower())
+            if plat:
+                from core.person_registry import is_self_account as _iss
+                if _iss(plat, sender or ""):
+                    print(f"[NOTIF] ignorando msg do próprio usuário ({plat}:{sender})")
+                    return
+        except Exception:
+            pass
         key = (app_key, sender)
         with self._lock:
             convo_exp = self._active_convo.get(key)

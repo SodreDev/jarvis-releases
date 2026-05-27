@@ -256,4 +256,41 @@ __all__ = [
     "list_people", "get_person", "find_by_identity", "resolve_person_id",
     "upsert_person", "add_identity", "remove_identity",
     "delete_person", "merge_people",
+    "is_self_account",
 ]
+
+
+# ─── Self-account detection ─────────────────────────────────────────────────
+# Identifica se um (platform, handle) é a CONTA DO PRÓPRIO USUÁRIO logado
+# em outro dispositivo — para não responder a si mesmo no #Jarvis nem
+# notificar mensagens auto-enviadas. Consulta:
+#   1) config.SELF_ACCOUNTS (env vars JARVIS_*_MY_*) — fonte primária
+#   2) identidades marcadas com `is_self=True` no people.json (opcional)
+
+def is_self_account(platform: str, handle: str) -> bool:
+    if not platform or not handle:
+        return False
+    nh = _norm_handle(platform, handle)
+    if not nh:
+        return False
+    # 1) config
+    try:
+        import config as _cfg
+        selfs = (getattr(_cfg, "SELF_ACCOUNTS", {}) or {}).get(platform, []) or []
+        for s in selfs:
+            if _norm_handle(platform, s) == nh:
+                return True
+    except Exception:
+        pass
+    # 2) flag is_self no people.json
+    try:
+        with _LOCK:
+            for p in _load_raw().get("people", {}).values():
+                for ident in p.get("identities", []):
+                    if (ident.get("platform") == platform
+                            and ident.get("is_self") is True
+                            and _norm_handle(platform, ident.get("handle","")) == nh):
+                        return True
+    except Exception:
+        pass
+    return False
