@@ -81,6 +81,25 @@ def _chromium_exe() -> Optional[Path]:
         return None
 
 
+def _browsers_dir() -> Optional[Path]:
+    """Retorna o diretório raiz de browsers do Playwright (para PLAYWRIGHT_BROWSERS_PATH).
+
+    Calculado a partir do caminho esperado do Chromium:
+      .../BROWSERS_DIR/chromium-XXXX/chrome-winXX/chrome.exe  →  BROWSERS_DIR
+
+    Funciona tanto em dev mode (aponta para %LOCALAPPDATA%\\ms-playwright) quanto
+    em modo frozen/PyInstaller (aponta para .local-browsers/ dentro de _internal).
+    Não requer que o binário exista — usa apenas a string de caminho.
+    """
+    exe = _chromium_exe()
+    if exe is None:
+        return None
+    try:
+        return exe.parent.parent.parent
+    except Exception:
+        return None
+
+
 def chromium_missing() -> bool:
     """True se o binário Chromium não existe (precisa instalar)."""
     exe = _chromium_exe()
@@ -118,6 +137,13 @@ def ensure_chromium_sync(
         return False
 
     env = {**os.environ}
+    # Garante que playwright instala no mesmo diretório que o runtime espera.
+    # Em modo frozen: _internal/playwright/driver/package/.local-browsers
+    # Em dev: %LOCALAPPDATA%/ms-playwright (ou ~/.cache/ms-playwright no Linux)
+    if "PLAYWRIGHT_BROWSERS_PATH" not in env:
+        bd = _browsers_dir()
+        if bd:
+            env["PLAYWRIGHT_BROWSERS_PATH"] = str(bd)
     try:
         result = subprocess.run(
             args + ["install", "chromium"],
@@ -170,6 +196,10 @@ async def ensure_chromium_async(
         return False
 
     env = {**os.environ}
+    if "PLAYWRIGHT_BROWSERS_PATH" not in env:
+        bd = _browsers_dir()
+        if bd:
+            env["PLAYWRIGHT_BROWSERS_PATH"] = str(bd)
     try:
         proc = await asyncio.create_subprocess_exec(
             *args, "install", "chromium",
