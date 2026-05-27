@@ -1667,6 +1667,37 @@ function openSetupGuide() {
 window.openSetupGuide = openSetupGuide;
 
 /* ── UPDATE TOAST ───────────────────────────────────────────────────────── */
+function applyUpdateFromToast(btn, fallbackUrl) {
+  if (btn && btn.disabled) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Atualizando...';
+  }
+  Promise.resolve(pyApi('apply_update_now')).then((rv) => {
+    const ok = rv && rv.ok;
+    if (ok) {
+      const msg = String((rv && rv.msg) || 'Atualização iniciada.');
+      try { addMessage('SISTEMA', msg, 'system'); } catch (_) {}
+      if (btn) btn.textContent = 'Atualizando';
+      return;
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Atualizar';
+    }
+    const err = String((rv && (rv.error || rv.msg)) || 'Falha ao atualizar automaticamente.');
+    try { addMessage('SISTEMA', err, 'erro'); } catch (_) {}
+    if (fallbackUrl) pyApi('open_url', fallbackUrl);
+  }).catch((e) => {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Atualizar';
+    }
+    try { addMessage('SISTEMA', `Falha ao atualizar automaticamente: ${e && e.message ? e.message : e}`, 'erro'); } catch (_) {}
+    if (fallbackUrl) pyApi('open_url', fallbackUrl);
+  });
+}
+
 function showUpdateToast(version, url) {
   if (document.getElementById('jb-update-toast')) return;
   const t = document.createElement('div');
@@ -1682,8 +1713,8 @@ function showUpdateToast(version, url) {
       <div style="color:#cfd2dc;font-size:11px">JARVIS v${version} est&aacute; dispon&iacute;vel.</div>
     </div>
     <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
-      <button onclick="pyApi('open_url','${url}')" class="jb-btn jb-btn-pri"
-              style="font-size:10px;padding:5px 10px;min-width:80px">Baixar</button>
+          <button onclick="applyUpdateFromToast(this,'${url}')" class="jb-btn jb-btn-pri"
+            style="font-size:10px;padding:5px 10px;min-width:80px">Atualizar</button>
       <button onclick="document.getElementById('jb-update-toast').remove()"
               class="jb-btn" style="font-size:10px;padding:4px 10px">Ignorar</button>
     </div>`;

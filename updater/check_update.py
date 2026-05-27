@@ -31,6 +31,7 @@ import json
 import os
 import shutil
 import ssl
+import subprocess
 import sys
 import tempfile
 import time
@@ -273,7 +274,16 @@ def apply_update(info: dict[str, Any], *, prefer: str = "payload") -> dict[str, 
     token = _get_token()
     if prefer == "installer" and info.get("installer"):
         path = download_asset(info["installer"], token=token)
-        return {"mode": "installer", "path": str(path), "restart_required": True}
+        try:
+            subprocess.Popen([str(path)], cwd=str(path.parent))
+        except Exception as e:
+            raise UpdateError(f"Instalador baixado, mas falhou ao abrir: {e}") from None
+        return {
+            "mode": "installer",
+            "path": str(path),
+            "restart_required": True,
+            "launched": True,
+        }
 
     asset = info.get("asset")
     if not asset:

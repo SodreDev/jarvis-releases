@@ -2155,6 +2155,37 @@ function cancelAction() {
 
 <!-- Update Toast -->
 <script>
+function applyUpdateFromToast(btn, fallbackUrl) {
+  if (btn && btn.disabled) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Atualizando...';
+  }
+  Promise.resolve(pyApi('apply_update_now')).then(function(rv) {
+    var ok = rv && rv.ok;
+    if (ok) {
+      var msg = (rv.msg || 'Atualização iniciada.').toString();
+      addMessage('SISTEMA', msg, 'system');
+      if (btn) btn.textContent = 'Atualizando';
+      return;
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Baixar';
+    }
+    var err = (rv && (rv.error || rv.msg)) || 'Falha ao atualizar automaticamente.';
+    addMessage('SISTEMA', String(err), 'erro');
+    if (fallbackUrl) pyApi('open_url', fallbackUrl);
+  }).catch(function(e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Baixar';
+    }
+    addMessage('SISTEMA', 'Falha ao atualizar automaticamente: ' + (e && e.message ? e.message : e), 'erro');
+    if (fallbackUrl) pyApi('open_url', fallbackUrl);
+  });
+}
+
 function showUpdateToast(version, url) {
   if (document.getElementById('jb-update-toast')) return;
   var t = document.createElement('div');
@@ -2169,7 +2200,7 @@ function showUpdateToast(version, url) {
     + '<div style="color:#cfd2dc;font-size:11px">JARVIS v' + version + ' est\u00e1 dispon\u00edvel.</div>'
     + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'
-    + '<button onclick="pyApi(\'open_url\',\'' + url + '\')" style="font-size:10px;padding:5px 10px;min-width:80px;cursor:pointer;background:#1a3a5c;color:#5ad8ff;border:1px solid rgba(90,216,255,.4);border-radius:6px">Baixar</button>'
+    + '<button onclick="applyUpdateFromToast(this,\'' + url + '\')" style="font-size:10px;padding:5px 10px;min-width:80px;cursor:pointer;background:#1a3a5c;color:#5ad8ff;border:1px solid rgba(90,216,255,.4);border-radius:6px">Atualizar</button>'
     + '<button onclick="document.getElementById(\'jb-update-toast\').remove()" style="font-size:10px;padding:4px 10px;cursor:pointer;background:transparent;color:#aaa;border:1px solid rgba(255,255,255,.1);border-radius:6px">Ignorar</button>'
     + '</div>';
   document.body.appendChild(t);

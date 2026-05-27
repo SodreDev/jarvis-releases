@@ -663,6 +663,36 @@ _SYS_MODE_TRANSC_OFF = re.compile(
     r")",
     re.I,
 )
+
+# ── Modo ambiente (escuta passiva) ───────────────────────────────────────────
+_SYS_AMBIENTE_OFF = re.compile(
+    r"(?:"
+    r"\bpara\s+de\s+me\s+ouvir\b"
+    r"|\bpara\s+de\s+escutar\b"
+    r"|\bpar[ae]\s+de\s+me\s+escutar\b"
+    r"|\bdesativ\w*\s+(?:o\s+)?(?:som|[aá]udio|modo)?\s*ambiente\b"
+    r"|\bdeslig\w*\s+(?:o\s+)?(?:som|[aá]udio|modo)?\s*ambiente\b"
+    r"|\bn[aã]o\s+precis[ao]\s+que\s+me\s+escut\w*\b"
+    r")",
+    re.I,
+)
+_SYS_AMBIENTE_ON = re.compile(
+    r"(?:"
+    r"\bativ\w*\s+(?:o\s+)?(?:som|[aá]udio|modo)?\s*ambiente\b"
+    r"|\blig\w*\s+(?:o\s+)?(?:som|[aá]udio|modo)?\s*ambiente\b"
+    r"|\bfic[ae]\s+escut\w*\b"
+    r"|\bpresta\s+aten[cç][aã]o\s+na\s+conversa\b"
+    r")",
+    re.I,
+)
+_SYS_AMBIENTE_STATUS = re.compile(
+    r"(?:"
+    r"\bstatus\s+d[oa]\s+modo\s+ambiente\b"
+    r"|\bmodo\s+ambiente\s+est[aá]\s+ativ\w*\b"
+    r"|\bmodo\s+ambiente\s+est[aá]\s+ligad\w*\b"
+    r")",
+    re.I,
+)
 # Sub-comandos do modo ditado
 _DITADO_PESQUISAR = re.compile(
     r"^(?:pesquis[ae]\w*|busc[ae]\w*|procur[ae]\w*)\s+(.+)", re.I,
@@ -1819,6 +1849,44 @@ class JarvisApi:
                 return {"ok": False, "error": "scheme não permitido"}
             webbrowser.open(u)
             return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def apply_update_now(self):
+        """Baixa e aplica atualização automaticamente (payload/installer)."""
+        try:
+            from updater.check_update import check_for_update, apply_update
+
+            info = check_for_update()
+            if not info or not info.get("has_update"):
+                return {"ok": True, "updated": False, "msg": "Você já está na versão mais recente."}
+
+            prefer = "payload" if info.get("asset") else "installer"
+            result = apply_update(info, prefer=prefer)
+            mode = result.get("mode", "payload")
+
+            if mode == "installer":
+                return {
+                    "ok": True,
+                    "updated": True,
+                    "mode": "installer",
+                    "msg": "Instalador aberto. Siga os passos para concluir a atualização.",
+                }
+
+            # payload aplicado com sucesso: reinicia automaticamente para carregar os arquivos novos
+            msg = "Atualização aplicada. Reiniciando o JARVIS..."
+            try:
+                self._app.root.after(0, self._app._exibir_resposta, msg)
+                self._app.root.after(1200, self._app._reiniciar_jarvis)
+            except Exception:
+                threading.Timer(1.2, self._app._reiniciar_jarvis).start()
+
+            return {
+                "ok": True,
+                "updated": True,
+                "mode": "payload",
+                "msg": msg,
+            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -3804,6 +3872,14 @@ class JarvisApp:
         ):
             return None
 
+        # Guard: comandos de modo ambiente não podem cair em Spotify
+        if (
+            _SYS_AMBIENTE_OFF.search(tl)
+            or _SYS_AMBIENTE_ON.search(tl)
+            or _SYS_AMBIENTE_STATUS.search(tl)
+        ):
+            return None
+
         # ── Guard: web/streaming/navegação NÃO é Spotify ──
         # Se o usuário menciona site/URL/anime/série/episódio/navegador/
         # YouTube/Netflix/Crunchyroll/Disney+/Prime/etc., descarta Spotify.
@@ -3943,6 +4019,14 @@ class JarvisApp:
             return ("reiniciar_jarvis", "")
         if _SYS_FECHAR_JARVIS.search(tl):
             return ("fechar_jarvis", "")
+
+        # Modo ambiente (escuta passiva)
+        if _SYS_AMBIENTE_OFF.search(tl):
+            return ("ambiente_off", "")
+        if _SYS_AMBIENTE_ON.search(tl):
+            return ("ambiente_on", "")
+        if _SYS_AMBIENTE_STATUS.search(tl):
+            return ("ambiente_status", "")
 
         # Screenshot
         if _SYS_SCREENSHOT.search(tl):
@@ -4798,6 +4882,19 @@ class JarvisApp:
                     resp = (
                         "Modo push-to-talk reativado, senhor. "
                         "Segure Shift+G para falar."
+                    )
+                case "ambiente_on":
+                    from core import ambient_listener as _al
+                    resp = _al.enable()
+                case "ambiente_off":
+                    from core import ambient_listener as _al
+                    resp = _al.disable()
+                case "ambiente_status":
+                    from core import ambient_listener as _al
+                    resp = (
+                        "Modo ambiente ATIVO, senhor."
+                        if _al.is_enabled()
+                        else "Modo ambiente desligado, senhor."
                     )
                 case "transcricao_off":
                     self._switch_transcription_mode("off")
@@ -8536,6 +8633,17 @@ class JarvisApp:
         parts = tag_body.split(":")
         tipo = parts[0] if parts else "nenhuma"
         print(f"[ROUTER] tipo={tipo!r} parts={parts!r}")
+
+        # Override de segurança: comandos explícitos de ambiente têm prioridade
+        # sobre classificações erradas de Spotify/volume.
+        _amb_force = self._detectar_comando_sistema(text)
+        if _amb_force and _amb_force[0] in {"ambiente_on", "ambiente_off", "ambiente_status"}:
+            threading.Thread(
+                target=self._executar_comando_sistema,
+                args=(_amb_force, text),
+                daemon=True,
+            ).start()
+            return
 
         # ── Spotify ──────────────────────────────────────────────────────
         if tipo.startswith("spotify"):
