@@ -12013,39 +12013,63 @@ class JarvisApp:
             import traceback; traceback.print_exc()
 
     def _iniciar_verificador_updates(self):
-        """Verifica atualizações no GitHub Releases 30 s após o startup.
-        Se houver versão nova, exibe toast na UI via showUpdateToast().
+        """Verifica atualizações no GitHub Releases 10 s após o startup.
+        Se houver versão nova, baixa e aplica o payload automaticamente,
+        exibe mensagem no chat e reinicia o JARVIS.
         Totalmente silencioso em caso de falha de rede.
         """
         import time as _time
 
-        def _worker():
-            _time.sleep(30)  # aguarda JARVIS estabilizar
+        def _ui_msg(text: str):
+            """Exibe mensagem na janela do chat (thread-safe)."""
             try:
-                from updater.check_update import check_for_update, UpdateError  # noqa
+                self._append("SISTEMA", text, "system")
+            except Exception:
+                pass
+
+        def _restart():
+            """Reinicia o processo do JARVIS."""
+            try:
+                import subprocess as _sp, sys as _sys, os as _os
+                args = [_sys.executable] + ([_sys.argv[1:]] and _sys.argv[1:] or [])
+                _sp.Popen(args)
+                _os._exit(0)
+            except Exception as _re:
+                print(f"[UPDATER] Falha ao reiniciar: {_re}")
+
+        def _worker():
+            _time.sleep(10)  # aguarda UI estabilizar
+            try:
+                from updater.check_update import check_for_update, apply_update, UpdateError
                 info = check_for_update()
-                if info and info.get("has_update"):
-                    latest = info.get("latest", "?")
-                    url = info.get("html_url") or ""
 
-                    def _notify():
-                        try:
-                            w = self._window
-                            if w:
-                                v_js = _json_mod.dumps(latest)
-                                u_js = _json_mod.dumps(url)
-                                w.evaluate_js(
-                                    f"if(window.showUpdateToast)"
-                                    f"{{window.showUpdateToast({v_js},{u_js});}}"
-                                )
-                        except Exception as _ne:
-                            print(f"[UPDATER] Toast falhou: {_ne}")
+                if not info.get("has_update"):
+                    return  # já está na versão mais recente
 
-                    threading.Thread(target=_notify, daemon=True).start()
+                latest = info.get("latest", "?")
+                current = info.get("current", "?")
+                _ui_msg(f"🔄 Nova versão disponível: {current} → {latest}. Baixando atualização…")
+                print(f"[UPDATER] Nova versão: {current} → {latest}")
+
+                result = apply_update(info, prefer="payload")
+
+                if result.get("mode") == "noop":
+                    return
+
+                files_count = len(result.get("files") or [])
+                _ui_msg(
+                    f"✅ Atualização {latest} aplicada ({files_count} arquivo(s)). "
+                    f"Reiniciando em 5 s…"
+                )
+                print(f"[UPDATER] Payload aplicado — {files_count} arquivos. Reiniciando…")
+                _time.sleep(5)
+                _restart()
+
             except Exception as _ue:
-                print(f"[UPDATER] Verificação silenciosa falhou: {_ue}")
+                # Falhas de rede ou download não devem travar o JARVIS
+                print(f"[UPDATER] Verificação/atualização silenciosa falhou: {_ue}")
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="AutoUpdater").start()
 
     def _refresh_alarmes_tab(self):
         """Envia dados de alarmes para o frontend JS."""
