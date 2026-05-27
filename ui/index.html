@@ -2153,6 +2153,30 @@ function cancelAction() {
 }
 </script>
 
+<!-- Update Toast -->
+<script>
+function showUpdateToast(version, url) {
+  if (document.getElementById('jb-update-toast')) return;
+  var t = document.createElement('div');
+  t.id = 'jb-update-toast';
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:88888;'
+    + 'background:#0b1629;border:1px solid rgba(90,216,255,.35);border-radius:12px;'
+    + 'padding:14px 18px;display:flex;align-items:center;gap:14px;'
+    + 'box-shadow:0 4px 24px rgba(0,0,0,.5);max-width:340px;animation:jb-slidein .35s ease;';
+  t.innerHTML = '<style>@keyframes jb-slidein{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}</style>'
+    + '<div style="flex:1;min-width:0">'
+    + '<div style="color:#5ad8ff;font-size:12px;font-weight:700;margin-bottom:3px">\uD83D\uDE80 Nova vers\u00e3o dispon\u00edvel</div>'
+    + '<div style="color:#cfd2dc;font-size:11px">JARVIS v' + version + ' est\u00e1 dispon\u00edvel.</div>'
+    + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'
+    + '<button onclick="pyApi(\'open_url\',\'' + url + '\')" style="font-size:10px;padding:5px 10px;min-width:80px;cursor:pointer;background:#1a3a5c;color:#5ad8ff;border:1px solid rgba(90,216,255,.4);border-radius:6px">Baixar</button>'
+    + '<button onclick="document.getElementById(\'jb-update-toast\').remove()" style="font-size:10px;padding:4px 10px;cursor:pointer;background:transparent;color:#aaa;border:1px solid rgba(255,255,255,.1);border-radius:6px">Ignorar</button>'
+    + '</div>';
+  document.body.appendChild(t);
+}
+window.showUpdateToast = showUpdateToast;
+</script>
+
 <!-- Confirm Banner -->
 <div id="confirm-banner" style="display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
   background:rgba(10,20,40,0.97);border:1px solid #c0392b;border-radius:10px;

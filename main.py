@@ -11803,14 +11803,16 @@ class JarvisApp:
                         try:
                             w = self._window
                             if w:
+                                v_js = _json_mod.dumps(latest)
+                                u_js = _json_mod.dumps(url)
                                 w.evaluate_js(
-                                    f"showUpdateToast({_json_mod.dumps(latest)},"
-                                    f"{_json_mod.dumps(url)})"
+                                    f"if(window.showUpdateToast)"
+                                    f"{{window.showUpdateToast({v_js},{u_js});}}"
                                 )
-                        except Exception:
-                            pass
+                        except Exception as _ne:
+                            print(f"[UPDATER] Toast falhou: {_ne}")
 
-                    self.root.after(0, _notify)
+                    threading.Thread(target=_notify, daemon=True).start()
             except Exception as _ue:
                 print(f"[UPDATER] Verificação silenciosa falhou: {_ue}")
 
