@@ -22,6 +22,11 @@ from .launcher import (  # noqa: F401
     chromium_launch_args,
     off_screen_window_args,
 )
+from .playwright_setup import (  # noqa: F401
+    chromium_missing,
+    ensure_chromium_sync,
+    ensure_chromium_async,
+)
 
 __all__ = [
     "profile_dir",

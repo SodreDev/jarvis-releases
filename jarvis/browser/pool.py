@@ -125,15 +125,43 @@ class BrowserPool:
                 )
 
             assert self._pw is not None
-            context = await self._pw.chromium.launch_persistent_context(
-                user_data_dir=str(udd),
-                headless=effective_headless,
-                args=launch_args,
-                viewport={"width": 1280, "height": 800},
-                locale="pt-BR",
-                timezone_id="America/Sao_Paulo",
-                ignore_https_errors=False,
-            )
+            try:
+                context = await self._pw.chromium.launch_persistent_context(
+                    user_data_dir=str(udd),
+                    headless=effective_headless,
+                    args=launch_args,
+                    viewport={"width": 1280, "height": 800},
+                    locale="pt-BR",
+                    timezone_id="America/Sao_Paulo",
+                    ignore_https_errors=False,
+                )
+            except Exception as _launch_err:
+                # "Executable doesn't exist" → Playwright instalado mas
+                # browsers nunca baixados (caso típico pós-instalador ou
+                # aplicação de update_payload).
+                if "Executable doesn't exist" in str(_launch_err):
+                    log.warning(
+                        "Chromium ausente — executando 'playwright install chromium'…"
+                    )
+                    from .playwright_setup import ensure_chromium_async
+                    ok = await ensure_chromium_async()
+                    if not ok:
+                        raise RuntimeError(
+                            "Chromium do Playwright não pôde ser instalado automaticamente.\n"
+                            "Execute manualmente: playwright install chromium"
+                        ) from _launch_err
+                    # Retry após instalar
+                    context = await self._pw.chromium.launch_persistent_context(
+                        user_data_dir=str(udd),
+                        headless=effective_headless,
+                        args=launch_args,
+                        viewport={"width": 1280, "height": 800},
+                        locale="pt-BR",
+                        timezone_id="America/Sao_Paulo",
+                        ignore_https_errors=False,
+                    )
+                else:
+                    raise
             await _apply_stealth_init(context)
             self._contexts[key] = _Entry(context=context, profile=profile, platform=platform)
             log.info("BrowserContext criado: profile=%s platform=%s headless=%s", profile, platform, effective_headless)

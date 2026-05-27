@@ -12337,6 +12337,20 @@ if __name__ == "__main__":
     try:
         app = JarvisApp()
 
+        # ── Verifica Chromium do Playwright em background (não bloqueia boot) ──
+        def _check_playwright_chromium():
+            try:
+                from jarvis.browser.playwright_setup import ensure_chromium_sync
+                ensure_chromium_sync()
+            except Exception as _cpw_err:
+                print(f"[PLAYWRIGHT] Aviso na verificação do Chromium: {_cpw_err}")
+        import threading as _th_cpw
+        _th_cpw.Thread(
+            target=_check_playwright_chromium,
+            name="PlaywrightChromiumCheck",
+            daemon=True,
+        ).start()
+
         def _on_ready():
             import time as _t
             _t.sleep(0.8)  # aguarda DOM carregar
