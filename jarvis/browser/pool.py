@@ -66,6 +66,34 @@ class BrowserPool:
         log.info("BrowserPool parado")
 
     # — contexto —
+    def _register_close_handler(self, context: "BrowserContext", profile: Profile, platform: str) -> None:
+        """Registra callback que remove o contexto do pool quando o browser é fechado
+        (ex.: usuário clicou no X da janela ou o processo Chromium morreu).
+        Assim a próxima chamada a get_context() recria o contexto usando os
+        cookies já salvos em disco — sem exigir novo login."""
+        _key = (profile, platform)
+        def _on_closed():
+            log.info(
+                "BrowserContext fechado externamente, removendo do pool: "
+                "profile=%s platform=%s", profile, platform,
+            )
+            self._contexts.pop(_key, None)
+        context.on("close", _on_closed)
+
+    @staticmethod
+    async def _is_context_alive(ctx: "BrowserContext") -> bool:
+        """Verifica rapidamente se o contexto ainda está vivo (browser não foi fechado)."""
+        try:
+            # .pages é uma propriedade síncrona; levanta se o contexto já morreu
+            _ = ctx.pages
+            # Para persistent contexts, .browser pode ser None — checamos só se existir
+            browser = ctx.browser
+            if browser is not None and not browser.is_connected():
+                return False
+            return True
+        except Exception:
+            return False
+
     async def get_context(
         self,
         platform: str,
@@ -79,9 +107,22 @@ class BrowserPool:
         key = (profile, platform)
         async with self._lock:
             if key in self._contexts:
-                # touch LRU
-                self._contexts.move_to_end(key)
-                return self._contexts[key].context
+                entry = self._contexts[key]
+                alive = await self._is_context_alive(entry.context)
+                if alive:
+                    # touch LRU
+                    self._contexts.move_to_end(key)
+                    return entry.context
+                # Contexto morto (usuário fechou o browser) — remove e recria abaixo
+                log.info(
+                    "BrowserContext morto detectado (browser fechado pelo usuário): "
+                    "profile=%s platform=%s — recriando com sessão salva", profile, platform,
+                )
+                self._contexts.pop(key, None)
+                try:
+                    await entry.context.close()
+                except Exception:
+                    pass
 
             # evict se necessário
             max_n = max(1, settings.browser.max_contexts)
@@ -163,6 +204,8 @@ class BrowserPool:
                 else:
                     raise
             await _apply_stealth_init(context)
+            # Registra listener para detectar quando o usuário fechar o browser
+            self._register_close_handler(context, profile, platform)
             self._contexts[key] = _Entry(context=context, profile=profile, platform=platform)
             log.info("BrowserContext criado: profile=%s platform=%s headless=%s", profile, platform, effective_headless)
             return context

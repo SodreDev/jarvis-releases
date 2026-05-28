@@ -947,22 +947,9 @@ def _t_controle_navegador(
 )
 def _t_reproduzir_youtube(app, query: str = "") -> str:
     from comandos import browser_ctrl as bc
-    from urllib.parse import quote_plus
     if not query:
         return "ERRO: query vazia."
-    url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
-    r1 = bc.abrir_url(url)
-    if r1.startswith("ERRO"):
-        return r1
-    # Aguarda DOM e clica primeiro #video-title
-    try:
-        page = bc._page()
-        page.wait_for_selector("a#video-title", timeout=10000)
-        page.locator("a#video-title").first.click()
-        page.wait_for_load_state("domcontentloaded", timeout=10000)
-        return f"Reproduzindo: {query}, Senhor."
-    except Exception as e:
-        return f"Abri o YouTube com a busca, mas não consegui clicar no vídeo: {e}"
+    return bc.reproduzir_youtube(query)
 
 
 # ── 11. notas_memoria ───────────────────────────────────────────────────

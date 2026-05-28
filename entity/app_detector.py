@@ -1,6 +1,7 @@
 # entity/app_detector.py — J.A.R.V.I.S.
 # Cache de aplicativos instalados — elimina a 7-strategy cascade no cold path.
-# Escaneia Program Files, Program Files (x86), %LOCALAPPDATA% e Start Menu.
+# Escaneia Program Files, Program Files (x86), %LOCALAPPDATA%, Start Menu e
+# todas as bibliotecas Steam (descobertas via libraryfolders.vdf).
 # Gera config/apps_cache.json com {nome_normalizado: caminho_completo}.
 # -*- coding: utf-8 -*-
 
@@ -13,6 +14,40 @@ import threading
 
 _DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CACHE_PATH = os.path.join(_DIR, "config", "apps_cache.json")
+
+
+def _get_steam_common_dirs() -> list[str]:
+    """Retorna todos os caminhos steamapps/common de bibliotecas Steam instaladas.
+
+    Lê C:\\Program Files (x86)\\Steam\\steamapps\\libraryfolders.vdf para
+    descobrir bibliotecas adicionais em outras unidades/pastas.
+    """
+    steam_root = r"C:\Program Files (x86)\Steam"
+    vdf_path = os.path.join(steam_root, "steamapps", "libraryfolders.vdf")
+    paths: list[str] = []
+
+    # Sempre inclui a biblioteca padrão do Steam
+    default_common = os.path.join(steam_root, "steamapps", "common")
+    if os.path.isdir(default_common):
+        paths.append(default_common)
+
+    if not os.path.isfile(vdf_path):
+        return paths
+
+    try:
+        with open(vdf_path, encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        # Extrai valores de "path" do VDF — formato: "path"\t\t"C:\\..."
+        for m in re.finditer(r'"path"\s+"([^"]+)"', content):
+            lib_path = m.group(1).replace("\\\\", "\\")
+            common = os.path.join(lib_path, "steamapps", "common")
+            if os.path.isdir(common) and common not in paths:
+                paths.append(common)
+    except Exception as e:
+        print(f"[APP DETECTOR] Erro ao ler libraryfolders.vdf: {e}")
+
+    return paths
+
 
 # Pastas de varredura padrão
 _SCAN_DIRS: list[str] = [
@@ -132,8 +167,9 @@ def scan_installed_apps(save: bool = True) -> dict[str, str]:
     # 1. Menu Iniciar (mais confiável — .lnk já aponta para exe correto)
     cache.update(_scan_start_menu())
 
-    # 2. Diretórios de Programas
-    for scan_dir in _SCAN_DIRS:
+    # 2. Diretórios de Programas + bibliotecas Steam
+    all_scan_dirs = list(_SCAN_DIRS) + _get_steam_common_dirs()
+    for scan_dir in all_scan_dirs:
         if os.path.isdir(scan_dir):
             found = _scan_dir(scan_dir)
             # Não sobrescreve entradas do Menu Iniciar (mais confiáveis)

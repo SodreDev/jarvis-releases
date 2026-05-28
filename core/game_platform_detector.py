@@ -215,6 +215,18 @@ def discover_steam_games() -> list[GameInfo]:
                     installdir = str(info.get("installdir") or "").strip()
                     if not appid or not name or appid in seen_ids:
                         continue
+                    # Filtra ferramentas, redistribuíveis, SDKs — só quer "game"
+                    app_type = str(info.get("type") or "game").strip().lower()
+                    if app_type and app_type not in ("game", ""):
+                        continue
+                    # Filtra pelo nome: Redistributables, Proton, SteamVR etc.
+                    name_low = name.lower()
+                    if any(k in name_low for k in (
+                        "redistributable", "steamworks shared",
+                        "steamvr", "steam linux runtime", "proton",
+                        "directx", "vcredist", "dotnet",
+                    )):
+                        continue
                     seen_ids.add(appid)
                     inst = lib / "common" / installdir if installdir else Path("")
                     games.append(GameInfo(
@@ -283,65 +295,142 @@ def discover_epic_games() -> list[GameInfo]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# EA APP (origin: / ealink:)
+# EA APP (ealink: / EADesktop)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def discover_ea_games() -> list[GameInfo]:
-    games: list[GameInfo] = []
-    if winreg is None:
-        return games
-    # EA Desktop registra jogos em HKLM\SOFTWARE\WOW6432Node\Electronic Arts\<game>
-    # ou também via Uninstall keys
-    candidates: list[tuple[int, str]] = [
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Electronic Arts"),
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Electronic Arts"),
-    ]
-    seen_paths: set[str] = set()
-    for hive, path in candidates:
-        k = _reg_open(hive, path)
-        if not k:
+# Nomes que NÃO são jogos nas pastas do EA Desktop
+_EA_NON_GAMES = {
+    "EA Desktop", "EA app", "EA Anti-Cheat", "EAAntiCheat",
+    "EADM", "EA Core", "EA Services",
+}
+
+
+def _ea_install_dirs() -> list[Path]:
+    """Lê os diretórios-base de instalação do EA Desktop dos arquivos .ini."""
+    dirs: list[Path] = []
+    ea_pdata = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "EA Desktop"
+    ea_local = Path(os.environ.get("LOCALAPPDATA", "")) / "Electronic Arts" / "EA Desktop"
+
+    for ini_dir in [ea_pdata, ea_local]:
+        if not ini_dir.is_dir():
             continue
-        try:
-            for sub in _reg_subkeys(k):
-                sk = _reg_open(hive, f"{path}\\{sub}")
-                if not sk:
-                    continue
-                try:
-                    install = _reg_value(sk, "Install Dir") or \
-                              _reg_value(sk, "InstallDir") or \
-                              _reg_value(sk, "InstallLocation")
-                    display = _reg_value(sk, "DisplayName") or sub
-                    if install and install not in seen_paths and Path(install).is_dir():
-                        seen_paths.add(install)
-                        games.append(GameInfo(
-                            name=str(display).strip(),
-                            platform="ea",
-                            install_path=install,
-                            launch_uri=f"origin://launchgame/{sub}",
-                            install_uri="ealink://library",
-                        ))
-                finally:
-                    sk.Close()
-        finally:
-            k.Close()
-    # Fallback: scan ProgramFiles\EA Games
-    for env in ("ProgramFiles", "ProgramFiles(x86)"):
-        v = os.environ.get(env)
-        if not v:
-            continue
-        for sub in ("EA Games", "Origin Games"):
-            base = Path(v) / sub
-            if not base.is_dir():
+        for ini_file in ini_dir.glob("*.ini"):
+            try:
+                for line in ini_file.read_text(encoding="utf-8", errors="replace").splitlines():
+                    k, _, v = line.partition("=")
+                    if "downloadinplacedir" in k.lower() and v.strip():
+                        p = Path(v.strip())
+                        if p not in dirs:
+                            dirs.append(p)
+            except Exception:
                 continue
+    # Garante defaults comuns caso o ini não exista / não tenha a chave
+    for default in [
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "EA Games",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "EA Games",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Origin Games",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Origin Games",
+    ]:
+        if default not in dirs:
+            dirs.append(default)
+    return dirs
+
+
+def _ea_find_install_path(game_name: str, install_dirs: list[Path]) -> str:
+    """Tenta encontrar a pasta de instalação de um jogo EA."""
+    name_lower = game_name.lower().replace(" ", "")
+    for base in install_dirs:
+        if not base.is_dir():
+            continue
+        # Procura subpasta com nome exato ou similar
+        try:
             for child in base.iterdir():
-                if child.is_dir() and str(child) not in seen_paths:
-                    seen_paths.add(str(child))
-                    games.append(GameInfo(
-                        name=child.name,
-                        platform="ea",
-                        install_path=str(child),
-                        launch_uri="ealink://library",
-                    ))
+                if not child.is_dir():
+                    continue
+                child_lower = child.name.lower().replace(" ", "")
+                if child_lower == name_lower or name_lower in child_lower or child_lower in name_lower:
+                    return str(child)
+        except (PermissionError, OSError):
+            continue
+    return ""
+
+
+def discover_ea_games() -> list[GameInfo]:
+    """Detecta jogos instalados via EA Desktop / EA App.
+
+    Usa o diretório ProgramData\\EA Desktop\\InstallData como fonte de
+    verdade dos jogos instalados — que o EA Desktop cria mesmo em installs
+    parciais — e depois tenta localizar o caminho físico real via os
+    diretórios de instalação configurados nos arquivos .ini.
+    """
+    games: list[GameInfo] = []
+
+    # ── 1. Fonte primária: ProgramData\EA Desktop\InstallData ──────────────
+    ea_installdata = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / \
+        "EA Desktop" / "InstallData"
+
+    if ea_installdata.is_dir():
+        install_dirs = _ea_install_dirs()
+        seen_names: set[str] = set()
+
+        for game_dir in ea_installdata.iterdir():
+            try:
+                if not game_dir.is_dir():
+                    continue
+                name = game_dir.name.strip()
+                if not name or name in _EA_NON_GAMES or name in seen_names:
+                    continue
+                seen_names.add(name)
+                install_path = _ea_find_install_path(name, install_dirs)
+                games.append(GameInfo(
+                    name=name,
+                    platform="ea",
+                    install_path=install_path,
+                    launch_uri="ealink://library",
+                    install_uri="ealink://library",
+                ))
+            except Exception:
+                continue
+
+    # ── 2. Fallback legado: registro HKLM\Electronic Arts ──────────────────
+    if winreg is not None:
+        seen_paths: set[str] = {g.install_path for g in games if g.install_path}
+        legacy_reg = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Electronic Arts"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Electronic Arts"),
+        ]
+        for hive, path in legacy_reg:
+            k = _reg_open(hive, path)
+            if not k:
+                continue
+            try:
+                for sub in _reg_subkeys(k):
+                    if sub in {"EA Core", "EA Desktop", "EADM"}:
+                        continue
+                    sk = _reg_open(hive, f"{path}\\{sub}")
+                    if not sk:
+                        continue
+                    try:
+                        install = (
+                            _reg_value(sk, "Install Dir")
+                            or _reg_value(sk, "InstallDir")
+                            or _reg_value(sk, "InstallLocation")
+                        )
+                        display = _reg_value(sk, "DisplayName") or sub
+                        if install and install not in seen_paths and Path(install).is_dir():
+                            seen_paths.add(install)
+                            games.append(GameInfo(
+                                name=str(display).strip(),
+                                platform="ea",
+                                install_path=install,
+                                launch_uri=f"origin://launchgame/{sub}",
+                                install_uri="ealink://library",
+                            ))
+                    finally:
+                        sk.Close()
+            finally:
+                k.Close()
+
     return games
 
 
@@ -449,10 +538,10 @@ def discover_ubisoft_games() -> list[GameInfo]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# XBOX (Microsoft Store / Gaming Services)
+# XBOX (Microsoft Store / Game Pass)
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Pacotes do sistema/Xbox app que NÃO são jogos
+# Pacotes do sistema/Xbox app que NÃO são jogos (lista explícita)
 _XBOX_EXCLUDE = {
     "Microsoft.GamingApp", "Microsoft.GamingServices", "Microsoft.XboxApp",
     "Microsoft.XboxGameOverlay", "Microsoft.XboxGamingOverlay",
@@ -460,16 +549,44 @@ _XBOX_EXCLUDE = {
     "Microsoft.Xbox.TCUI", "Microsoft.GameInputDeviceService",
 }
 
+# Prefixos de publishers/pacotes que nunca são jogos
+_XBOX_NON_GAME_PREFIXES = (
+    "Microsoft.", "MicrosoftWindows.", "MicrosoftCorporationII.",
+    "Windows.", "MSTeams", "NVIDIACorp.", "RealtekSemiconductorCorp.",
+    "AppleInc.", "AdobeSystems.", "Clipchamp.", "SpotifyAB.",
+    "AmazonVideo.", "4DF9E0F8.",  # Netflix publisher
+    "Facebook.", "5319275A.",     # WhatsApp / Facebook publisher
+    "Skype.", "LinkedInCorp.", "OpenAI.", "Anthropic.",
+    "Kaspersky.", "aimgr",
+)
+
+# Fragmentos no nome do pacote que indicam que NÃO é um jogo base
+_XBOX_NON_GAME_KEYWORDS = (
+    "dlc", "gamestub", "launchtracker", "gamepasspack", "contentpack",
+    "crossgenpack", "betaearlyaccess", "starterpack", "standardlaunch",
+    "extension", "codec", "encoder", "decoder", "videoextension",
+    "imageextension", "handwriting", "inputmethod", ".ime.",
+    "experience", "webexperience", "appinstaller", "storeapp",
+    "purchaseapp", "bingsearch", "sechealth", "desktopapp",
+    "screensketch", "screenclip", "photos", "paint", "notes",
+    "onenote", "office", "teams", "edge", "onedrive",
+)
+
 
 def discover_xbox_games() -> list[GameInfo]:
+    """Detecta jogos do Xbox Game Pass / Microsoft Store.
+
+    Usa `gamelaunchhelper.exe` como marcador primário para jogos do Xbox
+    Game Pass (todos os títulos GP rodam via esse helper). Para outros
+    pacotes da Store que sejam jogos (e.g. Roblox), aplica filtro
+    complementar por palavras-chave.
+    """
     games: list[GameInfo] = []
-    # Lista pacotes Appx; filtra os que tenham IsFramework=false e Architecture
-    # diferente de Neutral e não estejam na blacklist.
     try:
         proc = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Get-AppxPackage | Where-Object { $_.IsFramework -eq $false } | "
-             "Select-Object Name,PackageFamilyName,InstallLocation,DisplayName | "
+             "Select-Object Name,PackageFamilyName,InstallLocation | "
              "ConvertTo-Json -Compress"],
             capture_output=True, text=True, timeout=30,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -484,21 +601,62 @@ def discover_xbox_games() -> list[GameInfo]:
                 name = (item.get("Name") or "").strip()
                 pfn  = (item.get("PackageFamilyName") or "").strip()
                 inst = (item.get("InstallLocation") or "").strip()
-                disp = (item.get("DisplayName") or "").strip() or name
-                if not name or name in _XBOX_EXCLUDE:
+                if not name or not pfn:
                     continue
-                # Heurística: jogos do Xbox ficam em WindowsApps e têm
-                # família começando com publisherID. Filtra apenas pastas
-                # que tenham .exe principal jogavel; senão ignora.
-                if "WindowsApps" not in (inst or ""):
+                # Deve estar em WindowsApps
+                if "WindowsApps" not in inst:
                     continue
-                # Pacotes de framework/IME etc — pula
-                low = name.lower()
-                if any(x in low for x in ("input", "framework", "runtime",
-                                            "redist", "service", "language")):
+                # A pasta deve existir
+                inst_path = Path(inst)
+                if not inst_path.is_dir():
                     continue
+                # Blacklist explícita de pacotes de sistema
+                if name in _XBOX_EXCLUDE:
+                    continue
+                # Prefixos de publishers que nunca são jogos
+                if any(name.startswith(p) for p in _XBOX_NON_GAME_PREFIXES):
+                    continue
+
+                # ── Verificação primária: AppxManifest.xml ──────────────────
+                manifest = inst_path / "AppxManifest.xml"
+                is_game = False
+                display_name = name.rsplit("_", 1)[0]  # fallback
+                if manifest.is_file():
+                    try:
+                        manifest_text = manifest.read_text(
+                            encoding="utf-8", errors="replace"
+                        )
+                        manifest_low = manifest_text.lower()
+                        # gamelaunchhelper.exe é o executável de todos os
+                        # jogos do Xbox Game Pass / GDK
+                        if "gamelaunchhelper" in manifest_low:
+                            is_game = True
+                        # Tenta extrair DisplayName do manifest XML
+                        m = re.search(
+                            r'DisplayName\s*=\s*"([^"]{2,80})"',
+                            manifest_text,
+                        )
+                        if m:
+                            candidate = m.group(1).strip()
+                            # Ignora se for referência de recurso (ms-resource:...)
+                            if not candidate.startswith("ms-resource"):
+                                display_name = candidate
+                    except Exception:
+                        pass
+
+                # ── Verificação secundária: palavras-chave de não-jogos ─────
+                if not is_game:
+                    name_low = name.lower()
+                    if any(k in name_low for k in _XBOX_NON_GAME_KEYWORDS):
+                        continue
+                    # Sem gamelaunchhelper e sem marcadores de não-jogo →
+                    # tenta verificar se há .exe
+                    exes = list(inst_path.glob("*.exe"))
+                    if not exes:
+                        continue
+
                 games.append(GameInfo(
-                    name=disp or name,
+                    name=display_name,
                     platform="xbox",
                     app_id=pfn,
                     install_path=inst,

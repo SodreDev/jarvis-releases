@@ -83,6 +83,7 @@ SKIP_DIRS = {
     ".git", ".venv", "venv", "build", "dist", "__pycache__", "node_modules",
     "credentials", "data", "temp", "logs", "memories", ".idea", ".vscode",
     "VozIa", "kokoro_cache",  # VozIa pode ter binários grandes
+    "vscode_extension",  # tem node_modules com centenas de milhares de arquivos
 }
 
 # Extensões a escanear
@@ -113,30 +114,36 @@ def _should_skip(path: Path) -> bool:
 def scan_secrets(root: Path) -> list[dict]:
     """Retorna lista de findings. Vazia = limpo."""
     findings: list[dict] = []
-    for p in root.rglob("*"):
-        if not p.is_file():
-            continue
-        rel = p.relative_to(root)
-        if _should_skip(rel):
-            continue
-        try:
-            text = p.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-        for pattern, label in SECRET_PATTERNS:
-            for m in re.finditer(pattern, text):
-                snippet = m.group(0)
-                if any(a in snippet for a in ALLOWLIST_LITERALS):
-                    continue
-                if snippet.lower() in ALLOWLIST_LITERALS:
-                    continue
-                line_no = text[: m.start()].count("\n") + 1
-                findings.append({
-                    "file": str(rel).replace("\\", "/"),
-                    "line": line_no,
-                    "kind": label,
-                    "match": snippet[:60] + ("…" if len(snippet) > 60 else ""),
-                })
+    compiled = [(re.compile(pat), label) for pat, label in SECRET_PATTERNS]
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Poda diretórios do SKIP_DIRS in-place para não descer neles
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+
+        for fname in filenames:
+            fpath = Path(dirpath) / fname
+            rel = fpath.relative_to(root)
+            if _should_skip(rel):
+                continue
+            print(".", end="", flush=True)
+            try:
+                text = fpath.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for cpat, label in compiled:
+                for m in cpat.finditer(text):
+                    snippet = m.group(0)
+                    if any(a in snippet for a in ALLOWLIST_LITERALS):
+                        continue
+                    if snippet.lower() in ALLOWLIST_LITERALS:
+                        continue
+                    line_no = text[: m.start()].count("\n") + 1
+                    findings.append({
+                        "file": str(rel).replace("\\", "/"),
+                        "line": line_no,
+                        "kind": label,
+                        "match": snippet[:60] + ("…" if len(snippet) > 60 else ""),
+                    })
     return findings
 
 

@@ -6679,12 +6679,19 @@ class JarvisApp:
                     def _bg_jarvis_reply():
                         try:
                             from comandos import msg_sender as _ms_jpr
+                            from jarvis.messaging.router import get_router as _get_router_jpr
                             def _send(dest: str, content: str):
                                 if app_key == "whatsapp":
                                     return _ms_jpr.enviar_whatsapp_por_nome(dest, content)
                                 if app_key == "discord":
                                     return _ms_jpr.enviar_discord_por_nome(dest, content)
                                 if app_key == "instagram":
+                                    # Tenta Chromium primeiro; fallback pyautogui se indisponível
+                                    _router_res = _get_router_jpr().send(
+                                        "instagram", dest, content, profile_hint="user"
+                                    )
+                                    if _router_res.ok:
+                                        return _router_res
                                     return _ms_jpr.enviar_instagram_pyautogui(dest, content)
                                 return None
                             _jpr.handle_incoming(
@@ -11831,6 +11838,46 @@ class JarvisApp:
                     _ev_sub("messaging.incoming", hook_incoming_event)
                 except Exception as _mem_e:
                     print(f"[PersonMemory] hook falhou: {_mem_e}")
+                # #Jarvis prefix: responde DMs com prefixo #jarvis via InboxWatcher (todas as plataformas)
+                try:
+                    def _on_jarvis_dm(ev):
+                        try:
+                            _plat = (ev.get("platform") or "").lower()
+                            _sender = (ev.get("sender") or "").strip()
+                            _content = (ev.get("preview") or "").strip()
+                            _profile = (ev.get("profile") or "user")
+                            if not _content or not _sender or not _plat:
+                                return
+                            # DM: discord = sender sem '#'; demais plataformas = sempre DM
+                            _is_dm = True if _plat != "discord" else ("#" not in _sender)
+                            from core import jarvis_prefix_router as _jpr
+                            if not _jpr.should_handle(_plat, _sender, _content, is_dm=_is_dm):
+                                return
+                            def _bg(__plat=_plat, __sender=_sender, __content=_content,
+                                    __is_dm=_is_dm, __profile=_profile):
+                                try:
+                                    from jarvis.messaging.router import get_router as _gr
+                                    def _send(dest, msg):
+                                        return _gr().send(__plat, dest, msg, profile_hint=__profile)
+                                    _jpr.handle_incoming(
+                                        __plat, __sender, __content, is_dm=__is_dm,
+                                        send_fn=_send,
+                                        groq_client=getattr(self, "_groq", None),
+                                        llm_model=globals().get("GROQ_MODELO_CHAT",
+                                                                 "llama-3.1-8b-instant"),
+                                    )
+                                except Exception as _je:
+                                    print(f"[#JARVIS] inbox reply err: {_je}")
+                            import threading as _thr
+                            _thr.Thread(
+                                target=_bg, daemon=True,
+                                name=f"JarvisPrefix-{_plat}-{_sender[:12]}",
+                            ).start()
+                        except Exception as _e:
+                            print(f"[#JARVIS] inbox gate err: {_e}")
+                    _ev_sub("messaging.incoming", _on_jarvis_dm)
+                except Exception as _jdm_e:
+                    print(f"[#JARVIS] subscribe falhou: {_jdm_e}")
                 # Proatividade: fala "nova mensagem de X" quando habilitado (Fase 6)
                 try:
                     from core.messaging_proactive import get_messaging_proactive

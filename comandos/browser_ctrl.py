@@ -761,22 +761,60 @@ def status() -> str:
         return "Sessão inválida."
 
 
+def reproduzir_youtube(query: str) -> str:
+    """Abre a busca do YouTube e clica no primeiro vídeo.
+
+    Toda a operação (goto + wait_for_selector + click) é executada
+    atomicamente na thread dedicada do Playwright via _run_browser,
+    evitando o erro 'Cannot switch to a different thread'.
+    """
+    from urllib.parse import quote_plus as _qp
+    if not query:
+        return "ERRO: query vazia."
+    url = f"https://www.youtube.com/results?search_query={_qp(query)}"
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    _ensure_browser()
+    if _state.get("native_only"):
+        exe = _state.get("exe_path")
+        if exe:
+            import subprocess as _sp
+            _sp.Popen([exe, url], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        else:
+            import webbrowser as _wb
+            _wb.open(url)
+        return f"Abri a busca do YouTube por '{query}', Senhor (modo nativo — clique manual necessário)."
+    page = _page()
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+    except Exception as e:
+        return f"ERRO ao abrir YouTube: {e}"
+    try:
+        page.wait_for_selector("a#video-title", timeout=10000)
+        page.locator("a#video-title").first.click()
+        page.wait_for_load_state("domcontentloaded", timeout=10000)
+        return f"Reproduzindo: {query}, Senhor."
+    except Exception as e:
+        return f"Abri o YouTube com a busca, mas não consegui clicar no vídeo: {e}"
+
+
 # ── Wrappers thread-safe ───────────────────────────────────────────────────────
 # Substitui as funções originais por versões que garantem execução na
 # thread dedicada do Playwright (evita "cannot switch to a different thread").
-_abrir_url_impl       = abrir_url
-_ler_pagina_impl      = ler_pagina
-_listar_links_impl    = listar_links
-_clicar_texto_impl    = clicar_texto
-_buscar_e_clicar_impl = buscar_e_clicar
-_pesquisar_impl       = pesquisar
-_preencher_campo_impl = preencher_campo
-_pressionar_enter_impl= pressionar_enter
-_voltar_impl          = voltar
-_avancar_impl         = avancar
-_recarregar_impl      = recarregar
-_fechar_sessao_impl   = fechar_sessao
-_status_impl          = status
+_abrir_url_impl          = abrir_url
+_ler_pagina_impl         = ler_pagina
+_listar_links_impl       = listar_links
+_clicar_texto_impl       = clicar_texto
+_buscar_e_clicar_impl    = buscar_e_clicar
+_pesquisar_impl          = pesquisar
+_preencher_campo_impl    = preencher_campo
+_pressionar_enter_impl   = pressionar_enter
+_voltar_impl             = voltar
+_avancar_impl            = avancar
+_recarregar_impl         = recarregar
+_fechar_sessao_impl      = fechar_sessao
+_status_impl             = status
+_reproduzir_youtube_impl = reproduzir_youtube
 
 
 def abrir_url(url: str, navegador=None):          return _run_browser(_abrir_url_impl, url, navegador)
@@ -792,3 +830,4 @@ def avancar():                                    return _run_browser(_avancar_i
 def recarregar():                                 return _run_browser(_recarregar_impl)
 def fechar_sessao():                              return _run_browser(_fechar_sessao_impl)
 def status():                                     return _run_browser(_status_impl)
+def reproduzir_youtube(query: str):               return _run_browser(_reproduzir_youtube_impl, query)
