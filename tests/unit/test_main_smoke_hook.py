@@ -114,3 +114,21 @@ def test_smoke_ready_and_exit_markers_are_printed():
     source, _tree = _parse_main()
     assert "JARVIS_SMOKE_READY" in source
     assert "JARVIS_SMOKE_EXIT" in source
+
+
+def test_smoke_threads_marker_and_shutdown_are_gated():
+    source, tree = _parse_main()
+    assert "JARVIS_SMOKE_THREADS" in source
+
+    threads_line = _line_of_first_occurrence(source, "JARVIS_SMOKE_THREADS")
+    threads_guard = _innermost_wrapping_if(tree, threads_line)
+    assert threads_guard is not None and _test_calls_smoke_helper(threads_guard), (
+        "o print JARVIS_SMOKE_THREADS deve ficar sob if _smoke_seconds()"
+    )
+
+    # o encerramento (os._exit) logo depois também fica no if de modo smoke
+    exit_line = _line_of_first_occurrence(source, "os._exit(0)", start=threads_line)
+    exit_guard = _innermost_wrapping_if(tree, exit_line)
+    assert exit_guard is not None and _test_calls_smoke_helper(exit_guard), (
+        "o os._exit(0) do smoke deve ficar sob if _smoke_seconds()"
+    )

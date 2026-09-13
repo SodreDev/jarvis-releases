@@ -13567,6 +13567,15 @@ if __name__ == "__main__":
         webview.start(_on_ready, debug=os.environ.get("JARVIS_DEV") == "1", storage_path=_wv_data, **_wv_start_kwargs)
         if _smoke_seconds() is not None:
             print(f"JARVIS_SMOKE_EXIT children_alive={len(_plat_processes().alive_children())}", flush=True)
+            _vivas = [
+                t.name for t in _th_crash.enumerate()
+                if not t.daemon and t.is_alive() and t is not _th_crash.current_thread()
+            ]
+            print(f"JARVIS_SMOKE_THREADS {','.join(_vivas)}", flush=True)
+            # Encerra pelo mesmo caminho do fechamento normal do app (X/tray →
+            # _encerrar_de_tray/_RootProxy.destroy terminam em os._exit(0)): threads
+            # não-daemon (ex.: servidor do dashboard) seguram o processo senão.
+            os._exit(0)
     except Exception:
         _write_crash("BOOT", *_sys_crash.exc_info())
         raise
