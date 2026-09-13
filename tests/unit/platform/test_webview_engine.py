@@ -119,13 +119,39 @@ def test_qtwebengine_prepare_env_does_not_overwrite_existing():
 
 
 def test_qtwebengine_prepare_env_sets_defaults():
+    # QT_QPA_PLATFORM depende do `ctx.kind` (x11/wayland/headless) — não dá
+    # pra assumir um valor fixo sem injetar o ctx (achado rodando dentro do
+    # container N1, sem DISPLAY: kind vira headless e a var fica ausente,
+    # de propósito — "headless: não define QT_QPA_PLATFORM").
+    import types
+
     from jarvis.platform.linux.webview_engine import QtWebEngine
 
     environ = {}
-    QtWebEngine().prepare_env(environ)
+    QtWebEngine(ctx=types.SimpleNamespace(kind="linux-x11")).prepare_env(environ)
     assert environ["QT_API"] == "pyside6"
     assert environ["PYWEBVIEW_GUI"] == "qt"
-    assert "QT_QPA_PLATFORM" in environ
+    assert environ["QT_QPA_PLATFORM"] == "xcb"
+
+
+def test_qtwebengine_prepare_env_wayland_sets_qpa():
+    import types
+
+    from jarvis.platform.linux.webview_engine import QtWebEngine
+
+    environ = {}
+    QtWebEngine(ctx=types.SimpleNamespace(kind="linux-wayland")).prepare_env(environ)
+    assert environ["QT_QPA_PLATFORM"] == "wayland;xcb"
+
+
+def test_qtwebengine_prepare_env_headless_leaves_qpa_unset():
+    import types
+
+    from jarvis.platform.linux.webview_engine import QtWebEngine
+
+    environ = {}
+    QtWebEngine(ctx=types.SimpleNamespace(kind="linux-headless")).prepare_env(environ)
+    assert "QT_QPA_PLATFORM" not in environ
 
 
 def test_qtwebengine_start_kwargs():
