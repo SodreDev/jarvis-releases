@@ -18,11 +18,7 @@ PACKAGES = ["core", "comandos", "jarvis"]
 IMPORT_TIMEOUT = 30
 
 # module -> motivo da falha no Linux (baseline apurada rodando este probe no host)
-KNOWN_WINDOWS_ONLY = {
-    "comandos.janela_ctrl": "ModuleNotFoundError: No module named 'winreg' (registro do Windows)",
-    "comandos.midia_ctrl": "AttributeError: module 'ctypes' has no attribute 'windll'",
-    "comandos.notif_ctrl": "AttributeError: module 'ctypes' has no attribute 'windll'",
-}
+KNOWN_WINDOWS_ONLY = {}
 
 
 def discover_modules():

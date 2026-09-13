@@ -5,6 +5,7 @@
 
 import ctypes
 import ctypes.wintypes as wt
+import sys
 import re
 import threading
 import time
@@ -17,7 +18,25 @@ _WINEVENT_OUTOFCONTEXT = 0x0000
 _EVENT_OBJECT_SHOW     = 0x8002
 _OBJID_WINDOW          = 0          # idObject value for window-level events
 
-_user32 = ctypes.windll.user32
+class _LazyUser32:
+    """Adia ctypes.windll.user32 até o primeiro uso.
+
+    No Windows o comportamento é idêntico (binda user32 no primeiro acesso).
+    No Linux qualquer uso ergue NotImplementedError em vez de quebrar o import.
+    """
+    _real = None
+
+    def __getattr__(self, name):
+        if sys.platform != "win32":
+            raise NotImplementedError(
+                "leitura de notificações via API do Windows não suportada no Linux ainda"
+            )
+        if _LazyUser32._real is None:
+            _LazyUser32._real = ctypes.windll.user32
+        return getattr(_LazyUser32._real, name)
+
+
+_user32 = _LazyUser32()
 
 # CFUNCTYPE kept alive at module level so GC does not free the trampoline
 _WinEventProc = ctypes.CFUNCTYPE(
@@ -331,6 +350,10 @@ class NotificationMonitor:
     #  toast reader 
 
     def _read_toast(self, hwnd: int):
+        if sys.platform != "win32":
+            raise NotImplementedError(
+                "leitura de notificações via API do Windows não suportada no Linux ainda"
+            )
         time.sleep(0.45)
         ole32 = ctypes.windll.ole32
         ole32.CoInitializeEx.restype = ctypes.HRESULT

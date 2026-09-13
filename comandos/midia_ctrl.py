@@ -8,6 +8,7 @@ import ctypes
 import ctypes.wintypes
 import subprocess
 import os
+import sys
 import re
 import time
 import threading
@@ -22,7 +23,25 @@ VK_VOLUME_MUTE      = 0xAD
 VK_VOLUME_DOWN      = 0xAE
 VK_VOLUME_UP        = 0xAF
 
-_user32 = ctypes.windll.user32
+class _LazyUser32:
+    """Adia ctypes.windll.user32 até o primeiro uso.
+
+    No Windows o comportamento é idêntico (binda user32 no primeiro acesso).
+    No Linux qualquer uso ergue NotImplementedError em vez de quebrar o import.
+    """
+    _real = None
+
+    def __getattr__(self, name):
+        if sys.platform != "win32":
+            raise NotImplementedError(
+                "controle de mídia via API do Windows não suportado no Linux ainda"
+            )
+        if _LazyUser32._real is None:
+            _LazyUser32._real = ctypes.windll.user32
+        return getattr(_LazyUser32._real, name)
+
+
+_user32 = _LazyUser32()
 
 
 def _press_key(vk: int) -> None:

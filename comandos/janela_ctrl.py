@@ -5,13 +5,13 @@
 from __future__ import annotations
 import subprocess
 import os
+import sys
 import ctypes
 import glob
 import re
 import shutil
 import time
 import unicodedata
-import winreg
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GERENCIAMENTO DE JANELAS
@@ -286,6 +286,9 @@ def _try_shutil_direct(nome_n: str) -> str | None:
 
 def _try_registry_app_paths(nome_n: str) -> str | None:
     """Busca no registro: HKLM/HKCU → SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths."""
+    if sys.platform != "win32":
+        raise NotImplementedError("busca no registro do Windows não suportada no Linux ainda")
+    import winreg
     variantes = [nome_n, nome_n + ".exe"]
     # Adiciona alias se houver
     alias_cmd = _ALIAS.get(nome_n)
