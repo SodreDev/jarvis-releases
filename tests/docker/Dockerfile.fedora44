@@ -1,3 +1,13 @@
+# Build: SEMPRE a partir de uma cópia gravável obtida com `git archive`,
+# nunca do working tree direto (garante nada não-versionado — segredo,
+# .venv*, cache — entra no contexto):
+#   mkdir -p /tmp/jarvis-build  (pasta nova e vazia a cada build)
+#   git -C /home/sodre/GranaFacil/J.A.R.V.I.S archive linux-port | tar -x -C /tmp/jarvis-build
+#   podman build -f tests/docker/Dockerfile.fedora44 -t jarvis-fedora44 /tmp/jarvis-build
+#
+# Não construir com JARVIS_TEST_SANDBOXED sem checar antes que F1-06/F1-07/
+# F1-10 já entraram em main.py — sem o gancho de smoke o boot não sai
+# sozinho (ver SPEC F1-10, marco M1).
 FROM registry.fedoraproject.org/fedora:44
 
 RUN dnf install -y \
@@ -5,6 +15,19 @@ RUN dnf install -y \
         gcc \
         git \
         xz \
+        python3-devel \
+        kernel-headers \
+        portaudio \
+        xorg-x11-server-Xvfb \
+        nss \
+        libxkbcommon \
+        libXcomposite \
+        libXdamage \
+        libXrandr \
+        alsa-lib \
+        mesa-libGL \
+        mesa-libEGL \
+        fontconfig \
     && dnf clean all
 
 ENV UV_INSTALL_DIR=/usr/local/bin
@@ -14,8 +37,17 @@ WORKDIR /app
 COPY . /app
 
 RUN uv venv --python 3.12 /app/.venv-linux
-RUN uv pip install --python /app/.venv-linux/bin/python -r /app/tests/docker/requirements-linux.txt
+# torch pelo índice CPU (evita puxar as wheels CUDA, muito maiores e
+# inúteis num container de teste sem GPU).
+RUN uv pip install --python /app/.venv-linux/bin/python \
+        torch --index-url https://download.pytorch.org/whl/cpu
+RUN uv pip install --python /app/.venv-linux/bin/python \
+        -r /app/tests/docker/requirements-linux.txt
 
 ENV PATH="/app/.venv-linux/bin:${PATH}"
+ENV JARVIS_TEST_SANDBOXED=1
+ENV SDL_AUDIODRIVER=dummy
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu
 
-CMD ["/app/.venv-linux/bin/python", "-m", "pytest", "tests/smoke", "-v"]
+CMD ["xvfb-run", "-a", "/app/.venv-linux/bin/python", "-m", "pytest", "-m", "x11", "tests/smoke"]

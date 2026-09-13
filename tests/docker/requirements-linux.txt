@@ -1,4 +1,6 @@
-# ── Core IA / LLM ─────────────────────────────────────────────────────────────
+# Gerado a partir de requirements.txt (867b29d, F1-03) filtrando por
+# sys_platform=="linux" com `packaging` — ver tests/unit/test_requirements_markers.py.
+# torch: instalar pelo índice CPU (ver Dockerfile.fedora44), não daqui.
 openai
 groq
 transformers
@@ -7,21 +9,16 @@ google-generativeai
 google-genai
 google-api-python-client
 google-auth-oauthlib
-
-# ── Áudio / TTS / STT ─────────────────────────────────────────────────────────
 numpy
 sounddevice
 soundfile
 edge-tts
 kokoro
 misaki
-# Fixar cadeia spacy para evitar tentativa de compilar spacy 4.x (sem wheel):
 spacy==3.8.11
 spacy-curated-transformers==0.3.1
 thinc==8.3.10
 blis==1.3.3
-
-# ── Busca / Web ───────────────────────────────────────────────────────────────
 duckduckgo_search
 ddgs
 requests
@@ -29,8 +26,6 @@ httpx
 beautifulsoup4
 wikipedia
 youtube-transcript-api
-
-# ── Visão / OCR / Imagem ──────────────────────────────────────────────────────
 pillow
 mss
 easyocr
@@ -38,29 +33,17 @@ pytesseract
 PyMuPDF
 rembg
 yfinance
-
-# ── Automação / Sistema ───────────────────────────────────────────────────────
 pynput
 pyautogui
-pygetwindow
 psutil
-pycaw
-uiautomation
 pyperclip
-pystray
 plyer
-
-# ── Mídia ─────────────────────────────────────────────────────────────────────
 moviepy
 ffmpeg-python
 spotipy
-
-# ── Mensageria ────────────────────────────────────────────────────────────────
 discord.py
 instagrapi
 pywhatkit
-
-# ── Utilitários ───────────────────────────────────────────────────────────────
 redis
 PyYAML
 loguru
@@ -72,19 +55,9 @@ tabulate
 PyMsgBox
 python-dotenv
 packaging
-
-# ── WebSocket ─────────────────────────────────────────────────────────────────
 websockets>=13.0
-
-# ── Sprint 1 modular (pacote jarvis/) ─────────────────────────────────────────
-# pydantic v2 — schema tipado de jarvis/config
-# playwright  — browser pool + comportamento humano (jarvis/browser)
-# tomli       — fallback TOML para Python <3.11 (3.11+ usa tomllib stdlib)
 pydantic>=2.0
 playwright>=1.40
-tomli; python_version < "3.11"
-
-# ── Painel Stark + IDE + Documentos (Fases A-E, 2026) ─────────────────────────
 fastapi
 uvicorn
 python-docx
@@ -94,10 +67,8 @@ xlsxwriter
 reportlab
 matplotlib
 screeninfo
-
-# ── UI / GUI ──────────────────────────────────────────────────────────────────
-pywebview
-
-# ── Build / Distribuição ──────────────────────────────────────────────────────
+pywebview==6.1
+PySide6==6.9.3
+QtPy>=2.4,<3
 pyinstaller>=6.0
 pytest
