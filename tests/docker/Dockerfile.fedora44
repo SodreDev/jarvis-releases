@@ -29,6 +29,7 @@ RUN dnf install -y \
         libXcomposite \
         libXdamage \
         libXrandr \
+        libXtst \
         alsa-lib \
         mesa-libGL \
         mesa-libEGL \
