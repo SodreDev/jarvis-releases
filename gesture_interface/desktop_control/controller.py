@@ -16,7 +16,10 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-import pyautogui
+try:
+    import pyautogui
+except Exception:
+    pyautogui = None
 
 from gesture_interface.config import (
     DESKTOP_DANGEROUS_COOLDOWN,
@@ -27,8 +30,9 @@ from gesture_interface.gesture_engine.recognizer import GestureEvent, GestureTyp
 if TYPE_CHECKING:
     from gesture_interface.mouse_calibration import MouseCalibration
 
-pyautogui.FAILSAFE = False
-pyautogui.PAUSE = 0.02
+if pyautogui is not None:
+    pyautogui.FAILSAFE = False
+    pyautogui.PAUSE = 0.02
 
 
 class DesktopController:

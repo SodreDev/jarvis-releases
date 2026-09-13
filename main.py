@@ -1905,6 +1905,8 @@ class JarvisApi:
 
     def apply_update_now(self):
         """Baixa e aplica atualização automaticamente (payload/installer)."""
+        if not _has_feature("self_update_payload"):
+            return {"ok": False, "error": "Atualização automática ainda não disponível nesta plataforma."}
         try:
             from updater.check_update import check_for_update, apply_update
 
@@ -2802,7 +2804,8 @@ class JarvisApp:
         ))
         # ── Monitor de notificações (WhatsApp / Discord) — toasts Windows ──────
         self._notif_monitor = None
-        threading.Thread(target=self._iniciar_monitor_notif, daemon=True).start()
+        if _has_feature("notification_reader"):
+            threading.Thread(target=self._iniciar_monitor_notif, daemon=True).start()
         # ── Monitor de Instagram — polling via instagrapi ────────────────────
         self._ig_monitor = None
         threading.Thread(target=self._iniciar_monitor_instagram, daemon=True).start()
@@ -2811,11 +2814,12 @@ class JarvisApp:
         # ── Alarmes: reagenda pendentes e anuncia perdidos ───────────────────
         threading.Thread(target=self._verificar_alarmes_startup, daemon=True).start()
         # ── Monitor de Clipboard (histórico) ─────────────────────────────────
-        try:
-            from comandos import clipboard_hist_ctrl as _chc
-            _chc.start_monitor()
-        except Exception as _e:
-            print(f"[CLIPBOARD HIST] Monitor não iniciado: {_e}")
+        if _has_feature("clipboard_monitor"):
+            try:
+                from comandos import clipboard_hist_ctrl as _chc
+                _chc.start_monitor()
+            except Exception as _e:
+                print(f"[CLIPBOARD HIST] Monitor não iniciado: {_e}")
         # ── Rotinas Agendadas ─────────────────────────────────────────────────
         try:
             from comandos import rotinas_ctrl as _rctrl
@@ -6963,6 +6967,9 @@ class JarvisApp:
 
     def _ativar_gesture(self):
         """Ativa a interface gestual com Live View (câmera + tutorial)."""
+        if not _has_feature("gestures"):
+            self.root.after(0, self._exibir_resposta, "Interface gestual ainda não disponível nesta plataforma.")
+            return
         self._set_status("🖐  Interface Gestual — iniciando...", _CYAN)
         # Pre-flight: verifica deps nativas antes de instanciar GestureSystem
         try:
@@ -7036,6 +7043,9 @@ class JarvisApp:
 
     def _ativar_eye_control(self):
         """Ativa o controle do cursor pelo olhar (face direction)."""
+        if not _has_feature("gestures"):
+            self.root.after(0, self._exibir_resposta, "Interface gestual ainda não disponível nesta plataforma.")
+            return
         try:
             if self._gesture_system is None:
                 msg = "Ative a interface gestual primeiro com 'ativar gestos'."
@@ -7064,6 +7074,9 @@ class JarvisApp:
 
     def _calibrar_olhos(self):
         """Inicia calibração sweep do eye tracker."""
+        if not _has_feature("gestures"):
+            self.root.after(0, self._exibir_resposta, "Interface gestual ainda não disponível nesta plataforma.")
+            return
         try:
             if self._gesture_system is None:
                 msg = "Ative a interface gestual primeiro com 'ativar gestos'."
@@ -13177,9 +13190,11 @@ class JarvisApp:
             self._append("SISTEMA", "⚙  Clique no botão ⚙ na barra superior para configurações.", "system")
 
             # ── Tray icon ──
-            self._criar_tray_icon()
+            if _has_feature("tray"):
+                self._criar_tray_icon()
             # ── Verificador de atualizações (background, 30s delay) ──
-            self._iniciar_verificador_updates()
+            if _has_feature("self_update_payload"):
+                self._iniciar_verificador_updates()
             print(">>> [JARVIS] Webview pronto — sistema ativo.")
         except Exception as e:
             _log.error(f"WEBVIEW: Erro na inicialização: {e}", exc_info=e)

@@ -22,7 +22,10 @@ import sys
 import threading
 from typing import TYPE_CHECKING
 
-import pyautogui
+try:
+    import pyautogui
+except Exception:
+    pyautogui = None
 
 from gesture_interface.canvas2d.engine import Canvas2DEngine
 from gesture_interface.config import DEFAULT_MODE
