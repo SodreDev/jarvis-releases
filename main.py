@@ -2499,7 +2499,11 @@ class JarvisApi:
         try:
             theme = getattr(self._app, "_current_theme", None) \
                 or JarvisApp._read_theme_pref_early()
-            self._app._reload_with_theme(theme)
+            # Agenda o reload para DEPOIS do retorno desta chamada (com debounce):
+            # chamar load_html/load_url aqui destruiria o contexto JS antes do
+            # pywebview entregar o retorno desta mesma chamada (corrida do
+            # _returnValuesCallbacks.reload_ui). Ver core/ui_reload.py.
+            self._app._request_ui_reload(theme)
             return {"ok": True, "theme": theme}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -2591,6 +2595,19 @@ class JarvisApp:
         except Exception as e:
             print(f"[UI] _load_html_inline falhou: {e}")
             return None
+
+    def _request_ui_reload(self, theme: str) -> None:
+        """Agenda um hot-reload da UI com debounce, fora da chamada da ponte JS.
+
+        Coalesce F5/Ctrl+R repetidos num único reload e retorna na hora, evitando
+        a corrida do pywebview (o load_html/load_url roda depois). Ver
+        core/ui_reload.py."""
+        sched = getattr(self, "_ui_reload_scheduler", None)
+        if sched is None:
+            from core.ui_reload import UiReloadScheduler
+            sched = UiReloadScheduler(self._reload_with_theme)
+            self._ui_reload_scheduler = sched
+        sched.request(theme)
 
     def _reload_with_theme(self, theme: str) -> None:
         """Recarrega a janela do webview no HTML do tema indicado."""
