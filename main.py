@@ -149,6 +149,7 @@ except Exception as _e_pynput:
     keyboard = Key = GlobalHotKeys = None
     print(f"[HOTKEYS] pynput indisponível: {_e_pynput}")
 from jarvis.platform import has_feature as _has_feature
+from jarvis.platform import paths as _plat_paths
 
 # Migra credenciais/dados legados para credentials/ ANTES de importar config,
 # para que load_dotenv() encontre o .env já na nova localização.
@@ -2651,10 +2652,7 @@ class JarvisApp:
         _html_url = None if _html_inline else self._html_for_theme(_theme_boot)
         # storage_path estável evita que o WebView2 use diretórios temp
         # que o Windows limpa, prevenindo crashes/corrupção de estado.
-        _wv_storage = os.path.join(
-            os.environ.get("APPDATA", os.path.expanduser("~")),
-            "JARVIS", "webview_data",
-        )
+        _wv_storage = str(_plat_paths().webview_storage_dir())
         os.makedirs(_wv_storage, exist_ok=True)
         self._window = webview.create_window(
             "J.A.R.V.I.S.  ·  Stark Industries Protocol  v7.3",
@@ -13579,10 +13577,7 @@ if __name__ == "__main__":
 
         # storage_path: direciona o perfil do WebView2 para um local
         # persistente no AppData, evitando crashes por diretório temp limpo.
-        _wv_data = os.path.join(
-            os.environ.get("APPDATA", os.path.expanduser("~")),
-            "JARVIS", "webview_data",
-        )
+        _wv_data = str(_plat_paths().webview_storage_dir())
         # Cria o diretório antecipadamente com permissão do usuário atual,
         # evitando que o WebView2 solicite elevação UAC para criar a pasta.
         os.makedirs(_wv_data, exist_ok=True)

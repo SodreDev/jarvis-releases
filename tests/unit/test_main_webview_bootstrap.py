@@ -79,7 +79,6 @@ def test_webview_bootstrap_precedes_import_and_start_uses_kwargs():
     assert len(call.args) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="F1-07")
 def test_main_storage_expressions_no_longer_read_appdata_directly():
     source, _tree = _parse_main()
     assert 'os.environ.get("APPDATA"' not in source
