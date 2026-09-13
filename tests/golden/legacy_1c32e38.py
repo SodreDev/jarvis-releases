@@ -65,6 +65,28 @@ def legacy_webview_storage(environ: dict, home: str) -> str:
     return ntpath.join(environ.get("APPDATA", home), "JARVIS", "webview_data")
 
 
+def legacy_refresh_path(environ: dict, winreg_mod) -> set[str]:
+    """`main.py:113-129` em 1c32e38, âncora `if sys.platform == "win32":` /
+    `import winreg` / `_ler_path_windows()`.
+
+    Difere do original só em expor o CONJUNTO de entradas resultante (sem
+    vazias) em vez de escrever a string final em `os.environ["PATH"]`
+    (efeito colateral que não cabe num oráculo puro).
+    """
+    caminhos = set(environ.get("PATH", "").split(";"))
+    for hive, scope in [
+        (winreg_mod.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+        (winreg_mod.HKEY_CURRENT_USER, r"Environment"),
+    ]:
+        try:
+            with winreg_mod.OpenKey(hive, scope) as k:
+                val, _ = winreg_mod.QueryValueEx(k, "Path")
+                caminhos.update(val.split(";"))
+        except Exception:
+            pass
+    return set(filter(None, caminhos))
+
+
 __all__ = [
     "legacy_appdata_root",
     "legacy_user_config_dir",
@@ -72,4 +94,5 @@ __all__ = [
     "legacy_credentials_dir",
     "legacy_logs_dir",
     "legacy_webview_storage",
+    "legacy_refresh_path",
 ]
