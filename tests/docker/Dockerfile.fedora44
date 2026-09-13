@@ -34,6 +34,7 @@ RUN dnf install -y \
         libxkbcommon-x11 \
         xcb-util-wm \
         xcb-util-keysyms \
+        libwayland-cursor \
         alsa-lib \
         mesa-libGL \
         mesa-libEGL \
