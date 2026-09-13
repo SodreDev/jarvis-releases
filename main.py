@@ -58,15 +58,10 @@ def _data(*parts: str) -> str:
 # para que mensagens nativas (ex.: "PortAudio fatal", "Bus error") fiquem
 # preservadas mesmo quando o terminal fecha junto com o processo.
 try:
-    import faulthandler as _fh
+    from core.crash_log import setup_native_crash_log as _setup_native_crash_log
     _fault_path = _data("crash_native.log")
-    try:
-        os.makedirs(os.path.dirname(_fault_path), exist_ok=True)
-    except Exception:
-        pass
-    _fault_fp = open(_fault_path, "a", buffering=1, encoding="utf-8", errors="replace")
-    _fault_fp.write(f"\n=== faulthandler armado em {datetime.datetime.now()} ===\n")
-    _fh.enable(file=_fault_fp, all_threads=True)
+    # Mantém a referência viva para o GC não fechar o descritor.
+    _fault_fp = _setup_native_crash_log(_fault_path)
 except Exception as _e_fh:
     print(f"[FAULTHANDLER] falhou: {_e_fh}")
 
