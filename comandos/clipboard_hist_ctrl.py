@@ -10,26 +10,63 @@ _MAX = 50
 _monitor_thread: threading.Thread | None = None
 _stop_event = threading.Event()
 
+# Instâncias PRIVADAS de user32/kernel32 (F1-12): criadas uma vez, com protótipos
+# próprios. Não usar ctypes.windll (compartilhado) — definir restype/argtypes nele
+# vazaria para main.py e para o _LazyUser32 de comandos/notif_ctrl.
+# Só carregam no Windows (lazy), para o import continuar funcionando no Linux.
+_user32 = None
+_kernel32 = None
+
+
+def _win_libs():
+    """Carrega e configura user32/kernel32 privados (uma vez). Só no Windows."""
+    global _user32, _kernel32
+    if _user32 is None or _kernel32 is None:
+        u = ctypes.WinDLL("user32", use_last_error=True)
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Protótipos: HANDLE de 64 bits precisa de c_void_p (c_int trunca).
+        u.OpenClipboard.argtypes = [ctypes.c_void_p]
+        u.OpenClipboard.restype = ctypes.c_int
+        u.GetClipboardData.argtypes = [ctypes.c_uint]
+        u.GetClipboardData.restype = ctypes.c_void_p
+        u.CloseClipboard.argtypes = []
+        u.CloseClipboard.restype = ctypes.c_int
+        k.GlobalLock.argtypes = [ctypes.c_void_p]
+        k.GlobalLock.restype = ctypes.c_void_p
+        k.GlobalUnlock.argtypes = [ctypes.c_void_p]
+        k.GlobalUnlock.restype = ctypes.c_int
+        k.GlobalSize.argtypes = [ctypes.c_void_p]
+        k.GlobalSize.restype = ctypes.c_size_t
+        _user32, _kernel32 = u, k
+    return _user32, _kernel32
+
+
+def _reset_win_libs() -> None:
+    """Zera o cache das libs privadas (uso em testes)."""
+    global _user32, _kernel32
+    _user32 = _kernel32 = None
+
 
 def _get_clipboard_text() -> str | None:
     CF_UNICODETEXT = 13
-    user32   = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-    kernel32.GlobalLock.restype = ctypes.c_void_p
+    user32, kernel32 = _win_libs()
 
-    if not user32.OpenClipboard(0):
+    if not user32.OpenClipboard(None):
         return None
     try:
         h = user32.GetClipboardData(CF_UNICODETEXT)
         if not h:
             return None
-        p = kernel32.GlobalLock(ctypes.c_void_p(h))
+        p = kernel32.GlobalLock(h)
         if not p:
             return None
         try:
-            return ctypes.wstring_at(p)
+            size = kernel32.GlobalSize(h)
+            raw = ctypes.wstring_at(p, size // ctypes.sizeof(ctypes.c_wchar))
+            nul = raw.find("\x00")
+            return raw[:nul] if nul != -1 else raw
         finally:
-            kernel32.GlobalUnlock(ctypes.c_void_p(h))
+            kernel32.GlobalUnlock(h)
     except Exception:
         return None
     finally:
