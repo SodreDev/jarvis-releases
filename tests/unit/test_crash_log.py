@@ -8,6 +8,7 @@
 """
 import ast
 import faulthandler
+import time
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,36 @@ def test_faulthandler_fica_armado(isolated_home):
     finally:
         fp.close()
         faulthandler.enable()
+
+
+# ── F1-11b: teto por sessão e JARVIS_FAULTHANDLER=0 ────────────────────────────
+
+def test_guard_desarma_no_teto_da_sessao(isolated_home):
+    path = isolated_home["data"] / "crash_native.log"
+    fp = setup_native_crash_log(
+        str(path), max_session_bytes=1024, interval_s=0.05
+    )
+    try:
+        # simula dumps crescendo além do teto de 1 KB na sessão
+        fp.write("x" * 4096)
+        fp.flush()
+        # aguarda o guardião desarmar (poll até ~3 s)
+        prazo = time.time() + 3.0
+        while faulthandler.is_enabled() and time.time() < prazo:
+            time.sleep(0.05)
+        assert not faulthandler.is_enabled(), "o guardião deveria ter desarmado o faulthandler"
+        conteudo = path.read_text(encoding="utf-8")
+        assert "faulthandler DESARMADO: teto da sessão" in conteudo
+    finally:
+        fp.close()
+        faulthandler.enable()
+
+
+def test_jarvis_faulthandler_0_nao_cria_arquivo(isolated_home):
+    path = isolated_home["data"] / "crash_native.log"
+    fp = setup_native_crash_log(str(path), environ={"JARVIS_FAULTHANDLER": "0"})
+    assert fp is None
+    assert not path.exists()
 
 
 # ── Sem dump periódico (AST) ───────────────────────────────────────────────────
