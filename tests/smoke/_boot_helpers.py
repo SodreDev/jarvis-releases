@@ -59,9 +59,12 @@ def run_boot_smoke(kind: str, *, session_type: str, extra_env: dict | None = Non
 
     lines = [line for line in stdout.splitlines() if line.strip()]
     assert lines, "main.py não imprimiu nada no stdout"
-    last_line = lines[-1]
-    assert last_line.startswith("JARVIS_SMOKE_EXIT children_alive="), last_line
-    children_alive = last_line.split("=", 1)[1].strip()
+    # F1-10b: depois de `JARVIS_SMOKE_EXIT ...` pode vir uma linha extra
+    # `JARVIS_SMOKE_THREADS <nomes>` (diagnóstico antes do os._exit(0)) --
+    # procura a linha EXIT em vez de assumir que é sempre a última.
+    exit_line = next((l for l in lines if l.startswith("JARVIS_SMOKE_EXIT children_alive=")), None)
+    assert exit_line is not None, lines[-5:]
+    children_alive = exit_line.split("=", 1)[1].strip()
     # antes da F1-14 (limpeza de filhos) é aceito "n/a"
     assert children_alive in {"0", "n/a"}, last_line
 
