@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.xfail(strict=True, reason="F1-10")
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAIN_PY = REPO_ROOT / "main.py"
 

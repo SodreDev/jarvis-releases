@@ -48,14 +48,25 @@ def _attr_pred(attr):
     return lambda n: isinstance(n, ast.Attribute) and n.attr == attr
 
 
+def _test_tem_feature_positiva(if_test, feature) -> bool:
+    """True se o teste do if chama _has_feature(feature) de forma positiva
+    (inclusive dentro de um `and`), sem estar sob um `not`."""
+    for node in ast.walk(if_test):
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            if _feat_call_name(node.operand) == feature:
+                return False  # está negado
+        if _feat_call_name(node) == feature:
+            # confirma que não é o operando de um Not (já tratado acima)
+            return True
+    return False
+
+
 def _positivo_contendo(tree, feature, pred):
     for node in ast.walk(tree):
-        if isinstance(node, ast.If):
-            name, neg = _gate_of_if(node)
-            if name == feature and not neg:
-                for stmt in node.body:
-                    if any(pred(n) for n in ast.walk(stmt)):
-                        return True
+        if isinstance(node, ast.If) and _test_tem_feature_positiva(node.test, feature):
+            for stmt in node.body:
+                if any(pred(n) for n in ast.walk(stmt)):
+                    return True
     return False
 
 

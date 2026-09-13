@@ -24,13 +24,25 @@ except ImportError:
     pass
 
 _wv_start_kwargs: dict = {}
+_wv_engine_obj = None  # guarda o motor p/ o gancho de smoke reportar o sandbox
 try:
     from jarvis.platform import webview_engine
     _eng = webview_engine()
+    _wv_engine_obj = _eng
     _eng.prepare_env(os.environ)          # Windows: não faz nada
     _wv_start_kwargs = _eng.start_kwargs()  # Windows: {}
 except Exception as _e_plat:
     print(f"[PLATAFORMA] preparação da webview falhou: {_e_plat}")
+
+
+def _smoke_seconds():
+    """Segundos do smoke boot (JARVIS_SMOKE_SECONDS) ou None se desligado."""
+    v = os.environ.get("JARVIS_SMOKE_SECONDS", "").strip()
+    try:
+        return float(v) if v else None
+    except ValueError:
+        return None
+
 
 import webview
 import json as _json_mod
@@ -12930,6 +12942,49 @@ class JarvisApp:
     # PYWEBVIEW — Inicialização da UI
     # ══════════════════════════════════════════════════════════════════════════
 
+    def _smoke_boot_finish(self):
+        """Gancho de smoke boot (F1-10): imprime o marcador READY, executa os
+        reloads opcionais (JARVIS_SMOKE_RELOADS) e agenda o fechamento da janela.
+        Só é chamado quando o gancho de smoke está ligado (ver _smoke_seconds)."""
+        import threading as _th_s
+        import time as _time_s
+        ctx = _plat_current()
+        qpa = os.environ.get("QT_QPA_PLATFORM") or "n/a"
+        try:
+            sandbox = _wv_engine_obj.sandbox_state() if _wv_engine_obj is not None else "n/a"
+        except Exception:
+            sandbox = "n/a"
+        print(f"JARVIS_SMOKE_READY kind={ctx.kind} qpa={qpa} sandbox={sandbox}", flush=True)
+
+        reloads = os.environ.get("JARVIS_SMOKE_RELOADS", "").strip()
+        if reloads:
+            try:
+                n = int(reloads)
+            except ValueError:
+                n = 0
+            for _ in range(n):
+                try:
+                    self._window.evaluate_js(
+                        "window.dispatchEvent(new KeyboardEvent('keydown',{key:'F5'}))"
+                    )
+                except Exception:
+                    pass
+                # espera window.JARVIS_READY voltar a true (timeout ~5 s)
+                deadline = _time_s.monotonic() + 5.0
+                while _time_s.monotonic() < deadline:
+                    try:
+                        if self._window.evaluate_js("window.JARVIS_READY === true"):
+                            break
+                    except Exception:
+                        pass
+                    _time_s.sleep(0.05)
+                _time_s.sleep(0.3)  # 300 ms entre os reloads
+
+        secs = _smoke_seconds()
+        timer = _th_s.Timer(secs, self._window.destroy)
+        timer.daemon = True
+        timer.start()
+
     def _on_webview_ready(self):
         """Chamada após o webview carregar o HTML. Envia dados iniciais."""
         try:
@@ -13171,10 +13226,11 @@ class JarvisApp:
             self._atualizar_stats()
             self._tick_timers()
 
-            # ── Restaurar modo de ativação salvo ──
-            if self._activation_mode == "wake":
-                self._switch_activation_mode("ptt")   # reset p/ garantir labels
-                self._switch_activation_mode("wake")  # ativa wake com labels corretos
+            # ── Restaurar modo de ativação salvo (pulado no smoke: sem microfone) ──
+            if _smoke_seconds() is None:
+                if self._activation_mode == "wake":
+                    self._switch_activation_mode("ptt")   # reset p/ garantir labels
+                    self._switch_activation_mode("wake")  # ativa wake com labels corretos
 
             # ── Bootstrap de módulos opt-in via config ──
             try:
@@ -13190,9 +13246,12 @@ class JarvisApp:
             if _has_feature("tray"):
                 self._criar_tray_icon()
             # ── Verificador de atualizações (background, 30s delay) ──
-            if _has_feature("self_update_payload"):
+            if _smoke_seconds() is None and _has_feature("self_update_payload"):
                 self._iniciar_verificador_updates()
             print(">>> [JARVIS] Webview pronto — sistema ativo.")
+            # ── Gancho de smoke boot (F1-10): só quando o smoke está ligado ──
+            if _smoke_seconds() is not None:
+                self._smoke_boot_finish()
         except Exception as e:
             _log.error(f"WEBVIEW: Erro na inicialização: {e}", exc_info=e)
             import traceback; traceback.print_exc()
@@ -13481,11 +13540,12 @@ if __name__ == "__main__":
             except Exception as _cpw_err:
                 print(f"[PLAYWRIGHT] Aviso na verificação do Chromium: {_cpw_err}")
         import threading as _th_cpw
-        _th_cpw.Thread(
-            target=_check_playwright_chromium,
-            name="PlaywrightChromiumCheck",
-            daemon=True,
-        ).start()
+        if _smoke_seconds() is None:  # sem rede durante o smoke de boot
+            _th_cpw.Thread(
+                target=_check_playwright_chromium,
+                name="PlaywrightChromiumCheck",
+                daemon=True,
+            ).start()
 
         def _on_ready():
             import time as _t
@@ -13505,6 +13565,8 @@ if __name__ == "__main__":
         )
         # debug=True mantém DevTools vivo (+200 MB RAM) — só ativar com JARVIS_DEV=1
         webview.start(_on_ready, debug=os.environ.get("JARVIS_DEV") == "1", storage_path=_wv_data, **_wv_start_kwargs)
+        if _smoke_seconds() is not None:
+            print(f"JARVIS_SMOKE_EXIT children_alive={len(_plat_processes().alive_children())}", flush=True)
     except Exception:
         _write_crash("BOOT", *_sys_crash.exc_info())
         raise
