@@ -9,7 +9,13 @@
 # está versionado e por isso não é tocado pelo COPY).
 FROM localhost/jarvis-fedora44:latest
 
-RUN dnf -y install libXtst xcb-util-cursor && dnf clean all
+RUN dnf -y install \
+        libXtst \
+        xcb-util-cursor \
+        libxkbcommon-x11 \
+        xcb-util-wm \
+        xcb-util-keysyms \
+    && dnf clean all
 
 COPY . /app/
 
