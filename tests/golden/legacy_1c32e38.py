@@ -87,6 +87,92 @@ def legacy_refresh_path(environ: dict, winreg_mod) -> set[str]:
     return set(filter(None, caminhos))
 
 
+def legacy_job_object(ct, wt):
+    """Bloco `if _sys_crash.platform == "win32":` de `main.py`, perto de
+    `main.py:13412-13493` em 1c32e38 (Job Object KILL_ON_JOB_CLOSE |
+    BREAKAWAY_OK). `ct` substitui `ctypes` (`WinDLL`/`sizeof`/`byref`/
+    `Structure`/`get_last_error`) e `wt` substitui `ctypes.wintypes` —
+    únicas trocas em relação ao bloco original; sem outra mudança de lógica.
+    """
+    try:
+        class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ct.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ct.c_int64),
+                ("PerJobUserTimeLimit", ct.c_int64),
+                ("LimitFlags", wt.DWORD),
+                ("MinimumWorkingSetSize", ct.c_size_t),
+                ("MaximumWorkingSetSize", ct.c_size_t),
+                ("ActiveProcessLimit", wt.DWORD),
+                ("Affinity", ct.c_void_p),
+                ("PriorityClass", wt.DWORD),
+                ("SchedulingClass", wt.DWORD),
+            ]
+
+        class _IO_COUNTERS(ct.Structure):
+            _fields_ = [
+                ("ReadOperationCount", ct.c_uint64),
+                ("WriteOperationCount", ct.c_uint64),
+                ("OtherOperationCount", ct.c_uint64),
+                ("ReadTransferCount", ct.c_uint64),
+                ("WriteTransferCount", ct.c_uint64),
+                ("OtherTransferCount", ct.c_uint64),
+            ]
+
+        class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ct.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                ("IoInfo", _IO_COUNTERS),
+                ("ProcessMemoryLimit", ct.c_size_t),
+                ("JobMemoryLimit", ct.c_size_t),
+                ("PeakProcessMemoryUsed", ct.c_size_t),
+                ("PeakJobMemoryUsed", ct.c_size_t),
+            ]
+
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+        # BREAKAWAY_OK permite que processos filhos que pedem
+        # CREATE_BREAKAWAY_FROM_JOB escapem do job. Necessário pra
+        # o navegador (Chrome/Brave/Edge) — Chromium detecta job e
+        # altera comportamento de sandbox/IPC, abrindo SEM janela.
+        JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
+        JobObjectExtendedLimitInformation = 9
+
+        kernel32 = ct.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wt.HANDLE
+        kernel32.CreateJobObjectW.argtypes = [ct.c_void_p, wt.LPCWSTR]
+        kernel32.SetInformationJobObject.restype = wt.BOOL
+        kernel32.AssignProcessToJobObject.restype = wt.BOOL
+        kernel32.GetCurrentProcess.restype = wt.HANDLE
+
+        _job = kernel32.CreateJobObjectW(None, None)
+        if _job:
+            info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            info.BasicLimitInformation.LimitFlags = (
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                | JOB_OBJECT_LIMIT_BREAKAWAY_OK
+            )
+            ok = kernel32.SetInformationJobObject(
+                _job,
+                JobObjectExtendedLimitInformation,
+                ct.byref(info),
+                ct.sizeof(info),
+            )
+            if ok:
+                assigned = kernel32.AssignProcessToJobObject(_job, kernel32.GetCurrentProcess())
+                # Mantém o handle vivo (módulo global) — se for fechado,
+                # o KILL_ON_JOB_CLOSE dispara e mata o próprio JARVIS.
+                print(f"[JOB] Job Object criado (KILL_ON_JOB_CLOSE), assigned={bool(assigned)}")
+                return _job
+            else:
+                print(f"[JOB] SetInformationJobObject falhou: err={ct.get_last_error()}")
+                return None
+        else:
+            print(f"[JOB] CreateJobObjectW falhou: err={ct.get_last_error()}")
+            return None
+    except Exception as _je:
+        print(f"[JOB] Falha ao configurar Job Object: {_je}")
+        return None
+
+
 __all__ = [
     "legacy_appdata_root",
     "legacy_user_config_dir",
@@ -95,4 +181,5 @@ __all__ = [
     "legacy_logs_dir",
     "legacy_webview_storage",
     "legacy_refresh_path",
+    "legacy_job_object",
 ]

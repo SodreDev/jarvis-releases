@@ -1,11 +1,8 @@
-"""K — contrato (F1-02 e F1-07): descrevem `WindowsPaths` e `XdgPaths`
-ANTES de existirem (`jarvis/platform/{windows,linux}/paths.py`,
-`jarvis/platform/linux/xdg.py`). `xfail(strict=True)` — o executor remove
-o `xfail` no commit que implementa cada peça (SPEC F1-02 e F1-07).
+"""K — contrato (F1-02 e F1-07): `WindowsPaths` e `XdgPaths`. Ambas já
+implementadas pelo executor — xfail removido (2026-09-13, verificado com
+`-m "not slow"` verde, XPASS confirmado antes da troca).
 
-Import é feito DENTRO de cada teste (não no topo do módulo): os módulos
-ainda não existem, e um `ImportError` no topo quebraria a coleta do
-arquivo inteiro em vez de contar como falha esperada do teste.
+Import ainda dentro de cada teste por uniformidade com o resto do arquivo.
 """
 import ntpath
 import os
@@ -21,7 +18,6 @@ pytestmark = pytest.mark.linux_only
 # ── F1-02: XdgPaths — padrões, variável relativa ignorada, permissões, logs ──
 
 
-@pytest.mark.xfail(strict=True, reason="F1-02")
 def test_xdg_paths_defaults_without_env(isolated_home, monkeypatch):
     for var in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
         monkeypatch.delenv(var, raising=False)
@@ -34,7 +30,6 @@ def test_xdg_paths_defaults_without_env(isolated_home, monkeypatch):
     assert p.logs_dir() == home / ".local" / "state" / "jarvis" / "logs"
 
 
-@pytest.mark.xfail(strict=True, reason="F1-02")
 def test_xdg_paths_relative_value_is_ignored(isolated_home, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", "relativo/nao/absoluto")
     from jarvis.platform.linux.xdg import XdgPaths
@@ -43,7 +38,6 @@ def test_xdg_paths_relative_value_is_ignored(isolated_home, monkeypatch):
     assert p.user_config_dir() == isolated_home["home"] / ".config" / "jarvis"
 
 
-@pytest.mark.xfail(strict=True, reason="F1-02")
 def test_xdg_paths_created_dirs_are_mode_0700(isolated_home):
     from jarvis.platform.linux.xdg import XdgPaths
 
@@ -53,7 +47,6 @@ def test_xdg_paths_created_dirs_are_mode_0700(isolated_home):
     assert mode == 0o700
 
 
-@pytest.mark.xfail(strict=True, reason="F1-02")
 def test_xdg_paths_logs_in_xdg_state_home(isolated_home):
     from jarvis.platform.linux.xdg import XdgPaths
 
@@ -61,7 +54,6 @@ def test_xdg_paths_logs_in_xdg_state_home(isolated_home):
     assert p.logs_dir() == isolated_home["state"] / "jarvis" / "logs"
 
 
-@pytest.mark.xfail(strict=True, reason="F1-02")
 def test_xdg_paths_webview_storage_dir(isolated_home):
     from jarvis.platform.linux.xdg import XdgPaths
 
@@ -79,7 +71,6 @@ APPDATA_SCENARIOS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="F1-07")
 @pytest.mark.parametrize("appdata_value", APPDATA_SCENARIOS)
 def test_windows_paths_webview_storage_matches_oracle(appdata_value, isolated_home):
     from jarvis.platform.windows.paths import WindowsPaths
