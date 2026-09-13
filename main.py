@@ -23,6 +23,15 @@ try:
 except ImportError:
     pass
 
+_wv_start_kwargs: dict = {}
+try:
+    from jarvis.platform import webview_engine
+    _eng = webview_engine()
+    _eng.prepare_env(os.environ)          # Windows: não faz nada
+    _wv_start_kwargs = _eng.start_kwargs()  # Windows: {}
+except Exception as _e_plat:
+    print(f"[PLATAFORMA] preparação da webview falhou: {_e_plat}")
+
 import webview
 import json as _json_mod
 try:
@@ -13583,7 +13592,7 @@ if __name__ == "__main__":
             "--disable-extensions --disk-cache-size=67108864",
         )
         # debug=True mantém DevTools vivo (+200 MB RAM) — só ativar com JARVIS_DEV=1
-        webview.start(_on_ready, debug=os.environ.get("JARVIS_DEV") == "1", storage_path=_wv_data)
+        webview.start(_on_ready, debug=os.environ.get("JARVIS_DEV") == "1", storage_path=_wv_data, **_wv_start_kwargs)
     except Exception:
         _write_crash("BOOT", *_sys_crash.exc_info())
         raise

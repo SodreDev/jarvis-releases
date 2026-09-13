@@ -5,11 +5,6 @@ prova que o comportamento Windows não muda quando o boot passa a montar
 `xfail(strict=True, reason="F1-06")`: a classe ainda não existe (import
 dentro do teste).
 """
-import pytest
-
-pytestmark = pytest.mark.xfail(strict=True, reason="F1-06")
-
-
 def test_edge_chromium_engine_prepare_env_is_noop():
     from jarvis.platform.windows.webview_engine import EdgeChromiumEngine
 

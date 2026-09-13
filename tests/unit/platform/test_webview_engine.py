@@ -9,7 +9,7 @@ import types
 
 import pytest
 
-pytestmark = [pytest.mark.linux_only, pytest.mark.xfail(strict=True, reason="F1-06")]
+pytestmark = pytest.mark.linux_only
 
 
 def _probe(returncode=0, stderr=""):

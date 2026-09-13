@@ -51,7 +51,6 @@ def _webview_start_calls(tree: ast.AST) -> list[ast.Call]:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="F1-06")
 def test_webview_bootstrap_precedes_import_and_start_uses_kwargs():
     _source, tree = _parse_main()
     import_line = _import_webview_line(tree)

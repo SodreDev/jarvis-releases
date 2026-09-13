@@ -21,6 +21,10 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
         "win32": ("jarvis.platform.windows.paths:WindowsPaths",),
         "linux-*": ("jarvis.platform.linux.paths:XdgPaths",),
     },
+    Cap.WEBVIEW_ENGINE: {
+        "win32": ("jarvis.platform.windows.webview_engine:EdgeChromiumEngine",),
+        "linux-*": ("jarvis.platform.linux.webview_engine:QtWebEngine",),
+    },
 }
 
 _CACHE: Dict[Cap, object] = {}
