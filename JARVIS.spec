@@ -172,6 +172,11 @@ hidden = [
     'jarvis.intents', 'jarvis.intents.registry',
     'jarvis.intents.patterns', 'jarvis.intents.spotify',
     'jarvis.llm', 'jarvis.llm.client',
+    # Fase 1 port Linux — camada de plataforma (carga lazy por string via registry)
+    'jarvis.platform', 'jarvis.platform.detect', 'jarvis.platform.capabilities',
+    'jarvis.platform.features', 'jarvis.platform.registry', 'jarvis.platform.errors',
+    'jarvis.platform.protocols', 'jarvis.platform.common', 'jarvis.platform.common.base',
+    'jarvis.platform.common.unavailable',
     # tomli (fallback se tomllib stdlib não estiver presente; >=3.11 tem)
     'tomllib',
     # ── Fases 2026: painel, documentos, updater ──────────────────────────

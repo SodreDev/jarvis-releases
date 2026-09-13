@@ -48,6 +48,16 @@ if False:                                # pragma: no cover  # noqa: SIM108
     import jarvis.intents.spotify        # noqa: F401, E402
     import jarvis.llm                    # noqa: F401, E402
     import jarvis.llm.client             # noqa: F401, E402
+    import jarvis.platform               # noqa: F401, E402
+    import jarvis.platform.detect        # noqa: F401, E402
+    import jarvis.platform.capabilities  # noqa: F401, E402
+    import jarvis.platform.features      # noqa: F401, E402
+    import jarvis.platform.registry      # noqa: F401, E402
+    import jarvis.platform.errors        # noqa: F401, E402
+    import jarvis.platform.protocols     # noqa: F401, E402
+    import jarvis.platform.common        # noqa: F401, E402
+    import jarvis.platform.common.base   # noqa: F401, E402
+    import jarvis.platform.common.unavailable  # noqa: F401, E402
 
 
 # ── Detecção do source ao vivo ────────────────────────────────────────────────

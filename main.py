@@ -129,8 +129,13 @@ import edge_tts
 from openai import OpenAI
 from groq import Groq
 from duckduckgo_search import DDGS
-from pynput import keyboard
-from pynput.keyboard import Key, GlobalHotKeys
+try:
+    from pynput import keyboard
+    from pynput.keyboard import Key, GlobalHotKeys
+except Exception as _e_pynput:
+    keyboard = Key = GlobalHotKeys = None
+    print(f"[HOTKEYS] pynput indisponível: {_e_pynput}")
+from jarvis.platform import has_feature as _has_feature
 
 # Migra credenciais/dados legados para credentials/ ANTES de importar config,
 # para que load_dotenv() encontre o .env já na nova localização.
@@ -178,7 +183,7 @@ MIC_CHANNELS  = 1
 PASTA_TEMP    = "temp"
 ARQUIVO_AUDIO = os.path.join(PASTA_TEMP, "jarvis_out.mp3")
 # Combo push-to-talk: Shift + G
-_SHIFT_KEYS = {Key.shift, Key.shift_r, Key.shift_l}
+_SHIFT_KEYS = {Key.shift, Key.shift_r, Key.shift_l} if Key is not None else set()
 
 # Prompt de domínio para Whisper — melhora transcrição de termos frequentes.
 # Inclui termos técnicos em inglês e domínios comuns para que o decoder PT
@@ -11610,6 +11615,10 @@ class JarvisApp:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _start_keyboard_listener(self):
+        if keyboard is None or not _has_feature("global_hotkeys"):
+            self._listener = None
+            print("[PTT] Atalho global indisponível nesta sessão — use o botão de microfone ou a wake word.")
+            return
         self._listener = keyboard.Listener(
             on_press=self._on_key_press,
             on_release=self._on_key_release,
@@ -11626,6 +11635,9 @@ class JarvisApp:
 
     def _start_global_hotkeys(self):
         """Registra os atalhos globais definidos em config.HOTKEYS via pynput GlobalHotKeys."""
+        if keyboard is None or not _has_feature("global_hotkeys"):
+            print("[PTT] Atalho global indisponível nesta sessão — use o botão de microfone ou a wake word.")
+            return
         import sys as _sys
         _cfg = _sys.modules.get("config")
         raw: dict = getattr(_cfg, "HOTKEYS", {}) if _cfg else {}
