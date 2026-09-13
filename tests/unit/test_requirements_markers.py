@@ -57,7 +57,6 @@ def test_win32_set_matches_golden():
     assert current_names == golden_names
 
 
-@pytest.mark.xfail(strict=True, reason="F1-03")
 def test_linux_set_is_golden_minus_windows_only_plus_qt():
     golden_names = _names_for_platform(_parse(GOLDEN), "win32")
     expected = (golden_names - REMOVED_ON_LINUX) | ADDED_ON_LINUX
@@ -65,7 +64,6 @@ def test_linux_set_is_golden_minus_windows_only_plus_qt():
     assert current_names == expected
 
 
-@pytest.mark.xfail(strict=True, reason="F1-03")
 def test_pywebview_and_pyside6_pinned():
     reqs = {canonicalize_name(r.name): r for r in _parse(CURRENT)}
     assert str(reqs["pywebview"].specifier) == "==6.1"

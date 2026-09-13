@@ -1,3 +1,6 @@
+# Python 3.12 obrigatório (kokoro exige <3.13)
+# No Linux o pynput puxa evdev, que pode compilar (gcc, python3-devel, kernel-headers).
+
 # ── Core IA / LLM ─────────────────────────────────────────────────────────────
 openai
 groq
@@ -42,13 +45,13 @@ yfinance
 # ── Automação / Sistema ───────────────────────────────────────────────────────
 pynput
 pyautogui
-pygetwindow
-pywin32
+pygetwindow; sys_platform == "win32"
+pywin32; sys_platform == "win32"
 psutil
-pycaw
-uiautomation
+pycaw; sys_platform == "win32"
+uiautomation; sys_platform == "win32"
 pyperclip
-pystray
+pystray; sys_platform == "win32"          # tray Linux = SNI na Fase 2
 plyer
 
 # ── Mídia ─────────────────────────────────────────────────────────────────────
@@ -97,7 +100,9 @@ matplotlib
 screeninfo
 
 # ── UI / GUI ──────────────────────────────────────────────────────────────────
-pywebview
+pywebview==6.1
+PySide6==6.9.3; sys_platform == "linux"    # última wheel manylinux_2_28 (decisão do dono)
+QtPy>=2.4,<3; sys_platform == "linux"
 
 # ── Build / Distribuição ──────────────────────────────────────────────────────
 pyinstaller>=6.0
