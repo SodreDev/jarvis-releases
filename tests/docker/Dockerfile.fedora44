@@ -1,9 +1,14 @@
 # Build: SEMPRE a partir de uma cópia gravável obtida com `git archive`,
 # nunca do working tree direto (garante nada não-versionado — segredo,
 # .venv*, cache — entra no contexto):
-#   mkdir -p /tmp/jarvis-build  (pasta nova e vazia a cada build)
-#   git -C /home/sodre/GranaFacil/J.A.R.V.I.S archive linux-port | tar -x -C /tmp/jarvis-build
-#   podman build -f tests/docker/Dockerfile.fedora44 -t jarvis-fedora44 /tmp/jarvis-build
+#   mkdir -p /tmp/jarvis-ctx  (pasta nova e vazia a cada build, FORA do repo)
+#   git -C /home/sodre/GranaFacil/J.A.R.V.I.S archive linux-port | tar -x -C /tmp/jarvis-ctx
+#   podman build -f /tmp/jarvis-ctx/tests/docker/Dockerfile.fedora44 -t jarvis-fedora44 /tmp/jarvis-ctx
+#
+# Camadas nesta ordem de propósito (cache do podman): pacotes de sistema
+# (raramente mudam) -> uv -> SÓ requirements-linux.txt + venv com as
+# dependências (muda pouco) -> resto do código por último (COPY . /app,
+# muda a cada commit — não deve invalidar a camada de dependências).
 #
 # Não construir com JARVIS_TEST_SANDBOXED sem checar antes que F1-06/F1-07/
 # F1-10 já entraram em main.py — sem o gancho de smoke o boot não sai
@@ -34,15 +39,19 @@ ENV UV_INSTALL_DIR=/usr/local/bin
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /app
-COPY . /app
 
+# Só o requirements primeiro: essa camada só invalida quando ele muda, não
+# a cada alteração de código.
+COPY tests/docker/requirements-linux.txt /app/tests/docker/requirements-linux.txt
 RUN uv venv --python 3.12 /app/.venv-linux
-# torch pelo índice CPU (evita puxar as wheels CUDA, muito maiores e
-# inúteis num container de teste sem GPU).
+# torch pelo índice CPU (--extra-index-url mantém o PyPI normal pro resto
+# do arquivo e evita puxar as wheels CUDA, muito maiores e inúteis aqui).
 RUN uv pip install --python /app/.venv-linux/bin/python \
-        torch --index-url https://download.pytorch.org/whl/cpu
-RUN uv pip install --python /app/.venv-linux/bin/python \
-        -r /app/tests/docker/requirements-linux.txt
+        -r /app/tests/docker/requirements-linux.txt \
+        --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Resto do código por último.
+COPY . /app
 
 ENV PATH="/app/.venv-linux/bin:${PATH}"
 ENV JARVIS_TEST_SANDBOXED=1
