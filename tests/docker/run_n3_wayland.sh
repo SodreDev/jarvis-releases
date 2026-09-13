@@ -73,7 +73,6 @@ else
 fi
 
 podman run --rm \
-    --userns=keep-id \
     --security-opt label=disable \
     -v "$RUNTIME_DIR/$SOCKET_NAME:/run/jt/$SOCKET_NAME" \
     -e XDG_RUNTIME_DIR=/run/jt \
