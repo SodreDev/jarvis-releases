@@ -10,12 +10,15 @@ import sys
 from pathlib import Path
 
 
+def _backend():
+    """Backend de paths da camada de plataforma (WindowsPaths/XdgPaths)."""
+    from jarvis.platform import paths as _platform_paths
+    return _platform_paths()
+
+
 def _appdata_root() -> Path:
-    if os.name == "nt":
-        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / "JARVIS"
-    xdg = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(xdg) / "jarvis"
+    # Raiz de config (mantido para compat.: era usado internamente e no golden).
+    return _backend().user_config_dir()
 
 
 def project_root() -> Path:
@@ -33,9 +36,7 @@ def project_root() -> Path:
 
 
 def user_config_dir() -> Path:
-    p = _appdata_root()
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _backend().user_config_dir()
 
 
 def user_config_file() -> Path:
@@ -43,21 +44,15 @@ def user_config_file() -> Path:
 
 
 def user_data_dir() -> Path:
-    p = _appdata_root() / "data"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _backend().user_data_dir()
 
 
 def credentials_dir() -> Path:
-    p = _appdata_root() / "credentials"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _backend().credentials_dir()
 
 
 def logs_dir() -> Path:
-    p = _appdata_root() / "logs"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _backend().logs_dir()
 
 
 def browser_profiles_dir() -> Path:

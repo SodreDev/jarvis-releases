@@ -17,6 +17,8 @@ import types
 
 import pytest
 
+import jarvis.platform as jplatform
+from jarvis.platform.detect import detect
 from jarvis.config import paths as paths_mod
 from tests.golden.legacy_1c32e38 import (
     legacy_appdata_root,
@@ -51,7 +53,18 @@ def _fake_windows_os(monkeypatch, tmp_path, home, scenario):
     fake_os.name = "nt"
     fake_os.environ = environ
     monkeypatch.setattr(paths_mod, "os", fake_os)
+    # Após F1-02 a escolha do backend vem do contexto da camada, não de os.name:
+    # fixamos win32 e o mesmo `os` falso onde o WindowsPaths lê o environ.
+    import jarvis.platform.windows.paths as winpaths_mod
+    monkeypatch.setattr(winpaths_mod, "os", fake_os)
+    jplatform._reset_for_tests(ctx=detect(sys_platform="win32", environ=environ))
     return environ
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_layer():
+    yield
+    jplatform._reset_for_tests()
 
 
 @pytest.mark.parametrize("scenario", APPDATA_SCENARIOS)

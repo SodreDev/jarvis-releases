@@ -58,6 +58,9 @@ if False:                                # pragma: no cover  # noqa: SIM108
     import jarvis.platform.common        # noqa: F401, E402
     import jarvis.platform.common.base   # noqa: F401, E402
     import jarvis.platform.common.unavailable  # noqa: F401, E402
+    import jarvis.platform.windows.paths  # noqa: F401, E402
+    import jarvis.platform.linux.paths   # noqa: F401, E402
+    import jarvis.platform.linux.xdg     # noqa: F401, E402
 
 
 # ── Detecção do source ao vivo ────────────────────────────────────────────────

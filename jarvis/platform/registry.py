@@ -15,15 +15,13 @@ from typing import Dict, List, Optional, Tuple
 from .capabilities import Cap
 from .common.unavailable import Unavailable
 
-# Começa vazio: as entradas ("módulo:Classe") entram quando os backends chegarem.
-# Exemplo de forma esperada (comentado de propósito):
-#   REGISTRY = {
-#       Cap.PATHS: {
-#           "win32": ("jarvis.platform.windows.paths:WindowsPaths",),
-#           "linux-*": ("jarvis.platform.linux.paths:XDGPaths",),
-#       },
-#   }
-REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {}
+# Entradas ("módulo:Classe") por capacidade → chave de plataforma.
+REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
+    Cap.PATHS: {
+        "win32": ("jarvis.platform.windows.paths:WindowsPaths",),
+        "linux-*": ("jarvis.platform.linux.paths:XdgPaths",),
+    },
+}
 
 _CACHE: Dict[Cap, object] = {}
 _LOCK = threading.RLock()
