@@ -124,7 +124,11 @@ if sys.platform == "win32":
     _ler_path_windows()
 
 import numpy as np
-import sounddevice as sd
+try:
+    import sounddevice as sd
+except OSError as _e_sd:
+    sd = None
+    print(f"[AUDIO] sounddevice indisponível: {_e_sd} — instale PortAudio (dnf install portaudio | pacman -S portaudio | apt install libportaudio2)")
 import edge_tts
 from openai import OpenAI
 from groq import Groq
@@ -10714,6 +10718,8 @@ class JarvisApp:
 
     def _listar_microfones(self) -> list[dict]:
         """Retorna lista de dispositivos de entrada de áudio disponíveis."""
+        if sd is None:
+            return []
         devs = sd.query_devices()
         mics = []
         for i, d in enumerate(devs):
@@ -11271,6 +11277,9 @@ class JarvisApp:
 
     def _wake_word_loop(self):
         """Loop principal de detecção de wake word (roda em background)."""
+        if sd is None:
+            self._set_status("Microfone indisponível: PortAudio não instalado", _TEXT_DIM)
+            return
         import time as _t
 
         CHUNK = 1024
@@ -11881,6 +11890,9 @@ class JarvisApp:
 
     def _gravar_audio(self):
         """Captura microfone com sounddevice enquanto recording == True."""
+        if sd is None:
+            self._set_status("Microfone indisponível: PortAudio não instalado", _TEXT_DIM)
+            return
         try:
             # Garante mic em 100% antes de gravar
             _sc_mod.garantir_mic_maximo()
@@ -12350,6 +12362,9 @@ class JarvisApp:
 
     def _realtime_loop(self):
         """Loop contínuo de transcrição em tempo real com VAD."""
+        if sd is None:
+            self._set_status("Microfone indisponível: PortAudio não instalado", _TEXT_DIM)
+            return
         import time as _t
 
         CHUNK = 1024
