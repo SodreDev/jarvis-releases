@@ -30,6 +30,10 @@ RUN dnf install -y \
         libXdamage \
         libXrandr \
         libXtst \
+        xcb-util-cursor \
+        libxkbcommon-x11 \
+        xcb-util-wm \
+        xcb-util-keysyms \
         alsa-lib \
         mesa-libGL \
         mesa-libEGL \
