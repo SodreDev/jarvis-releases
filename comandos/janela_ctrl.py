@@ -287,7 +287,8 @@ def _try_shutil_direct(nome_n: str) -> str | None:
 def _try_registry_app_paths(nome_n: str) -> str | None:
     """Busca no registro: HKLM/HKCU → SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths."""
     if sys.platform != "win32":
-        raise NotImplementedError("busca no registro do Windows não suportada no Linux ainda")
+        # Sem registro no Linux: devolve None para a cadeia seguir p/ a próxima estratégia.
+        return None
     import winreg
     variantes = [nome_n, nome_n + ".exe"]
     # Adiciona alias se houver
