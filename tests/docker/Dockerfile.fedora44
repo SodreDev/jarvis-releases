@@ -41,8 +41,12 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /app
 
-# Só o requirements primeiro: essa camada só invalida quando ele muda, não
-# a cada alteração de código.
+# Só os requirements primeiro: essa camada só invalida quando eles mudam,
+# não a cada alteração de código. requirements.txt (raiz) entra aqui junto
+# porque o setup.py legado do instagrapi lê um arquivo com esse nome do cwd
+# durante o build da wheel (achado: falha com FileNotFoundError se não
+# existir ainda nesta etapa).
+COPY requirements.txt /app/requirements.txt
 COPY tests/docker/requirements-linux.txt /app/tests/docker/requirements-linux.txt
 RUN uv venv --python 3.12 /app/.venv-linux
 # torch pelo índice CPU (--extra-index-url mantém o PyPI normal pro resto
