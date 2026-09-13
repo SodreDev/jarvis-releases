@@ -7,10 +7,6 @@ Só leitura de texto — nunca importa `main.py`.
 """
 from pathlib import Path
 
-import pytest
-
-pytestmark = pytest.mark.xfail(strict=True, reason="F1-14")
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAIN_PY = REPO_ROOT / "main.py"
 _ANCHOR = "self._tts_process = proc"

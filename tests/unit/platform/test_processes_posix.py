@@ -12,10 +12,6 @@ import subprocess
 import sys
 import time
 
-import pytest
-
-pytestmark = pytest.mark.xfail(strict=True, reason="F1-14")
-
 _TIMEOUT = 10.0
 _DEATH_DEADLINE = 3.0
 

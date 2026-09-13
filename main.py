@@ -150,6 +150,7 @@ except Exception as _e_pynput:
     print(f"[HOTKEYS] pynput indisponível: {_e_pynput}")
 from jarvis.platform import has_feature as _has_feature
 from jarvis.platform import paths as _plat_paths
+from jarvis.platform import processes as _plat_processes
 
 # Migra credenciais/dados legados para credentials/ ANTES de importar config,
 # para que load_dotenv() encontre o .env já na nova localização.
@@ -12785,6 +12786,7 @@ class JarvisApp:
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             self._tts_process = proc
+            _plat_processes().register_child(proc)  # no-op no Windows (Job Object)
             got_end = False
             try:
                 from core import event_bus as _eb
@@ -13474,84 +13476,11 @@ if __name__ == "__main__":
     # navegadores Playwright, etc.) sejam mortos automaticamente quando o
     # processo principal do JARVIS termina. Sem isso, msedgewebview2.exe
     # vira órfão e acumula a cada reinício, comendo RAM/CPU.
-    if _sys_crash.platform == "win32":
-        try:
-            import ctypes as _ct
-            from ctypes import wintypes as _wt
-
-            class _JOBOBJECT_BASIC_LIMIT_INFORMATION(_ct.Structure):
-                _fields_ = [
-                    ("PerProcessUserTimeLimit", _ct.c_int64),
-                    ("PerJobUserTimeLimit", _ct.c_int64),
-                    ("LimitFlags", _wt.DWORD),
-                    ("MinimumWorkingSetSize", _ct.c_size_t),
-                    ("MaximumWorkingSetSize", _ct.c_size_t),
-                    ("ActiveProcessLimit", _wt.DWORD),
-                    ("Affinity", _ct.c_void_p),
-                    ("PriorityClass", _wt.DWORD),
-                    ("SchedulingClass", _wt.DWORD),
-                ]
-
-            class _IO_COUNTERS(_ct.Structure):
-                _fields_ = [
-                    ("ReadOperationCount", _ct.c_uint64),
-                    ("WriteOperationCount", _ct.c_uint64),
-                    ("OtherOperationCount", _ct.c_uint64),
-                    ("ReadTransferCount", _ct.c_uint64),
-                    ("WriteTransferCount", _ct.c_uint64),
-                    ("OtherTransferCount", _ct.c_uint64),
-                ]
-
-            class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(_ct.Structure):
-                _fields_ = [
-                    ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION),
-                    ("IoInfo", _IO_COUNTERS),
-                    ("ProcessMemoryLimit", _ct.c_size_t),
-                    ("JobMemoryLimit", _ct.c_size_t),
-                    ("PeakProcessMemoryUsed", _ct.c_size_t),
-                    ("PeakJobMemoryUsed", _ct.c_size_t),
-                ]
-
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
-            # BREAKAWAY_OK permite que processos filhos que pedem
-            # CREATE_BREAKAWAY_FROM_JOB escapem do job. Necessário pra
-            # o navegador (Chrome/Brave/Edge) — Chromium detecta job e
-            # altera comportamento de sandbox/IPC, abrindo SEM janela.
-            JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
-            JobObjectExtendedLimitInformation = 9
-
-            kernel32 = _ct.WinDLL("kernel32", use_last_error=True)
-            kernel32.CreateJobObjectW.restype = _wt.HANDLE
-            kernel32.CreateJobObjectW.argtypes = [_ct.c_void_p, _wt.LPCWSTR]
-            kernel32.SetInformationJobObject.restype = _wt.BOOL
-            kernel32.AssignProcessToJobObject.restype = _wt.BOOL
-            kernel32.GetCurrentProcess.restype = _wt.HANDLE
-
-            _job = kernel32.CreateJobObjectW(None, None)
-            if _job:
-                info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-                info.BasicLimitInformation.LimitFlags = (
-                    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-                    | JOB_OBJECT_LIMIT_BREAKAWAY_OK
-                )
-                ok = kernel32.SetInformationJobObject(
-                    _job,
-                    JobObjectExtendedLimitInformation,
-                    _ct.byref(info),
-                    _ct.sizeof(info),
-                )
-                if ok:
-                    assigned = kernel32.AssignProcessToJobObject(_job, kernel32.GetCurrentProcess())
-                    # Mantém o handle vivo (módulo global) — se for fechado,
-                    # o KILL_ON_JOB_CLOSE dispara e mata o próprio JARVIS.
-                    globals()["_JARVIS_JOB_HANDLE"] = _job
-                    print(f"[JOB] Job Object criado (KILL_ON_JOB_CLOSE), assigned={bool(assigned)}")
-                else:
-                    print(f"[JOB] SetInformationJobObject falhou: err={_ct.get_last_error()}")
-            else:
-                print(f"[JOB] CreateJobObjectW falhou: err={_ct.get_last_error()}")
-        except Exception as _je:
-            print(f"[JOB] Falha ao configurar Job Object: {_je}")
+    try:
+        from jarvis.platform import processes as _plat_processes
+        _plat_processes().install_child_cleanup()
+    except Exception as _je:
+        print(f"[JOB] Falha ao configurar limpeza de filhos: {_je}")
 
     try:
         app = JarvisApp()

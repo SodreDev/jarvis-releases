@@ -16,8 +16,6 @@ import pytest
 
 from tests.golden.legacy_1c32e38 import legacy_job_object
 
-pytestmark = pytest.mark.xfail(strict=True, reason="F1-14")
-
 
 class _FakeWinFunc:
     """Uma "função" de DLL falsa: chamável, com `.restype`/`.argtypes`

@@ -178,9 +178,9 @@ hidden = [
     'jarvis.platform.protocols', 'jarvis.platform.common', 'jarvis.platform.common.base',
     'jarvis.platform.common.unavailable',
     'jarvis.platform.windows', 'jarvis.platform.windows.paths',
-    'jarvis.platform.windows.webview_engine',
+    'jarvis.platform.windows.webview_engine', 'jarvis.platform.windows.processes',
     'jarvis.platform.linux', 'jarvis.platform.linux.paths', 'jarvis.platform.linux.xdg',
-    'jarvis.platform.linux.webview_engine',
+    'jarvis.platform.linux.webview_engine', 'jarvis.platform.linux.processes',
     # tomli (fallback se tomllib stdlib não estiver presente; >=3.11 tem)
     'tomllib',
     # ── Fases 2026: painel, documentos, updater ──────────────────────────
