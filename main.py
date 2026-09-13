@@ -12723,7 +12723,7 @@ class JarvisApp:
             proc = subprocess.Popen(
                 ff_args, stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             self._tts_process = proc
             got_end = False

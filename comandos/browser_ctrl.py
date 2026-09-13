@@ -352,14 +352,8 @@ def abrir_url_padrao(url: str = "") -> bool:
             # desacopla console e sinais.
             CREATE_BREAKAWAY_FROM_JOB = 0x01000000
             flags = CREATE_BREAKAWAY_FROM_JOB
-            try:
-                flags |= _sp.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-            except Exception:
-                pass
-            try:
-                flags |= _sp.DETACHED_PROCESS  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            flags |= getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0)  # 0 fora do Windows
+            flags |= getattr(_sp, "DETACHED_PROCESS", 0)          # 0 fora do Windows
             p = _sp.Popen(args, close_fds=True, creationflags=flags)
             _diag(f"Popen OK pid={p.pid} flags=0x{flags:08x} → return True")
             return True
