@@ -44,7 +44,6 @@ class FakeWinreg:
         return key._values[name], 1  # tipo REG_SZ arbitrário
 
 
-@pytest.mark.xfail(strict=True, reason="F1-15")
 def test_refresh_path_matches_oracle_both_hives_present():
     from jarvis.platform.windows.env import refresh_path_from_registry
 
@@ -62,7 +61,6 @@ def test_refresh_path_matches_oracle_both_hives_present():
     assert "" not in set(result)
 
 
-@pytest.mark.xfail(strict=True, reason="F1-15")
 def test_refresh_path_matches_oracle_one_hive_missing():
     from jarvis.platform.windows.env import refresh_path_from_registry
 

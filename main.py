@@ -115,22 +115,10 @@ _atexit.register(_on_exit)
 
 
 # ── Garante PATH completo no Windows (ffplay via winget) ─────────────────────
-if sys.platform == "win32":
-    import winreg
-    def _ler_path_windows():
-        caminhos = set(os.environ.get("PATH", "").split(";"))
-        for hive, scope in [
-            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
-            (winreg.HKEY_CURRENT_USER, r"Environment"),
-        ]:
-            try:
-                with winreg.OpenKey(hive, scope) as k:
-                    val, _ = winreg.QueryValueEx(k, "Path")
-                    caminhos.update(val.split(";"))
-            except Exception:
-                pass
-        os.environ["PATH"] = ";".join(filter(None, caminhos))
-    _ler_path_windows()
+from jarvis.platform import current as _plat_current
+if _plat_current().is_windows:
+    from jarvis.platform.windows.env import refresh_path_from_registry as _refresh_path
+    _refresh_path()
 
 import numpy as np
 try:

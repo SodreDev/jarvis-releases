@@ -61,6 +61,7 @@ if False:                                # pragma: no cover  # noqa: SIM108
     import jarvis.platform.windows.paths  # noqa: F401, E402
     import jarvis.platform.windows.webview_engine  # noqa: F401, E402
     import jarvis.platform.windows.processes  # noqa: F401, E402
+    import jarvis.platform.windows.env  # noqa: F401, E402
     import jarvis.platform.linux.paths   # noqa: F401, E402
     import jarvis.platform.linux.xdg     # noqa: F401, E402
     import jarvis.platform.linux.webview_engine  # noqa: F401, E402
