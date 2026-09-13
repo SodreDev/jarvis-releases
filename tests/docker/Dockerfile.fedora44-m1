@@ -1,12 +1,14 @@
 # Imagem DERIVADA para o marco M1 (smoke boot N2/N3): reaproveita o
-# /app/.venv-linux já instalado em localhost/jarvis-fedora44:latest (o
-# rebuild completo do zero está quebrado agora por causa do instagrapi
-# resolvendo para uma versão com sdist quebrado quando junto com
-# --extra-index-url -- ver Dockerfile.fedora44, corrigir depois).
+# /app/.venv-linux já instalado em localhost/jarvis-fedora44:latest (build
+# completo já corrigido em Dockerfile.fedora44, mas rebuildar do zero leva
+# ~15-20 min; esta imagem sobrescreve só o código, em segundos).
 #
-# Só adiciona a lib de sistema que faltava (libXtst) e sobrescreve o
-# código com uma cópia via `git archive` (preserva .venv-linux, que não
-# está versionado e por isso não é tocado pelo COPY).
+# Acrescenta libwayland-cursor (achado no N3: plugin libqwayland-generic.so
+# da PySide6 precisa dela) — as libs xcb já estão no Dockerfile.fedora44
+# base agora, mas repetidas aqui para o caso de rodar M1 sobre uma imagem
+# base antiga (sem rebuild). Sobrescreve o código com uma cópia via
+# `git archive` (preserva .venv-linux, que não está versionado e por isso
+# não é tocado pelo COPY).
 FROM localhost/jarvis-fedora44:latest
 
 RUN dnf -y install \
@@ -15,6 +17,7 @@ RUN dnf -y install \
         libxkbcommon-x11 \
         xcb-util-wm \
         xcb-util-keysyms \
+        libwayland-cursor \
     && dnf clean all
 
 COPY . /app/
