@@ -32,6 +32,10 @@
 | [10](10-geracao-documentos.md) | Geração visual: PDF/DOCX/PPTX/XLSX | Nada — feature nova | 🟡 Média |
 | [11](11-leitura-interpretacao-docs.md) | Leitura/interpretação de documentos | `pdf_ctrl.py` extrai texto; sem layout/imagens | 🟡 Média |
 | [12](12-config-instalador-toggles.md) | Config padrão para instalador | `config.py` mistura segredos + flags | 🔴 Alta (bloqueante p/ distribuir) |
+| [13](13-cerebro-agentico-tool-calling.md) | Cérebro agêntico & tool-calling (acerto com modelo barato) | Loop existe (`_pensar_e_agir`) mas estrangulado por filtro de tools, sem histórico e sem paralelo real | 🔴 Alta — em execução (Fase 1) |
+| [14](14-memoria-semantica-cognicao.md) | Memória vetorial em RAM + orquestrador semântico + contexto adaptativo + cognição humana | Fases 1-4 implementadas (memória/triagem/compactação OFF) — resto por fases | 🟡 Média (em execução) |
+| [15](15-orquestrador-multiagente.md) | Orquestrador multi-agente (4 tiers) + sub-agentes (= TOOL_LAYERS) + identidade read-only + "JARVIS modelo próprio" | Fase 3 FEITA (roteador de domínio + escopo de tools); demais em design | 🟡 Média (Fase 3 entregue) |
+| [16](16-agente-que-raciocina.md) | Agente que RACIOCINA (anti-automação): prompt agêntico + memória de artefato + raciocínio visível + decomposição | Baseado em projetos reais (OpenHands/Goose/Cline/Hermes/OpenClaw); prompt+last_artifact FEITOS, resto por fases | 🔴 Alta — em execução |
 
 ---
 

@@ -2,7 +2,7 @@
     "ws_port": 6589,
     "projects": [
         {
-            "path": "b:\\GranaFacil\\J.A.R.V.I.S",
+            "path": ".",
             "name": "J.A.R.V.I.S",
             "language": "Python",
             "description": "Assistente IA pessoal com controle por voz"

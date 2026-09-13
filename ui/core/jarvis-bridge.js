@@ -239,6 +239,32 @@ function appendContinue(text) {
   }
 }
 
+/* ── Preload do histórico no chat ───────────────────────────────────────────
+   O #chat-area abre vazio a cada boot/reload de UI; aqui pré-carregamos as
+   últimas trocas persistidas (data/memoria_jarvis.jsonl via list_history) pra
+   dar continuidade visual. Não sobrescreve mensagens vivas já chegadas. */
+function _preloadChat() {
+  const area = _qs('chat-area');
+  if (!area || area.dataset.preloaded) return;
+  area.dataset.preloaded = '1';
+  try {
+    pyApiAsync('list_history', 14).then(r => {
+      if (!r || !r.ok) return;
+      const items = r.items || [];
+      if (!items.length || area.children.length) return;
+      items.forEach(it => {
+        const role = String(it.role || '').toLowerCase();
+        const txt = it.text || it.content || '';
+        if (!txt) return;
+        const isU = role === 'user' || role === 'senhor' || role === 'você' || role === 'voce';
+        addMessage(isU ? 'Você' : 'JARVIS', txt, isU ? 'user' : 'jarvis');
+      });
+      _scrollBottom('chat-area');
+    }).catch(() => {});
+  } catch (_) {}
+}
+window._preloadChat = _preloadChat;
+
 /* ── LOG ─────────────────────────────────────────────────────────────────── */
 function addLogEntry(text) {
   const area = _qs('log-area');
@@ -421,11 +447,13 @@ const _DRAWER_CSS = `
   color: #8e96a8; cursor: pointer; font-size: 16px;
   display: flex; align-items: center; justify-content: center; transition: all .2s; }
 .jb-drawer-x:hover { color: #ff6b9e; border-color: rgba(255,107,158,0.4); }
-#jb-drawer-tabs { display: flex; gap: 6px; padding: 14px 18px 16px;
+#jb-drawer-tabs { display: flex; gap: 6px; padding: 14px 18px 10px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
-  overflow-x: auto; scrollbar-width: none; }
-#jb-drawer-tabs::-webkit-scrollbar { display: none; }
-.jb-tab { padding: 9px 14px; background: rgba(255,255,255,0.04);
+  overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(90,216,255,0.35) transparent; }
+#jb-drawer-tabs::-webkit-scrollbar { height: 6px; }
+#jb-drawer-tabs::-webkit-scrollbar-thumb { background: rgba(90,216,255,0.30); border-radius: 3px; }
+#jb-drawer-tabs::-webkit-scrollbar-track { background: transparent; }
+.jb-tab { flex-shrink: 0; padding: 9px 14px; background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
   color: #b6bdcc; cursor: pointer; font-size: 12px; font-weight: 600;
   letter-spacing: .3px; border-radius: 10px;
@@ -570,6 +598,7 @@ function _ensureDrawer() {
         <button class="jb-tab active" data-tab="setup"   onclick="_switchTab('setup')">${_IC.key}Setup</button>
         <button class="jb-tab"        data-tab="audio"   onclick="_switchTab('audio')">${_IC.mic}Áudio</button>
         <button class="jb-tab"        data-tab="models"  onclick="_switchTab('models')">${_IC.brain}Modelos</button>
+        <button class="jb-tab"        data-tab="cerebro" onclick="_switchTab('cerebro')">🧠 Cérebro</button>
         <button class="jb-tab"        data-tab="msg"     onclick="_switchTab('msg')">💬 Mensageria</button>
         <button class="jb-tab"        data-tab="people"  onclick="_switchTab('people')">👥 Pessoas</button>
         <button class="jb-tab"        data-tab="theme"   onclick="_switchTab('theme')">${_IC.palette}Aparência</button>
@@ -591,12 +620,16 @@ function closeSettings() {
   const d = _qs('jb-drawer'); if (d) d.classList.remove('open');
 }
 function _switchTab(name) {
+  // Se a config full-screen do macOS está montada (rail, fora do modal),
+  // roteia a navegação interna dos renderers pra ela em vez do drawer oculto.
+  if (document.getElementById('mac-cfg-body')) { _macCfgGo(name); return; }
   document.querySelectorAll('#jb-drawer-tabs .jb-tab').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === name));
   const body = _qs('jb-drawer-body');
   if (!body) return;
   body.innerHTML = '<div class="jb-empty">Carregando…</div>';
   ({setup:_renderSetup, audio:_renderAudio, models:_renderModels,
+    cerebro:_renderCerebro,
     theme:_renderTheme, alarmes:_renderAlarmes, history:_renderHistory,
     msg:_renderMessaging,
     people:_renderPeople,
@@ -706,16 +739,52 @@ function _renderModels(body) {
                  + '<select class="jb-select" id="jb-prov-sel">'
                  + '<option value="groq">Groq (nuvem — recomendado)</option>'
                  + '<option value="lmstudio">LM Studio (local — sem internet)</option>'
+                 + '<option value="openrouter">OpenRouter (nuvem — modelos grátis/baratos)</option>'
                  + '</select></div>'
                  + '<div class="jb-row"><label>Modelo Groq (chat)</label><select class="jb-select" id="jb-groq-sel"><option>Carregando…</option></select></div>'
+                 + '<div id="jb-or-box" style="display:none">'
+                 +   '<p style="margin:2px 0 6px;font-size:11px;color:#8e96a8">Padrão: <code>openrouter/auto</code> — sua conta escolhe o melhor modelo por request (com fallback automático se algum falhar).</p>'
+                 +   '<div class="jb-row"><label><input type="checkbox" id="jb-or-specify" style="margin-right:8px">Especificar modelos manualmente</label></div>'
+                 +   '<div id="jb-or-specbox" style="display:none">'
+                 +     '<div class="jb-row"><label>OpenRouter — pensar</label><input class="jb-input" id="jb-or-thinking" placeholder="ex: deepseek/deepseek-v4-flash"></div>'
+                 +     '<div class="jb-row"><label>OpenRouter — arquivos</label><input class="jb-input" id="jb-or-files" placeholder="ex: qwen/qwen3-next-80b-a3b-instruct:free"></div>'
+                 +     '<p style="margin:2px 0 8px;font-size:11px;color:#8e96a8">Se o modelo específico falhar, cai automaticamente no <code>openrouter/auto</code> → Groq.</p>'
+                 +   '</div>'
+                 +   '<div class="jb-row"><label>Gerador de imagem</label>'
+                 +   '<select class="jb-select" id="jb-img-provider">'
+                 +   '<option value="auto">Auto (OpenRouter → Pollinations)</option>'
+                 +   '<option value="openrouter">OpenRouter (modelo pago)</option>'
+                 +   '<option value="pollinations">Pollinations (grátis)</option>'
+                 +   '</select></div>'
+                 +   '<div class="jb-row"><label>OpenRouter — modelo de imagem</label><input class="jb-input" id="jb-or-imgrender" placeholder="bytedance-seed/seedream-4.5 (≈US$0,04) ou x-ai/grok-imagine-image-quality:free"></div>'
+                 +   '<p id="jb-or-keyhint" style="margin:2px 0 4px;font-size:11.5px"></p>'
+                 +   '<p style="margin:0 0 8px;font-size:11px;color:#8e96a8">Pollinations grátis: pegue um token Seed (auth.pollinations.ai) e defina <code>POLLINATIONS_TOKEN</code> no .env para evitar 429.</p>'
+                 + '</div>'
+                 + '<div class="jb-section-title" style="margin-top:14px">Cérebro (tool-calling)</div>'
+                 + '<div class="jb-row"><label><input type="checkbox" id="jb-agent-total" style="margin-right:8px">Cérebro total — máxima acertividade (LLM sempre raciocina sobre o contexto; todas as tools + histórico)</label></div>'
+                 + '<div class="jb-row"><label>Seleção de ferramentas</label>'
+                 + '<select class="jb-select" id="jb-agent-mode">'
+                 + '<option value="keyword">Por palavra-chave (atual)</option>'
+                 + '<option value="layered">Por camadas (recomendado)</option>'
+                 + '<option value="all">Todas (máximo acerto, + tokens)</option>'
+                 + '</select></div>'
+                 + '<div class="jb-row"><label><input type="checkbox" id="jb-agent-hist" style="margin-right:8px">Usar histórico recente (entende "manda pra ele")</label></div>'
+                 + '<div class="jb-row"><label><input type="checkbox" id="jb-agent-par" style="margin-right:8px">Chamar várias ferramentas por vez (paralelo)</label></div>'
+                 + '<div class="jb-row"><label><input type="checkbox" id="jb-agent-strict" style="margin-right:8px">Schema estrito (argumentos sempre válidos)</label></div>'
+                 + '<div class="jb-row"><label><input type="checkbox" id="jb-agent-deck" style="margin-right:8px">Apresentações novas (spec→render, mais bonitas)</label></div>'
+                 + '<div class="jb-section-title" style="margin-top:14px">Geral</div>'
                  + '<div class="jb-row"><label>Cidade (clima)</label><input class="jb-input" id="jb-city" placeholder="ex: São Paulo"></div>'
                  + '<div class="jb-row"><label><input type="checkbox" id="jb-notif-speak" style="margin-right:8px">Falar notificações automaticamente</label></div>'
                  + '<button class="jb-btn jb-btn-pri" onclick="_saveModels(this)">Salvar</button>'
                  + '<span class="jb-saved" id="jb-models-saved">'+_IC.check+'Salvo</span>'
   Promise.all([pyApiAsync('list_groq_models'), pyApiAsync('get_models_pref')]).then(([gm, pref]) => {
     window._curModels = (pref && pref.models) || {};
+    window._curAgent  = (pref && pref.agent)  || {};
     const ps = _qs('jb-prov-sel');
-    if (ps) ps.value = (window._curModels.llm_provider || pref?.llm_provider || 'groq');
+    if (ps) {
+      ps.value = (window._curModels.llm_provider || pref?.provider_active || 'groq');
+      ps.onchange = _toggleOrBox;
+    }
     const sel = _qs('jb-groq-sel');
     if (sel) {
       const list = (gm && gm.ok && gm.models) || [];
@@ -724,19 +793,64 @@ function _renderModels(body) {
         ? list.map(m => `<option value="${escHtml(m.id||m)}" ${(m.id||m)===cur?'selected':''}>${escHtml(m.id||m)}</option>`).join('')
         : `<option value="${escHtml(cur)}">${escHtml(cur || 'sem chave Groq')}</option>`;
     }
+    const ord = (pref && pref.openrouter_defaults) || {};
+    const setv = (id, v) => { const e = _qs(id); if (e) e.value = v || ''; };
+    setv('jb-or-thinking',  window._curModels.openrouter_thinking || '');
+    setv('jb-or-files',     window._curModels.openrouter_files    || '');
+    setv('jb-or-imgrender', window._curModels.openrouter_image_render || ord.image_render || '');
+    const ipv = _qs('jb-img-provider'); if (ipv) ipv.value = window._curModels.image_provider || 'auto';
+    const spc = _qs('jb-or-specify'); if (spc) { spc.checked = !!window._curModels.openrouter_specify; spc.onchange = _toggleSpecBox; }
+    _toggleSpecBox();
+    const kh = _qs('jb-or-keyhint');
+    if (kh) {
+      const ok = pref && pref.openrouter_key_set;
+      kh.textContent = ok ? '✓ Chave OpenRouter configurada.' : '⚠ Defina a OpenRouter API Key na aba Setup para usar este provider.';
+      kh.style.color = ok ? '#5ad88f' : '#ffb454';
+    }
+    const atot = _qs('jb-agent-total'); if (atot) atot.checked = (window._curAgent.brain_mode === 'total');
+    const am = _qs('jb-agent-mode'); if (am) am.value = window._curAgent.tool_select_mode || 'keyword';
+    const ah = _qs('jb-agent-hist'); if (ah) ah.checked = !!window._curAgent.include_history;
+    const ap = _qs('jb-agent-par');  if (ap) ap.checked = !!window._curAgent.parallel_tools;
+    const ast = _qs('jb-agent-strict'); if (ast) ast.checked = !!window._curAgent.strict_tools;
+    const adk = _qs('jb-agent-deck'); if (adk) adk.checked = !!window._curAgent.deck_v2;
     const c = _qs('jb-city');         if (c && pref) c.value = pref.user_city || '';
     const n = _qs('jb-notif-speak');  if (n && pref) n.checked = !!pref.notif_auto_speak;
+    _toggleOrBox();
   });
+}
+function _toggleOrBox() {
+  const ps = _qs('jb-prov-sel'); const box = _qs('jb-or-box');
+  if (box) box.style.display = (ps && ps.value === 'openrouter') ? 'block' : 'none';
+}
+function _toggleSpecBox() {
+  const cb = _qs('jb-or-specify'); const box = _qs('jb-or-specbox');
+  if (box) box.style.display = (cb && cb.checked) ? 'block' : 'none';
 }
 function _saveModels(btn) {
   const groq = _qs('jb-groq-sel')?.value || '';
   const prov = _qs('jb-prov-sel')?.value || 'groq';
   const city = _qs('jb-city')?.value || '';
   const speak = _qs('jb-notif-speak')?.checked || false;
+  const orT = (_qs('jb-or-thinking')?.value || '').trim();
+  const orF = (_qs('jb-or-files')?.value || '').trim();
+  const orImg = (_qs('jb-or-imgrender')?.value || '').trim();
+  const imgProv = _qs('jb-img-provider')?.value || 'auto';
+  const orSpec = _qs('jb-or-specify')?.checked || false;
   // Preserva os outros campos do dict de modelos pra não apagar chat_lm/vision/etc
-  const merged = Object.assign({}, window._curModels || {}, {chat_groq: groq, llm_provider: prov});
+  const merged = Object.assign({}, window._curModels || {}, {chat_groq: groq, llm_provider: prov, image_provider: imgProv, openrouter_specify: orSpec});
+  if (orT) merged.openrouter_thinking = orT;
+  if (orF) merged.openrouter_files = orF;
+  if (orImg) merged.openrouter_image_render = orImg;
+  const agent = {
+    brain_mode:       _qs('jb-agent-total')?.checked ? 'total' : 'fast',
+    tool_select_mode: _qs('jb-agent-mode')?.value || 'keyword',
+    include_history:  _qs('jb-agent-hist')?.checked || false,
+    parallel_tools:   _qs('jb-agent-par')?.checked || false,
+    strict_tools:     _qs('jb-agent-strict')?.checked || false,
+    deck_v2:          _qs('jb-agent-deck')?.checked || false,
+  };
   btn.disabled = true; btn.textContent = '…';
-  pyApiAsync('apply_models', merged, city, speak).then(_=>{
+  pyApiAsync('apply_models', merged, city, speak, agent).then(_=>{
     btn.disabled = false; btn.textContent = 'Salvar';
     const s = _qs('jb-models-saved'); if (s) { s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2000); }
   });
@@ -866,6 +980,98 @@ function _renderControl(key, def, val) {
   }
   // default: str
   return `<input type="text" class="jb-input" data-cfg-key="${key}" data-cfg-type="str" value="${escHtml(String(safeVal))}">`;
+}
+
+/* ── Tab: Cérebro (orquestrador + modelo alternativo + memória) ──────────── */
+function _renderCerebro(body) {
+  body.innerHTML = `
+    <div class="jb-section-title">Orquestrador & modelo alternativo</div>
+    <p style="margin:2px 0 10px;font-size:11.5px;color:#8e96a8;line-height:1.5">
+      Roteamento das ferramentas por <b>significado</b> e uso de um <b>modelo local alternativo (Nila)</b>
+      como roteador, quando presente. OFF por padrão — cai no MiniLM/API se faltar.</p>
+    <div class="jb-row"><label>Modo do cérebro <span id="jb-brain-mode-status" style="font-size:11px;color:#5ad88f"></span></label>
+      <select class="jb-select" id="jb-brain-mode">
+        <option value="layered">Por camadas — recomendado (filtra ~8 tools por significado, menos tokens)</option>
+        <option value="keyword">Por palavra-chave (filtro simples)</option>
+        <option value="all">Todas as tools (sem filtro, + tokens)</option>
+        <option value="total">Total (todas as tools + histórico, máx. acerto e tokens)</option>
+      </select></div>
+    <div style="font-size:10.5px;color:#8e96a8;margin:-4px 0 12px 0">Salva na hora, sem botão. "Por camadas" usa o filtro semântico calibrado; "Total" manda tudo (custo alto).</div>
+    <div id="jb-cer-cfg"></div>
+    <div class="jb-section-title" style="margin-top:18px">Memória (cérebro)
+      <span style="font-weight:400;color:#8e96a8;font-size:11px">· visão enxuta — o completo está no Painel Global</span></div>
+    <div style="display:flex;gap:10px;min-height:200px">
+      <div id="jb-cer-layers" style="width:48%;max-height:330px;overflow-y:auto"></div>
+      <div id="jb-cer-content" style="flex:1;max-height:330px;overflow-y:auto;border-left:1px solid rgba(255,255,255,0.08);padding-left:12px;font-size:12px;line-height:1.6;color:#cfd6e4">
+        <div style="opacity:.5;padding-top:30px;text-align:center">Clique numa camada para ver o conteúdo.</div>
+      </div>
+    </div>`;
+  // ── toggles (set_setting, salvam na hora) ──
+  const cfg = _qs('jb-cer-cfg');
+  const TGL = [
+    ['SKILL_MEMORY_ENABLED', 'bool', 'Roteamento semântico de instruções', 'Recupera só as ~8 ferramentas relevantes por significado em vez de mandar todas — reduz tokens e mata o erro 413.'],
+    ['MODELO_LOCAL_ENABLED', 'bool', 'Modelo local alternativo (Nila) como roteador', 'Usa o modelo da pasta abaixo se presente; senão cai no MiniLM/API.'],
+    ['MODELO_LOCAL_DIR', 'str', 'Pasta do modelo local (Nila)', 'Caminho da pasta com o binário + .safetensors. VAZIO = autodetect (env JARVIS_MODELO_DIR / pasta padrão). Ex.: B:\\GranaFacil\\testes\\nila_mind_para_amigos_10m'],
+    ['MODELO_LOCAL_THREADS', 'int', 'Threads de CPU do modelo local', '6–8 recomendado (CPU intensa só no treino).'],
+  ];
+  cfg.innerHTML = TGL.map(([k, t, lbl, help]) => {
+    const status = `<span id="jb-cfg-status-${k}" style="font-size:11px"></span>`;
+    const hint = `<div style="font-size:10.5px;color:#8e96a8;margin:-4px 0 8px ${t === 'bool' ? '24px' : '0'}">${escHtml(help)}</div>`;
+    if (t === 'bool')
+      return `<div class="jb-row"><label><input type="checkbox" data-cfg-key="${k}" data-cfg-type="bool" style="margin-right:8px">${escHtml(lbl)}</label>${status}</div>${hint}`;
+    if (t === 'int')
+      return `<div class="jb-row"><label>${escHtml(lbl)}</label><input class="jb-input mono" style="max-width:90px" type="number" min="1" max="16" data-cfg-key="${k}" data-cfg-type="int">${status}</div>${hint}`;
+    // str (ex.: pasta do modelo) — campo de texto largo
+    return `<div style="margin:4px 0 2px"><label style="font-size:12.5px">${escHtml(lbl)}</label> ${status}</div><input class="jb-input mono" style="width:100%;margin-bottom:2px" type="text" placeholder="vazio = autodetect" data-cfg-key="${k}" data-cfg-type="str">${hint}`;
+  }).join('');
+  pyApiAsync('get_settings').then(rv => {
+    const s = (rv && rv.ok) ? (rv.settings || {}) : (rv || {});
+    cfg.querySelectorAll('[data-cfg-key]').forEach(el => {
+      const k = el.dataset.cfgKey;
+      if (k in s) { if (el.type === 'checkbox') el.checked = !!s[k]; else el.value = s[k]; }
+      el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => _onCfgFieldChange(el));
+    });
+  });
+  // ── Modo do cérebro (escreve na seção 'agent' — canônica, lida no boot) ──
+  const _bm = _qs('jb-brain-mode');
+  if (_bm) {
+    pyApiAsync('get_brain_mode').then(r => { if (r && r.mode) _bm.value = r.mode; });
+    _bm.addEventListener('change', () => {
+      const _st = _qs('jb-brain-mode-status');
+      if (_st) _st.textContent = '…';
+      pyApiAsync('set_brain_mode', _bm.value).then(r => {
+        if (_st) { _st.textContent = (r && r.ok) ? '✓ salvo' : '✗ ' + ((r && r.msg) || 'erro'); setTimeout(() => { _st.textContent = ''; }, 2000); }
+      });
+    });
+  }
+  // ── visualização da memória (cérebro + conteúdo) ──
+  const layersEl = _qs('jb-cer-layers');
+  const contentEl = _qs('jb-cer-content');
+  const showItems = (lay) => {
+    const items = [];
+    (lay.subs || []).forEach(sub => (sub.items || []).forEach(it => items.push(Object.assign({ _sub: sub.name }, it))));
+    (lay.items || []).forEach(it => items.push(it));
+    let html = `<div style="color:${lay.color};font-weight:600;margin-bottom:3px">${escHtml(lay.icon)} ${escHtml(lay.name)} · ${items.length}</div>`
+      + `<div style="font-size:11px;color:#8e96a8;margin-bottom:10px">${escHtml(lay.purpose)}</div>`;
+    html += items.length
+      ? items.map(it => `<div style="border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:7px 9px;margin-bottom:6px">${it._sub ? `<div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#8e96a8;margin-bottom:2px">${escHtml(it._sub)}</div>` : ''}<div style="white-space:pre-wrap;word-break:break-word;font-size:11.5px">${escHtml(it.text)}</div></div>`).join('')
+      : '<div style="opacity:.5">(camada vazia ainda)</div>';
+    contentEl.innerHTML = html;
+  };
+  pyApiAsync('get_brain').then(d => {
+    const lays = (d && d.layers) || [];
+    if (!lays.length) { layersEl.innerHTML = '<div style="opacity:.5;font-size:12px">Sem memórias ainda.</div>'; return; }
+    layersEl.innerHTML = '';
+    lays.forEach(lay => {
+      const card = document.createElement('div');
+      card.style.cssText = `border:1px solid rgba(255,255,255,0.08);border-left:3px solid ${lay.color};border-radius:7px;padding:8px 10px;margin-bottom:6px;cursor:pointer`;
+      card.onmouseenter = () => card.style.background = 'rgba(90,216,255,0.05)';
+      card.onmouseleave = () => card.style.background = 'transparent';
+      card.innerHTML = `<div style="display:flex;align-items:center;gap:6px"><span>${escHtml(lay.icon)}</span><span style="font-weight:600;font-size:12px">${escHtml(lay.name)}</span><span style="margin-left:auto;font-size:10px;color:#8e96a8">${lay.count}</span></div><div style="font-size:10px;color:#8e96a8;margin-top:3px;line-height:1.3">${escHtml(lay.desc)}</div>`;
+      card.onclick = () => showItems(lay);
+      layersEl.appendChild(card);
+    });
+  }).catch(err => { if (layersEl) layersEl.innerHTML = '<div style="opacity:.5">erro: ' + escHtml(String(err)) + '</div>'; });
 }
 
 function _renderAllConfigs(body) {
@@ -1324,6 +1530,13 @@ const _MAC_CSS = `
 .mac-page-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; color: var(--txt); }
 .mac-page-sub { font-size: 12px; color: var(--txt-mute); margin-top: 4px; }
 .mac-page .card { padding: 22px; }
+.mac-cfg-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 4px 16px; }
+.mac-cfg-pill { padding: 8px 16px; background: var(--glass-2); border: 1px solid var(--stroke);
+  border-radius: 10px; color: var(--txt-mute); font-size: 12.5px; font-weight: 600;
+  font-family: inherit; cursor: pointer; transition: all .18s; white-space: nowrap; }
+.mac-cfg-pill:hover { border-color: var(--cyan); color: var(--txt); transform: translateY(-1px); }
+.mac-cfg-pill.active { background: linear-gradient(135deg, rgba(90,216,255,0.18), rgba(167,139,250,0.14));
+  border-color: var(--cyan); color: var(--txt); box-shadow: 0 0 0 3px rgba(90,216,255,0.08); }
 .mac-list { display: flex; flex-direction: column; gap: 10px; }
 .mac-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px;
   background: var(--glass-2); border: 1px solid var(--stroke); border-radius: 14px;
@@ -1408,16 +1621,18 @@ function _ensureMacCSS() {
   document.head.appendChild(st);
 }
 
-function macosNav(page) {
-  if (!_isMacOS()) { openSettings(page); return; }
+function macosNav(page, sub) {
+  if (!_isMacOS()) { openSettings(page === 'cerebro' ? 'cerebro' : (sub || page)); return; }
   _ensureMacCSS();
   const main = document.getElementById('main');
   if (!main) return;
   if (_macDashHTML === null) _macDashHTML = main.innerHTML;
 
-  // Marca rail-btn ativo
+  // Marca rail-btn ativo (ordem real do rail: 1 Dashboard · 2 Histórico ·
+  // 3 Alarmes · 4 Áudio · 5 Setup · 6 Cérebro · 7 Tema · 8 Config)
   document.querySelectorAll('#rail .rail-btn').forEach(b => b.classList.remove('active'));
-  const idx = {dashboard:1, history:2, alarmes:3, audio:4, setup:5, theme:6}[page];
+  const idx = {dashboard:1, history:2, alarmes:3, audio:4, setup:5,
+               cerebro:6, theme:7, config:8}[page];
   if (idx) {
     const btns = document.querySelectorAll('#rail .rail-btn');
     if (btns[idx-1]) btns[idx-1].classList.add('active');
@@ -1430,6 +1645,10 @@ function macosNav(page) {
   }
   main.innerHTML = `<div class="mac-page" id="mac-page-root"><div class="mac-page-head"><div><div class="mac-page-title">Carregando…</div></div></div></div>`;
   const root = document.getElementById('mac-page-root');
+  if (page === 'config' || page === 'cerebro') {
+    _macPageConfig(root, page === 'cerebro' ? 'cerebro' : sub);
+    return;
+  }
   ({history:_macPageHistory, alarmes:_macPageAlarmes, audio:_macPageAudio,
     setup:_macPageSetup, theme:_macPageTheme}[page] || _macPageHistory)(root);
 }
@@ -1514,6 +1733,58 @@ function _macPageAudio(root) {
   card.innerHTML = '<div id="mac-audio-inner"></div>';
   const body = document.getElementById('mac-audio-inner');
   try { _renderAudio(body); } catch(e) { card.innerHTML = '<div class="mac-empty">Erro: '+escHtml(String(e))+'</div>'; }
+}
+
+/* ── Página: Configurações (full-screen no rail, FORA do modal) ─────────────
+   Reaproveita os renderers do drawer (_renderModels/_renderCerebro/…) dentro
+   de uma .mac-page com sub-nav. `_ensureDrawer()` injeta só o CSS `.jb-*`
+   (global) — o drawer em si fica oculto, nunca é aberto. */
+const _MAC_CFG_SECTIONS = [
+  {key:'all',     label:'Geral'},
+  {key:'models',  label:'Modelos'},
+  {key:'cerebro', label:'Cérebro'},
+  {key:'msg',     label:'Mensageria'},
+  {key:'people',  label:'Pessoas'},
+  {key:'audio',   label:'Áudio'},
+  {key:'setup',   label:'Chaves API'},
+  {key:'theme',   label:'Aparência'},
+];
+let _macCfgSection = 'all';
+function _macPageConfig(root, section) {
+  _ensureDrawer(); // garante CSS .jb-* (drawer permanece oculto)
+  section = section || _macCfgSection || 'all';
+  if (!_MAC_CFG_SECTIONS.some(s => s.key === section)) section = 'all';
+  _macCfgSection = section;
+  const pills = _MAC_CFG_SECTIONS.map(s =>
+    `<button class="mac-cfg-pill${s.key===section?' active':''}" data-cfg="${s.key}" onclick="_macCfgGo('${s.key}')">${escHtml(s.label)}</button>`
+  ).join('');
+  root.innerHTML = `
+    <div class="mac-page-head">
+      <div>
+        <div class="mac-page-title">Configurações</div>
+        <div class="mac-page-sub">Cérebro, modelos, mensageria e ajustes — em tela cheia, fora do modal.</div>
+      </div>
+    </div>
+    <div class="mac-cfg-nav">${pills}</div>
+    <div class="card"><div id="mac-cfg-body"><div class="mac-empty">Carregando…</div></div></div>`;
+  _macCfgRender(section);
+}
+function _macCfgGo(key) {
+  if (!_MAC_CFG_SECTIONS.some(s => s.key === key)) key = 'all';
+  _macCfgSection = key;
+  document.querySelectorAll('#mac-page-root .mac-cfg-pill').forEach(b =>
+    b.classList.toggle('active', b.dataset.cfg === key));
+  _macCfgRender(key);
+}
+window._macCfgGo = _macCfgGo;
+function _macCfgRender(key) {
+  const body = _qs('mac-cfg-body'); if (!body) return;
+  body.innerHTML = '<div class="mac-empty">Carregando…</div>';
+  const map = {all:_renderAllConfigs, models:_renderModels, cerebro:_renderCerebro,
+    msg:_renderMessaging, people:_renderPeople, audio:_renderAudio,
+    setup:_renderSetup, theme:_renderTheme};
+  try { (map[key] || _renderAllConfigs)(body); }
+  catch (e) { body.innerHTML = '<div class="mac-empty">Erro ao renderizar: '+escHtml(String(e))+'</div>'; }
 }
 
 function _macPageSetup(root) {
@@ -1729,6 +2000,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function _waitAndCheck() {
     if (window.pywebview && window.pywebview.api && window.pywebview.api.get_setup_status) {
       checkSetupStatus();
+      _preloadChat();
     } else if (tries++ < 40) {
       setTimeout(_waitAndCheck, 100);
     }

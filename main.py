@@ -155,7 +155,7 @@ except Exception as _e_mig:
 from config import (
     LMSTUDIO_BASE_URL, LMSTUDIO_MODEL, LMSTUDIO_VISION_MODEL,
     SYSTEM_PROMPT, CLASSIFY_PROMPT, RESEARCH_PROMPT,
-    GROQ_API_KEY, GROQ_MODELO_CHAT, GROQ_MODELO_CLS, GROQ_VISION_MODEL,
+    GROQ_API_KEY, GROQ_MODELO_CHAT, GROQ_MODELO_CLS, GROQ_MODELO_TOOLS, GROQ_VISION_MODEL,
     LLM_PROVIDER,
     VOZ_EDGE, VOZ_EDGE_EN, VOZ_RATE, VOZ_PITCH,
     SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI,
@@ -1640,23 +1640,42 @@ class JarvisApi:
             return {"ok": False, "available": False, "msg": f"erro: {e}"}
 
     def get_models_pref(self):
-        """Retorna preferências atuais de modelos (cidade, notif, etc)."""
+        """Retorna preferências atuais de modelos (cidade, notif, agente, etc)."""
         a = self._app
+        try:
+            import config as _cfg
+            _prov_global = getattr(_cfg, "LLM_PROVIDER", "groq")
+            # provider EFETIVO do chat (respeita override por módulo da UI); cai no global.
+            try:
+                _prov = _cfg.get_provider("chat") or _prov_global
+            except Exception:
+                _prov = _prov_global
+            _or_key = bool((getattr(_cfg, "OPENROUTER_API_KEY", "") or "").strip())
+            _or_models = dict(getattr(_cfg, "OPENROUTER_MODELS", {}) or {})
+        except Exception:
+            _prov, _prov_global, _or_key, _or_models = "groq", "groq", False, {}
         return {
             "models":            getattr(a, "_models_pref", {}) or {},
+            "agent":             getattr(a, "_agent_pref", {}) or {},
             "user_city":         getattr(a, "_user_city", None),
             "notif_auto_speak":  bool(getattr(a, "_notif_auto_speak", False)),
             "activation_mode":   getattr(a, "_activation_mode", "ptt"),
             "mic_idx":           getattr(a, "_selected_mic_idx", -1),
+            "provider_active":   _prov,          # EFETIVO (o que o backend usa de fato)
+            "provider_global":   _prov_global,   # escolha global (LLM_PROVIDER) — p/ detectar divergência
+            "openrouter_key_set": _or_key,
+            "openrouter_defaults": _or_models,
         }
 
-    def apply_models(self, models_dict, user_city=None, notif_auto_speak=None):
-        """Aplica preferências do modal de configurações e persiste.
+    def apply_models(self, models_dict, user_city=None, notif_auto_speak=None, agent=None):
+        """Aplica preferências do modal de configurações, persiste E APLICA AO VIVO.
 
-        models_dict: {"chat_lm": "...", "chat_groq": "...", "vision": "...",
-                      "classifier": "..."}
+        models_dict: {"chat_lm","chat_groq","vision","classifier","llm_provider",
+                      "openrouter_thinking","openrouter_files","openrouter_image"}
         user_city: string ou None
         notif_auto_speak: bool ou None
+        agent: {"tool_select_mode","tool_max","include_history",
+                "history_turns","parallel_tools"} ou None
         """
         a = self._app
         try:
@@ -1667,8 +1686,22 @@ class JarvisApi:
                 a._user_city = city or None
             if isinstance(notif_auto_speak, bool):
                 a._notif_auto_speak = notif_auto_speak
+            if isinstance(agent, dict):
+                cur = dict(getattr(a, "_agent_pref", {}) or {})
+                cur.update(agent)
+                a._agent_pref = cur
             a._save_prefs()
-            return {"ok": True}
+            # APLICA AO VIVO (sem restart): re-lê prefs e re-inicializa provider/clients.
+            prov = None
+            try:
+                import config as _cfg
+                _cfg._aplicar_prefs_modelos()
+                _cfg._aplicar_prefs_agente()
+                a._aplicar_config_recarregado(_cfg)
+                prov = getattr(_cfg, "LLM_PROVIDER", None)
+            except Exception as _e_hot:
+                print(f"[apply_models] hot-apply (vale no próximo restart): {_e_hot}")
+            return {"ok": True, "provider": prov}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1721,6 +1754,7 @@ class JarvisApi:
         # tier,         key,                  label,                                                       help_url,                                         desc
         ("obrigatorio", "GEMINI_API_KEY",     "Gemini API Key",            "https://aistudio.google.com/apikey",                             "IA principal (visão + chat). 1500 req/dia grátis."),
         ("obrigatorio", "GROQ_API_KEY",       "Groq API Key",              "https://console.groq.com/keys",                                  "IA rápida + transcrição de voz (Whisper). 14k req/dia grátis."),
+        ("opcional",    "OPENROUTER_API_KEY", "OpenRouter API Key",        "https://openrouter.ai/keys",                                     "Acesso a modelos grátis/baratos via OpenRouter. Selecione 'OpenRouter' na aba Modelos para usar."),
         ("recomendado", "ELEVENLABS_API_KEY", "ElevenLabs API Key",        "https://elevenlabs.io/app/settings/api-keys",                    "Voz premium (TTS humano). Sem isso usa Edge-TTS grátis."),
         ("opcional",    "ELEVENLABS_API_KEY_2", "ElevenLabs (chave 2)",    "https://elevenlabs.io/app/settings/api-keys",                    "Segunda chave — usada automaticamente se a primária esgotar."),
         ("opcional",    "ELEVENLABS_API_KEY_3", "ElevenLabs (chave 3)",    "https://elevenlabs.io/app/settings/api-keys",                    "Terceira chave para fallback."),
@@ -2037,8 +2071,11 @@ class JarvisApi:
             a._save_prefs()
             new_theme = curr.get("theme")
             if new_theme and new_theme != old_theme:
+                # Adia o reload: retorna ANTES de recarregar a janela, senão o
+                # contexto JS que aguarda o retorno some → "_returnValuesCallbacks
+                # .set_ui_pref... is not a function". O after() roda no loop da UI.
                 try:
-                    a._reload_with_theme(new_theme)
+                    a.root.after(180, lambda: a._reload_with_theme(new_theme))
                 except Exception as _e:
                     print(f"[JARVIS] _reload_with_theme falhou: {_e}")
             return {"ok": True}
@@ -2086,6 +2123,53 @@ class JarvisApi:
             return get_config_manager().reset(key)
         except Exception as e:
             return {"ok": False, "key": key, "msg": str(e)}
+
+    def get_brain_mode(self):
+        """Modo efetivo do cérebro p/ a UI: 'total'|'keyword'|'layered'|'all'.
+        Lê da seção 'agent' das prefs (canônica, aplicada no boot)."""
+        try:
+            ag = dict(getattr(self._app, "_agent_pref", {}) or {})
+            if ag.get("brain_mode") == "total":
+                return {"ok": True, "mode": "total"}
+            return {"ok": True, "mode": ag.get("tool_select_mode") or "keyword"}
+        except Exception as e:
+            return {"ok": False, "mode": "keyword", "msg": str(e)}
+
+    def set_brain_mode(self, mode):
+        """Define o modo do cérebro num ÚNICO controle e PERSISTE na seção 'agent'
+        do jarvis_prefs.json (lida no boot por _aplicar_prefs_agente) + aplica AO
+        VIVO. 'total' = todas as tools + histórico (máx. acerto/tokens); senão =
+        brain 'fast' + seleção de tools por keyword/layered/all."""
+        a = self._app
+        try:
+            mode = (mode or "keyword").strip()
+            if mode not in ("total", "keyword", "layered", "all"):
+                mode = "keyword"
+            cur = dict(getattr(a, "_agent_pref", {}) or {})
+            if mode == "total":
+                cur["brain_mode"] = "total"
+            else:
+                cur["brain_mode"] = "fast"
+                cur["tool_select_mode"] = mode
+            a._agent_pref = cur
+            a._save_prefs()
+            try:
+                import config as _cfg
+                _cfg._aplicar_prefs_agente()
+            except Exception:
+                pass
+            return {"ok": True, "mode": mode}
+        except Exception as e:
+            return {"ok": False, "mode": mode, "msg": str(e)}
+
+    def get_brain(self):
+        """Snapshot das CAMADAS da memória (visualização Cérebro da UI macOS).
+        Versão enxuta: só o cérebro e o conteúdo (o completo fica no Painel Global)."""
+        try:
+            from jarvis.memory import layers as _lay
+            return {"ok": True, **_lay.snapshot()}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "layers": []}
 
     # ── Mensageria: status de login por (plataforma × perfil) ─────────────
     def messaging_login_status(self):
@@ -2560,30 +2644,19 @@ class JarvisApp:
         # → LLM_USE_MODULAR_CLIENT. Quando True, monkey-patcha os 4 métodos
         # _lm_chat*/_groq_chat* para usar jarvis/llm/LLMClient (Sprint 2).
         try:
-            if getattr(config, "LLM_USE_MODULAR_CLIENT", False):
+            import config as _cfg_bridge
+            if getattr(_cfg_bridge, "LLM_USE_MODULAR_CLIENT", False):
                 from jarvis.llm.bridge import maybe_install_bridge
                 if maybe_install_bridge(self):
                     print("[JARVIS] LLM bridge modular instalado.")
         except Exception as _e_bridge:
             print(f"[JARVIS] LLM bridge falhou: {_e_bridge}")
 
-        # ── API (LLM principal: Groq ou LM Studio) ──────────────────────────
-        if LLM_PROVIDER == "groq":
-            self._lm = None   # Groq puro: zero VRAM, sem LM Studio
-            print("[JARVIS] LLM_PROVIDER=groq — LM Studio desabilitado.")
-        else:
-            # LM Studio: pré-carrega com ctx 14k via `lms` CLI
-            try:
-                threading.Thread(
-                    target=self._garantir_lm_model_carregado,
-                    kwargs={"model_key": LMSTUDIO_MODEL, "context_length": 14000},
-                    daemon=True,
-                    name="LMPreload",
-                ).start()
-            except Exception as _e:
-                print(f"[LM-PRELOAD] Aviso: {_e}")
-            self._lm = OpenAI(base_url=LMSTUDIO_BASE_URL, api_key="lm-studio")
-        self._groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+        # ── API (LLM principal: Groq / LM Studio / OpenRouter) ──────────────
+        # Init centralizado e idempotente — também é re-chamado quando o provider
+        # é trocado pela UI (apply_models → _aplicar_config_recarregado).
+        self._openrouter = None
+        self._init_llm_clients()
         self._chat_history: list[dict] = []
         self._groq_history: list[dict] = []
         # ── Recarrega histórico de conversa da sessão anterior ───────────────
@@ -2671,6 +2744,7 @@ class JarvisApp:
         self._follow_up = False                        # escutar próxima fala sem wake word
         self._tts_done = threading.Event()             # sinaliza que TTS terminou
         self._tts_done.set()                           # começa "pronto" (sem TTS ativo)
+        self._tts_ended_at = 0.0                        # anti-eco: quando o TTS parou (monotonic)
         # ── Modo de transcrição ──────────────────────────────────────────────
         self._transcription_mode: str = "off"    # "off" | "ditado" | "temp" | "realtime"
         self._ditado_target_hwnd: int = 0        # HWND da janela ativa no momento Shift+G (ditado)
@@ -3065,7 +3139,7 @@ class JarvisApp:
         else:
             user_content.append({"type": "text", "text": "Descreva o que você vê na imagem."})
         msgs.append({"role": "user", "content": user_content})
-        _vision_client = self._lm or self._groq
+        _vision_client = self._lm or getattr(self, "_groq_real", None) or self._groq
         _vision_model  = LMSTUDIO_VISION_MODEL if self._lm else GROQ_VISION_MODEL
         if not _vision_client:
             return "Nenhum backend de visão disponível, Senhor."
@@ -3098,7 +3172,7 @@ class JarvisApp:
         else:
             user_content.append({"type": "text", "text": "Descreva o que você vê na imagem."})
         msgs.append({"role": "user", "content": user_content})
-        _vision_client = self._lm or self._groq
+        _vision_client = self._lm or getattr(self, "_groq_real", None) or self._groq
         _vision_model  = LMSTUDIO_VISION_MODEL if self._lm else GROQ_VISION_MODEL
         if not _vision_client:
             yield "Nenhum backend de visão disponível, Senhor."
@@ -3204,6 +3278,26 @@ class JarvisApp:
     # TOOL-CALLING (LLM consciente — escolhe ações em vez de regex)
     # ══════════════════════════════════════════════════════════════════════════
 
+    # Prompt do ÚLTIMO recurso: o tool-calling falhou em TODOS os backends
+    # (ex.: 413/limite de tokens). Aqui NÃO há tools — então o modelo é
+    # PROIBIDO de fingir que executou. Evita o bug de narrar 'abrir_site(...)',
+    # 'Abrir_app(Word)', 'Digitar_texto(...)' como se tivesse feito.
+    _CHAT_FALLBACK_SYSTEM = (
+        "Você é JARVIS, mordomo britânico do Senhor. NESTE MOMENTO você está "
+        "SEM acesso às ferramentas (falha técnica/limite de uso). REGRAS "
+        "ABSOLUTAS:\n"
+        "✗ NÃO finja executar nada. NÃO escreva chamadas de função nem nomes de "
+        "tools (ex.: 'abrir_site(...)', 'Abrir_app(Word)', 'Digitar_texto(...)', "
+        "'Inserir_tabela'). NÃO liste passos como se estivesse fazendo. Você NÃO "
+        "consegue agir agora — então NÃO diga 'farei', 'vou abrir', 'gerando'.\n"
+        "✓ Se for PERGUNTA/opinião/algo que você sabe → responda direto (1-3 frases).\n"
+        "✓ Se for um PEDIDO DE AÇÃO (abrir app, gerar arquivo, pesquisar, enviar) "
+        "→ diga com honestidade que não conseguiu executar agora (limite técnico) "
+        "e peça para o Senhor repetir de forma mais simples ou tentar de novo, em "
+        "1 frase. JAMAIS invente que a ação foi feita.\n"
+        "Sem markdown, sem asteriscos, sem narração de ações."
+    )
+
     _TOOL_SYSTEM_PROMPT = (
         "Você é JARVIS, operador REAL de um sistema REAL e MORDOMO PESSOAL "
         "do Senhor. Tem acesso a TOOLS (funções) que controlam o computador, "
@@ -3219,6 +3313,26 @@ class JarvisApp:
         "se esquivar. Pode discordar do Senhor educadamente: 'Discordo, Senhor, "
         "minha leitura é X'. Tom: britânico formal mas HUMANO. Em vez de "
         "'quer executar uma função?', diga 'quer que eu cuide disso, Senhor?'.\n\n"
+        "═══ AJA COMO AGENTE QUE RACIOCINA (não automação) ═══\n"
+        "• RACIOCINE antes de agir: entenda o que o Senhor REALMENTE quer, usando "
+        "o histórico, as [Memórias relevantes] e o [Último arquivo criado] quando "
+        "houver. Esse raciocínio é INTERNO — não precisa ser falado.\n"
+        "• AJA por padrão. Se a ação é clara e reversível, EXECUTE a tool — não "
+        "sugira, não peça permissão. NUNCA responda 'você poderia...' quando VOCÊ "
+        "mesmo pode fazer.\n"
+        "• INFIRA defaults sensatos em vez de perguntar: 'mova o PDF' sem destino "
+        "→ use Downloads/Documentos e DIGA a suposição. Pergunte (1 frase) só se "
+        "for ambíguo de verdade ou destrutivo. JAMAIS peça um dado que você já tem "
+        "ou pode inferir — ex.: o arquivo que VOCÊ acabou de criar.\n"
+        "• TAREFA COMPOSTA (vários pedidos numa frase: 'pesquisa E gera PDF E "
+        "PowerPoint'): execute os passos EM SEQUÊNCIA, um após o outro, até "
+        "concluir TODOS. Não pare no primeiro nem ignore partes.\n"
+        "• Referências ('esse PDF', 'aquele arquivo', 'de novo', 'minha IDE') → "
+        "resolva pelo contexto/memória ANTES de agir; se não achar, chame "
+        "memoria_buscar e SÓ depois aja.\n"
+        "• FALA: lidere com o RESULTADO concreto do que você fez (varie o fraseado, "
+        "cite o que mudou). Evite o robótico 'Feito, Senhor' repetido — seja curto, "
+        "mas humano.\n\n"
         "═══ PROIBIÇÕES ABSOLUTAS (violação = falha grave) ═══\n"
         "✗ NÃO simule execução. Se a ação é possível, CHAME A TOOL. Se não é, diga.\n"
         "✗ NÃO diga 'executei X', 'feito', 'pronto' SEM ter chamado a tool de fato.\n"
@@ -3230,10 +3344,22 @@ class JarvisApp:
         "✗ NÃO use markdown, listas, emojis, asteriscos de ênfase.\n"
         "✗ NÃO comece com 'Peço desculpas, mas não posso...' nem 'Como IA...' "
         "— se não souber, diga 'Não tenho esse dado, Senhor' ou opine assim mesmo.\n\n"
-        "═══ MODO VOZ — TELEGRÁFICO ═══\n"
-        "Respostas em texto são lidas em voz alta. Pós-ação trivial: 1 frase "
-        "curta ('Feito, Senhor'). Opinião/análise/conclusão: até 2-3 frases — "
-        "uma de raciocínio + uma de posição.\n\n"
+        "═══ MODO VOZ — TELEGRÁFICO (REGRA DURA DE TAMANHO) ═══\n"
+        "TODA resposta é LIDA EM VOZ ALTA → seja CURTO. LIMITE RÍGIDO: no máximo "
+        "2 frases (~35 palavras). Pós-ação: 1 frase com o RESULTADO concreto "
+        "(varie o fraseado; não repita 'Feito, Senhor'). "
+        "NUNCA liste passos, NUNCA narre o que vai fazer, NUNCA repita o pedido, "
+        "NUNCA explique demais. Vá direto ao ponto. Conteúdo longo (texto de "
+        "documento, lista grande) vai para o ARQUIVO/tela, jamais para a fala.\n\n"
+        "═══ TRANSCRIÇÃO DE VOZ PODE VIR ERRADA ═══\n"
+        "O comando vem de reconhecimento de voz e PODE ter erros: palavras "
+        "grudadas ('paraquímica'→'para química'), nomes trocados, trechos sem "
+        "sentido ('C2B do doutor', 'Signência'). Interprete pela INTENÇÃO e pelo "
+        "CONTEXTO (histórico + [Memórias relevantes] quando houver). Corrija "
+        "mentalmente o óbvio e IGNORE pedaços claramente corrompidos/ruído. Se a "
+        "intenção central estiver clara, AJA. Se o comando estiver realmente "
+        "ininteligível ou ambíguo demais, pergunte em 1 frase curta — NUNCA "
+        "invente uma ação a partir de ruído.\n\n"
         "REGRAS DE DECISÃO (siga em ordem):\n"
         "1. PENSE: o pedido exige uma AÇÃO no PC? Se sim, CHAME A TOOL CERTA "
         "AGORA — não anuncie, não pergunte, EXECUTE. "
@@ -3243,6 +3369,15 @@ class JarvisApp:
         "É uma pergunta de OPINIÃO, palpite, análise, julgamento, preferência, "
         "ou conhecimento geral que você já domina? "
         "→ RESPONDA DIRETO com sua perspectiva. Não precisa de tool pra opinar.\n"
+        "1b. CONVERSA ≠ COMANDO (regra dura, vale nos DOIS sentidos): se o Senhor "
+        "está apenas CONVERSANDO, desabafando, comentando, cumprimentando, "
+        "reagindo ('nossa', 'pois é', 'que legal', 'verdade'), pensando alto ou "
+        "fazendo bate-papo — NÃO chame NENHUMA tool; apenas responda como pessoa. "
+        "Só execute uma tool quando houver uma AÇÃO concreta e clara pedida. "
+        "JAMAIS chame uma tool que não tenha relação com o que foi dito, nem force "
+        "um comando a partir de uma frase ambígua. Na dúvida entre conversar e "
+        "agir, PERGUNTE em 1 frase curta o que o Senhor deseja — nunca 'chute' uma "
+        "tool. É melhor responder sem agir do que executar a ação errada.\n"
         "2. MULTI-STEP: você pode chamar VÁRIAS tools em SEQUÊNCIA, observando "
         "o resultado de cada uma antes de decidir a próxima. Quando todas as "
         "ações estiverem completas, responda em 1-2 frases curtas resumindo.\n"
@@ -3303,6 +3438,26 @@ class JarvisApp:
         "8. FLUXO abrir+escrever: quando pedirem para abrir um app E escrever algo, "
         "use DOIS steps: step1 → abrir_app, step2 → digitar_texto(texto='...conteúdo...'). "
         "Gere o conteúdo completo diretamente no parâmetro 'texto' — não use pesquisa_rapida para isso.\n"
+    )
+
+    # Instruções SEPARADAS POR CASOS (orquestrador 2026-06-26): bloco rotulado de
+    # alto sinal pra um modelo pequeno rotear por CASO em vez de inferir da prosa
+    # corrida das regras 1/1b. Dobra as guardas enterradas (ambiente, destrutivo)
+    # pra perto da decisão. Prepended ao _TOOL_SYSTEM_PROMPT quando AGENT_CASE_BLOCKS.
+    _CASE_BLOCKS_TEXT = (
+        "SEPARAÇÃO POR CASOS — classifique o pedido do Senhor e siga SÓ o caso certo:\n"
+        "CASO A — AÇÃO/COMANDO (abre, cria, toca, envia, pausa, move, fecha, instala): "
+        "chame a tool AGORA, sem anunciar nem pedir permissão.\n"
+        "CASO B — FATO ATUAL (clima, cotação, notícia, evento recente, dado externo que muda): "
+        "chame pesquisa_rapida.\n"
+        "CASO C — OPINIÃO/CONHECIMENTO (palpite, análise, 'o que é X', preferência, fato estável): "
+        "RESPONDA direto, SEM tool.\n"
+        "CASO D — CONVERSA (desabafo, cumprimento, reação, pensar alto): NÃO chame tool; "
+        "só responda como pessoa.\n"
+        "NUNCA AJA QUANDO: o texto vier do bloco [Contexto recente ao redor do Senhor] "
+        "(é só fundo de ambiente, nunca um comando); ou for controle_sistema destrutivo "
+        "(desligar/reiniciar/bloquear) sem pedido EXPLÍCITO. Na dúvida entre C/D e A: "
+        "pergunte em 1 frase — NUNCA chute uma tool.\n"
     )
 
     def _salvage_groq_tool_call(self, err: Exception) -> tuple[str, dict] | None:
@@ -3392,17 +3547,144 @@ class JarvisApp:
         "comando_terminal":    ("terminal", "powershell", "cmd", "comando", "shell", "executa", "executar"),
         "gerenciar_contatos":  ("contato", "contatos", "telefone", "numero", "número", "agenda"),
         "enviar_mensagem":     ("manda", "mandar", "envia", "enviar", "mensagem", "whatsapp", "wpp", "zap", "avisa", "avisar", "fala pro", "fala pra", "diz pro", "diga pro", "diga pra"),
+        "criar_apresentacao":  ("apresentacao", "apresentação", "apresentaçao", "slide", "slides", "powerpoint", "power point", "ppt", "pptx", "deck", "pitch"),
+        "criar_relatorio":     ("relatorio", "relatório", "relatorios", "report", "dossie", "dossiê", "pdf", "documento", "laudo", "resumo executivo"),
+        "exportar_pdf":        ("exportar pdf", "converter pdf", "converte em pdf", "salvar em pdf", "transformar em pdf", "vira pdf", "para pdf"),
+        "criar_planilha":      ("planilha", "planilhas", "excel", "xlsx", "tabela", "spreadsheet", "dashboard", "kpi", "kpis"),
+        "memoria_salvar_fato": ("lembra que", "lembre que", "anota que", "guarda que", "salva que", "meu nome é", "minha ide", "meu editor", "prefiro", "minha preferencia", "meu projeto"),
+        "memoria_esquecer":    ("esquece", "esqueça", "esquecer", "apaga da memoria", "apaga da memória", "apagar da memoria", "remove da memoria", "remover da memória"),
+        "compactar_conversa":  ("compacta", "compactar", "resume a conversa", "resumir a conversa", "resume o que", "encurta", "libera contexto", "resumir conversa"),
+        "resumir_decisoes":    ("decisoes", "decisões", "o que decidimos", "quais decisoes", "quais decisões", "decisões tomadas", "consolidar decis"),
     }
 
     def _filter_tools_for_text(self, text: str, tools: list[dict], max_n: int = 10) -> list[dict]:
-        """Seleciona tools mais relevantes para `text` pra economizar tokens
-        no LLM (essencial em modelos 8B com TPM baixo).
+        """Seleciona quais tools expor ao LLM. Modo via config (roadmap/13):
 
-        Mantém: (a) core sempre presente, (b) tools cujas keywords aparecem
-        no texto, ordenadas por quantidade de matches. Limita a `max_n` total.
-        Se nenhuma match além do core, devolve TODAS (modo seguro: comandos
-        ambíguos ou abertos não devem ficar sem opções).
+        - "keyword" (default): core + tools cujas keywords aparecem no texto,
+          ordenadas por nº de matches, até `max_n`. (comportamento histórico)
+        - "layered": core + TODAS as tools das CAMADAS dos matches (irmãos de
+          domínio), até `max_n` — menos rígido que keyword.
+        - "all": manda todas as tools (melhor acerto p/ frase livre, + tokens).
+
+        Se nenhuma keyword bater, devolve TODAS (modo seguro).
         """
+        # Lê modo/teto da config (defensivo — defaults = comportamento atual)
+        mode = "keyword"
+        _mem_on = False
+        _compact_on = False
+        try:
+            import config as _cfg
+            mode = getattr(_cfg, "AGENT_TOOL_SELECT_MODE", "keyword") or "keyword"
+            max_n = int(getattr(_cfg, "AGENT_TOOL_MAX", max_n) or max_n)
+            if getattr(_cfg, "AGENT_BRAIN_MODE", "fast") == "total":
+                mode = "all"   # cérebro total: o LLM vê TODAS as tools
+            _mem_on = bool(getattr(_cfg, "MEMORY_ENABLED", False))
+            _compact_on = bool(getattr(_cfg, "MEMORY_COMPACTION_ENABLED", False))
+        except Exception:
+            pass
+
+        # Features OFF → remove suas tools (comportamento idêntico ao histórico).
+        # Memória ON → memoria_buscar fica sempre disponível (core).
+        _strip = set()
+        if not _mem_on:
+            _strip |= {"memoria_buscar", "memoria_salvar_fato", "memoria_esquecer"}
+        if not _compact_on:
+            _strip |= {"compactar_conversa", "resumir_decisoes"}
+        if _strip:
+            tools = [t for t in tools
+                     if t.get("function", {}).get("name") not in _strip]
+
+        # ── Sub-agente por domínio (roadmap/15 Fase 3) ────────────────────────
+        # Manda ao cérebro SÓ as tools do domínio do turno (~5-8 em vez de 44):
+        # mata o 413 e melhora a seleção. Fallback ao filtro atual quando o
+        # roteador está incerto/multi-domínio — nunca pior que hoje.
+        try:
+            import config as _cfgsa
+            if getattr(_cfgsa, "AGENT_SUBAGENTS", False):
+                from jarvis.agents import router as _arouter, registry as _areg
+                thr = float(getattr(_cfgsa, "AGENT_SUBAGENT_THRESHOLD", 0.42))
+                mgn = float(getattr(_cfgsa, "AGENT_SUBAGENT_MARGIN", 0.06))
+                dom, conf, margin = _arouter.route(text)
+                if dom and conf >= thr and margin >= mgn:
+                    names = set(_areg.tool_names(dom)) | set(self._TOOLS_CORE)
+                    if _mem_on:
+                        names.add("memoria_buscar")
+                    scoped = [t for t in tools
+                              if t.get("function", {}).get("name") in names]
+                    if scoped:
+                        cap = int(getattr(_cfgsa, "AGENT_SUBAGENT_TOOL_MAX", 12))
+                        self._active_domain = dom
+                        out = scoped[:cap] if (cap and len(scoped) > cap) else scoped
+                        print(f"[SUBAGENTE] domínio={dom} conf={conf:.2f} "
+                              f"margem={margin:.2f} → {len(out)} tools")
+                        return out
+                # SOFT fallback (roadmap/15): confiança decente mas margem baixa
+                # (ambíguo entre 2 domínios). Em vez de cair no filtro keyword —
+                # que pode despejar as 44 tools e estourar o 413 — escopa ao
+                # top-domínio mesmo sem margem. NÃO seta _active_domain (sem hint
+                # forte de domínio), só limita o payload. Gated por AGENT_SUBAGENTS.
+                soft = float(getattr(_cfgsa, "AGENT_SUBAGENT_SOFT_FLOOR", 0.55))
+                if dom and conf >= soft:
+                    names = set(_areg.tool_names(dom)) | set(self._TOOLS_CORE)
+                    if _mem_on:
+                        names.add("memoria_buscar")
+                    scoped = [t for t in tools
+                              if t.get("function", {}).get("name") in names]
+                    if scoped:
+                        cap = int(getattr(_cfgsa, "AGENT_SUBAGENT_TOOL_MAX", 12))
+                        self._active_domain = None
+                        out = scoped[:cap] if (cap and len(scoped) > cap) else scoped
+                        print(f"[SUBAGENTE] soft scope domínio={dom} "
+                              f"conf={conf:.2f} → {len(out)} tools")
+                        return out
+                self._active_domain = None
+                print(f"[SUBAGENTE] sem domínio claro (conf={conf:.2f} "
+                      f"margem={margin:.2f}) → filtro padrão")
+        except Exception as _esa:
+            self._active_domain = None
+            print(f"[SUBAGENTE] roteamento falhou: {_esa}")
+
+        if mode == "all":
+            return tools
+
+        # ── Recuperação SEMÂNTICA de tools (SkillMemory · Fase 3) ─────────────
+        # Atrás de SKILL_MEMORY_ENABLED (OFF). Em vez do filtro keyword (frágil:
+        # keyword-miss → despeja TODAS as tools → 413), recupera as top-k tools
+        # por SIGNIFICADO (MiniLM; calibrado em tools/eval_tools.py: recall@8≈0.97).
+        # Fallback: top-1 < FLOOR (match degenerado: gibberish/vazio) → NÃO escopa,
+        # cai no filtro keyword/all. Conversa real pontua como pedido real (0.44+) e
+        # escopa msm — inofensivo (LLM só conversa, core sempre presente). Nunca pior
+        # que hoje (keyword-miss já despejava TODAS).
+        try:
+            import config as _cfgsk
+            if getattr(_cfgsk, "SKILL_MEMORY_ENABLED", False):
+                from jarvis.memory import skills as _skills
+                _sm = _skills.get_skills()
+                if _sm.stats().get("records", 0) == 0:
+                    _skills.sync_from_registry()  # build lazy na 1ª vez
+                k = int(getattr(_cfgsk, "SKILL_MEMORY_K", 8) or 8)
+                floor = float(getattr(_cfgsk, "SKILL_MEMORY_FLOOR", 0.30))
+                recs = _sm.retrieve(text, k=k)
+                top = recs[0].get("_score", 0.0) if recs else 0.0
+                if recs and top >= floor:
+                    names = set(self._TOOLS_CORE)
+                    if _mem_on:
+                        names.add("memoria_buscar")
+                    for r in recs:
+                        tn = r.get("tool")
+                        if tn:
+                            names.add(tn)
+                    scoped = [t for t in tools
+                              if t.get("function", {}).get("name") in names]
+                    if scoped:
+                        out = scoped[:max_n] if (max_n and len(scoped) > max_n) else scoped
+                        print(f"[SKILL] semântico: {len(out)}/{len(tools)} tools (top={top:.2f})")
+                        return out
+                else:
+                    print(f"[SKILL] baixa confiança (top={top:.2f} < {floor}) → filtro padrão")
+        except Exception as _esk:
+            print(f"[SKILL] retrieval falhou: {_esk} — filtro padrão")
+
         try:
             t_low = (text or "").lower()
             scores: dict[str, int] = {}
@@ -3411,30 +3693,351 @@ class JarvisApp:
                 if s > 0:
                     scores[tname] = s
 
-            # Se NENHUMA keyword bateu → texto é aberto/conversacional.
-            # Devolve tudo pra o LLM decidir (fallback seguro).
+            # Nenhuma keyword bateu → texto aberto/conversacional → devolve tudo.
             if not scores:
                 return tools
 
-            # Seleciona: core + top-scored, até max_n
-            keep: set[str] = set(self._TOOLS_CORE)
-            for tname, _ in sorted(scores.items(), key=lambda x: -x[1]):
-                keep.add(tname)
-                if len(keep) >= max_n:
-                    break
+            ordered = [n for n, _ in sorted(scores.items(), key=lambda x: -x[1])]
+            keep: list[str] = list(self._TOOLS_CORE)
+            if _mem_on and "memoria_buscar" not in keep:
+                keep.insert(0, "memoria_buscar")  # resolve referências antes de agir
+            for n in ordered:
+                if n not in keep:
+                    keep.append(n)
 
-            filtered = [t for t in tools if t.get("function", {}).get("name") in keep]
-            # Garante que não devolvemos lista vazia (se nomes não baterem)
+            # Modo "layered": adiciona os irmãos de camada dos matches.
+            if mode == "layered":
+                try:
+                    layers = {_tool_registry.layer_of(n) for n in scores}
+                    for n in _tool_registry.tools_in_layers(layers):
+                        if n not in keep:
+                            keep.append(n)
+                except Exception:
+                    pass
+
+            if max_n and len(keep) > max_n:
+                keep = keep[:max_n]
+            keepset = set(keep)
+
+            filtered = [t for t in tools if t.get("function", {}).get("name") in keepset]
             if not filtered:
                 return tools
             try:
-                print(f"[PENSAR] tools filtradas: {len(filtered)}/{len(tools)} → {sorted(keep)}")
+                print(f"[PENSAR] tools ({mode}): {len(filtered)}/{len(tools)} → {sorted(keepset)}")
             except Exception:
                 pass
             return filtered
         except Exception as _fe:
             print(f"[PENSAR] _filter_tools_for_text falhou: {_fe} — usando tudo")
             return tools
+
+    def _reduce_tools_emergencia(self, text: str, tools: list, max_n: int = 8) -> list:
+        """Reduz a lista de tools p/ caber em limites apertados de tokens
+        (ex.: Groq free 6k TPM → 413). Mantém o core + as de maior match de
+        keyword. Usado só no retry após falha de tamanho/limite."""
+        try:
+            t_low = (text or "").lower()
+            core, rest = [], []
+            for t in tools:
+                nm = t.get("function", {}).get("name", "")
+                if nm in self._TOOLS_CORE:
+                    core.append(t)
+                else:
+                    kws = self._TOOL_KEYWORDS.get(nm, ())
+                    rest.append((sum(1 for kw in kws if kw in t_low), t))
+            rest.sort(key=lambda x: -x[0])
+            ranked = core + [t for s, t in rest if s > 0]
+            if not ranked:
+                ranked = core + [t for _, t in rest]
+            return (ranked or tools)[:max_n]
+        except Exception:
+            return tools[:max_n]
+
+    def _on_tool_dispatched(self, name: str, args: dict, out: str) -> None:
+        """Callback do tool_registry.dispatch — grava a saída na memória episódica
+        (se ligada) e captura o ÚLTIMO ARTEFATO criado. Best-effort."""
+        # Memória de ARTEFATO (em sessão, independe de MEMORY_ENABLED): captura o
+        # último arquivo criado → resolve "esse PDF / aquele / de novo / move ele"
+        # sem o JARVIS perguntar "qual projeto/arquivo".
+        try:
+            if not str(out).startswith("ERRO"):
+                import re as _reA
+                _paths = _reA.findall(
+                    r"(?:[A-Za-z]:\\|/)[^\s\"'<>|]+\.(?:pdf|pptx|xlsx|docx|png|jpg|jpeg|csv|txt|md)\b",
+                    str(out))
+                if _paths:
+                    import time as _tA
+                    _p = _paths[-1]
+                    self._last_artifact = {
+                        "path": _p, "type": _p.rsplit(".", 1)[-1].lower(),
+                        "tool": name, "ts": _tA.time()}
+        except Exception:
+            pass
+        try:
+            import jarvis.memory as _mem
+            tid = getattr(self, "_mem_turn_id", None)
+            if tid is None or not _mem.enabled():
+                return
+            ok = not str(out).startswith("ERRO")
+            _mem.get_store().record_tool_outcome(tid, name, args, ok, str(out))
+        except Exception:
+            pass
+
+    def _gerar_plano(self, text: str) -> str:
+        """Raciocínio VISÍVEL (roadmap/16 Fase 2): plano CURTO e estruturado antes
+        de agir. Vai pra UI ("pensando"), NÃO é falado. LLM barato (Groq real).
+        Best-effort → '' em falha."""
+        cli = getattr(self, "_groq_real", None) or getattr(self, "_groq", None)
+        if cli is None:
+            return ""
+        # Plano = tarefa barata → 8b (GROQ_MODELO_TOOLS), não o 70b (economiza TPD).
+        mdl = GROQ_MODELO_TOOLS or getattr(self, "_groq_real_model", None) or GROQ_MODELO_CHAT
+        sysm = (
+            "Você é o módulo de PLANEJAMENTO do JARVIS. Dado o pedido do Senhor, "
+            "responda em português um plano CURTÍSSIMO e estruturado:\n"
+            "Objetivo: <1 linha>\n"
+            "Passos: 1) ... 2) ... (no máx. 3, só se exigir AÇÃO; verbos diretos)\n"
+            "Se for só conversa/pergunta/opinião, responda apenas "
+            "'Objetivo: responder direto' (sem passos). "
+            "NÃO execute nada, NÃO escreva código, NÃO invente dados. Máx 40 palavras."
+        )
+        try:
+            r = cli.chat.completions.create(
+                model=mdl,
+                messages=[{"role": "system", "content": sysm},
+                          {"role": "user", "content": text}],
+                max_tokens=120, temperature=0.2)
+            return (r.choices[0].message.content or "").strip()
+        except Exception as e:
+            print(f"[PLANO] falhou: {e}")
+            return ""
+
+    def _tool_fallback_providers(self):
+        """Provedores ALTERNATIVOS de tool-calling quando o primário estoura limite
+        (rate-limit/413). Ordem: OpenRouter (auto) → Gemini (janela grande) → Groq
+        real. Pula o que for == primário. → [(client, model, label)]. Não depende só
+        do Groq: se um estourar, o próximo assume."""
+        import config as _cfg
+        pri = getattr(self, "_groq", None)
+        out = []
+        orc = getattr(self, "_openrouter", None)
+        if orc is not None and orc is not pri:
+            out.append((orc, "openrouter/auto", "OpenRouter"))
+        gr = getattr(self, "_groq_real", None)
+        if gr is not None and gr is not pri:
+            out.append((gr, getattr(_cfg, "GROQ_MODELO_TOOLS", "") or getattr(self, "_groq_real_model", ""), "Groq-real"))
+        return out
+
+    def _llm_completar(self, messages, max_tokens=4096, temperature=0.4):
+        """LLM SEM tools, MULTI-PROVEDOR (Groq primário → OpenRouter → Gemini →
+        Groq-real). Retorna o texto da 1ª resposta boa, ou '' se todos falharem.
+        Para JSON/conteúdo (geração de documentos etc.) — não depende só do Groq,
+        cobre TPD/TPM/429."""
+        import config as _cfg
+        tried = []
+        pri = getattr(self, "_groq", None)
+        if pri is not None:
+            tried.append((pri, getattr(_cfg, "GROQ_MODELO_CHAT", "") or getattr(self, "_groq_real_model", ""), "primário"))
+        tried += self._tool_fallback_providers()
+        for _cli, _mdl, _lbl in tried:
+            if _cli is None or not _mdl:
+                continue
+            try:
+                r = _cli.chat.completions.create(model=_mdl, messages=messages,
+                                                 max_tokens=max_tokens, temperature=temperature, timeout=40)
+                txt = (r.choices[0].message.content or "").strip()
+                if txt:
+                    return txt
+            except Exception as _e:
+                print(f"[LLM] {_lbl} ({_mdl}) falhou: {type(_e).__name__}")
+        return ""
+
+    # ── Fase B1: Nila (modelo local) como ORQUESTRADORA (opt-in, sem Rust) ──────
+    # A Nila JÁ emite ações JSON {"acao":"<nome>", ...} e JÁ decodifica byte→texto.
+    # Aqui o JARVIS faz a PONTE: mapeia a ação dela p/ uma tool do JARVIS, executa,
+    # devolve o resultado e ela itera — 100% local, sem rate-limit. As ações que o
+    # JARVIS ainda não mapeia (cobertura total = Fase B2/treino) caem na nuvem.
+    _NILA_ACAO_MAP = {
+        "pesquisar": ("pesquisa_web",     lambda a: {"query": (a.get("sobre") or a.get("assunto") or a.get("query") or "")}),
+        "comando":   ("comando_terminal", lambda a: {"comando": a.get("comando", "")}),
+    }
+    _nila_warmed = False  # aquece a Nila 1×/sessão (ver _nila_warmup)
+
+    def _nila_warmup(self, _ml, _c):
+        """Aquece o stream_state da Nila UMA vez por sessão via perceive(corpus).
+        O GRU começa com estado zero (Affect::new() = BPB~8, não muda com perceive).
+        O perceive avança o stream_state pelo corpus → act() clona esse estado quente.
+        Tempo: ~0.4s para 54KB. Não usa train (lento) — act usa temp=0.5 (não o afeto)."""
+        if self._nila_warmed:
+            return
+        self._nila_warmed = True
+        try:
+            import os
+            corpus_path = os.path.join(
+                os.path.dirname(__file__), "..", "data", "nila", "corpus_tools_jarvis.txt"
+            )
+            corpus_path = os.path.normpath(corpus_path)
+            if os.path.exists(corpus_path):
+                with open(corpus_path, encoding="utf-8") as _f:
+                    corpus = _f.read()
+                _ml.perceive(corpus, timeout=30.0)
+            else:
+                # fallback: primer curto se corpus não gerado ainda
+                _ml.perceive(
+                    'Senhor: pesquisa sobre fotossintese {"acao":"pesquisa_web","query":"fotossintese"} '
+                    'Senhor: roda o comando dir {"acao":"comando_terminal","comando":"dir"} '
+                    'Senhor: faz um pdf sobre energia solar {"acao":"criar_relatorio","tema":"energia solar"} '
+                    'Senhor: como esta o tempo em Lisboa {"acao":"clima","cidade":"Lisboa"} '
+                    'Senhor: toca um rock classico {"acao":"tocar_musica","query":"rock classico"} '
+                    'Senhor: abre o spotify {"acao":"abrir_app","nome":"spotify"} ',
+                    timeout=10.0,
+                )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _nila_extract_args(nome, original_text):
+        """Extrai os args reais do pedido ORIGINAL do usuário para a tool `nome`.
+        A Nila classifica o NOME da ação mas não copia o argumento (limite arquitetural
+        do GRU byte-level). O bridge extrai os args do texto original aqui.
+        Retorna dict com os args, ou {} se não conseguir extrair."""
+        import re
+        t = original_text.strip().lower()
+        # Remove prefixos de saudação comuns
+        t = re.sub(r'^(senhor|jarvis|nila)[:\s]*', '', t, flags=re.I).strip()
+        if nome in ("pesquisar", "pesquisa_web"):
+            for pat in [r'(?:pesquisa|busca|procura|pesquise)(?:\s+(?:sobre|na web|na internet))?\s+(.+)',
+                        r'(?:quero saber|me fala|me conta|explica)\s+(?:sobre\s+)?(.+)',
+                        r'(?:o que é|quem foi|como funciona|o que sao)\s+(.+)']:
+                m = re.search(pat, t, re.I)
+                if m:
+                    return {"query": m.group(1).strip()}
+            return {"query": t}
+        if nome in ("comando", "comando_terminal"):
+            for pat in [r'(?:roda|executa|rode|execute|run)\s+(?:o\s+)?(?:comando\s+)?(.+)',
+                        r'(?:comando|cmd)\s+(.+)',
+                        r'manda\s+(?:um\s+)?(.+)']:
+                m = re.search(pat, t, re.I)
+                if m:
+                    return {"comando": m.group(1).strip()}
+            return {"comando": t}
+        if nome == "criar_relatorio":
+            for pat in [r'(?:faz|cria|gera|make|crie)\s+(?:um\s+)?(?:pdf|relatorio|relatório|doc|documento)\s+(?:sobre|de|a respeito de)\s+(.+)',
+                        r'(?:sobre|de)\s+(.+)']:
+                m = re.search(pat, t, re.I)
+                if m:
+                    return {"tema": m.group(1).strip()}
+            return {"tema": t}
+        if nome == "clima":
+            for pat in [r'(?:tempo|clima|previsao|temperatura)\s+(?:em|no|na|para|de)\s+([A-Za-zÀ-ÿ\s]+?)(?:\s*\??\s*$)',
+                        r'(?:em|no|na|para|de)\s+([A-Za-zÀ-ÿ\s]+?)(?:\s*\??\s*$)']:
+                m = re.search(pat, original_text, re.I)
+                if m:
+                    return {"cidade": m.group(1).strip()}
+            return {"cidade": t}
+        if nome == "tocar_musica":
+            for pat in [r'(?:toca|play|coloca|roda)\s+(?:um\s+|uma\s+)?(.+)',
+                        r'(?:musica|música)\s+(?:de\s+|do\s+|da\s+)?(.+)']:
+                m = re.search(pat, t, re.I)
+                if m:
+                    return {"query": m.group(1).strip()}
+            return {"query": t}
+        if nome == "abrir_app":
+            for pat in [r'(?:abre|abrir|open|inicia|lança|lanca)\s+(?:o\s+|a\s+)?(.+)',
+                        r'(?:app|aplicativo)\s+(.+)']:
+                m = re.search(pat, t, re.I)
+                if m:
+                    return {"nome": m.group(1).strip()}
+            return {"nome": t}
+        if nome == "enviar_mensagem":
+            m = re.search(r'(?:manda|envia|send)\s+(?:mensagem|msg)?\s*(?:pro|para|pra)\s+(\w+)\s+(?:dizendo|falando|com mensagem)?\s+(.+)', t, re.I)
+            if m:
+                return {"destinatario": m.group(1), "mensagem": m.group(2).strip()}
+            return {}
+        # genérico: devolve o texto completo como argumento principal
+        return {"query": t}
+
+    def _nila_parse_acao(self, reply):
+        """Extrai a 1ª ação {"acao":...} da resposta da Nila (ou None)."""
+        if not reply:
+            return None
+        import json as _json, re as _re
+        m = _re.search(r'\{[^{}]*"acao"\s*:[^{}]*\}', reply, _re.S)
+        if not m:
+            return None
+        try:
+            d = _json.loads(m.group(0))
+            return d if (isinstance(d, dict) and d.get("acao")) else None
+        except Exception:
+            return None
+
+    def _orquestrar_nila(self, text):
+        """FASE B1 — a Nila orquestra LOCAL: act→{"acao"}→dispatch→devolve→itera.
+        1ª chamada usa `act` (respond_act: estado quente clonado, temp=0.5) p/ classificar
+        a ação. Args extraídos do texto original (a Nila classifica o NOME, não copia args).
+        Retorna (True, resposta) se a Nila resolveu; (False, '') → cai no
+        _pensar_e_agir da nuvem. Opt-in (NILA_ORCHESTRATOR_ENABLED), best-effort."""
+        try:
+            import config as _c
+            if not getattr(_c, "NILA_ORCHESTRATOR_ENABLED", False):
+                return False, ""
+            from classifiers import modelo_local as _ml
+            if not _ml.available():
+                return False, ""
+        except Exception:
+            return False, ""
+        self._nila_warmup(_ml, _c)  # aquece stream_state via perceive(corpus) 1×/sessão
+        original_text = text
+        prompt, used_any, first_step = text, False, True
+        for _step in range(4):
+            try:
+                if first_step:
+                    # act() usa respond_act: clona stream_state quente + temp=0.5
+                    # Não depende do afeto (que fica em BPB~8 no boot).
+                    reply = _ml.act(f"Senhor: {prompt}", timeout=8.0)
+                    first_step = False
+                else:
+                    # Passos seguintes: respond() (acumulou contexto via perceive implícito)
+                    reply = _ml.respond(prompt, timeout=8.0)
+            except Exception:
+                reply = None
+            if not reply:
+                return (True, "Pronto, Senhor.") if used_any else (False, "")
+            acao = self._nila_parse_acao(reply)
+            if not acao:
+                return True, reply.strip()            # texto final da Nila
+            nome = str(acao.get("acao", "")).strip().lower()
+            # Extrai args do PEDIDO ORIGINAL (a Nila classifica o nome, não copia args)
+            args = self._nila_extract_args(nome, original_text)
+            ent = self._NILA_ACAO_MAP.get(nome)
+            if ent:
+                tool, _argf = ent
+                # override args com os do pedido original se vazios no extract
+                if not args:
+                    try:
+                        args = _argf(acao)
+                    except Exception:
+                        args = {}
+            elif nome in getattr(_tool_registry, "_TOOLS", {}):
+                # forward-compat B2: a Nila treinada já emite o nome da tool do JARVIS.
+                # CONSERVADOR: só auto-executa local as tools da allow-list (read-mostly);
+                # tools sensíveis (enviar_mensagem, abrir_app, docs...) caem na nuvem.
+                _allow = getattr(_c, "NILA_ALLOWED_TOOLS", []) or []
+                if "*" not in _allow and nome not in _allow:
+                    print(f"[NILA] tool '{nome}' fora da allow-list local → nuvem")
+                    return False, ""
+                tool = nome
+            else:
+                print(f"[NILA] ação '{nome}' não mapeada (Fase B2/treino) → nuvem")
+                return False, ""                       # JARVIS não cobre → nuvem
+            print(f"[NILA] orquestrando: {nome} → {tool}({args})")
+            try:
+                out = _tool_registry.dispatch(tool, args, self)
+            except Exception as _e:
+                out = f"ERRO: {_e}"
+            used_any = True
+            prompt = f"resultado de {nome}: {str(out)[:800]}"
+        return (True, "Feito, Senhor.") if used_any else (False, "")
 
     def _pensar_e_agir(self, text: str) -> tuple[bool, str]:
         """Pipeline de tool-calling consciente.
@@ -3472,18 +4075,35 @@ class JarvisApp:
              "encerrar_jarvis", {}),
             (r"^tchau\s+jarvis$", "encerrar_jarvis", {}),
         ]
-        for _pat, _tname, _targs in _FAST_DISPATCH:
-            if _re_fp.match(_pat, _txt_norm):
-                try:
-                    print(f"[PENSAR] FAST-PATH → {_tname}({_targs}) (sem LLM)")
-                    out = _tool_registry.dispatch(_tname, _targs, self)
-                    return True, str(out or "")
-                except Exception as _fpe:
-                    print(f"[PENSAR] FAST-PATH falhou: {_fpe} — caindo no LLM")
-                    break
+        # Cérebro total: pula fast-paths de regex — o LLM SEMPRE raciocina sobre
+        # o contexto (não dispara comando exato achado fora de contexto).
+        _brain_total = False
+        try:
+            import config as _cfg_bt
+            _brain_total = getattr(_cfg_bt, "AGENT_BRAIN_MODE", "fast") == "total"
+        except Exception:
+            _brain_total = False
+        if not _brain_total:
+            for _pat, _tname, _targs in _FAST_DISPATCH:
+                if _re_fp.match(_pat, _txt_norm):
+                    try:
+                        print(f"[PENSAR] FAST-PATH → {_tname}({_targs}) (sem LLM)")
+                        out = _tool_registry.dispatch(_tname, _targs, self)
+                        return True, str(out or "")
+                    except Exception as _fpe:
+                        print(f"[PENSAR] FAST-PATH falhou: {_fpe} — caindo no LLM")
+                        break
 
         try:
-            tools = _tool_registry.to_openai_tools()
+            _strict_tools = False
+            _compact_tools = False
+            try:
+                import config as _cfg_s
+                _strict_tools = bool(getattr(_cfg_s, "AGENT_STRICT_TOOLS", False))
+                _compact_tools = bool(getattr(_cfg_s, "AGENT_TOOLS_COMPACT", False))
+            except Exception:
+                _strict_tools = False
+            tools = _tool_registry.to_openai_tools(strict=_strict_tools, compact=_compact_tools)
         except Exception as e:
             print(f"[TOOL-CALL] Registry falhou: {e}")
             return False, ""
@@ -3502,16 +4122,110 @@ class JarvisApp:
         except Exception:
             _ctx_inj = ""
         _sys_content = self._TOOL_SYSTEM_PROMPT
+        # Instruções SEPARADAS POR CASOS no TOPO (pedido do dono) — gated, aditivo.
+        try:
+            import config as _cfgcb
+            if getattr(_cfgcb, "AGENT_CASE_BLOCKS", False):
+                _sys_content = self._CASE_BLOCKS_TEXT + "\n\n" + _sys_content
+        except Exception:
+            pass
         if _ctx_inj:
             _sys_content += (
                 "\n\n[Contexto recente ao redor do Senhor — captado pelo "
                 "microfone/áudio do sistema — use para respostas mais contextuais]\n"
                 + _ctx_inj
             )
-        msgs = [
-            {"role": "system", "content": _sys_content},
-            {"role": "user",   "content": text},
-        ]
+        # Memória semântica/vetorial (roadmap/14, OFF por padrão): recupera o que
+        # for relevante POR SITUAÇÃO e injeta antes do turno — resolve "refaz o
+        # PDF", "minha IDE", "de novo". O turn_id liga as saídas de tools a este turno.
+        self._mem_turn_id = None
+        try:
+            import jarvis.memory as _mem
+            if _mem.enabled():
+                import time as _tt_m
+                self._mem_turn_id = int(_tt_m.time() * 1000)
+                _store = _mem.get_store()
+                _mblk = _store.format_for_prompt(_store.retrieve(text))
+                if _mblk:
+                    _sys_content += "\n\n" + _mblk
+        except Exception as _e_mem:
+            print(f"[MEM] injeção falhou: {_e_mem}")
+        # Sub-agente: dica curta do domínio do turno (roadmap/15 Fase 3). O escopo
+        # de tools já foi aplicado em _filter_tools_for_text; aqui só foca o prompt.
+        try:
+            _dom = getattr(self, "_active_domain", None)
+            if _dom:
+                from jarvis.agents import registry as _areg2
+                _h = _areg2.hint(_dom)
+                if _h:
+                    _sys_content += "\n\n" + _h
+        except Exception:
+            pass
+        # Hint SEMÂNTICO de tools (pedido do dono): consulta a SkillMemory por
+        # SIGNIFICADO e injeta "tools úteis: X, Y, Z". INDEPENDE do modo de filtro —
+        # funciona inclusive com brain_mode=total (onde o filtro manda tudo). Gated
+        # por SKILL_MEMORY_HINT (OFF). Reconstrói o índice na 1ª vez (lazy).
+        try:
+            import config as _cfgh
+            if getattr(_cfgh, "SKILL_MEMORY_HINT", False):
+                from jarvis.memory import skills as _skh
+                _smh = _skh.get_skills()
+                if _smh.stats().get("records", 0) == 0:
+                    _skh.sync_from_registry()
+                _hint = _smh.retrieve_tool_names(
+                    text, k=int(getattr(_cfgh, "SKILL_MEMORY_HINT_MAX", 6)))
+                if _hint:
+                    _sys_content += ("\n\n[Tools provavelmente úteis para este pedido, "
+                                     "por significado e em ordem: " + ", ".join(_hint) + "]")
+        except Exception:
+            pass
+        # Memória de artefato: o último arquivo criado fica VISÍVEL no contexto →
+        # "esse PDF / aquele arquivo / de novo / move ele" resolve sem perguntar.
+        try:
+            _art = getattr(self, "_last_artifact", None)
+            if _art and _art.get("path"):
+                _sys_content += (
+                    f"\n\n[Último arquivo que VOCÊ criou nesta sessão: "
+                    f"{_art['path']} ({_art['type']}). Se o Senhor disser 'esse/este/"
+                    f"aquele {_art['type']}', 'esse arquivo', 'de novo' ou 'move/abre "
+                    f"ele', é ESTE — use este caminho, não pergunte.]")
+        except Exception:
+            pass
+        # Raciocínio VISÍVEL (roadmap/16 Fase 2, OFF por padrão): plano curto antes
+        # de agir → aparece na UI ("pensando") e guia as tools. NÃO é falado.
+        try:
+            import config as _cfgr
+            if getattr(_cfgr, "AGENT_REASONING", False):
+                _minw = int(getattr(_cfgr, "AGENT_REASONING_MIN_WORDS", 4))
+                if len((text or "").split()) >= _minw:
+                    _plano = self._gerar_plano(text)
+                    if _plano:
+                        print(f"[PLANO] {_plano[:160]}")
+                        self._append("JARVIS", _plano, "thinking")
+                        _sys_content += f"\n\n[Seu plano para este turno]\n{_plano}"
+        except Exception as _ep:
+            print(f"[PLANO] erro: {_ep}")
+        # Histórico recente (roadmap/13, opcional, OFF por padrão) — dá contexto
+        # p/ frases que dependem do turno anterior ("manda pra ele", "esse aí").
+        _hist_msgs: list[dict] = []
+        try:
+            import config as _cfg_h
+            if getattr(_cfg_h, "AGENT_INCLUDE_HISTORY", False):
+                # Contexto adaptativo: provider de nuvem (self._lm None) tem
+                # janela maior, então injeta mais histórico que o LM local.
+                _cloud = self._lm is None
+                _n_h = int(getattr(_cfg_h, "AGENT_HISTORY_TURNS_CLOUD", 20) if _cloud
+                           else (getattr(_cfg_h, "AGENT_HISTORY_TURNS", 6) or 6))
+                _prev = [m for m in (getattr(self, "_chat_history", None) or [])
+                         if isinstance(m, dict)
+                         and m.get("role") in ("user", "assistant")
+                         and m.get("content")]
+                _hist_msgs = _prev[-_n_h:] if _n_h > 0 else []
+        except Exception:
+            _hist_msgs = []
+        msgs = [{"role": "system", "content": _sys_content}]
+        msgs.extend(_hist_msgs)
+        msgs.append({"role": "user", "content": text})
 
         # Escolhe backend: game mode ou Groq puro → Groq; senão LM Studio
         use_groq = bool((self._game_mode or not self._lm) and self._groq)
@@ -3525,7 +4239,10 @@ class JarvisApp:
         except Exception:
             pass
         # Feedback visual + terminal: usuário precisa SENTIR a IA pensando
-        backend_lbl = "Groq" if use_groq else "LM Studio"
+        if use_groq:
+            backend_lbl = "OpenRouter" if getattr(self, "_cloud_is_openrouter", False) else "Groq"
+        else:
+            backend_lbl = "LM Studio"
         print(f"[PENSAR] {backend_lbl} analisando: {text!r}")
         try:
             self._set_status(f"🧠  {backend_lbl} pensando...", _CYAN)
@@ -3537,10 +4254,14 @@ class JarvisApp:
         _use_sem = not use_groq
         if _use_sem:
             self._lm_pensar_sem.acquire()
+        # Modelo de TOOL-CALLING: usa o 8b (barato, TPD MUITO maior) em vez do 70b —
+        # o loop agêntico é o caminho mais pesado e estourava o limite diário do 70b.
+        # O 70b (GROQ_MODELO_CHAT) segue p/ o chat. Override: prefs models.tools_groq.
+        _tool_model = GROQ_MODELO_TOOLS or GROQ_MODELO_CHAT
         try:
             if use_groq:
                 resp = self._groq.chat.completions.create(
-                    model=GROQ_MODELO_CHAT, messages=msgs,
+                    model=_tool_model, messages=msgs,
                     tools=tools, tool_choice="auto",
                     max_tokens=512, temperature=0.3,
                 )
@@ -3567,22 +4288,111 @@ class JarvisApp:
                     print("[TOOL-CALL] LM Studio context overflow → pulando para Groq por 10min.")
             except Exception:
                 pass
-            # Fallback Groq se LM falhou
-            if not use_groq and self._groq:
+            # ── 413 / LIMITE DE TOKENS: reduz o payload e deixa a cadeia abaixo
+            # re-tentar com MENOS tokens (sem histórico/memória, poucas tools) —
+            # em vez de cair no chat. Resolve o 413 do Groq free tier (6k TPM).
+            _token_err = False
+            try:
+                _em = str(e).lower()
+                if any(k in _em for k in (
+                        "413", "rate_limit", "too large", "request too large",
+                        "tokens per minute", "reduce your message", "context length")):
+                    _token_err = True
+                    # Compactação NÃO-destrutiva primeiro: mascara saídas de tools já
+                    # consumidas antes de descartar TODO o histórico. Só destrói o
+                    # contexto se a compactação estiver OFF. Gated por MEMORY_COMPACTION_ENABLED.
+                    _compacted = False
+                    try:
+                        import config as _cfgk413
+                        if getattr(_cfgk413, "MEMORY_COMPACT_IN_LOOP", False):
+                            from jarvis.memory import compaction as _cmp413
+                            msgs = _cmp413.mask_tool_outputs(msgs, keep_last=2)
+                            _compacted = True
+                            print("[413] compactação não-destrutiva aplicada (histórico preservado)")
+                    except Exception:
+                        _compacted = False
+                    if not _compacted:
+                        msgs = [{"role": "system", "content": self._TOOL_SYSTEM_PROMPT},
+                                {"role": "user", "content": text}]
+                    tools = self._reduce_tools_emergencia(text, tools, max_n=8)
+                    print(f"[TOOL-CALL] payload reduzido (limite de tokens) → "
+                          f"{len(tools)} tools, sem histórico/memória")
+            except Exception:
+                pass
+            # ── CADEIA DE FALLBACK ROBUSTA (roadmap/13) ────────────────────
+            # OpenRouter modelo específico → openrouter/auto → Groq real → LM
+            # → chat sem tools. Nunca acessa self._lm/self._groq quando None.
+            import sys as _sys_fb
+            _m_fb = _sys_fb.modules.get(__name__)
+            resp = None
+
+            # (0) Erro de TOKEN → re-tenta o PRÓPRIO primário com o payload já
+            #     reduzido. Cobre provider=groq (onde (1)-(4) não re-tentam o
+            #     primário) — faz a ação executar em vez de virar "estou limitado".
+            if _token_err and use_groq and self._groq is not None:
                 try:
+                    print("[TOOL-CALL] (0) re-tentando primário com payload reduzido")
                     resp = self._groq.chat.completions.create(
-                        model=GROQ_MODELO_CHAT, messages=msgs,
-                        tools=tools, tool_choice="auto",
-                        max_tokens=512, temperature=0.3,
-                    )
-                    actual_use_groq = True  # loop continua na Groq
-                    use_groq = True  # atualiza flag para liberar sem corretamente
-                except Exception as e2:
-                    print(f"[TOOL-CALL] Groq fallback falhou: {e2}")
-                    # Tenta SALVAR a tool call do failed_generation do Groq.
-                    # Llama 70B às vezes emite '<function=NAME{json}</function>'
-                    # que o Groq rejeita — mas a intenção do modelo está lá.
-                    salvaged = self._salvage_groq_tool_call(e2)
+                        model=_tool_model, messages=msgs, tools=tools,
+                        tool_choice="auto", max_tokens=400, temperature=0.3)
+                    actual_use_groq = True
+                except Exception as _e0:
+                    print(f"[TOOL-CALL] (0) retry primário reduzido falhou: {_e0}")
+                    resp = None
+
+            # (0.5) MULTI-PROVEDOR: o primário (Groq) estourou limite → tenta
+            # OpenRouter → Gemini → Groq-real, cada um com janela/limite PRÓPRIO.
+            # Não depende só do Groq. O primeiro que responder assume o resto do loop.
+            if resp is None:
+                for _cli, _mdl, _lbl in self._tool_fallback_providers():
+                    try:
+                        print(f"[TOOL-CALL] → {_lbl} ({_mdl}) [multi-provedor]")
+                        resp = _cli.chat.completions.create(
+                            model=_mdl, messages=msgs, tools=tools,
+                            tool_choice="auto", max_tokens=512, temperature=0.3, timeout=30)
+                        actual_use_groq = True
+                        self._groq = _cli            # loop segue neste provedor
+                        _tool_model = _mdl
+                        if _m_fb:
+                            setattr(_m_fb, "GROQ_MODELO_CHAT", _mdl)
+                        print(f"[TOOL-CALL] {_lbl} assumiu o turno.")
+                        break
+                    except Exception as _ep:
+                        print(f"[TOOL-CALL] {_lbl} falhou: {type(_ep).__name__}")
+                        resp = None
+
+            # (1) OpenRouter: tenta o Auto Router se o modelo específico falhou.
+            if (use_groq and getattr(self, "_cloud_is_openrouter", False)
+                    and self._groq is not None and GROQ_MODELO_CHAT != "openrouter/auto"):
+                try:
+                    print("[TOOL-CALL] → openrouter/auto (fallback de modelo)")
+                    resp = self._groq.chat.completions.create(
+                        model="openrouter/auto", messages=msgs, tools=tools,
+                        tool_choice="auto", max_tokens=512, temperature=0.3)
+                    actual_use_groq = True
+                    _tool_model = "openrouter/auto"
+                    if _m_fb:
+                        setattr(_m_fb, "GROQ_MODELO_CHAT", "openrouter/auto")
+                except Exception as _ea:
+                    print(f"[TOOL-CALL] openrouter/auto falhou: {_ea}")
+                    resp = None
+
+            # (2) Groq REAL como fallback (inclusive quando a nuvem é OpenRouter).
+            if (resp is None and getattr(self, "_groq_real", None) is not None
+                    and self._groq_real is not self._groq):
+                try:
+                    print("[TOOL-CALL] → Groq real (fallback)")
+                    resp = self._groq_real.chat.completions.create(
+                        model=self._groq_real_model, messages=msgs, tools=tools,
+                        tool_choice="auto", max_tokens=512, temperature=0.3)
+                    actual_use_groq = True
+                    self._groq = self._groq_real        # loop continua na Groq real
+                    _tool_model = self._groq_real_model
+                    if _m_fb:
+                        setattr(_m_fb, "GROQ_MODELO_CHAT", self._groq_real_model)
+                except Exception as _eg:
+                    print(f"[TOOL-CALL] Groq real falhou: {_eg}")
+                    salvaged = self._salvage_groq_tool_call(_eg)
                     if salvaged:
                         name, args = salvaged
                         try:
@@ -3590,49 +4400,56 @@ class JarvisApp:
                             out = _tool_registry.dispatch(name, args, self)
                             if out and not str(out).startswith("ERRO"):
                                 return True, str(out)
-                        except Exception as e3:
-                            print(f"[TOOL-CALL] Salvage exec falhou: {e3}")
-                    # Último recurso: pede ao Groq uma resposta de CHAT (sem
-                    # tools) usando o prompt original, mantendo a personalidade
-                    # JARVIS. Evita cair no classificador raso quando ambos
-                    # backends falharam no tool-calling.
+                        except Exception:
+                            pass
+                    resp = None
+
+            # (3) Caminho original: primária era LM e Groq está disponível.
+            if resp is None and not use_groq and self._groq is not None:
+                try:
+                    resp = self._groq.chat.completions.create(
+                        model=_tool_model, messages=msgs, tools=tools,
+                        tool_choice="auto", max_tokens=512, temperature=0.3)
+                    actual_use_groq = True
+                    use_groq = True
+                except Exception as _e2:
+                    print(f"[TOOL-CALL] Groq fallback falhou: {_e2}")
+                    resp = None
+
+            # (4) LM Studio como fallback (só se estiver vivo).
+            if resp is None and self._lm is not None:
+                try:
+                    resp = self._lm.chat.completions.create(
+                        model=LMSTUDIO_MODEL, messages=msgs, tools=tools,
+                        tool_choice="auto", max_tokens=512, temperature=0.3)
+                    actual_use_groq = False
+                except Exception as _el:
+                    print(f"[TOOL-CALL] LM fallback falhou: {_el}")
+                    resp = None
+
+            # (5) Último recurso: chat SEM tools no provedor disponível, p/ não
+            # cair no classificador raso quando o tool-calling falhou em todos.
+            if resp is None:
+                _chat_cli = (self._groq_real or self._groq
+                             if not self._cloud_is_openrouter else self._groq_real) or self._lm
+                _chat_model = (self._groq_real_model if getattr(self, "_groq_real", None)
+                               else (LMSTUDIO_MODEL if self._lm else GROQ_MODELO_CHAT))
+                if _chat_cli is not None:
                     try:
-                        chat_resp = self._groq.chat.completions.create(
-                            model=GROQ_MODELO_CHAT,
+                        chat_resp = _chat_cli.chat.completions.create(
+                            model=_chat_model,
                             messages=[
-                                {"role": "system", "content": self._TOOL_SYSTEM_PROMPT},
+                                {"role": "system", "content": self._CHAT_FALLBACK_SYSTEM},
                                 {"role": "user",   "content": text},
                             ],
-                            max_tokens=400, temperature=0.4,
-                        )
+                            max_tokens=120, temperature=0.4)
                         ftxt = (chat_resp.choices[0].message.content or "").strip()
                         ftxt = ftxt.replace("**", "").replace("*", "").replace("`", "")
                         if ftxt:
-                            print(f"[PENSAR] Groq chat-fallback → {ftxt[:120]!r}")
+                            print(f"[PENSAR] chat-fallback → {ftxt[:120]!r}")
                             return True, ftxt
-                    except Exception as e4:
-                        print(f"[PENSAR] Groq chat-fallback falhou: {e4}")
-                    return False, ""
-            else:
-                # LM falhou e Groq indisponível → último recurso é tentar
-                # uma resposta direta no LM sem tools (caso ele esteja vivo
-                # mas só tenha estourado o template das tools).
-                try:
-                    chat_resp = self._lm.chat.completions.create(
-                        model=LMSTUDIO_MODEL,
-                        messages=[
-                            {"role": "system", "content": self._TOOL_SYSTEM_PROMPT},
-                            {"role": "user",   "content": text},
-                        ],
-                        max_tokens=300, temperature=0.4,
-                    )
-                    ftxt = (chat_resp.choices[0].message.content or "").strip()
-                    ftxt = ftxt.replace("**", "").replace("*", "").replace("`", "")
-                    if ftxt:
-                        print(f"[PENSAR] LM chat-fallback → {ftxt[:120]!r}")
-                        return True, ftxt
-                except Exception as e5:
-                    print(f"[PENSAR] LM chat-fallback falhou: {e5}")
+                    except Exception as _ec:
+                        print(f"[PENSAR] chat-fallback falhou: {_ec}")
                 return False, ""
 
         # Libera semaphore LM Studio — primeira chamada concluída com sucesso.
@@ -3667,6 +4484,29 @@ class JarvisApp:
                     print(f"[PENSAR] Groq corrigiu: {len(tool_calls)} tool_call(s).")
                 except Exception as _eg:
                     print(f"[PENSAR] Groq correção falhou: {_eg}")
+
+        # Nuvem voltou VAZIA (sem tool e sem texto)? O Auto Router às vezes devolve
+        # vazio. Re-tenta 1× no Groq REAL com tools ANTES de cair em conversa — pra
+        # a ação realmente disparar (ex.: criar_apresentacao) em vez de fingir.
+        if (not tool_calls and not (getattr(choice, "content", "") or "").strip()
+                and actual_use_groq and getattr(self, "_groq_real", None) is not None
+                and self._groq_real is not self._groq):
+            try:
+                print("[PENSAR] nuvem vazia → re-tentando no Groq real com tools.")
+                _rr = self._groq_real.chat.completions.create(
+                    model=self._groq_real_model, messages=msgs,
+                    tools=tools, tool_choice="auto", max_tokens=400, temperature=0.3)
+                _rc = _rr.choices[0].message
+                if getattr(_rc, "tool_calls", None) or (_rc.content or "").strip():
+                    choice = _rc
+                    tool_calls = getattr(_rc, "tool_calls", None) or []
+                    self._groq = self._groq_real   # loop segue no Groq real
+                    import sys as _sfb
+                    _mm = _sfb.modules.get(__name__)
+                    if _mm is not None:            # alinha o modelo do loop ao Groq real
+                        setattr(_mm, "GROQ_MODELO_CHAT", self._groq_real_model)
+            except Exception as _ev:
+                print(f"[PENSAR] re-tentativa Groq real falhou: {_ev}")
 
         if not tool_calls:
             # Sem tool → LLM decidiu que é só conversa.
@@ -3720,7 +4560,16 @@ class JarvisApp:
         # modelo não aceita executá-los todos juntos no próximo render. Para
         # garantir compatibilidade, executamos apenas o PRIMEIRO de cada turno
         # quando rodando localmente — o LLM re-emite os próximos no step seguinte.
-        if not actual_use_groq and len(current_tool_calls) > 1:
+        # Permite paralelo real quando o usuário liga a flag (roadmap/13).
+        # Default OFF → serializa no modelo local (template do 3B não renderiza
+        # múltiplos calls). Groq/OpenRouter já fazem paralelo no caminho normal.
+        _allow_parallel = False
+        try:
+            import config as _cfg_p
+            _allow_parallel = bool(getattr(_cfg_p, "AGENT_PARALLEL_TOOLS", False))
+        except Exception:
+            _allow_parallel = False
+        if not actual_use_groq and not _allow_parallel and len(current_tool_calls) > 1:
             print(f"[PENSAR] LM Studio: {len(current_tool_calls)} tool_calls paralelos → serializando (só o 1º).")
             current_tool_calls = current_tool_calls[:1]
 
@@ -3732,6 +4581,7 @@ class JarvisApp:
 
             # Executa as tools deste step
             step_results: list[tuple[str, dict, str, str]] = []
+            _real_dispatch = False  # algum dispatch REAL aconteceu (não só DEDUP)?
             for tc in current_tool_calls:
                 try:
                     name, args = _tool_registry.parse_tool_call(tc)
@@ -3749,11 +4599,24 @@ class JarvisApp:
                     except Exception:
                         pass
                     out = _tool_registry.dispatch(name, args, self)
+                    _real_dispatch = True
                     step_results.append((name, args, out, getattr(tc, "id", None) or "tc"))
                 except Exception as e:
                     step_results.append(("?", {}, f"ERRO: {e}", "tc"))
 
             all_results.extend(step_results)
+
+            # BREAK por NÃO-PROGRESSO: o step só produziu DEDUP-aborts (zero dispatch
+            # real) → o modelo está repetindo a MESMA chamada. Em vez de gastar outra
+            # rodada de LLM (que vira o hang de 30s), encerra: devolve o parcial bom se
+            # houver, senão cai no chat. Mata o caso 'abrir_dm_discord' repetido.
+            if not _real_dispatch:
+                _ok_prev = [o for _, _, o, _ in all_results if o and not str(o).startswith("ERRO")]
+                if _ok_prev:
+                    print(f"[PENSAR] step {step}: só DEDUP (zero progresso) → encerra com parcial.")
+                    return True, " ".join(_ok_prev)
+                print(f"[PENSAR] step {step}: só DEDUP e sem resultado prévio → encerra (chat).")
+                return False, ""
 
             # Adiciona ao histórico para a próxima iteração
             assistant_msg = {
@@ -3773,11 +4636,24 @@ class JarvisApp:
             }
             msgs.append(assistant_msg)
             for i, (name, args, out, _tc_id) in enumerate(step_results):
+                # Pesquisa é matéria-prima de documento → mais corpo que outras tools.
+                # Solta a truncagem só p/ elas; 1500 segue p/ o resto (protege contexto).
+                _cap = 4000 if name in ("pesquisa_web", "pesquisa_rapida", "aprender_sobre", "dossie") else 1500
+                _content = (out or "")[:_cap]
+                # Auto-correção ancorada (grounded self-correction): em erro, dá
+                # ao modelo uma instrução de recuperação em vez do erro cru — ele
+                # corrige os args / usa a tool certa / pede o dado, sem repetir
+                # nem fingir que funcionou. (anti-loop já corta repetição exata.)
+                if _content.startswith("ERRO"):
+                    _content += ("\n[recuperação: ajuste os argumentos OU use a tool "
+                                 "correta para a intenção; se faltar um dado, pergunte "
+                                 "ao Senhor em 1 frase; NUNCA repita a mesma chamada nem "
+                                 "diga que funcionou.]")
                 msgs.append({
                     "role": "tool",
                     "tool_call_id": getattr(current_tool_calls[i], "id", f"tc_{step}_{i}"),
                     "name": name,
-                    "content": (out or "")[:1500],
+                    "content": _content,
                 })
 
             # Atalho de single-step simples: 1 tool, sucesso → ainda assim
@@ -3812,18 +4688,38 @@ class JarvisApp:
                     actual_use_groq = True
             except Exception:
                 pass
+            # Compactação no loop vivo (roadmap/14): mascara saídas de tools JÁ
+            # consumidas (mantém últimas N + paths/erros/URLs verbatim) antes de
+            # re-enviar o msgs crescente — sem 2ª chamada de LLM. Combate o "injeta
+            # muito contexto mas não usa". Gated por MEMORY_COMPACTION_ENABLED (OFF).
+            try:
+                import config as _cfgk
+                if getattr(_cfgk, "MEMORY_COMPACT_IN_LOOP", False):
+                    from jarvis.memory import compaction as _cmp
+                    _budget = 24000 if self._lm is None else 6000
+                    _at = float(getattr(_cfgk, "MEMORY_COMPACT_AT", 0.70))
+                    if _cmp.needs_compaction(msgs, _budget, _at):
+                        msgs = _cmp.mask_tool_outputs(
+                            msgs, keep_last=int(getattr(_cfgk, "MEMORY_COMPACT_KEEP_LAST", 4)))
+                        print(f"[COMPACT] saídas de tools mascaradas (budget≈{_budget})")
+            except Exception as _ecmp:
+                print(f"[COMPACT] falhou: {_ecmp}")
+            # Timeout REAL por chamada: o STEP_TIMEOUT_S só era checado ENTRE steps —
+            # uma chamada travada estourava os 30s. Limita cada create ao orçamento
+            # restante (<=12s) → o hang vira erro tratável (migra/encerra com parcial).
+            _step_to = min(12.0, max(2.0, STEP_TIMEOUT_S - (_time.time() - loop_start)))
             try:
                 if actual_use_groq:
                     resp_n = self._groq.chat.completions.create(
-                        model=GROQ_MODELO_CHAT, messages=msgs,
+                        model=_tool_model, messages=msgs,
                         tools=tools, tool_choice="auto",
-                        max_tokens=400, temperature=0.3,
+                        max_tokens=400, temperature=0.3, timeout=_step_to,
                     )
                 else:
                     resp_n = self._lm.chat.completions.create(
                         model=LMSTUDIO_MODEL, messages=msgs,
                         tools=tools, tool_choice="auto",
-                        max_tokens=400, temperature=0.3,
+                        max_tokens=400, temperature=0.3, timeout=_step_to,
                     )
             except Exception as e:
                 print(f"[PENSAR] step {step+1} falhou ({type(e).__name__}): {e}")
@@ -3833,9 +4729,9 @@ class JarvisApp:
                     print("[PENSAR] Migrando loop para Groq…")
                     try:
                         resp_n = self._groq.chat.completions.create(
-                            model=GROQ_MODELO_CHAT, messages=msgs,
+                            model=_tool_model, messages=msgs,
                             tools=tools, tool_choice="auto",
-                            max_tokens=400, temperature=0.3,
+                            max_tokens=400, temperature=0.3, timeout=_step_to,
                         )
                         actual_use_groq = True
                     except Exception as e2:
@@ -3862,7 +4758,8 @@ class JarvisApp:
                 return True, final_txt
 
             # Serializa também nos próximos turnos quando estamos no LM local
-            if not actual_use_groq and len(next_tcs) > 1:
+            # (a menos que o usuário tenha ligado AGENT_PARALLEL_TOOLS).
+            if not actual_use_groq and not _allow_parallel and len(next_tcs) > 1:
                 print(f"[PENSAR] LM Studio: {len(next_tcs)} tool_calls paralelos no step {step+1} → serializando.")
                 next_tcs = next_tcs[:1]
 
@@ -3871,11 +4768,13 @@ class JarvisApp:
             current_tool_calls = next_tcs
             step += 1
 
-        # Saiu do loop por MAX_STEPS, timeout ou erro: fallback
-        fallback = " ".join(o for _, _, o, _ in all_results
-                            if o and not o.startswith("ERRO")) \
-                   or "Pronto, Senhor."
-        return True, fallback[:600]
+        # Saiu do loop por MAX_STEPS, timeout ou erro.
+        _ok = [o for _, _, o, _ in all_results if o and not o.startswith("ERRO")]
+        if _ok:
+            return True, " ".join(_ok)[:600]
+        # TUDO falhou → honestidade (NUNCA fingir 'Pronto, Senhor').
+        return True, ("Não consegui concluir essa ação agora, Senhor — pode tentar "
+                      "de novo ou de outra forma?")
 
     # ══════════════════════════════════════════════════════════════════════════
     # INPUT DE TEXTO
@@ -7563,6 +8462,9 @@ class JarvisApp:
             src_mv = m_mv.group(1).strip()
             dst_mv = m_mv.group(2).strip()
             nome_proj = (m_mv.group(3) or "").strip() or getattr(self, "_last_ide_project", None)
+            # Só trata como file-op de IDE se houver CONTEXTO de projeto. Sem
+            # projeto (ex.: "mova esse PDF para downloads") NÃO sequestra — deixa
+            # o cérebro raciocinar, em vez de pedir "qual projeto" rigidamente.
             if nome_proj:
                 def _do_mv(p=nome_proj, s=src_mv, d=dst_mv):
                     try:
@@ -7573,10 +8475,8 @@ class JarvisApp:
                     except Exception as e:
                         self.root.after(0, self._exibir_resposta, f"Erro: {e}")
                 threading.Thread(target=_do_mv, daemon=True).start()
-            else:
-                self.root.after(0, self._exibir_resposta,
-                    "Em qual projeto, senhor? Diga 'no projeto <nome>'.")
-            return True
+                return True
+            return False  # sem projeto → não é file-op de IDE; cérebro decide
 
         # Abrir no Windows Explorer
         m_exp = re.search(
@@ -7707,6 +8607,14 @@ class JarvisApp:
         )
         if m_pptx:
             tema = _limpa_tema(m_pptx.group(1))
+            # Deck v2 (roadmap/13, Fase 2): se ligado, NÃO intercepta — deixa o
+            # cérebro compor via tool 'criar_apresentacao' (spec→render bonito).
+            try:
+                import config as _cfg_dv
+                if getattr(_cfg_dv, "DECK_V2_ENABLED", False):
+                    return False
+            except Exception:
+                pass
             self._gerar_documento_via_llm("pptx", tema)
             return True
 
@@ -7717,6 +8625,15 @@ class JarvisApp:
         )
         if m_pdf:
             tema = _limpa_tema(m_pdf.group(1))
+            # Report v2 (espelha o gate do PPTX): se ligado, NÃO intercepta — deixa o
+            # cérebro compor via tool 'criar_relatorio' (HTML→Chromium: capa, sumário,
+            # quebras de página corretas, SEM cap de 4-6 seções). Mata o "pdf cagado".
+            try:
+                import config as _cfg_rv
+                if getattr(_cfg_rv, "REPORT_V2_ENABLED", False):
+                    return False
+            except Exception:
+                pass
             self._gerar_documento_via_llm("pdf", tema)
             return True
 
@@ -7879,7 +8796,8 @@ class JarvisApp:
                 schema = ('{"titulo": str, "subtitulo": str, "secoes": '
                           '[{"heading": str, "icon": "emoji", "paragraphs": [str, ...]}, ...]}')
                 hint = (
-                    "Gere 4 a 6 seções. Cada seção: heading descritivo, "
+                    "Gere de 6 a 12 seções conforme a amplitude do tema (cubra cada "
+                    "subtópico em sua própria seção). Cada seção: heading descritivo, "
                     "um emoji relevante no campo 'icon' (escolha com base no conteúdo: "
                     "📋 introdução/resumo, 🔍 análise/pesquisa, 📊 dados/resultados, "
                     "⚙️ metodologia/técnico, 💡 conclusões/insights, 🌐 contexto/cenário, "
@@ -7899,24 +8817,13 @@ class JarvisApp:
             # Tenta chamar o cliente LLM existente do JARVIS
             conteudo_json = None
             raw = ""
-            try:
-                from groq import Groq as _Groq
-                from config import GROQ_API_KEY as _GK, GROQ_MODELO_CHAT as _GM
-                _client = _Groq(api_key=_GK)
-                _resp = _client.chat.completions.create(
-                    model=_GM,
-                    messages=[
-                        {"role": "system",
-                         "content": "Você é o JARVIS. Responda APENAS com JSON válido, sem markdown."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.4,
-                    max_tokens=2048,
-                )
-                raw = (_resp.choices[0].message.content or "").strip()
-            except Exception as _e_llm:
-                print(f"[DOC-LLM] Groq falhou: {_e_llm}")
-                raw = ""
+            # Multi-provedor (Groq → OpenRouter → Gemini): geração de documento não
+            # depende só do Groq — se estourar limite, o próximo provedor assume.
+            raw = self._llm_completar(
+                [{"role": "system",
+                  "content": "Você é o JARVIS. Responda APENAS com JSON válido, sem markdown."},
+                 {"role": "user", "content": prompt}],
+                max_tokens=4096, temperature=0.4)
             if raw:
                 raw = raw.strip()
                 raw = re.sub(r"^```(?:json)?\s*", "", raw)
@@ -8172,6 +9079,10 @@ class JarvisApp:
         """Classifica intenção e age (entrada de texto ou voz)."""
         from comandos.system_ctrl import salvar_comando as _salvar
         _salvar(text, origem)
+        # Memória (roadmap/14): guarda o input; o par user→JARVIS é gravado no
+        # episódico em _exibir_resposta. OFF por padrão (config.MEMORY_ENABLED).
+        self._mem_last_user = text
+        self._mem_origem = origem
         # Registra o texto de voz para captura da resposta e contexto multi-turno
         if origem == "voz":
             self._voz_pending_input = text
@@ -8570,6 +9481,17 @@ class JarvisApp:
             # cujo output já é a fala final. Se o LLM não chamar nenhuma
             # tool, cai no fluxo conversacional/regex como fallback.
             if len(text.split()) >= 1:
+                # Fase B1: a Nila (local) tenta orquestrar PRIMEIRO (opt-in). Se ela
+                # resolver, pula a nuvem (sem rate-limit); senão cai no _pensar_e_agir.
+                try:
+                    _nused, _nresp = self._orquestrar_nila(text)
+                except Exception as _e_nila:
+                    print(f"[NILA] orquestração falhou: {_e_nila}")
+                    _nused, _nresp = False, ""
+                if _nused:
+                    if _nresp:
+                        self.root.after(0, self._exibir_resposta, _nresp)
+                    return
                 try:
                     _used_tool, _resp = self._pensar_e_agir(text)
                 except Exception as _e_pa:
@@ -8578,6 +9500,22 @@ class JarvisApp:
                 if _used_tool:
                     if _resp:
                         self.root.after(0, self._exibir_resposta, _resp)
+                    # Write-back do turno COM TOOL no histórico (fecha o vazamento:
+                    # turnos de ação ficavam invisíveis p/ os próximos → "de novo"/
+                    # "fecha ele"/"esse PDF" alucinavam). Gated por
+                    # AGENT_TOOL_HISTORY_WRITEBACK (OFF); a LEITURA ainda depende de
+                    # AGENT_INCLUDE_HISTORY — ligar os dois juntos e re-validar o bleed.
+                    try:
+                        import config as _cfgw
+                        if getattr(_cfgw, "AGENT_TOOL_HISTORY_WRITEBACK", False):
+                            if not self._chat_history:
+                                self._chat_history.append({"role": "system", "content": SYSTEM_PROMPT})
+                            self._chat_history.append({"role": "user", "content": text})
+                            self._chat_history.append({"role": "assistant", "content": _resp or ""})
+                            if len(self._chat_history) > 21:
+                                self._chat_history = self._chat_history[:1] + self._chat_history[-20:]
+                    except Exception:
+                        pass
                     return
                 # Sem tool → cai no fluxo abaixo (regex de fallback ou chat).
 
@@ -9886,7 +10824,11 @@ class JarvisApp:
             "Sem apresentação. Use o contexto abaixo se relevante — o Senhor pode "
             "estar reagindo a algo que ouviu (vídeo, música, conversa). "
             "Para opiniões, dê sua opinião diretamente. Para fatos, responda com "
-            "o que sabe. Jamais diga 'posso ajudar' ou peça confirmação."
+            "o que sabe. Jamais diga 'posso ajudar' ou peça confirmação. "
+            "CRÍTICO: você NÃO executou nenhuma ação agora. NUNCA diga que fez, "
+            "gerou, abriu, criou ou enviou algo, nem que 'está sendo gerado/feito'. "
+            "Se o Senhor pediu uma AÇÃO (gerar arquivo, abrir app, pesquisar), diga "
+            "em 1 frase honesta que não conseguiu executá-la agora — não finja."
         )
         user_msg = text
         if ctx:
@@ -9895,8 +10837,12 @@ class JarvisApp:
                 f"(mic + áudio do sistema):\n{ctx}\n\nSenhor disse: {text}"
             )
         try:
-            resp = self._groq.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+            # Ambiente/contexto: usa o Groq REAL (grátis), nunca um id Groq cru no
+            # cliente OpenRouter (que rejeita 'llama-...' sem prefixo de provedor).
+            _cli = getattr(self, "_groq_real", None) or self._groq
+            _mdl = getattr(self, "_groq_real_model", None) or GROQ_MODELO_CHAT
+            resp = _cli.chat.completions.create(
+                model=_mdl,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user",   "content": user_msg},
@@ -9932,8 +10878,10 @@ class JarvisApp:
         if contexto:
             user_msg = f"Contexto recente da conversa:\n{contexto}\n\nPergunta: {pergunta}"
         try:
-            resp = self._groq.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+            _cli = getattr(self, "_groq_real", None) or self._groq
+            _mdl = getattr(self, "_groq_real_model", None) or GROQ_MODELO_CHAT
+            resp = _cli.chat.completions.create(
+                model=_mdl,
                 messages=[
                     {"role": "system", "content": sys_prompt},
                     {"role": "user",   "content": user_msg},
@@ -10013,18 +10961,30 @@ class JarvisApp:
         _PREFS_FILE = _data("jarvis_prefs.json")
 
     def _save_prefs(self) -> None:
-        """Salva preferências (mic, modo, modelos, cidade, notif, ui)."""
+        """Salva preferências (mic, modo, modelos, cidade, notif, ui).
+        PRESERVA a seção 'settings' (overlay do config_manager) e quaisquer outras
+        chaves do arquivo — antes este método reescrevia tudo e APAGAVA os toggles
+        da aba Cérebro (set_setting) ao salvar Modelos, e vice-versa."""
         try:
-            data = {
+            existing: dict = {}
+            try:
+                with open(self._PREFS_FILE, "r", encoding="utf-8") as f:
+                    existing = _json_mod.load(f) or {}
+            except Exception:
+                existing = {}
+            if not isinstance(existing, dict):
+                existing = {}
+            existing.update({
                 "activation_mode": self._activation_mode,
                 "mic_idx": self._selected_mic_idx,
                 "notif_auto_speak": getattr(self, "_notif_auto_speak", False),
                 "user_city": getattr(self, "_user_city", None),
                 "models": getattr(self, "_models_pref", {}),
+                "agent": getattr(self, "_agent_pref", {}) or {},
                 "ui": getattr(self, "_ui_pref", {}) or {},
-            }
+            })
             with open(self._PREFS_FILE, "w", encoding="utf-8") as f:
-                _json_mod.dump(data, f, ensure_ascii=False, indent=2)
+                _json_mod.dump(existing, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
@@ -10034,6 +10994,7 @@ class JarvisApp:
         self._notif_auto_speak = False
         self._user_city = None
         self._models_pref = {}
+        self._agent_pref = {}
         self._ui_pref = {"theme": "stark"}
         try:
             with open(self._PREFS_FILE, "r", encoding="utf-8") as f:
@@ -10048,6 +11009,8 @@ class JarvisApp:
                 self._user_city = data.get("user_city")
             if isinstance(data.get("models"), dict):
                 self._models_pref = data["models"]
+            if isinstance(data.get("agent"), dict):
+                self._agent_pref = data["agent"]
             if isinstance(data.get("ui"), dict):
                 self._ui_pref = {**self._ui_pref, **data["ui"]}
             # Aplica preferência de navegador (override) a config.BROWSER_PREFERRED
@@ -10080,6 +11043,26 @@ class JarvisApp:
     def _is_wake_word(self, text: str) -> bool:
         """Verifica se o texto contém o wake word 'Jarvis'."""
         return bool(self._WAKE_PATTERNS.search(text))
+
+    def _echo_guard_active(self) -> bool:
+        """True se o TTS está tocando ou acabou há pouco — anti-eco do wake.
+
+        Corrige a auto-escuta: o mic captava a própria fala do JARVIS (e a cauda
+        logo após) como se fosse comando. NÃO afeta a interrupção por wake word
+        durante o TTS (barge-in), que tem caminho próprio.
+        """
+        guard = 1.2
+        try:
+            import config as _cfg
+            if not getattr(_cfg, "WAKE_ANTI_ECHO", True):
+                return False
+            guard = float(getattr(_cfg, "WAKE_ANTI_ECHO_GUARD_SEC", 1.2))
+        except Exception:
+            pass
+        if not self._tts_done.is_set():       # TTS tocando agora
+            return True
+        import time as _t
+        return (_t.monotonic() - getattr(self, "_tts_ended_at", 0.0)) < guard
 
     # Padrões típicos de áudio de TV/rádio/anúncio que vazam pelo mic.
     # Quando o comando contém esses padrões, descartamos como ruído ambiente.
@@ -10201,7 +11184,10 @@ class JarvisApp:
            confusa, refaz SEM language lock — Whisper passa a poder usar
            fonemas em inglês para decodificar termos como github.com.
         """
-        if not self._groq:
+        # Transcrição usa o Groq REAL (Whisper) — NUNCA o cliente OpenRouter
+        # (que não tem endpoint de áudio compatível → 'invalid content-type').
+        _gr = getattr(self, "_groq_real", None) or self._groq
+        if not _gr:
             return ""
         # ── Filtro VAD: descarta áudio sem fala humana antes de chamar Whisper.
         # Reduz drasticamente alucinações ('Obrigado', 'Obrigado por assistir')
@@ -10215,7 +11201,7 @@ class JarvisApp:
         try:
             audio_file = io.BytesIO(wav_bytes)
             audio_file.name = "audio.wav"
-            tr = self._groq.audio.transcriptions.create(
+            tr = _gr.audio.transcriptions.create(
                 model="whisper-large-v3",
                 file=audio_file,
                 language="pt",
@@ -10240,7 +11226,7 @@ class JarvisApp:
             if tem_url_hint and not ja_ok:
                 audio_file2 = io.BytesIO(wav_bytes)
                 audio_file2.name = "audio.wav"
-                tr2 = self._groq.audio.transcriptions.create(
+                tr2 = _gr.audio.transcriptions.create(
                     model="whisper-large-v3",
                     file=audio_file2,
                     prompt=self._whisper_prompt_dynamic(),  # multilíngue
@@ -10467,6 +11453,10 @@ class JarvisApp:
 
                                 print(f"[WAKE] Ouvido: '{texto}'")
 
+                                if self._echo_guard_active():
+                                    print("[WAKE] eco do TTS ignorado (anti-eco).")
+                                    continue
+
                                 if not self._is_wake_word(texto):
                                     continue  # não é wake word
 
@@ -10689,6 +11679,82 @@ class JarvisApp:
 
         _thr.Thread(target=_watcher, daemon=True, name="ConfigWatcher").start()
 
+    def _init_llm_clients(self) -> None:
+        """(Re)inicializa os clients LLM conforme `config.LLM_PROVIDER`.
+        Idempotente — usado no startup e ao trocar de provider pela UI.
+
+        OpenRouter assume o papel de "cliente de nuvem" (substitui `self._groq`
+        e remapeia o model id), reusando todo o caminho de nuvem existente sem
+        mexer nos call-sites. Sem chave OpenRouter → cai para Groq."""
+        import sys as _sys
+        from openai import OpenAI as _OAI
+        try:
+            from groq import Groq as _Groq
+        except Exception:
+            _Groq = None
+        import config as _cfg
+
+        # Provider do CÉREBRO = o do módulo "chat" (UI: "Provider — Chat"), caindo
+        # p/ o global. Antes lia só LLM_PROVIDER (global) e ignorava a escolha da UI.
+        try:
+            prov = (_cfg.get_provider("chat") or "groq").lower()
+        except Exception:
+            prov = (getattr(_cfg, "LLM_PROVIDER", "groq") or "groq").lower()
+        m = _sys.modules.get(__name__)
+
+        def _set(name, val):
+            if m is not None:
+                setattr(m, name, val)
+
+        # Client OpenRouter (se houver chave em .env / env)
+        or_key = (getattr(_cfg, "OPENROUTER_API_KEY", "") or
+                  os.environ.get("OPENROUTER_API_KEY", "")).strip()
+        try:
+            self._openrouter = _OAI(base_url=_cfg.OPENROUTER_BASE_URL,
+                                    api_key=or_key) if or_key else None
+        except Exception:
+            self._openrouter = None
+
+        # Groq REAL — sempre criado se houver chave. Fica como FALLBACK mesmo
+        # quando o provider primário é OpenRouter (self._groq pode apontar p/ OR).
+        self._groq_real = _Groq(api_key=_cfg.GROQ_API_KEY) if (_Groq and _cfg.GROQ_API_KEY) else None
+        self._groq_real_model = _cfg.GROQ_MODELO_CHAT   # id de modelo REAL da Groq
+        self._cloud_is_openrouter = False
+
+        if prov == "openrouter" and self._openrouter is not None:
+            self._lm = None
+            self._groq = self._openrouter            # nuvem primária = OpenRouter
+            self._cloud_is_openrouter = True
+            _set("GROQ_MODELO_CHAT", _cfg.get_openrouter_model("thinking"))
+            _set("GROQ_MODELO_CLS",  _cfg.get_openrouter_model("thinking"))
+            print(f"[JARVIS] Provider=openrouter ({_cfg.get_openrouter_model('thinking')}); "
+                  f"Groq real {'OK' if self._groq_real else 'ausente'} como fallback.")
+        elif prov == "lmstudio":
+            try:
+                threading.Thread(
+                    target=self._garantir_lm_model_carregado,
+                    kwargs={"model_key": _cfg.LMSTUDIO_MODEL, "context_length": 14000},
+                    daemon=True, name="LMPreload",
+                ).start()
+            except Exception as _e:
+                print(f"[LM-PRELOAD] Aviso: {_e}")
+            self._lm = _OAI(base_url=_cfg.LMSTUDIO_BASE_URL, api_key="lm-studio")
+            self._groq = self._groq_real
+            _set("GROQ_MODELO_CHAT", _cfg.GROQ_MODELO_CHAT)
+            _set("GROQ_MODELO_CLS",  _cfg.GROQ_MODELO_CLS)
+            _set("LMSTUDIO_MODEL",   _cfg.LMSTUDIO_MODEL)
+            print("[JARVIS] Provider=lmstudio — LM Studio local + Groq fallback.")
+        else:  # groq (default) — ou openrouter sem chave
+            self._lm = None
+            self._groq = self._groq_real
+            _set("GROQ_MODELO_CHAT", _cfg.GROQ_MODELO_CHAT)
+            _set("GROQ_MODELO_CLS",  _cfg.GROQ_MODELO_CLS)
+            if prov == "openrouter":
+                print("[JARVIS] Provider=openrouter SEM chave — usando Groq.")
+            else:
+                print("[JARVIS] Provider=groq — nuvem Groq, LM Studio desabilitado.")
+        _set("LLM_PROVIDER", prov)
+
     def _aplicar_config_recarregado(self, cfg) -> None:
         """Reaplica valores de config.py no módulo atual e na instância após hot reload."""
         import sys as _sys
@@ -10701,6 +11767,11 @@ class JarvisApp:
             "SYSTEM_PROMPT", "CLASSIFY_PROMPT", "RESEARCH_PROMPT",
             "CIDADE_PADRAO", "MAX_CHAT_TURNS", "MAX_GROQ_TURNS",
             "EMBEDDING_ENABLED", "EMBEDDING_THRESHOLD",
+            # Provider + cérebro agêntico (roadmap/13)
+            "LLM_PROVIDER", "OPENROUTER_BASE_URL", "OPENROUTER_API_KEY",
+            "AGENT_TOOL_SELECT_MODE", "AGENT_TOOL_MAX", "AGENT_INCLUDE_HISTORY",
+            "AGENT_HISTORY_TURNS", "AGENT_PARALLEL_TOOLS", "AGENT_STRICT_TOOLS",
+            "DECK_V2_ENABLED", "AGENT_BRAIN_MODE", "AGENT_HISTORY_TURNS_CLOUD",
         )
         m = _sys.modules.get(__name__)
         if m:
@@ -10708,14 +11779,11 @@ class JarvisApp:
                 if hasattr(cfg, name):
                     setattr(m, name, getattr(cfg, name))
 
-        # Re-cria cliente LM Studio se a URL mudou (somente em modo lmstudio)
+        # Re-inicializa os clients LLM conforme o provider atual (groq/lm/openrouter).
         try:
-            import config as _cfg_v2
-            if getattr(_cfg_v2, 'LLM_PROVIDER', 'lmstudio') != 'groq':
-                from openai import OpenAI as _OAI
-                self._lm = _OAI(base_url=cfg.LMSTUDIO_BASE_URL, api_key="lm-studio")
-        except Exception:
-            pass
+            self._init_llm_clients()
+        except Exception as _e_cli:
+            print(f"[CONFIG] re-init clients falhou: {_e_cli}")
 
         # Re-registra hotkeys (para o listener antigo e inicia novo)
         self._start_global_hotkeys()
@@ -10841,13 +11909,14 @@ class JarvisApp:
 
             texto = None
 
-            # Tenta Groq Whisper primeiro (melhor para STT)
-            if self._groq:
+            # Tenta Groq Whisper primeiro (melhor para STT) — Groq REAL, nunca OpenRouter.
+            _gr = getattr(self, "_groq_real", None) or self._groq
+            if _gr:
                 import io as _io
                 audio_file = _io.BytesIO(wav_bytes)
                 audio_file.name = "audio.wav"
                 try:
-                    tr = self._groq.audio.transcriptions.create(
+                    tr = _gr.audio.transcriptions.create(
                         model="whisper-large-v3",
                         file=audio_file,
                         language="pt",
@@ -11386,6 +12455,20 @@ class JarvisApp:
                 self._voz_ctx = self._voz_ctx[-5:]
             self._voz_pending_input = None
         self._falar(texto_para_tts)
+        # Memória (roadmap/14): grava o turno user→JARVIS no episódico (1x por
+        # turno; limpo após gravar). OFF por padrão (config.MEMORY_ENABLED).
+        try:
+            import jarvis.memory as _mem
+            _u = getattr(self, "_mem_last_user", None)
+            if _u and _mem.enabled():
+                self._mem_last_user = None
+                # ingest_turn aplica o DISCERNIMENTO (se ligado): descarta efêmero,
+                # promove fatos/regras; senão grava o turno cru (Fase 2).
+                _mem.ingest_turn(
+                    _u, texto, origem=getattr(self, "_mem_origem", "texto"),
+                    turn_id=getattr(self, "_mem_turn_id", None))
+        except Exception:
+            pass
 
     _LONG_THRESHOLD = 400  # chars
     _LONG_MARKER_RE = re.compile(r"^\s*\[LONGO\]\s*", re.I)
@@ -11684,6 +12767,8 @@ class JarvisApp:
                 except Exception:
                     pass
                 proc.wait()
+                import time as _t
+                self._tts_ended_at = _t.monotonic()   # anti-eco: marca fim do áudio
                 self._tts_process = None
                 try:
                     from core import event_bus as _eb
@@ -11784,6 +12869,8 @@ class JarvisApp:
         self._audio_queue.put((b"", ""))
         # Sinaliza que não há mais TTS
         self._tts_done.set()
+        import time as _t
+        self._tts_ended_at = _t.monotonic()   # anti-eco: marca fim do áudio
 
     # ══════════════════════════════════════════════════════════════════════════
     # BANDEJA DO SISTEMA (System Tray)

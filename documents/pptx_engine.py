@@ -41,29 +41,124 @@ def _base() -> str:
 
 # ── Geração de imagem via Pollinations.ai ───────────────────────────────────
 
-def _download_visual(prompt: str, width: int = 1152, height: int = 768) -> str:
-    """Baixa imagem do Pollinations.ai para um arquivo temp. Retorna path ou '' se falhar."""
-    from urllib.parse import quote
-    style = (
-        "professional presentation slide illustration, "
-        "clean minimal flat design, soft gradient, vibrant colors, no text"
-    )
-    full_prompt = f"{prompt}, {style}"
-    url = (
-        f"https://image.pollinations.ai/prompt/{quote(full_prompt)}"
-        f"?model=flux&width={width}&height={height}&nologo=true&enhance=true"
-    )
+_IMG_STYLE = ("professional presentation illustration, clean minimal flat "
+              "editorial design, soft gradient, vibrant colors, no text")
+
+
+def gen_image(prompt: str, width: int = 1152, height: int = 768,
+              aspect: str = "16:9") -> str:
+    """Gera uma imagem e retorna o path (ou '' em falha). Roteamento (roadmap/13):
+    1) modelo de imagem do OpenRouter (se OPENROUTER_API_KEY + image_render);
+    2) Pollinations (grátis, com token+backoff).  Groq NÃO gera imagem."""
+    import os as _os
     try:
-        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-        tmp.close()
-        req = urllib.request.Request(url, headers={"User-Agent": "JARVIS-DocEngine/2.0"})
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            with open(tmp.name, "wb") as fh:
-                fh.write(resp.read())
-        return tmp.name
+        import config as _cfg
+        try:
+            provider = _cfg.get_image_provider()
+        except Exception:
+            provider = "auto"
+        if provider != "pollinations":
+            key = (getattr(_cfg, "OPENROUTER_API_KEY", "") or
+                   _os.environ.get("OPENROUTER_API_KEY", "")).strip()
+            try:
+                model = _cfg.get_openrouter_model("image_render")
+            except Exception:
+                model = (getattr(_cfg, "OPENROUTER_MODELS", {}) or {}).get("image_render", "")
+            if key and model:
+                p = _openrouter_image(prompt, model, key, aspect,
+                                      getattr(_cfg, "OPENROUTER_BASE_URL",
+                                              "https://openrouter.ai/api/v1"))
+                if p:
+                    return p
+            elif provider == "openrouter":
+                print("[IMG] provider=openrouter sem chave/modelo — usando Pollinations")
     except Exception as exc:
-        print(f"[PPTX-VISUAL] Falha ao baixar imagem: {exc}")
+        print(f"[IMG] OpenRouter indisponível: {exc}")
+    return _download_visual(prompt, width, height)
+
+
+def _openrouter_image(prompt: str, model: str, key: str, aspect: str,
+                      base_url: str) -> str:
+    """Gera imagem via OpenRouter /chat/completions (modalities=['image','text'])."""
+    import json as _json
+    import base64 as _b64
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": f"{prompt}, {_IMG_STYLE}"}],
+        "modalities": ["image", "text"],
+    }
+    if aspect:
+        body["image_config"] = {"aspect_ratio": aspect}
+    req = urllib.request.Request(
+        base_url.rstrip("/") + "/chat/completions",
+        data=_json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/NinjaZinS2",
+            "X-Title": "JARVIS",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = _json.loads(resp.read())
+    imgs = (data.get("choices") or [{}])[0].get("message", {}).get("images") or []
+    if not imgs:
         return ""
+    url = imgs[0].get("image_url", {}).get("url", "")
+    if not url:
+        return ""
+    b64 = url.split(",", 1)[1] if "," in url else url
+    raw = _b64.b64decode(b64)
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.close()
+    with open(tmp.name, "wb") as fh:
+        fh.write(raw)
+    print(f"[IMG] OpenRouter ({model}) → {os.path.basename(tmp.name)}")
+    return tmp.name
+
+
+def _download_visual(prompt: str, width: int = 1152, height: int = 768) -> str:
+    """Pollinations.ai → arquivo temp. Token (tier Seed) + backoff em 429."""
+    from urllib.parse import quote
+    import urllib.error as _uerr
+    import time as _t
+    import os as _os
+    full_prompt = f"{prompt}, {_IMG_STYLE}"
+    token = ""
+    try:
+        import config as _cfg2
+        token = (getattr(_cfg2, "POLLINATIONS_TOKEN", "")
+                 or _os.environ.get("POLLINATIONS_TOKEN", "")).strip()
+    except Exception:
+        token = (_os.environ.get("POLLINATIONS_TOKEN", "") or "").strip()
+    url = (f"https://image.pollinations.ai/prompt/{quote(full_prompt)}"
+           f"?model=flux&width={width}&height={height}&enhance=true")
+    headers = {"User-Agent": "JARVIS-DocEngine/2.0"}
+    if token:
+        url += "&nologo=true"
+        headers["Authorization"] = f"Bearer {token}"
+    for delay in (0, 1, 2, 4, 8):
+        if delay:
+            _t.sleep(delay)
+        try:
+            tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+            tmp.close()
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                with open(tmp.name, "wb") as fh:
+                    fh.write(resp.read())
+            return tmp.name
+        except _uerr.HTTPError as e:
+            if e.code == 429 and delay != 8:
+                print(f"[PPTX-VISUAL] 429 (rate-limit) — backoff {delay or 1}s")
+                continue
+            print(f"[PPTX-VISUAL] Falha HTTP {e.code}")
+            return ""
+        except Exception as exc:
+            print(f"[PPTX-VISUAL] Falha ao baixar imagem: {exc}")
+            return ""
+    return ""
 
 
 

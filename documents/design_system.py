@@ -194,6 +194,108 @@ def hex_to_rgb(h: str) -> tuple[int, int, int]:
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Grid + escala tipográfica + espaçamento (roadmap/13, Fase 2 — deck_builder v2)
+# Tokens que dão o look "designed" (alinhamento, hierarquia, ritmo).
+# ─────────────────────────────────────────────────────────────────────────────
+# Canvas 16:9 widescreen
+SLIDE_W = 13.33
+SLIDE_H = 7.5
+
+# Grid de 12 colunas (em polegadas)
+GRID = {
+    "margin": 0.7,      # margem externa
+    "gutter": 0.25,     # espaço entre colunas
+    "cols": 12,
+    "top": 0.55,        # baseline do topo do conteúdo
+    "header_h": 1.15,   # altura da faixa de título
+    "body_top": 1.7,    # início da área de conteúdo
+    "body_bottom": 6.75,
+    "footer": 6.95,
+}
+
+
+def col_w() -> float:
+    return (SLIDE_W - 2 * GRID["margin"] - (GRID["cols"] - 1) * GRID["gutter"]) / GRID["cols"]
+
+
+def col_x(i: int) -> float:
+    """x (polegadas) da coluna i (0-based)."""
+    return GRID["margin"] + i * (col_w() + GRID["gutter"])
+
+
+def span_w(n: int) -> float:
+    """largura (polegadas) de um bloco que ocupa n colunas."""
+    return n * col_w() + (n - 1) * GRID["gutter"]
+
+
+# Trilha de LINHAS na área de conteúdo (grid 12 col × ROWS linhas) — base do
+# modelo de BLOCOS componíveis (layout 'livre' + layouts nomeados).
+ROWS = 6
+
+
+def row_h_unit() -> float:
+    return (GRID["body_bottom"] - GRID["body_top"]) / ROWS
+
+
+def row_y(i: int) -> float:
+    return GRID["body_top"] + i * row_h_unit()
+
+
+def row_span_h(n: int) -> float:
+    return n * row_h_unit()
+
+
+def cell(c0: int, cspan: int, r0: int, rspan: int) -> tuple:
+    """Retângulo (x, y, w, h) em polegadas p/ uma célula do grid 12×ROWS."""
+    return (col_x(max(0, c0)), row_y(max(0, r0)),
+            span_w(max(1, cspan)), row_span_h(max(1, rspan)))
+
+
+# Escala tipográfica modular (ratio ~1.25, base body=16). Tamanhos em pt.
+TYPE = {
+    "eyebrow": 12,   # kicker em caps espaçado
+    "caption": 13,
+    "body":    16,
+    "lead":    20,
+    "h3":      24,
+    "h2":      30,
+    "h1":      40,
+    "display": 54,
+    "stat":    120,  # número gigante (auto-encolhe se string longa)
+}
+
+# Escala de espaçamento (8pt) em polegadas
+SPACE = {"xs": 8/72, "sm": 16/72, "md": 24/72, "lg": 32/72, "xl": 48/72}
+
+
+def text_dim_of(theme) -> str:
+    """Cor de texto secundária para um tema (deriva se não houver token)."""
+    return PALETTE["text_dim"] if theme.is_dark else "#5a6b85"
+
+
+def card_of(theme) -> str:
+    """Cor de fundo de card (levemente destacada do bg)."""
+    return theme.panel
+
+
+def tokens_to_css(theme) -> str:
+    """Tokens de design → CSS custom properties (:root) p/ o report_builder
+    (HTML→PDF). Espelha o uso dos tokens pelo deck_builder, em CSS."""
+    parts = [
+        f"--bg:{theme.bg}", f"--panel:{theme.panel}", f"--card:{card_of(theme)}",
+        f"--accent:{theme.accent}", f"--accent-dim:{theme.accent_dim}",
+        f"--text:{theme.text}", f"--text-dim:{text_dim_of(theme)}",
+        f"--grid:{theme.grid}",
+        f"--ok:{PALETTE['ok']}", f"--warn:{PALETTE['warn']}", f"--crit:{PALETTE['crit']}",
+    ]
+    for k, v in TYPE.items():
+        parts.append(f"--fs-{k}:{v}pt")
+    for k, v in SPACE.items():
+        parts.append(f"--sp-{k}:{v * 72:.0f}pt")
+    return ":root{" + ";".join(parts) + "}"
+
+
 __all__ = ["PALETTE", "Theme", "THEMES", "get_theme", "FONTS", "hex_to_rgb",
            "build_custom_theme", "parse_color_from_text",
            "_luminance", "_ensure_dark_contrast"]

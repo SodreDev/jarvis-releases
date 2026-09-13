@@ -35,6 +35,48 @@ from urllib.parse import quote_plus as _qp
 # Tool definition
 # ─────────────────────────────────────────────────────────────────────────
 
+def _strictify(params: dict) -> dict:
+    """Converte um JSON Schema de parâmetros para o formato `strict` aceito por
+    OpenAI/Claude: `additionalProperties:false` e TODOS os campos em `required`
+    (recursivo — também em objetos e arrays aninhados). Campos OPCIONAIS viram
+    nullable (type aceita "null"); o modelo pode "omiti-los" passando null — o
+    `dispatch` descarta None no topo e os handlers/renderers ignoram None
+    aninhado. Best-effort e não-destrutivo (faz cópia)."""
+    import copy as _copy
+    p = _copy.deepcopy(params or {})
+    if not isinstance(p, dict):
+        return {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+    return _strictify_node(p)
+
+
+def _strictify_node(node: dict) -> dict:
+    """Aplica regras strict a um nó de schema, recursivamente."""
+    if not isinstance(node, dict):
+        return node
+    props = node.get("properties")
+    if isinstance(props, dict):
+        node.setdefault("type", "object")
+        req_orig = set(node.get("required") or [])
+        for name, spec in props.items():
+            if not isinstance(spec, dict):
+                continue
+            _strictify_node(spec)  # recursa antes de mexer no type
+            if name not in req_orig:
+                t = spec.get("type")
+                if isinstance(t, str) and t != "null":
+                    spec["type"] = [t, "null"]
+                elif isinstance(t, list) and "null" not in t:
+                    spec["type"] = t + ["null"]
+                if isinstance(spec.get("enum"), list) and None not in spec["enum"]:
+                    spec["enum"] = spec["enum"] + [None]
+        node["required"] = list(props.keys())
+        node["additionalProperties"] = False
+    items = node.get("items")
+    if isinstance(items, dict):
+        _strictify_node(items)
+    return node
+
+
 class Tool:
     __slots__ = ("name", "description", "parameters", "handler")
 
@@ -45,15 +87,23 @@ class Tool:
         self.parameters = parameters
         self.handler = handler
 
-    def to_openai_schema(self) -> dict:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters,
-            },
+    def to_openai_schema(self, strict: bool = False, compact: bool = False) -> dict:
+        _desc = _compact_desc(self.description) if compact else self.description
+        _params = _compact_params(self.parameters) if compact else self.parameters
+        fn = {
+            "name": self.name,
+            "description": _desc,
+            "parameters": _params,
         }
+        # strict=True: força args schema-válidos (Claude/OpenAI strict). Requer
+        # que TODOS os campos estejam em `required` + additionalProperties:false.
+        # `_strictify` torna campos OPCIONAIS nullable, e o `dispatch` descarta
+        # None → o handler usa seu default. Assim tools com args opcionais não
+        # quebram. (Toggle AGENT_STRICT_TOOLS, OFF por padrão.)
+        if strict:
+            fn["parameters"] = _strictify(_params)
+            fn["strict"] = True
+        return {"type": "function", "function": fn}
 
 
 _TOOLS: dict[str, Tool] = {}
@@ -66,12 +116,99 @@ def register(name: str, description: str, parameters: dict):
     return deco
 
 
-def to_openai_tools() -> list[dict]:
-    return [t.to_openai_schema() for t in _TOOLS.values()]
+def _compact_desc(desc: str, maxlen: int = 240) -> str:
+    """Description compacta: 1ª-2ª frase/linha (onde fica 'o que é + use quando')."""
+    import re as _re
+    d = (desc or "").strip()
+    parts = _re.split(r"(?<=[.!?])\s+|\n", d)
+    d = " ".join(p.strip() for p in parts[:2] if p.strip())
+    if len(d) > maxlen:
+        d = d[:maxlen].rsplit(" ", 1)[0] + "…"
+    return d.strip()
+
+
+def _compact_params(params):
+    """Trunca as 'description' aninhadas a ~60 chars (mantém type/enum/required/
+    estrutura). É onde mora o grosso dos tokens dos schemas verbosos (MCP-Zero)."""
+    def _walk(node):
+        if isinstance(node, dict):
+            out = {}
+            for k, v in node.items():
+                if k == "description" and isinstance(v, str) and len(v) > 60:
+                    out[k] = v[:60].rsplit(" ", 1)[0] + "…"
+                else:
+                    out[k] = _walk(v)
+            return out
+        if isinstance(node, list):
+            return [_walk(x) for x in node]
+        return node
+    try:
+        return _walk(params)
+    except Exception:
+        return params
+
+
+def to_openai_tools(strict: bool = False, names: "set[str] | list[str] | None" = None,
+                    compact: bool = False) -> list[dict]:
+    """Lista de tools no formato OpenAI. `names` filtra um subconjunto; `strict`
+    ativa schema estrito; `compact` enxuga descrições (corta ~50-60% dos tokens)."""
+    if names is not None:
+        nameset = set(names)
+        items = [t for t in _TOOLS.values() if t.name in nameset]
+    else:
+        items = list(_TOOLS.values())
+    return [t.to_openai_schema(strict=strict, compact=compact) for t in items]
 
 
 def list_tools() -> list[str]:
     return list(_TOOLS.keys())
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Camadas (namespaces) das tools — usado pela seleção em camadas do
+# _pensar_e_agir (roadmap/13). Apenas organiza; não altera o dispatch.
+# ─────────────────────────────────────────────────────────────────────────
+TOOL_LAYERS: dict[str, str] = {
+    # sistema / PC
+    "controle_sistema": "sistema", "controle_audio_sistema": "sistema",
+    "controle_ambiente": "sistema", "controle_modos": "sistema",
+    "controle_proativo": "sistema", "controle_presenca": "sistema",
+    "comando_terminal": "sistema", "listar_drives": "sistema",
+    "procurar_pasta": "sistema", "criar_timer": "sistema",
+    "criar_alarme": "sistema", "clima": "sistema", "display_text": "sistema",
+    # mídia
+    "tocar_musica": "midia", "controle_spotify": "midia",
+    "reproduzir_youtube": "midia", "controle_voz_tts": "midia",
+    # web / apps
+    "abrir_site": "web", "abrir_app": "web", "pesquisa_web": "web",
+    "pesquisa_rapida": "web", "controle_navegador": "web", "traduzir": "web",
+    # mensageria
+    "enviar_mensagem": "mensageria", "abrir_dm_discord": "mensageria",
+    "ler_notificacoes": "mensageria", "gerenciar_contatos": "mensageria",
+    # visão
+    "analisar_tela": "visao", "controle_visao": "visao",
+    # jogos
+    "abrir_jogo": "jogos", "instalar_jogo": "jogos", "listar_jogos": "jogos",
+    # memória / imagem / documentos / jarvis
+    "notas_memoria": "memoria", "gerar_imagem": "imagem",
+    "memoria_buscar": "memoria", "memoria_salvar_fato": "memoria",
+    "memoria_esquecer": "memoria", "compactar_conversa": "memoria",
+    "resumir_decisoes": "memoria", "aprender_sobre": "memoria",
+    "criar_apresentacao": "documentos", "criar_relatorio": "documentos",
+    "exportar_pdf": "documentos", "criar_planilha": "documentos",
+    "dossie": "documentos", "criar_documento_word": "documentos",
+    "encerrar_jarvis": "jarvis",
+}
+
+
+def layer_of(name: str) -> str:
+    return TOOL_LAYERS.get(name, "geral")
+
+
+def tools_in_layers(layers) -> list[str]:
+    """Nomes de tools que pertencem a qualquer uma das `layers`."""
+    s = set(layers)
+    return [n for n in _TOOLS if layer_of(n) in s]
 
 
 def dispatch(name: str, args: dict, app) -> str:
@@ -80,17 +217,25 @@ def dispatch(name: str, args: dict, app) -> str:
     tool = _TOOLS.get(name)
     if tool is None:
         return f"ERRO: tool '{name}' não existe."
+    # Descarta args None (ex.: campos opcionais "omitidos" via null no modo
+    # strict) → o handler usa seu valor default em vez de receber None.
+    kwargs = {k: v for k, v in args.items() if v is not None} if isinstance(args, dict) else {}
     try:
-        kwargs = args if isinstance(args, dict) else {}
         result = tool.handler(app, **kwargs)
-        if result is None:
-            return ""
-        return str(result)
+        out = "" if result is None else str(result)
     except TypeError as e:
-        return f"ERRO: argumentos inválidos para '{name}': {e}"
+        out = f"ERRO: argumentos inválidos para '{name}': {e}"
     except Exception as e:
         print(f"[TOOL] Falha em {name}: {_tb.format_exc()}")
-        return f"ERRO: falha em '{name}': {type(e).__name__}: {e}"
+        out = f"ERRO: falha em '{name}': {type(e).__name__}: {e}"
+    # Callback opcional (memória/telemetria) — nunca quebra o dispatch.
+    _cb = getattr(app, "_on_tool_dispatched", None)
+    if _cb is not None:
+        try:
+            _cb(name, kwargs, out)
+        except Exception:
+            pass
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -531,6 +676,7 @@ def _t_pesquisa_web(app, query: str = "") -> str:
         except ImportError:
             return "ERRO: pacote de busca não instalado."
     out_lines = [f"[LONGO]Pesquisa: {query}", ""]
+    hrefs: list[str] = []
     try:
         with DDGS() as ddgs:
             for i, r in enumerate(ddgs.text(query, region="br-pt", max_results=5), 1):
@@ -542,10 +688,119 @@ def _t_pesquisa_web(app, query: str = "") -> str:
                     out_lines.append(f"   {trecho}")
                 if href:
                     out_lines.append(f"   {href}")
+                    hrefs.append(href)
                 out_lines.append("")
-        return "\n".join(out_lines)
     except Exception as e:
         return f"ERRO: pesquisa falhou: {e}"
+    # Busca o CORPO das 1-2 primeiras páginas — o DDG só dá um TRECHO curto (daí
+    # "fica pouco conteúdo mesmo pesquisando"). Time-boxed + SSRF-safe, best-effort.
+    try:
+        from comandos import url_fetch_ctrl as _uf
+        for href in hrefs[:2]:
+            corpo = _uf.fetch_url_texto(href, timeout=4.0, max_chars=3500)
+            if corpo:
+                out_lines.append(f"--- conteúdo de {href} ---")
+                out_lines.append(corpo)
+                out_lines.append("")
+    except Exception:
+        pass
+    full = "\n".join(out_lines)
+    # Acumula no DOSSIÊ ativo (texto COMPLETO, sem cap) p/ gerar um doc rico depois.
+    try:
+        from jarvis.memory import dossie as _dos
+        if _dos.ativo():
+            _dos.anexar(f"pesquisa: {query}", full)
+    except Exception:
+        pass
+    return full
+
+
+# ── 8b. aprender_sobre — pesquisa E MEMORIZA (tool agregadora) ────────────
+
+@register(
+    name="aprender_sobre",
+    description=(
+        "PESQUISA um assunto e MEMORIZA o que aprendeu nas camadas Aprendizados e "
+        "Pesquisas (conhecimento que fica salvo para depois). Use quando o Senhor "
+        "pedir para APRENDER, ESTUDAR, se ESPECIALIZAR num tema, ou GUARDAR "
+        "conhecimento sobre algo.\n"
+        "NÃO use para RESPONDER algo que talvez já saiba — para consultar o que já "
+        "aprendeu, use 'memoria_buscar'. NÃO confunda com 'pesquisa_web' (que só "
+        "busca e mostra, SEM memorizar)."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "assunto": {"type": "string", "description": "Tema a aprender/estudar."},
+            "profundidade": {
+                "type": "string", "enum": ["basico", "aprofundado"],
+                "description": "'basico' = visão geral (1 busca); 'aprofundado' = especialização (várias buscas). Default 'basico'.",
+            },
+        },
+        "required": ["assunto"],
+    },
+)
+def _t_aprender_sobre(app, assunto: str = "", profundidade: str = "basico") -> str:
+    if not (assunto or "").strip():
+        return "ERRO: diga o assunto a aprender."
+    try:
+        from jarvis.memory import aggregator as _agg
+        res = _agg.aprender_sobre(assunto, profundidade=profundidade, app=app)
+    except Exception as e:
+        return f"ERRO: falha ao aprender: {e}"
+    if not res.get("ok"):
+        return f"Não consegui aprender sobre '{assunto}', Senhor: {res.get('erro', '')}"
+    return res.get("resumo") or f"Aprendi sobre '{assunto}', Senhor."
+
+
+# ── 8c. dossie — arquivo provisório que acumula pesquisa p/ gerar doc rico ──
+
+@register(
+    name="dossie",
+    description=(
+        "DOSSIÊ PROVISÓRIO: rascunho onde você ACUMULA o conteúdo das pesquisas para "
+        "depois gerar um documento RICO e detalhado a partir de TODO o material — e "
+        "zera no fim. Fluxo p/ relatório/artigo/resumo denso:\n"
+        "  1) dossie acao='iniciar' assunto='<tema>'\n"
+        "  2) chame pesquisa_web (e/ou aprender_sobre) VÁRIAS vezes — elas anexam o "
+        "que acharem no dossiê AUTOMATICAMENTE;\n"
+        "  3) criar_relatorio com fonte_dossie='<tema>' usa TODO o conteúdo acumulado;\n"
+        "  4) dossie acao='limpar' (zera o provisório).\n"
+        "acao='ler' mostra o que já foi acumulado."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "acao": {"type": "string", "enum": ["iniciar", "anexar", "ler", "limpar"]},
+            "assunto": {"type": "string", "description": "tema do dossiê (em 'iniciar')."},
+            "fonte": {"type": "string", "description": "rótulo da fonte (em 'anexar')."},
+            "texto": {"type": "string", "description": "conteúdo a anexar (em 'anexar')."},
+        },
+        "required": ["acao"],
+    },
+)
+def _t_dossie(app, acao="", assunto="", fonte="", texto=""):
+    try:
+        from jarvis.memory import dossie as _dos
+    except Exception as e:
+        return f"ERRO: dossiê indisponível: {e}"
+    acao = (acao or "").strip().lower()
+    if acao == "iniciar":
+        if not (assunto or "").strip():
+            return "ERRO: diga o assunto do dossiê."
+        _dos.iniciar(assunto)
+        return (f"Dossiê de '{assunto}' iniciado, Senhor. Pesquise à vontade que vou "
+                f"acumulando; depois é só criar_relatorio com fonte_dossie='{assunto}'.")
+    if acao == "anexar":
+        r = _dos.anexar(fonte or "nota", texto, assunto or None)
+        return "Anexado ao dossiê." if r.get("ok") else f"ERRO: {r.get('erro')}"
+    if acao == "ler":
+        c = _dos.ler(assunto or None)
+        return ("[LONGO]" + c) if c else "Dossiê vazio (nada acumulado ainda)."
+    if acao == "limpar":
+        _dos.limpar(assunto or None)
+        return "Dossiê zerado, Senhor."
+    return "ERRO: ação inválida (use iniciar/anexar/ler/limpar)."
 
 
 # ── 9. traduzir ─────────────────────────────────────────────────────────
@@ -1362,9 +1617,14 @@ def _t_pesquisa_rapida(app, pergunta: str = "") -> str:
         user_msg += f"\n\nDados atualizados da internet:{web_context}"
 
     try:
-        from config import GROQ_MODELO_CHAT
-        resp = groq.chat.completions.create(
-            model=GROQ_MODELO_CHAT,
+        # Usa o Groq REAL (grátis, modelo válido) p/ o resumo — evita mandar um
+        # id Groq cru ao cliente OpenRouter (erro 400) e poupa créditos.
+        _cli = getattr(app, "_groq_real", None) or groq
+        _mdl = getattr(app, "_groq_real_model", None)
+        if not _mdl:
+            from config import GROQ_MODELO_CHAT as _mdl
+        resp = _cli.chat.completions.create(
+            model=_mdl,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user",   "content": user_msg},
@@ -1700,3 +1960,705 @@ def _t_instalar_jogo(app, nome: str = "", plataforma: str = "") -> str:
         return _gc.instalar_jogo(nome, plataforma or None)
     except Exception as e:
         return f"ERRO: {e}"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Documentos — apresentação spec→render (roadmap/13, Fase 2)
+# ─────────────────────────────────────────────────────────────────────────
+
+@register(
+    name="criar_apresentacao",
+    description=(
+        "Cria uma APRESENTAÇÃO (.pptx) BONITA e VARIADA a partir de uma spec que "
+        "VOCÊ compõe (padrão spec→render). NÃO use um formato único — VARIE o layout "
+        "de cada slide; layouts adjacentes devem diferir; misture densos e visuais.\n"
+        "Layouts (campo 'layout'):\n"
+        "  • capa — abertura (titulo, subtitulo?, eyebrow?, image_prompt?)\n"
+        "  • hero — imagem cheia + título sobreposto (titulo, legenda?, image_prompt)\n"
+        "  • secao — divisória de seção (titulo, numero?, eyebrow?)\n"
+        "  • agenda — índice (titulo, bullets[])\n"
+        "  • topicos — título + bullets (titulo, bullets[], image_prompt?)\n"
+        "  • texto — corpo de texto médio/grande, explicativo (titulo, corpo)\n"
+        "  • duas_colunas / comparativo — duas listas (titulo, esq_titulo, esquerda[], dir_titulo, direita[])\n"
+        "  • kpi — 1-4 números grandes (titulo?, items[]={valor,titulo?,legenda?})\n"
+        "  • bento — grade de 3-6 cards (titulo, items[]={titulo,legenda?})\n"
+        "  • timeline — linha do tempo (titulo, items[]={quando,titulo})\n"
+        "  • citacao — citação grande (valor=frase, legenda=autor)\n"
+        "  • destaque — 1 número/frase de impacto (valor, legenda?, titulo?)\n"
+        "  • imagem — imagem cheia c/ legenda (image_prompt, titulo?, legenda?)\n"
+        "  • imagem_lateral — imagem à direita + texto (titulo, bullets[]|legenda, image_prompt)\n"
+        "  • fechamento — encerramento (titulo, subtitulo?)\n"
+        "  • declaracao — 1 frase de impacto · processo — passos+setas (items{titulo,desc}) · "
+        "matriz — 2x2 (items[4]) · tabela — (headers[],rows[[]]) · equipe — pessoas "
+        "(items{titulo=nome,legenda=cargo}) · numerado — passos numerados · executivo — "
+        "3 colunas (items[3]{titulo,bullets[]}) · galeria — imagens · livre — COMPOSE "
+        "(blocks[] no grid 12col: {type,col,span,row,rspan,...})\n"
+        "ESCOLHA o layout pelo TIPO de conteúdo: número→destaque/kpi, sequência→processo/"
+        "numerado, tabela→tabela, comparação→comparativo, 2 eixos→matriz, criativo→livre.\n"
+        "Use a QUANTIDADE de texto que o conteúdo pedir: slides explicativos podem "
+        "ter parágrafos (layout 'texto'); slides de visão geral usam bullets. NÃO "
+        "resuma a 3 itens se o tema exige mais — prefira 'texto' ou mais bullets. "
+        "Só títulos/valores são curtos (título <=72, kpi.valor <=16 como '74%'). "
+        "'image_prompt' em INGLÊS, visual SEM texto. Se precisar de dados atuais, "
+        "chame 'pesquisa_web' ANTES. Comece com 'capa', use 'secao' p/ dividir, "
+        "termine com 'fechamento'; 6-12 slides é ideal."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "titulo": {"type": "string", "description": "Título da apresentação."},
+            "subtitulo": {"type": "string", "description": "Subtítulo/contexto (opcional)."},
+            "tema": {"type": "string", "description": "'stark_dark', 'stark_light', nome de cor (azul, verde…) ou hex #rrggbb."},
+            "gerar_imagens": {"type": "boolean", "description": "Gera ilustrações IA p/ slides com image_prompt (default true)."},
+            "slides": {
+                "type": "array",
+                "description": "Lista ordenada de slides; cada um escolhe um 'layout' e preenche os campos dele.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "layout": {"type": "string", "description": "capa|hero|secao|agenda|topicos|texto|duas_colunas|comparativo|kpi|bento|timeline|citacao|destaque|imagem|imagem_lateral|fechamento|declaracao|processo|matriz|tabela|equipe|numerado|executivo|galeria|livre"},
+                        "titulo": {"type": "string"},
+                        "subtitulo": {"type": "string"},
+                        "eyebrow": {"type": "string", "description": "rótulo curto acima do título (kicker)"},
+                        "numero": {"type": "string"},
+                        "corpo": {"type": "string", "description": "parágrafo(s) de texto p/ layout 'texto' (use \\n entre parágrafos)"},
+                        "bullets": {"type": "array", "items": {"type": "string"}},
+                        "esq_titulo": {"type": "string"},
+                        "esquerda": {"type": "array", "items": {"type": "string"}},
+                        "dir_titulo": {"type": "string"},
+                        "direita": {"type": "array", "items": {"type": "string"}},
+                        "valor": {"type": "string"},
+                        "legenda": {"type": "string"},
+                        "items": {
+                            "type": "array",
+                            "description": "p/ kpi/bento/timeline/processo/matriz/equipe/executivo: {valor?,titulo?,legenda?,quando?,desc?,bullets?}",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "valor": {"type": "string"},
+                                    "titulo": {"type": "string"},
+                                    "legenda": {"type": "string"},
+                                    "quando": {"type": "string"},
+                                    "desc": {"type": "string"},
+                                    "bullets": {"type": "array", "items": {"type": "string"}},
+                                },
+                                "required": [],
+                            },
+                        },
+                        "headers": {"type": "array", "items": {"type": "string"}, "description": "p/ layout 'tabela': cabeçalhos das colunas"},
+                        "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "description": "p/ layout 'tabela': linhas (cada uma é lista de células)"},
+                        "blocks": {
+                            "type": "array",
+                            "description": "p/ layout 'livre': blocos no grid 12col×6lin. type: titulo|texto|bullets|stat|card|imagem|citacao|divisor",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {"type": "string"},
+                                    "col": {"type": "integer"}, "span": {"type": "integer"},
+                                    "row": {"type": "integer"}, "rspan": {"type": "integer"},
+                                    "texto": {"type": "string"}, "titulo": {"type": "string"},
+                                    "valor": {"type": "string"}, "legenda": {"type": "string"},
+                                    "autor": {"type": "string"},
+                                    "itens": {"type": "array", "items": {"type": "string"}},
+                                },
+                                "required": ["type"],
+                            },
+                        },
+                        "image_prompt": {"type": "string"},
+                        "icon": {"type": "string"},
+                    },
+                    "required": ["layout"],
+                },
+            },
+        },
+        "required": ["titulo", "slides"],
+    },
+)
+def _t_criar_apresentacao(app, titulo="", subtitulo="", tema="", gerar_imagens=True, slides=None):
+    try:
+        from documents import deck_builder as _db
+    except Exception as e:
+        return f"ERRO: módulo de apresentação indisponível: {e}"
+    spec = {"titulo": titulo, "subtitulo": subtitulo, "tema": tema, "slides": slides or []}
+    try:
+        path = _db.gerar_deck(spec, gen_visuals=bool(gerar_imagens))
+    except Exception as e:
+        return f"ERRO: falha ao gerar apresentação: {e}"
+    try:
+        import os as _os
+        _os.startfile(path)  # type: ignore[attr-defined]  # abre no PowerPoint (Windows)
+    except Exception:
+        pass
+    return f"Apresentação criada com {len(slides or [])} slides e aberta: {path}"
+
+
+@register(
+    name="criar_relatorio",
+    description=(
+        "Cria um RELATÓRIO em PDF bonito (HTML/CSS→PDF) a partir de uma spec que VOCÊ "
+        "compõe — capa, seções, gráficos, tabelas, KPIs. Ideal p/ relatórios de pesquisa, "
+        "documentos formais, dossiês.\n"
+        "Blocos (campo 'block' de cada seção):\n"
+        "  • capa (titulo, subtitulo?, image_prompt?) · secao (titulo, numero?) — nova página\n"
+        "  • texto (titulo?, corpo) · bullets (titulo?, bullets[]) · kpi (items[]={valor,titulo,legenda?})\n"
+        "  • grafico (titulo?, grafico={tipo:bar|line|pie, labels[], valores[]}) · tabela (headers[], rows[[]])\n"
+        "  • callout (tipo:info|warn|ok|crit, titulo, texto) · citacao (valor, legenda=autor) · imagem (image_prompt, legenda?)\n"
+        "  • campos (campos[]={label}) p/ PREENCHIMENTO · questao (enunciado, alternativas[], resposta?) p/ prova/simulado · gabarito (respostas[]) · equacao (latex) p/ MATEMÁTICA (KaTeX, selecionável)\n"
+        "formato='prova|simulado|artigo|resumo|redacao|relatorio|argumentacao|contrato' ajusta a "
+        "estrutura (blocos/sequência) e o estilo automaticamente.\n"
+        "tipo_fonte ('executivo'|'financeiro'|'tecnico'|'generico') ajusta o estilo. "
+        "Comece com 'capa'; use 'secao' p/ capítulos; 'grafico' p/ dados, 'kpi' p/ métricas. "
+        "Se precisar de dados atuais, chame 'pesquisa_web' ANTES. image_prompt em INGLÊS.\n"
+        "fonte_dossie='<tema>': usa TODO o conteúdo acumulado no dossiê (via dossie + "
+        "pesquisa_web) p/ compor um relatório RICO automaticamente — nesse caso NÃO "
+        "precisa passar 'secoes'."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "titulo": {"type": "string"},
+            "subtitulo": {"type": "string"},
+            "tema": {"type": "string", "description": "tema, nome de cor ou hex"},
+            "tipo_fonte": {"type": "string", "description": "executivo|financeiro|tecnico|generico"},
+            "page": {"type": "string", "description": "A4|Letter|Legal"},
+            "toc": {"type": "boolean", "description": "incluir sumário"},
+            "gerar_imagens": {"type": "boolean"},
+            "fonte_dossie": {"type": "string", "description": "tema do dossiê a usar como fonte (conteúdo acumulado via pesquisa). Se setado, compõe um relatório rico do material — pode deixar 'secoes' vazio."},
+            "formato": {"type": "string", "description": "ajusta a ESTRUTURA e o estilo: simulado|prova|artigo|resumo|redacao|relatorio|argumentacao|contrato. Combina com fonte_dossie."},
+            "secoes": {
+                "type": "array",
+                "description": "Lista ordenada de seções; cada uma escolhe um 'block'.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "block": {"type": "string", "description": "capa|secao|texto|bullets|kpi|grafico|tabela|callout|citacao|duas_colunas|imagem|divisor|campos|questao|gabarito|equacao"},
+                        "titulo": {"type": "string"}, "subtitulo": {"type": "string"},
+                        "eyebrow": {"type": "string"}, "numero": {"type": "string"},
+                        "corpo": {"type": "string"}, "tipo": {"type": "string"},
+                        "valor": {"type": "string"}, "legenda": {"type": "string"},
+                        "esq_titulo": {"type": "string"}, "dir_titulo": {"type": "string"},
+                        "bullets": {"type": "array", "items": {"type": "string"}},
+                        "esquerda": {"type": "array", "items": {"type": "string"}},
+                        "direita": {"type": "array", "items": {"type": "string"}},
+                        "headers": {"type": "array", "items": {"type": "string"}},
+                        "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+                        "items": {"type": "array", "items": {"type": "object", "properties": {"valor": {"type": "string"}, "titulo": {"type": "string"}, "legenda": {"type": "string"}}, "required": []}},
+                        "grafico": {"type": "object", "properties": {"tipo": {"type": "string"}, "labels": {"type": "array", "items": {"type": "string"}}, "valores": {"type": "array", "items": {"type": "string"}}}, "required": []},
+                        "image_prompt": {"type": "string"},
+                        "campos": {"type": "array", "items": {"type": "object", "properties": {"label": {"type": "string"}, "largura": {"type": "string"}}, "required": []}, "description": "campos de preenchimento (block=campos)"},
+                        "enunciado": {"type": "string", "description": "enunciado (block=questao)"},
+                        "alternativas": {"type": "array", "items": {"type": "string"}, "description": "alternativas a-e (block=questao)"},
+                        "resposta": {"type": "string"},
+                        "respostas": {"type": "array", "items": {"type": "string"}, "description": "chave do gabarito (block=gabarito)"},
+                        "latex": {"type": "string", "description": "expressão LaTeX (block=equacao), ex: x = \\frac{-b}{2a}"},
+                    },
+                    "required": ["block"],
+                },
+            },
+        },
+        "required": ["titulo"],
+    },
+)
+def _t_criar_relatorio(app, titulo="", subtitulo="", tema="", tipo_fonte="generico",
+                       page="A4", toc=False, gerar_imagens=True, secoes=None,
+                       fonte_dossie="", formato=""):
+    try:
+        from documents import report_builder as _rb
+    except Exception as e:
+        return f"ERRO: módulo de relatório indisponível: {e}"
+    secoes = secoes or []
+    formato = (formato or "").strip().lower()
+    _guia = _FORMATO_GUIA.get(formato, "")
+    # formato escolhe um SKIN (só se o cérebro não pediu um tipo_fonte específico)
+    if formato in _FORMATO_SKIN and (not tipo_fonte or tipo_fonte == "generico"):
+        tipo_fonte = _FORMATO_SKIN[formato]
+    # Fonte = DOSSIÊ: compõe as seções a partir de TODO o material acumulado (que
+    # excede o contexto do orquestrador) via um LLM barato (8b). Só se o material
+    # for substancial; senão usa as 'secoes' que o cérebro já passou.
+    if fonte_dossie:
+        try:
+            from jarvis.memory import dossie as _dos
+            _k = None if str(fonte_dossie).strip().lower() in ("1", "true", "sim", "ativo") else str(fonte_dossie)
+            material = _dos.ler(_k)
+            if material and len(material.strip()) > 200:
+                geradas = _compose_secoes_from_material(app, titulo or str(fonte_dossie), tema, tipo_fonte, material, guia=_guia)
+                if geradas:
+                    secoes = geradas
+                    toc = True  # doc rico ganha sumário
+        except Exception as _ed:
+            print(f"[DOSSIE] composição falhou: {_ed}")
+    spec = {"titulo": titulo, "subtitulo": subtitulo, "tema": tema,
+            "tipo_fonte": tipo_fonte, "page": page, "toc": bool(toc),
+            "secoes": secoes}
+    try:
+        path = _rb.gerar_relatorio(spec, gen_visuals=bool(gerar_imagens))
+    except Exception as e:
+        return f"ERRO: falha ao gerar relatório: {e}"
+    try:
+        import os as _os
+        _os.startfile(path)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    return f"Relatório PDF criado com {len(secoes or [])} seções e aberto: {path}"
+
+
+# Guias de FORMATO (P1): cada formato injeta uma estrutura-alvo na composição da
+# spec + escolhe um skin. É PROMPT-DRIVEN — não há template Python por formato.
+_FORMATO_GUIA = {
+    "prova": "PROVA: capa, um 'texto' com instruções, vários blocos 'questao' (enunciado + alternativas a-e), e um 'gabarito' no fim. Sóbrio.",
+    "simulado": "SIMULADO: como prova — capa, instruções, muitos blocos 'questao' (alternativas a-e) cobrindo o tema, e 'gabarito' no fim.",
+    "artigo": "ARTIGO acadêmico: capa, um 'texto' de RESUMO/abstract, seções ('secao'+'texto') de desenvolvimento, e 'citacao' p/ referências. Tom impessoal.",
+    "resumo": "RESUMO objetivo: capa enxuta e, por tópico, 'texto' curto + 'bullets' com os pontos-chave. Direto ao ponto.",
+    "redacao": "REDAÇÃO dissertativa: um 'texto' com introdução (tese), desenvolvimento e conclusão. Texto CORRIDO, sem bullets/tabelas.",
+    "relatorio": "RELATÓRIO: capa, seções com 'texto', e 'kpi'/'tabela'/'grafico' p/ dados quando houver. Formal.",
+    "argumentacao": "ARGUMENTAÇÃO: 'callout' com a TESE, seções com argumentos, uma seção de contra-argumentos rebatidos, e conclusão.",
+    "contrato": "CONTRATO: título, 'campos' p/ as partes, cláusulas NUMERADAS ('secao' por cláusula + 'texto'), e 'campos' finais p/ data/local/assinaturas. Formal/jurídico.",
+}
+_FORMATO_SKIN = {
+    "prova": "generico", "simulado": "generico", "artigo": "tecnico", "resumo": "generico",
+    "redacao": "generico", "relatorio": "executivo", "argumentacao": "tecnico", "contrato": "tecnico",
+}
+
+
+def _compose_secoes_from_material(app, titulo, tema, tipo_fonte, material, guia=""):
+    """Compõe a SPEC de seções de um relatório a partir do MATERIAL bruto (dossiê)
+    via um LLM BARATO (8b). `guia` injeta a estrutura-alvo do formato. → lista|None."""
+    cli = getattr(app, "_groq_real", None) or getattr(app, "_groq", None)
+    if cli is None or not (material or "").strip():
+        return None
+    import json as _json, re as _re
+    try:
+        import config as _c
+        mdl = getattr(_c, "GROQ_MODELO_TOOLS", None) or getattr(_c, "GROQ_MODELO_CHAT", "")
+    except Exception:
+        mdl = ""
+    sysm = (
+        "Você compõe a SPEC de um relatório PDF a partir de MATERIAL bruto de pesquisa. "
+        "Devolva SÓ um array JSON de seções — NADA fora do JSON. Cada seção tem 'block'. "
+        "Blocos válidos: capa{titulo,subtitulo}; secao{titulo,numero}; texto{titulo,corpo}; "
+        "bullets{titulo,bullets:[]}; kpi{items:[{valor,titulo,legenda}]}; "
+        "tabela{headers:[],rows:[[]]}; callout{tipo:info|warn|ok|crit,titulo,texto}; "
+        "citacao{valor,legenda}; campos{campos:[{label}]}; questao{enunciado,alternativas:[],resposta}; "
+        "gabarito{respostas:[]}; equacao{latex}. Comece SEMPRE com uma 'capa'. Cubra TODO o "
+        "material em 6 a 12 seções bem estruturadas e RICAS (parágrafos densos, bullets, "
+        "tabelas quando os dados permitirem). Em português, FIEL ao material (não invente fatos)."
+    )
+    if guia:
+        sysm += "\nFORMATO ALVO — siga ESTA estrutura: " + guia
+    usr = (f"Título: {titulo}\nEstilo: {tema or tipo_fonte}\n\nMATERIAL:\n"
+           f"{material[:12000]}\n\nSpec (array JSON de seções):")
+    try:
+        r = cli.chat.completions.create(
+            model=mdl, messages=[{"role": "system", "content": sysm},
+                                 {"role": "user", "content": usr}],
+            max_tokens=3500, temperature=0.3)
+        raw = (r.choices[0].message.content or "").strip()
+        m = _re.search(r"\[.*\]", raw, _re.S)
+        arr = _json.loads(m.group(0) if m else raw)
+        if isinstance(arr, list) and arr:
+            return arr
+    except Exception as e:
+        print(f"[DOSSIE] spec-LLM falhou: {e}")
+    return None
+
+
+def _compose_word_secoes_from_material(app, titulo, material, guia=""):
+    """Compõe seções de um DOC WORD (heading + paragraphs) do material bruto via 8b."""
+    cli = getattr(app, "_groq_real", None) or getattr(app, "_groq", None)
+    if cli is None or not (material or "").strip():
+        return None
+    import json as _json, re as _re
+    try:
+        import config as _c
+        mdl = getattr(_c, "GROQ_MODELO_TOOLS", None) or getattr(_c, "GROQ_MODELO_CHAT", "")
+    except Exception:
+        mdl = ""
+    sysm = ("Você compõe as SEÇÕES de um documento Word a partir de MATERIAL bruto. "
+            "Devolva SÓ um array JSON: [{\"heading\":str,\"paragraphs\":[str,...]}]. "
+            "6 a 12 seções, parágrafos densos, em português, FIEL ao material (não invente).")
+    if guia:
+        sysm += "\nFORMATO ALVO: " + guia
+    usr = f"Título: {titulo}\n\nMATERIAL:\n{material[:12000]}\n\nSeções (array JSON):"
+    try:
+        r = cli.chat.completions.create(model=mdl, messages=[
+            {"role": "system", "content": sysm}, {"role": "user", "content": usr}],
+            max_tokens=3500, temperature=0.3)
+        raw = (r.choices[0].message.content or "").strip()
+        m = _re.search(r"\[.*\]", raw, _re.S)
+        arr = _json.loads(m.group(0) if m else raw)
+        if isinstance(arr, list) and arr:
+            return arr
+    except Exception as e:
+        print(f"[DOSSIE-WORD] spec-LLM falhou: {e}")
+    return None
+
+
+@register(
+    name="criar_documento_word",
+    description=(
+        "Cria um documento WORD (.docx) EDITÁVEL a partir de seções (heading + "
+        "parágrafos + tabela opcional). Use quando o Senhor for EDITAR depois "
+        "(contrato, redação, carta, rascunho) ou pedir explicitamente Word/.docx. Para "
+        "PDF bonito (relatório/dossiê), use 'criar_relatorio'. fonte_dossie='<tema>' usa "
+        "o conteúdo acumulado; formato ajusta a estrutura."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "titulo": {"type": "string"},
+            "subtitulo": {"type": "string"},
+            "fonte_dossie": {"type": "string", "description": "tema do dossiê acumulado (compõe as seções automaticamente)."},
+            "formato": {"type": "string", "description": "simulado|prova|artigo|resumo|redacao|relatorio|argumentacao|contrato"},
+            "secoes": {
+                "type": "array",
+                "description": "Seções em ordem.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "heading": {"type": "string"},
+                        "paragraphs": {"type": "array", "items": {"type": "string"}},
+                        "table": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+                    },
+                    "required": ["heading"],
+                },
+            },
+        },
+        "required": ["titulo"],
+    },
+)
+def _t_criar_documento_word(app, titulo="", subtitulo="", fonte_dossie="", formato="", secoes=None):
+    try:
+        from documents import docx_engine as _dx
+    except Exception as e:
+        return f"ERRO: módulo Word indisponível: {e}"
+    secoes = secoes or []
+    formato = (formato or "").strip().lower()
+    if fonte_dossie:
+        try:
+            from jarvis.memory import dossie as _dos
+            _k = None if str(fonte_dossie).strip().lower() in ("1", "true", "sim", "ativo") else str(fonte_dossie)
+            material = _dos.ler(_k)
+            if material and len(material.strip()) > 200:
+                geradas = _compose_word_secoes_from_material(app, titulo or str(fonte_dossie), material, guia=_FORMATO_GUIA.get(formato, ""))
+                if geradas:
+                    secoes = geradas
+        except Exception as _ed:
+            print(f"[DOSSIE-WORD] composição falhou: {_ed}")
+    if not secoes:
+        return "ERRO: nada para o documento (passe 'secoes' ou 'fonte_dossie')."
+    try:
+        path = _dx.gerar_relatorio(titulo, secoes, subtitulo=subtitulo)
+    except Exception as e:
+        return f"ERRO: falha ao gerar Word: {e}"
+    try:
+        import os as _os
+        _os.startfile(path)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    return f"Documento Word criado com {len(secoes)} seções e aberto: {path}"
+
+
+@register(
+    name="exportar_pdf",
+    description=(
+        "Converte um arquivo de documento JÁ EXISTENTE (.docx, .xlsx, .pptx, .odt…) "
+        "em PDF, com alta fidelidade (MS Office se instalado, senão LibreOffice). "
+        "Use quando o Senhor pedir 'converte X em pdf', 'exporta esse documento em pdf'."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "arquivo": {"type": "string", "description": "Caminho do arquivo a converter."},
+        },
+        "required": ["arquivo"],
+    },
+)
+def _t_exportar_pdf(app, arquivo=""):
+    try:
+        from documents import pdf_convert as _pc
+    except Exception as e:
+        return f"ERRO: conversor indisponível: {e}"
+    if not arquivo:
+        return "ERRO: informe o caminho do arquivo."
+    pdf = _pc.to_pdf(arquivo)
+    if not pdf:
+        return ("ERRO: não consegui converter. Instale o MS Office ou o LibreOffice "
+                "(https://libreoffice.org) para conversão de Word/Excel/PowerPoint → PDF.")
+    try:
+        import os as _os
+        _os.startfile(pdf)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    return f"PDF gerado e aberto: {pdf}"
+
+
+@register(
+    name="criar_planilha",
+    description=(
+        "Cria uma PLANILHA Excel (.xlsx) PROFISSIONAL a partir de uma spec que VOCÊ compõe — "
+        "cabeçalho colorido, linhas zebra, freeze panes, FORMATOS por coluna (moeda/percent/"
+        "data), FORMATAÇÃO CONDICIONAL (escala de cor, data bars, ícones, maior/menor), "
+        "GRÁFICOS nativos e um painel de KPIs no topo.\n"
+        "Cada 'aba' = {nome, kpis?[{valor,titulo,legenda?}], headers[], rows[[...]], "
+        "formatos?[{coluna, formato}], condicional?[{coluna, tipo, valor?}], "
+        "grafico?{tipo:bar|line|pie, titulo?, col_valor, col_rotulo?}}. "
+        "'coluna' aceita o NOME do header ou o índice. Use formatos p/ moeda/percent/data, "
+        "condicional p/ realçar metas, grafico p/ visualizar. Se precisar de dados atuais, "
+        "chame 'pesquisa_web' ANTES."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "titulo": {"type": "string"},
+            "tema": {"type": "string"},
+            "abas": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "nome": {"type": "string"},
+                        "headers": {"type": "array", "items": {"type": "string"}},
+                        "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+                        "kpis": {"type": "array", "items": {"type": "object", "properties": {"valor": {"type": "string"}, "titulo": {"type": "string"}, "legenda": {"type": "string"}}, "required": []}},
+                        "formatos": {"type": "array", "items": {"type": "object", "properties": {"coluna": {"type": "string"}, "formato": {"type": "string"}}, "required": ["coluna", "formato"]}},
+                        "condicional": {"type": "array", "items": {"type": "object", "properties": {"coluna": {"type": "string"}, "tipo": {"type": "string"}, "valor": {"type": "string"}}, "required": ["coluna", "tipo"]}},
+                        "grafico": {"type": "object", "properties": {"tipo": {"type": "string"}, "titulo": {"type": "string"}, "col_valor": {"type": "string"}, "col_rotulo": {"type": "string"}}, "required": []},
+                    },
+                    "required": ["nome", "headers", "rows"],
+                },
+            },
+        },
+        "required": ["titulo", "abas"],
+    },
+)
+def _t_criar_planilha(app, titulo="", tema="", abas=None):
+    try:
+        from documents import sheet_builder as _sb
+    except Exception as e:
+        return f"ERRO: módulo de planilha indisponível: {e}"
+    try:
+        path = _sb.gerar_planilha({"titulo": titulo, "tema": tema, "abas": abas or []})
+    except Exception as e:
+        return f"ERRO: falha ao gerar planilha: {e}"
+    try:
+        import os as _os
+        _os.startfile(path)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    return f"Planilha criada com {len(abas or [])} aba(s) e aberta: {path}"
+
+
+# ── Memória semântica/vetorial (roadmap/14) ──────────────────────────────────
+# Deixam o PRÓPRIO LLM consultar e gravar memória — resolvendo referências a
+# coisas ditas/feitas antes ("minha IDE", "o PDF", "de novo") ANTES de executar
+# a ação. Só ficam visíveis quando config.MEMORY_ENABLED (ver _filter_tools_for_text).
+
+@register(
+    name="memoria_buscar",
+    description=(
+        "Busca na MEMÓRIA do Senhor: conversas passadas, arquivos/ações que o "
+        "JARVIS já fez, fatos e preferências salvos. USE SEMPRE QUE o pedido "
+        "fizer referência a algo dito/feito ANTES e você NÃO tiver o dado no "
+        "contexto atual: 'minha IDE', 'esse site', 'aquele arquivo', 'o PDF', "
+        "'de novo', 'como sempre', 'manda pra ele', 'qual era mesmo...'. Chame "
+        "ESTA tool PRIMEIRO para resolver a referência e SÓ DEPOIS a tool de "
+        "ação.\n"
+        "↳ NÃO confunda com pesquisa_web (fatos gerais do mundo/internet). "
+        "Aqui é a memória PESSOAL do Senhor."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "consulta": {
+                "type": "string",
+                "description": "O que buscar, em linguagem natural (ex.: 'qual minha IDE', 'o PDF que gerei').",
+            },
+        },
+        "required": ["consulta"],
+    },
+)
+def _t_memoria_buscar(app, consulta=""):
+    try:
+        import jarvis.memory as _mem
+    except Exception as e:
+        return f"ERRO: memória indisponível: {e}"
+    if not _mem.enabled():
+        return "Memória desativada (ative em Configurações → Cérebro)."
+    try:
+        store = _mem.get_store()
+        out = store.format_for_prompt(store.retrieve(consulta))
+        return out or "Nenhuma memória relevante encontrada."
+    except Exception as e:
+        return f"ERRO: falha ao buscar memória: {e}"
+
+
+@register(
+    name="memoria_salvar_fato",
+    description=(
+        "Salva um FATO DURÁVEL sobre o Senhor na memória: identidade, "
+        "preferência ou dado estável que valha lembrar no futuro. Ex.: "
+        "assunto='minha IDE', atributo='fica em', valor='IDE.DevSystemWeb.com'; "
+        "ou assunto='tema favorito', atributo='é', valor='escuro'. Use "
+        "fixar=true para IDENTIDADE/preferência forte (sempre lembrada).\n"
+        "↳ NÃO salve segredos/senhas/tokens, nem conversa trivial/efêmera "
+        "(saudação, chit-chat). Para só CONSULTAR, use memoria_buscar."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "assunto":  {"type": "string", "description": "Sujeito do fato (ex.: 'minha IDE', 'meu nome')."},
+            "atributo": {"type": "string", "description": "Relação (ex.: 'fica em', 'é', 'prefere')."},
+            "valor":    {"type": "string", "description": "Valor do fato (ex.: 'IDE.DevSystemWeb.com')."},
+            "fixar":    {"type": "boolean", "description": "True = fixa como identidade/preferência (sempre lembrada)."},
+        },
+        "required": ["assunto", "atributo", "valor"],
+    },
+)
+def _t_memoria_salvar_fato(app, assunto="", atributo="", valor="", fixar=False):
+    try:
+        import jarvis.memory as _mem
+    except Exception as e:
+        return f"ERRO: memória indisponível: {e}"
+    if not _mem.enabled():
+        return "Memória desativada (ative em Configurações → Cérebro)."
+    try:
+        rid = _mem.get_store().upsert_fact(assunto, atributo, valor, pinned=bool(fixar))
+        if rid is None:
+            return "ERRO: não consegui salvar (assunto/atributo vazio?)."
+        return f"Anotado: {assunto} {atributo} {valor}."
+    except Exception as e:
+        return f"ERRO: falha ao salvar fato: {e}"
+
+
+@register(
+    name="memoria_esquecer",
+    description=(
+        "Remove da memória um fato/assunto que o Senhor pediu para esquecer ou "
+        "que ficou desatualizado. Informe o 'assunto' exato (ex.: 'minha IDE'). "
+        "Use SÓ quando o Senhor pedir explicitamente para esquecer/apagar algo."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "assunto": {"type": "string", "description": "Assunto/sujeito a esquecer (ex.: 'minha IDE')."},
+        },
+        "required": ["assunto"],
+    },
+)
+def _t_memoria_esquecer(app, assunto=""):
+    try:
+        import jarvis.memory as _mem
+    except Exception as e:
+        return f"ERRO: memória indisponível: {e}"
+    if not _mem.enabled():
+        return "Memória desativada (ative em Configurações → Cérebro)."
+    try:
+        n = _mem.get_store().forget((assunto or "").strip())
+        return (f"Esqueci {n} registro(s) sobre '{assunto}'." if n
+                else f"Nada encontrado sobre '{assunto}'.")
+    except Exception as e:
+        return f"ERRO: falha ao esquecer: {e}"
+
+
+def _mem_llm_call(app, system: str, user: str, max_tokens: int = 220) -> str:
+    """Chamada curta a um LLM barato (Groq real preferido) para resumir/compactar."""
+    cli = getattr(app, "_groq_real", None) or getattr(app, "_groq", None)
+    if cli is None:
+        return ""
+    mdl = getattr(app, "_groq_real_model", None) or "llama-3.3-70b-versatile"
+    r = cli.chat.completions.create(
+        model=mdl,
+        messages=[{"role": "system", "content": system},
+                  {"role": "user", "content": user}],
+        max_tokens=max_tokens, temperature=0.3)
+    return (r.choices[0].message.content or "").strip()
+
+
+def _coletar_conversa(app, n: int = 24) -> str:
+    """Reúne os últimos turnos da conversa (chat ou voz) em texto."""
+    turns = []
+    for m in (getattr(app, "_chat_history", None) or [])[-n:]:
+        if isinstance(m, dict) and m.get("role") in ("user", "assistant") and m.get("content"):
+            who = "Senhor" if m["role"] == "user" else "JARVIS"
+            turns.append(f"{who}: {m['content']}")
+    if not turns:
+        for t in (getattr(app, "_voz_ctx", None) or [])[-8:]:
+            turns.append(f"Senhor: {t.get('user', '')}\nJARVIS: {t.get('jarvis', '')}")
+    return "\n".join(turns)
+
+
+@register(
+    name="compactar_conversa",
+    description=(
+        "Resume a CONVERSA recente em forma CURTA para liberar contexto (gastar "
+        "menos tokens), preservando decisões, arquivos gerados e caminhos. Use "
+        "quando a conversa ficou longa, o Senhor pedir 'resume/compacta o que "
+        "falamos', ou para fechar um assunto. O resumo é guardado na memória."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "foco": {"type": "string", "description": "Opcional: tema a priorizar no resumo."},
+        },
+        "required": [],
+    },
+)
+def _t_compactar_conversa(app, foco=""):
+    try:
+        from jarvis.memory import compaction as _cp
+        import jarvis.memory as _mem
+    except Exception as e:
+        return f"ERRO: compactação indisponível: {e}"
+    txt = _coletar_conversa(app)
+    if not txt:
+        return "Não há conversa recente para compactar, senhor."
+    if foco:
+        txt = f"[Priorize: {foco}]\n" + txt
+    resumo = _cp.summarize_turns(txt, lambda s, u: _mem_llm_call(app, s, u))
+    if not resumo:
+        return "ERRO: não consegui resumir agora."
+    try:
+        if _mem.enabled():
+            _mem.get_store().add("episodic", "Resumo da conversa: " + resumo,
+                                 importance=0.6, source="summary")
+    except Exception:
+        pass
+    return "Resumo: " + resumo
+
+
+@register(
+    name="resumir_decisoes",
+    description=(
+        "Extrai e registra, em forma curta, as DECISÕES e escolhas tomadas na "
+        "conversa (com a razão de cada uma) — para não reocupar contexto "
+        "relembrando tudo. Use quando o Senhor pedir 'quais decisões tomamos' ou "
+        "para consolidar o que foi decidido. Guarda o resumo na memória."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+)
+def _t_resumir_decisoes(app):
+    try:
+        from jarvis.memory import compaction as _cp
+        import jarvis.memory as _mem
+    except Exception as e:
+        return f"ERRO: compactação indisponível: {e}"
+    txt = _coletar_conversa(app)
+    if not txt:
+        return "Não há conversa recente, senhor."
+    sysm = ("Liste em 1-5 linhas curtas APENAS as DECISÕES/escolhas tomadas na "
+            "conversa, cada uma com a razão. Preserve nomes/paths/valores verbatim. "
+            "Se não houver decisão clara, responda 'Nenhuma decisão registrada.'")
+    resumo = _mem_llm_call(app, sysm, f"Conversa:\n{txt}\n\nDecisões:")
+    if not resumo:
+        return "ERRO: não consegui consolidar agora."
+    try:
+        if _mem.enabled():
+            _mem.get_store().add("semantic", "Decisões: " + resumo,
+                                 importance=0.7, source="summary")
+    except Exception:
+        pass
+    return resumo

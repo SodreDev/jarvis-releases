@@ -6,7 +6,7 @@
 
 Assistente pessoal de IA desktop para Windows — controlado por voz, texto ou gestos.
 
-[![Versão](https://img.shields.io/badge/versão-2.2.4-blue?style=flat-square)](https://github.com/NinjaZinS2/jarvis-releases/releases/latest)
+[![Versão](https://img.shields.io/badge/versão-2.7.0-blue?style=flat-square)](https://github.com/NinjaZinS2/jarvis-releases/releases/latest)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/NinjaZinS2/jarvis-releases/releases/latest)
 [![Auto-update](https://img.shields.io/badge/auto--update-ativo-brightgreen?style=flat-square)](#atualizações-automáticas)
@@ -282,6 +282,9 @@ O payload incremental atualiza apenas os arquivos `.py`. Uma atualização compl
 
 ## Estrutura de pastas
 
+> Para a visão técnica completa (arquitetura, fluxo de build/release, camadas de
+> configuração), veja [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ```
 J.A.R.V.I.S/
 ├── main.py              # Entry point, JarvisApp, roteador principal
@@ -355,6 +358,44 @@ Gera em `installer/output/`:
 ---
 
 ## Changelog
+
+### v2.7.0 — Cérebro agêntico + Suíte de documentos
+
+**🧠 Cérebro & tool-calling (acerto com modelos baratos)**
+- **OpenRouter** como provedor (drop-in OpenAI-compatible) com **Auto Router** (`openrouter/auto`) e **cadeia de fallback robusta**: modelo específico → Auto Router → Groq → LM Studio → chat, sem travar.
+- **Modo "Cérebro total"**: o LLM **sempre raciocina sobre o contexto** com todas as ferramentas + histórico (não dispara comando exato fora de contexto).
+- Seleção de ferramentas por **camadas** + **schema estrito** opcional; **chamadas paralelas** de ferramentas; **histórico/contexto adaptativo** ao limite do modelo (4 → 200k-1M).
+- **Modelos grátis/baratos por tarefa** (pensar / arquivos / imagem) e **seleção visual** de provedor, modelos e toggles na aba **Modelos**.
+
+**📄 Suíte de documentos (geração via IA)**
+- **Apresentações (.pptx)** — `spec→render` com **25 layouts** + composição livre por blocos (grid 12 colunas), design tokens, imagens e gráficos.
+- **Relatórios (.pdf)** — HTML/CSS→PDF via Chromium: capa, seções, KPIs, **gráficos**, tabelas, callouts, sumário, headers/footers; estilos por tipo (executivo/financeiro/técnico).
+- **Planilhas (.xlsx)** — formatos por coluna (moeda/percent/data), **formatação condicional** (escala/data bars/ícones), **gráficos nativos**, painel de KPIs, freeze panes.
+- **Exportar para PDF** — converte `.docx/.xlsx/.pptx`→PDF com alta fidelidade (MS Office / LibreOffice).
+- **Gerador de imagem** roteado (OpenRouter pago/grátis → Pollinations com backoff), proporção por layout.
+
+**🐛 Correções**
+- Transcrição de voz (Whisper) e visão voltam a usar o **Groq real** mesmo com OpenRouter selecionado (corrige erro 400 de content-type).
+- Corrigido crash ao trocar de tema (`set_ui_pref`) e a aplicação **ao vivo** da troca de provedor.
+
+**🔭 Planejado (em projeto — `planning/roadmap/`)**
+- Memória **semântica/vetorial em RAM** + **orquestrador semântico** leve (decisor/roteador instantâneo).
+- **Cognição humana**: personalidade persistente, reflexão e aprendizado contínuo de conteúdo novo.
+- Execução por **código** (programmatic tool calling), ícones embutidos, DOCX no mesmo padrão, e refino visual contínuo.
+
+> Recursos novos do cérebro saem **desligados por padrão** (toggles na aba Modelos) — ative conforme preferir.
+
+### v2.2.6
+- **BrowserPool**: corrige "contexto morto" após fechar o Chromium — listener do evento `close` + health-check recriam o contexto a partir dos cookies em disco, sem exigir novo login
+- **`#jarvis` em DMs**: resposta automática via LLM em **todas as plataformas** (WhatsApp, Instagram, Discord, Telegram, Gmail) pelo roteador Chromium, sem depender de pyautogui
+- **Instagram**: envio de DMs via Chromium (roteador), com fallback para pyautogui só se o backend não estiver disponível
+- **Steam**: descoberta de múltiplas bibliotecas via `libraryfolders.vdf` (jogos em drives secundários, ex.: `F:\SteamLibrary`)
+
+### v2.2.5
+- **YouTube**: corrige crash "Cannot switch to a different thread" (greenlet) ao buscar/reproduzir vídeos por voz
+- **Steam**: jogos instalados fora do disco C: (ex.: `F:\SteamLibrary`, `B:\SteamLibrary`) agora são detectados (lê `libraryfolders.vdf`)
+- **EA App**: melhor descoberta de diretórios de instalação (leitura de arquivos `.ini`)
+- **Release**: `make_release.py` poda `node_modules` e outros diretórios grandes no scan (build mais rápido)
 
 ### v2.2.4
 - Jogos EA Desktop detectados via `ProgramData\EA Desktop\InstallData\` — funciona independente do drive de instalação

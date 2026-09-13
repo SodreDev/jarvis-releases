@@ -760,7 +760,7 @@ def status() -> str:
     except Exception:
         return "Sessão inválida."
 
-
+2
 def reproduzir_youtube(query: str) -> str:
     """Abre a busca do YouTube e clica no primeiro vídeo.
 

@@ -193,13 +193,23 @@ class _EmbeddingClassifier:
     """Encapsula o modelo MiniLM-L6-v2 e os vetores de referência."""
 
     def __init__(self) -> None:
+        import os as _os
         from sentence_transformers import SentenceTransformer  # type: ignore
         import numpy as np  # já presente no projeto
 
         self._np = np
-        self._model: SentenceTransformer = SentenceTransformer(
-            "sentence-transformers/all-MiniLM-L6-v2"
-        )
+        # MiniLM roda 100% LOCAL (CPU, ~90 MB RAM, ~5ms/query) — NÃO é API.
+        # JARVIS_EMBED_MODEL permite trocar o modelo (caminho de ajuste/own-model:
+        # ex.: um modelo destilado/fine-tunado nosso). Tenta o cache LOCAL primeiro
+        # (sem rede nem warning do HF Hub); só baixa da internet no 1º uso.
+        _name = (_os.environ.get("JARVIS_EMBED_MODEL")
+                 or "sentence-transformers/all-MiniLM-L6-v2")
+        try:
+            self._model: SentenceTransformer = SentenceTransformer(
+                _name, local_files_only=True)
+        except Exception:
+            print("[EMBED] modelo não está em cache — baixando (só na 1ª vez)…")
+            self._model = SentenceTransformer(_name)
 
         # Pré-computa embeddings de todos os exemplos
         self._labels: list[str] = []

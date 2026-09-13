@@ -107,6 +107,16 @@ _SCHEMA: dict[str, dict[str, Any]] = {
     "EMBEDDING_ENABLED":       {"type": "bool"},
     "EMBEDDING_THRESHOLD":     {"type": "float", "min": 0.0, "max": 1.0},
 
+    # — Cérebro / Orquestrador (roteamento semântico + modelo local alternativo) —
+    "SKILL_MEMORY_ENABLED":    {"type": "bool",
+                               "desc": "Roteamento semântico de instruções: recupera só as tools relevantes por significado (reduz tokens e o erro 413)."},
+    "MODELO_LOCAL_ENABLED":    {"type": "bool",
+                               "desc": "Usa o modelo LOCAL alternativo (Nila), se presente, como roteador/orquestrador. OFF = MiniLM/API."},
+    "MODELO_LOCAL_THREADS":    {"type": "int", "min": 1, "max": 16,
+                               "desc": "Threads de CPU do modelo local alternativo (6-8 recomendado)."},
+    "MODELO_LOCAL_DIR":        {"type": "str",
+                               "desc": "Pasta do modelo local (Nila etc.: binário + .safetensors). VAZIO = autodetect (env JARVIS_MODELO_DIR / pasta padrão)."},
+
     # — Browser —
     "BROWSER_CDP_PORT":  {"type": "int",   "min": 1, "max": 65535,
                           "desc": "Porta de depuração remota para conectar ao browser já aberto (CDP)."},

@@ -184,6 +184,40 @@ if _FASTAPI_OK:
         except Exception as e:
             return JSONResponse({"error": str(e), "monitors": []}, status_code=500)
 
+    def _read_brain() -> Dict[str, Any]:
+        """Snapshot das CAMADAS da memória p/ o viewer do Cérebro (best-effort,
+        barato: lê os .json/.npy persistidos; semeia a camada META 1x)."""
+        out: Dict[str, Any] = {"layers": [], "stats": {}, "ts": _now_ms()}
+        try:
+            from jarvis.memory import layers as _lay
+            snap = _lay.snapshot()
+            out["layers"] = snap.get("layers", [])
+        except Exception as e:
+            out["layers_error"] = str(e)
+        out["stats"] = {l["id"]: int(l.get("count", 0)) for l in out["layers"]}
+        return out
+
+    @app.get("/api/brain")
+    async def get_brain():
+        """Snapshot das memórias do JARVIS (para a aba Cérebro da dashboard)."""
+        try:
+            return await asyncio.get_event_loop().run_in_executor(None, _read_brain)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/brain/sync")
+    async def post_brain_sync():
+        """(Re)indexa as instruções das tools na camada de skills (carrega o MiniLM)."""
+        def _do():
+            try:
+                from jarvis.memory import skills as _sk
+                n = _sk.sync_from_registry()
+                return {"ok": True, "indexed": n}
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        res = await asyncio.get_event_loop().run_in_executor(None, _do)
+        return JSONResponse(res)
+
     @app.get("/api/windows")
     async def get_windows():
         try:

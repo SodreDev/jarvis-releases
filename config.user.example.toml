@@ -65,3 +65,12 @@ enabled = false
 host = "127.0.0.1"
 port = 8765
 remote_access = false
+
+[modelo_local]
+# Orquestrador/roteador LOCAL opcional (SIDECAR: binário + pesos, FORA do repo/.exe).
+# OFF por padrão → usa o MiniLM/API atual. O modelo é fornecido por VOCÊ e vive fora
+# do projeto; aponte o caminho aqui ou via env JARVIS_MODELO_DIR. NUNCA vai pro git.
+# (CPU intensa só no treino; em uso roda leve na RAM.)
+enabled = false
+dir = ""            # pasta do modelo (binário + .safetensors); "" = autodetect (env/pasta padrão)
+threads = 6         # threads de CPU em uso (6-8 das 12)

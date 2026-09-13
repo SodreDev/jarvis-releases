@@ -61,6 +61,36 @@ def _extrair_texto_html(html: bytes, charset: str = "utf-8") -> str:
     return "\n".join(linhas)
 
 
+def fetch_url_texto(url: str, timeout: float = 4.0, max_chars: int = 3500) -> str:
+    """GET direto numa URL → texto LIMPO do corpo (bs4). Time-boxed + SSRF-safe.
+    Retorna '' em QUALQUER falha (nunca levanta) — feito p/ usar em loop de pesquisa,
+    onde uma URL morta NÃO pode travar o agente."""
+    import httpx
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if not url.startswith("http"):
+        url = "https://" + url
+    if _is_private_url(url):
+        return ""
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True,
+                          headers={"User-Agent": "JARVIS/1.0 (fetch)"}) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+        conteudo = resp.content[:_MAX_BYTES]
+        ct = resp.headers.get("content-type", "").lower()
+        if "html" in ct or not ct:
+            texto = _extrair_texto_html(conteudo)
+        elif "text" in ct:
+            texto = conteudo.decode("utf-8", errors="replace")
+        else:
+            return ""
+        return (texto or "").strip()[:max_chars]
+    except Exception:
+        return ""
+
+
 def fetch_e_resumir(texto_cmd: str, resumir_cb=None) -> str:
     """Faz GET na URL detectada no texto e retorna texto limpo (ou resumo via IA).
 

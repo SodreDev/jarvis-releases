@@ -809,6 +809,10 @@ function addMessage(sender, text, tag) {
       </div>`;
     lastJarvisBody = div.querySelector('.bubble-body');
     lastJarvisBody.textContent = text;
+  } else if (tag === 'thinking') {
+    // Raciocínio visível (roadmap/16): plano curto, estilo discreto, NÃO falado.
+    div.className = 'msg msg-system';
+    div.innerHTML = `<span class="msg-sys-text" style="opacity:.7;font-style:italic;color:var(--cyan);white-space:pre-wrap">🧠 ${escHtml(text)}</span>`;
   } else {
     div.className = 'msg msg-system';
     const cls = tag === 'erro' ? 'msg-sys-text error' : 'msg-sys-text';
@@ -1484,6 +1488,42 @@ function openConfigModal(mics, mode, selectedIdx) {
   notifRow.appendChild(document.createTextNode('Falar notificações automaticamente'));
   panel.appendChild(notifRow);
 
+  // ── 🧠 CÉREBRO ────────────────────────────────────────────────────────
+  panel.appendChild(sectionTitle('🧠 CÉREBRO'));
+  const memHelp = document.createElement('div');
+  memHelp.style.cssText = 'color:var(--text-dim);font-size:11px;margin-bottom:6px;line-height:1.4';
+  memHelp.innerHTML = '<b>Memória semântica/vetorial</b>: o JARVIS passa a lembrar das conversas e dos arquivos que gerou (ex.: "refaz o PDF", "abre minha IDE") e usa isso no raciocínio. Roda 100% local na RAM (~200 MB).';
+  panel.appendChild(memHelp);
+  const memRow = document.createElement('label');
+  memRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;color:var(--text);font-size:13px;cursor:pointer';
+  const cbMemoria = document.createElement('input');
+  cbMemoria.type = 'checkbox'; cbMemoria.id = 'cfg-memoria'; cbMemoria.style.accentColor = 'var(--cyan)';
+  memRow.appendChild(cbMemoria);
+  memRow.appendChild(document.createTextNode('Ativar memória semântica (lembrar contexto)'));
+  panel.appendChild(memRow);
+
+  const mkMemCheck = (id, label, help) => {
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;color:var(--text);font-size:13px;cursor:pointer';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.id = id; cb.style.accentColor = 'var(--cyan)';
+    row.appendChild(cb); row.appendChild(document.createTextNode(label));
+    panel.appendChild(row);
+    const h = document.createElement('div');
+    h.style.cssText = 'color:var(--text-dim);font-size:10.5px;margin:0 0 4px 22px;line-height:1.35';
+    h.innerHTML = help;
+    panel.appendChild(h);
+    return cb;
+  };
+  const cbTriage = mkMemCheck('cfg-mem-triage', 'Discernimento (filtrar o que lembrar)',
+    'Decide o que vira memória e <b>descarta conversa fiada e segredos</b> — gasta menos contexto. Requer memória ligada.');
+  const cbCompact = mkMemCheck('cfg-mem-compact', 'Compactação de contexto',
+    'Permite <b>resumir conversas/decisões</b> e enxugar saídas de ferramentas para gastar menos tokens.');
+  const cbSubagents = mkMemCheck('cfg-subagents', 'Sub-agentes (foco por domínio)',
+    'Roteia o pedido para <b>um domínio</b> (documentos, web, mídia, sistema…) e manda só as ferramentas dele — <b>resolve o erro de limite (413)</b> e melhora a precisão.');
+  const cbReasoning = mkMemCheck('cfg-reasoning', 'Raciocínio visível (pensa antes de agir)',
+    'Antes de agir, o JARVIS mostra um <b>plano curto</b> ("pensando…") e segue por ele. A fala continua curta. Deixa menos robótico; custa 1 chamada extra por pedido.');
+
   // ── 🌐 NAVEGADOR ──────────────────────────────────────────────────────
   panel.appendChild(sectionTitle('🌐 NAVEGADOR'));
   const browserHelp = document.createElement('div');
@@ -1884,7 +1924,12 @@ function openConfigModal(mics, mode, selectedIdx) {
       vision_provider:     selProvVis.value  || '',
       code_provider:       selProvCode.value || '',
     };
-    pyApi('apply_models', models, inpCity.value, cbNotif.checked);
+    pyApi('apply_models', models, inpCity.value, cbNotif.checked,
+          { memory_enabled: cbMemoria.checked,
+            memory_triage: cbTriage.checked,
+            memory_compaction: cbCompact.checked,
+            subagents: cbSubagents.checked,
+            reasoning: cbReasoning.checked });
     // Preferência de navegador (override)
     try { pyApi('set_browser_pref', selBrowser.value || ''); } catch(_){}
     // Coleta credenciais alteradas
@@ -1956,6 +2001,11 @@ function openConfigModal(mics, mode, selectedIdx) {
     if (prefs) {
       inpCity.value = prefs.user_city || '';
       cbNotif.checked = !!prefs.notif_auto_speak;
+      cbMemoria.checked = !!(prefs.agent && prefs.agent.memory_enabled);
+      cbTriage.checked = !!(prefs.agent && prefs.agent.memory_triage);
+      cbCompact.checked = !!(prefs.agent && prefs.agent.memory_compaction);
+      cbSubagents.checked = !!(prefs.agent && prefs.agent.subagents);
+      cbReasoning.checked = !!(prefs.agent && prefs.agent.reasoning);
     }
   }).catch(err => console.warn('[config] modelos:', err));
 }

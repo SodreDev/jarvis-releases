@@ -52,6 +52,7 @@ MODELO_CLASSIFICADOR = "gemini-2.0-flash-lite"  # 1500 req/dia free tier
 GROQ_API_KEY     = _os.environ.get("GROQ_API_KEY", "")
 GROQ_MODELO_CHAT = "llama-3.3-70b-versatile" # inteligente, 14400 req/dia free
 GROQ_MODELO_CLS  = "llama-3.1-8b-instant"   # ultra rápido para classificação
+GROQ_MODELO_TOOLS = "llama-3.1-8b-instant"  # TOOL-CALLING/loop agêntico — barato + TPD MUITO maior que o 70b (o 70b estourava 100k tokens/dia em <30min). O 70b fica só p/ o chat. Override: prefs models.tools_groq.
 # Modelo de visão Groq (grátis, 1k req/dia, 128k ctx)
 GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
@@ -69,6 +70,182 @@ LMSTUDIO_VISION_MODEL = "noctrex/huihui-qwen3-vl-4b-instruct-abliterated"
 # Alias legado — aponta para o modelo de texto
 LMSTUDIO_MODEL       = LMSTUDIO_TEXT_MODEL
 
+# ── OpenRouter (provider OPCIONAL — modelos grátis/baratos por tarefa) ────────
+# Drop-in OpenAI-compatible. Habilite definindo OPENROUTER_API_KEY no
+# credentials/.env. NÃO é usado por padrão (ver roadmap/13, Fase 1/4).
+# Os IDs abaixo são PROVISÓRIOS — a escolha do melhor modelo grátis/barato por
+# tarefa é a Fase 4 do roadmap/13 (pesquisa dedicada). Override em
+# prefs["models"]["openrouter_<task>"].
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_API_KEY  = _os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODELS = {
+    # 'openrouter/auto' usa o AUTO ROUTER da SUA conta (escolhe o melhor modelo
+    # por request conforme sua preferência de qualidade/custo + allowed models +
+    # provider sort). Troque por um id fixo se quiser fixar (ex.: ':free').
+    "thinking":     "openrouter/auto",   # raciocínio + tool-calling (via Auto Router)
+    "files":        "openrouter/auto",   # composição de documentos
+    "image":        "google/gemini-2.0-flash-exp:free",  # VISÃO + escrever prompt de imagem
+    # image_render = modelo que GERA a imagem (≠ 'image'). Groq NÃO gera imagem.
+    # Default: 'google/gemini-2.5-flash-image' (Nano Banana — #1 em uso/qualidade
+    # no OpenRouter, jun/2026; o antigo 'bytedance-seed/seedream-4.5' dava 404).
+    # Alternativas: 'google/gemini-3-pro-image' (Nano Banana Pro, top qualidade),
+    # 'black-forest-labs/flux.2-pro', 'x-ai/grok-imagine-image-quality:free' (grátis).
+    "image_render": "google/gemini-2.5-flash-image",
+}
+# Token grátis (tier Seed) p/ Pollinations — sobe o limite e evita 429. Opcional.
+POLLINATIONS_TOKEN = _os.environ.get("POLLINATIONS_TOKEN", "")
+# Provedor de geração de imagem: "auto" (OpenRouter→Pollinations) | "openrouter" | "pollinations".
+IMAGE_PROVIDER = "auto"
+
+
+def get_image_provider() -> str:
+    """auto | openrouter | pollinations (override em prefs["models"]["image_provider"])."""
+    try:
+        v = (_read_prefs_models() or {}).get("image_provider")
+        if v in ("auto", "openrouter", "pollinations"):
+            return v
+    except Exception:
+        pass
+    return IMAGE_PROVIDER
+# Fallbacks pagos MUITO baratos (sem cota free) — defina em prefs["models"] se quiser:
+#   thinking/files → "deepseek/deepseek-v4-flash"      (~US$0,09/0,18 por 1M)
+#   alternativa    → "google/gemini-2.5-flash-lite"    (~US$0,10/0,40 por 1M)
+# Baseline free de fallback: "meta-llama/llama-3.3-70b-instruct:free".
+
+def get_openrouter_model(task: str = "thinking") -> str:
+    """Modelo OpenRouter para uma tarefa (thinking|files|image|image_render).
+
+    Por PADRÃO, thinking/files usam o AUTO ROUTER ('openrouter/auto') — a conta
+    do usuário escolhe o melhor modelo por request. Só usam um id específico se
+    o usuário ligar o modo "especificar modelos" (prefs["models"]["openrouter_specify"]).
+    image_render é sempre específico (Auto Router não gera imagem)."""
+    try:
+        m = _read_prefs_models() or {}
+    except Exception:
+        m = {}
+    if task in ("thinking", "files") and not m.get("openrouter_specify"):
+        return "openrouter/auto"
+    ov = m.get(f"openrouter_{task}")
+    if ov:
+        return ov
+    return OPENROUTER_MODELS.get(task, OPENROUTER_MODELS["thinking"])
+
+# ── Cérebro agêntico (roadmap/13) — TOGGLES OFF POR PADRÃO ────────────────────
+# Controlam o _pensar_e_agir do main.py. Defaults preservam o comportamento
+# atual; ligue para ativar o cérebro novo (sem remover nada).
+#
+# AGENT_TOOL_SELECT_MODE — como expor tools ao LLM:
+#   "keyword" → filtra por palavra-chave (atual; pode esconder a tool certa)
+#   "layered" → core + tools das CAMADAS relevantes (menos rígido)
+#   "all"     → manda TODAS as tools (melhor acerto p/ frase livre, mais tokens)
+AGENT_TOOL_SELECT_MODE = "keyword"
+AGENT_TOOL_MAX         = 10       # teto de tools quando keyword/layered
+AGENT_INCLUDE_HISTORY  = False    # injeta histórico recente no payload de tools
+AGENT_HISTORY_TURNS    = 6        # nº de mensagens recentes a injetar (sem system)
+AGENT_PARALLEL_TOOLS   = False    # permite múltiplos tool_calls/turno (provider capaz)
+AGENT_STRICT_TOOLS     = False    # schema estrito (args sempre válidos; ver _strictify)
+AGENT_HISTORY_TURNS_CLOUD = 20    # histórico em provider de nuvem (mais contexto disponível)
+# AGENT_BRAIN_MODE: "fast" (atual) | "total" (máxima acertividade: o LLM SEMPRE
+# raciocina sobre o contexto — pula fast-paths de regex dentro do _pensar, vê
+# TODAS as tools e usa histórico. Evita "disparar comando exato fora de contexto".)
+AGENT_BRAIN_MODE       = "fast"
+DECK_V2_ENABLED        = False    # apresentações via spec→render (documents/deck_builder)
+REPORT_V2_ENABLED      = False    # PDF/relatório via spec→render MODERNO (documents/report_builder, HTML→Chromium): capa, sumário, quebras de página corretas, SEM cap de seções. OFF = atalho legado (reportlab, bagunçado). Override: prefs agent.report_v2.
+
+# ── Anti-eco do wake (correção de auto-escuta) ───────────────────────────────
+# O JARVIS ouvia a PRÓPRIA fala (TTS) pelo mic e tratava como comando
+# ("PDF pronto, senhor…" virava ativação). Enquanto o TTS toca — e por
+# WAKE_ANTI_ECHO_GUARD_SEC após terminar (cauda/reverberação) — o caminho
+# principal do wake DESCARTA o que ouviu. A interrupção por wake word durante o
+# TTS (barge-in) tem caminho próprio e continua funcionando.
+WAKE_ANTI_ECHO           = True
+WAKE_ANTI_ECHO_GUARD_SEC = 1.2    # janela de guarda após o TTS terminar (s)
+
+# ── Memória semântica/vetorial em RAM (roadmap/14) — TOGGLE OFF POR PADRÃO ────
+# MemoryStore (jarvis/memory): MiniLM compartilhado + numpy cosseno. Grava
+# turnos e saídas de tools (episódico), fatos (semântico) e rotinas (procedural).
+# Recuperação adaptativa por situação injeta "[Memórias relevantes]" no cérebro.
+MEMORY_ENABLED           = False  # liga a memória vetorial no _pensar_e_agir
+MEMORY_DIR               = "data/memory"
+MEMORY_K_DEFAULT         = 6      # nº de memórias recuperadas por turno
+MEMORY_RECENCY_DECAY     = 0.995  # decaimento por hora (recência)
+MEMORY_MMR_LAMBDA        = 0.6    # diversidade vs relevância (política híbrida)
+MEMORY_ROUTER_THRESHOLD  = 0.50   # abaixo disto → política 'hybrid' (busca tudo + MMR)
+MEMORY_REFLECTION_ENABLED = False  # consolidação offline (Fase 7 — heartbeat ocioso)
+# ── Discernimento de escrita (triage) — decide O QUE/COMO memorizar ──────────
+MEMORY_TRIAGE_ENABLED       = False  # filtra o que vira memória (descarta efêmero)
+MEMORY_TRIAGE_EMBED_THRESHOLD = 0.45 # confiança mín. do embedding p/ categorizar
+MEMORY_TRIAGE_MARGIN        = 0.08   # margem top1-top2 mín. (senão → efêmero)
+MEMORY_TRIAGE_LLM_FALLBACK  = False  # escalar casos incertos a um juiz-LLM (futuro)
+MEMORY_PII_REDACT           = True   # redige e-mail/telefone/CPF antes de gravar
+MEMORY_PRIVATE_MODE         = False  # opt-out global: não memoriza nada
+# ── Compactação de contexto — gasta menos tokens ─────────────────────────────
+MEMORY_COMPACTION_ENABLED   = False  # liga mascaramento de saídas de tools + resumo
+MEMORY_COMPACT_AT           = 0.70   # compacta quando uso do contexto ≥ 70%
+MEMORY_COMPACT_KEEP_LAST    = 4      # nº de saídas de tools mantidas VERBATIM ao compactar (orquestrador 2026-06-26)
+MEMORY_COMPACT_IN_LOOP      = False  # liga a compactação AUTOMÁTICA no loop vivo + 413 (DEDICADO; separado das prefs do usuário, OFF até validar)
+
+# ── Sub-agentes por domínio (roadmap/15 Fase 3) — TOGGLE OFF POR PADRÃO ───────
+# Roteia o turno (MiniLM local) p/ 1 domínio e manda ao cérebro só as ~5-8 tools
+# daquele domínio (em vez de 44): mata o 413 e melhora a seleção. Fallback p/ o
+# filtro atual quando incerto/multi-domínio — nunca pior que hoje.
+AGENT_SUBAGENTS          = False
+AGENT_SUBAGENT_THRESHOLD = 0.45   # confiança mín. do roteador (calibrado 2026-06-26 via eval_tools --calibrate; thr não afeta o gold, 0.45 = folga conservadora)
+AGENT_SUBAGENT_MARGIN    = 0.03   # margem top1-top2 mín. (calibrado: 0.03 → 95% acc + 0 misrotas no gold; 0.06 dava 93%)
+AGENT_SUBAGENT_TOOL_MAX  = 12     # teto de tools no modo sub-agente
+AGENT_SUBAGENT_SOFT_FLOOR = 0.55  # fallback suave: sem margem, escopa ao top-domínio se conf ≥ isto (evita despejar 44 tools → 413)
+
+# ── Raciocínio visível (roadmap/16 Fase 2) — TOGGLE OFF POR PADRÃO ────────────
+# Antes de agir em turnos não-triviais, o cérebro gera um PLANO curto e
+# estruturado (Objetivo→Passos) que aparece na UI como "pensando" e guia as
+# tools. A FALA (TTS) continua curta — o plano NÃO é falado. Custa 1 chamada
+# barata (Groq real) por turno; por isso é opt-in.
+AGENT_REASONING          = False
+AGENT_REASONING_MIN_WORDS = 4     # só planeja se o pedido tiver ≥ N palavras
+
+# ── Modelo local externo (orquestrador customizado) — TOGGLE OFF POR PADRÃO ───
+# Roteador/orquestrador LOCAL opcional (SIDECAR: binário + pesos, FORA do repo/.exe;
+# fornecido pelo usuário). OFF → usa o MiniLM/API atual. Quando ON e o modelo
+# presente, o adapter classifiers/modelo_local.py assume o slot de classify();
+# senão degrada gracioso. Path via env JARVIS_MODELO_DIR / pasta padrão (paths.model_dir).
+MODELO_LOCAL_ENABLED   = False
+MODELO_LOCAL_THREADS   = 6        # threads de CPU do processo do modelo (6-8 das 12)
+MODELO_LOCAL_DIR       = ""       # pasta do modelo (Nila etc.) — VAZIO por padrão; o usuário
+                                  # preenche. Também via env JARVIS_MODELO_DIR. Ver paths.model_dir().
+
+# ── Base semântica de instruções das tools (jarvis/memory/skills) — OFF ───────
+# "Experts semânticos": guarda as instruções/situações das tools num índice
+# vetorial e RECUPERA só as relevantes por prompt (em vez de despejar 44 schemas)
+# → reduz tokens + "sabor de treino" sem treinar. Reconstruível do tool_registry.
+# OFF → o filtro de tools atual segue intacto; quando ON, o orquestrador consulta.
+SKILL_MEMORY_ENABLED   = False
+SKILL_MEMORY_K         = 8        # nº de tools recuperadas por prompt
+SKILL_MEMORY_FLOOR     = 0.30     # guarda de match DEGENERADO: top-1 < isto (gibberish/vazio) → NÃO escopa. Calibrado 2026-06-26: conversa real pontua 0.44-0.65 (≈ pedidos reais), logo o score NÃO detecta conversa — mas escopar conversa é inofensivo (LLM só conversa, core sempre presente). 0.30 só barra match nulo.
+
+# ── Orquestrador: instruções separadas por CASO + hint semântico de tools +
+# write-back de histórico do path de tools (2026-06-26; pesquisa MemGPT/MCP-Zero,
+# planning/PESQUISA-ORQUESTRADOR-2026-06-26.md). Tudo OFF/identidade por padrão —
+# o comportamento vivo só muda quando ligado, e a continuidade exige também
+# AGENT_INCLUDE_HISTORY ON (re-validar o "bleed" de contexto antes).
+AGENT_CASE_BLOCKS            = False  # prepende bloco CASO A/B/C/D + NUNCA-AJA às regras de decisão do orquestrador
+SKILL_MEMORY_HINT            = False  # injeta "tools provavelmente úteis: ..." no system por SIGNIFICADO (requer SKILL_MEMORY_ENABLED)
+SKILL_MEMORY_HINT_MAX        = 6      # nº máx. de tools nomeadas no hint semântico
+AGENT_TOOL_HISTORY_WRITEBACK = False  # grava turnos com tool no _chat_history (leitura ainda via AGENT_INCLUDE_HISTORY)
+AGENT_TOOLS_COMPACT          = False  # schemas de tools ENXUTOS (descrições truncadas) — corta ~50-60% dos tokens das tools (MCP-Zero) p/ aliviar rate-limit; override: prefs agent.tools_compact
+NILA_ORCHESTRATOR_ENABLED    = False  # Fase B1: usa a Nila (modelo local) como ORQUESTRADORA (ela emite {"acao":...}, o JARVIS executa a tool e devolve, ela itera — 100% local, sem rate-limit). Opt-in; requer MODELO_LOCAL_ENABLED + sidecar presente. Override: prefs agent.nila_orchestrator
+# Fase B2: allow-list das tools que a Nila pode AUTO-executar local (forward-compat).
+# Conservador: só read-mostly/baixo-risco; o resto (enviar_mensagem, abrir_app, docs...)
+# CAI NA NUVEM, onde o modelo grande + as travas decidem. "*" = liberar todas (confio na
+# Nila treinada). As ações nativas dela (pesquisar/comando) sempre valem. Override: prefs agent.nila_allowed_tools
+NILA_ALLOWED_TOOLS           = ["pesquisa_web", "comando_terminal", "clima", "aprender_sobre", "memoria_buscar", "analisar_tela"]
+# Fase B2: aquece a Nila 1×/sessão (perceive exemplos canônicos + train N passos) p/ ACALMAR o afeto
+# → a respond sai como AÇÃO JSON LIMPA em vez de proto-texto embolado (cold=garbage, warm=válido — testado).
+# OFF por padrão (0): cada passo de train custa ~5-10s (CPU pura), então warmup síncrono trava a 1ª chamada
+# por minutos — INVIÁVEL no hot path. O fix LIMPO é decode greedy/baixa-temp no sidecar (Rust, a propor).
+# Esta plumbing fica p/ experimentação / um warmup ASSÍNCRONO futuro. >0 = liga (lento). O train persiste
+# SÓ no mind_state.bin (o .safetensors carregado fica intacto). Override: prefs agent.nila_warmup_steps
+NILA_WARMUP_STEPS            = 0
+
 # ── Override via prefs do usuário (jarvis_prefs.json) ─────────────────────────
 # Permite escolher modelos pelo modal de configurações sem editar config.py.
 # Estrutura esperada em prefs["models"]:
@@ -80,7 +257,7 @@ def _aplicar_prefs_modelos():
     substitutos atuais — caso o usuário tenha selecionado no passado.
     """
     global LMSTUDIO_MODEL, LMSTUDIO_TEXT_MODEL, LMSTUDIO_VISION_MODEL
-    global GROQ_MODELO_CHAT, GROQ_MODELO_CLS, GROQ_VISION_MODEL, LLM_PROVIDER
+    global GROQ_MODELO_CHAT, GROQ_MODELO_CLS, GROQ_MODELO_TOOLS, GROQ_VISION_MODEL, LLM_PROVIDER
 
     # Mapa de modelos descontinuados → substituto atual
     _DEPRECATED_MAP = {
@@ -144,12 +321,94 @@ def _aplicar_prefs_modelos():
             GROQ_MODELO_CHAT = models["chat_groq"]
         if models.get("classifier"):
             GROQ_MODELO_CLS = models["classifier"]
+        if models.get("tools_groq"):
+            GROQ_MODELO_TOOLS = models["tools_groq"]
         if models.get("groq_vision"):
             GROQ_VISION_MODEL = models["groq_vision"]
     except Exception:
         pass
 
 _aplicar_prefs_modelos()
+
+
+def _aplicar_prefs_agente():
+    """Carrega os toggles do cérebro agêntico (roadmap/13) do jarvis_prefs.json,
+    seção "agent". Silencioso em falha — mantém os defaults do config."""
+    global AGENT_TOOL_SELECT_MODE, AGENT_TOOL_MAX, AGENT_INCLUDE_HISTORY
+    global AGENT_HISTORY_TURNS, AGENT_PARALLEL_TOOLS, AGENT_STRICT_TOOLS
+    global DECK_V2_ENABLED, REPORT_V2_ENABLED, AGENT_BRAIN_MODE, AGENT_HISTORY_TURNS_CLOUD
+    global MEMORY_ENABLED, MEMORY_TRIAGE_ENABLED, MEMORY_COMPACTION_ENABLED
+    global AGENT_SUBAGENTS, AGENT_REASONING
+    global AGENT_CASE_BLOCKS, MEMORY_COMPACT_IN_LOOP, SKILL_MEMORY_ENABLED, SKILL_MEMORY_HINT
+    global AGENT_TOOLS_COMPACT, NILA_ORCHESTRATOR_ENABLED, NILA_ALLOWED_TOOLS, NILA_WARMUP_STEPS
+    try:
+        import json as _json
+        candidatos = [
+            creds_path("jarvis_prefs.json"),
+            _os.path.join(_data_base(), "jarvis_prefs.json"),
+        ]
+        path = next((p for p in candidatos if _os.path.exists(p)), None)
+        if not path:
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            ag = (_json.load(f) or {}).get("agent") or {}
+        if not isinstance(ag, dict):
+            return
+        if ag.get("tool_select_mode") in ("keyword", "layered", "all"):
+            AGENT_TOOL_SELECT_MODE = ag["tool_select_mode"]
+        if isinstance(ag.get("tool_max"), int) and ag["tool_max"] > 0:
+            AGENT_TOOL_MAX = ag["tool_max"]
+        if isinstance(ag.get("include_history"), bool):
+            AGENT_INCLUDE_HISTORY = ag["include_history"]
+        if isinstance(ag.get("history_turns"), int) and ag["history_turns"] >= 0:
+            AGENT_HISTORY_TURNS = ag["history_turns"]
+        if isinstance(ag.get("parallel_tools"), bool):
+            AGENT_PARALLEL_TOOLS = ag["parallel_tools"]
+        if isinstance(ag.get("strict_tools"), bool):
+            AGENT_STRICT_TOOLS = ag["strict_tools"]
+        if isinstance(ag.get("deck_v2"), bool):
+            DECK_V2_ENABLED = ag["deck_v2"]
+        if isinstance(ag.get("report_v2"), bool):
+            REPORT_V2_ENABLED = ag["report_v2"]
+        if ag.get("brain_mode") in ("fast", "total"):
+            AGENT_BRAIN_MODE = ag["brain_mode"]
+        if isinstance(ag.get("history_turns_cloud"), int) and ag["history_turns_cloud"] > 0:
+            AGENT_HISTORY_TURNS_CLOUD = ag["history_turns_cloud"]
+        # Memória semântica/vetorial (roadmap/14) — toggles visuais na aba Config.
+        if isinstance(ag.get("memory_enabled"), bool):
+            MEMORY_ENABLED = ag["memory_enabled"]
+        if isinstance(ag.get("memory_triage"), bool):
+            MEMORY_TRIAGE_ENABLED = ag["memory_triage"]
+        if isinstance(ag.get("memory_compaction"), bool):
+            MEMORY_COMPACTION_ENABLED = ag["memory_compaction"]
+        if isinstance(ag.get("subagents"), bool):
+            AGENT_SUBAGENTS = ag["subagents"]
+        if isinstance(ag.get("reasoning"), bool):
+            AGENT_REASONING = ag["reasoning"]
+        # Orquestrador 2026-06-26: casos / hint semântico / compactação no loop vivo.
+        if isinstance(ag.get("case_blocks"), bool):
+            AGENT_CASE_BLOCKS = ag["case_blocks"]
+        if isinstance(ag.get("compact_in_loop"), bool):
+            MEMORY_COMPACT_IN_LOOP = ag["compact_in_loop"]
+        if isinstance(ag.get("skill_memory"), bool):
+            SKILL_MEMORY_ENABLED = ag["skill_memory"]
+        if isinstance(ag.get("skill_memory_hint"), bool):
+            SKILL_MEMORY_HINT = ag["skill_memory_hint"]
+        if isinstance(ag.get("tools_compact"), bool):
+            AGENT_TOOLS_COMPACT = ag["tools_compact"]
+        if isinstance(ag.get("nila_orchestrator"), bool):
+            NILA_ORCHESTRATOR_ENABLED = ag["nila_orchestrator"]
+        if isinstance(ag.get("nila_allowed_tools"), list):
+            NILA_ALLOWED_TOOLS = [str(t) for t in ag["nila_allowed_tools"] if t]
+        if isinstance(ag.get("nila_warmup_steps"), int):
+            NILA_WARMUP_STEPS = max(0, ag["nila_warmup_steps"])
+        # No modo "total", liga histórico por padrão (o LLM precisa do contexto).
+        if AGENT_BRAIN_MODE == "total":
+            AGENT_INCLUDE_HISTORY = True
+    except Exception:
+        pass
+
+_aplicar_prefs_agente()
 
 # ── Provider por módulo (mix permitido) ───────────────────────────────────────
 # Cada módulo do JARVIS pode escolher seu próprio provider, independente do

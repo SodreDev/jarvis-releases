@@ -34,6 +34,31 @@ _SCOPE = " ".join([
 _sp_client: spotipy.Spotify | None = None
 _AUTH_PORT   = 8888
 _REDIRECT_URI = f"http://127.0.0.1:{_AUTH_PORT}/callback"
+_CACHE_PATH  = ".spotify_cache"
+_creds: tuple | None = None          # (client_id, client_secret, redirect_uri) p/ re-login
+_auth_mgr: SpotifyOAuth | None = None
+
+
+def _eh_invalid_grant(e: Exception) -> bool:
+    """True se o erro for refresh token expirado/revogado.
+
+    A partir de 20/07/2026 o refresh token do Spotify expira em 6 meses; tentar
+    refresh com token morto retorna invalid_grant. NÃO retentar — refazer login.
+    """
+    s = str(e).lower()
+    return ("invalid_grant" in s or "refresh token revoked" in s
+            or "token revoked" in s or "refresh token expired" in s)
+
+
+def _descartar_token() -> None:
+    """Descarta o token em cache (sem retentar um refresh morto) → força novo login."""
+    global _sp_client
+    _sp_client = None
+    try:
+        if os.path.exists(_CACHE_PATH):
+            os.remove(_CACHE_PATH)
+    except Exception:
+        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -94,30 +119,50 @@ def _aguardar_callback(timeout: int = 120) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def iniciar(client_id: str, client_secret: str, redirect_uri: str) -> spotipy.Spotify:
-    """Cria (ou reutiliza) o cliente Spotify autenticado."""
-    global _sp_client
-    if _sp_client is not None:
-        return _sp_client
+    """Cria (ou reutiliza) o cliente Spotify autenticado.
 
-    auth = SpotifyOAuth(
-        client_id=client_id,
-        client_secret=client_secret,
-        redirect_uri=_REDIRECT_URI,   # sempre 127.0.0.1
-        scope=_SCOPE,
-        cache_path=".spotify_cache",
-        open_browser=False,           # controlamos manualmente
-    )
+    Valida o token A CADA chamada (barato: o spotipy só faz refresh de rede
+    quando o access token expira, ~1x/hora). Se o REFRESH token expirou
+    (invalid_grant — mudança Spotify a partir de 20/07/2026), descarta o token
+    em cache e refaz o sign-in (sem retentar o refresh morto), como exige o e-mail
+    "Handle invalid_grant errors / Discard expired tokens".
+    """
+    global _sp_client, _creds, _auth_mgr
+    _creds = (client_id, client_secret, redirect_uri)
 
-    # Se já tem token em cache válido, usa direto
-    token_info = auth.get_cached_token()
+    auth = _auth_mgr
+    if auth is None:
+        auth = SpotifyOAuth(
+            client_id=client_id,
+            client_secret=client_secret,
+            redirect_uri=_REDIRECT_URI,   # sempre 127.0.0.1
+            scope=_SCOPE,
+            cache_path=_CACHE_PATH,
+            open_browser=False,           # controlamos manualmente
+        )
+        _auth_mgr = auth
+
+    # get_cached_token() refresca automaticamente se o access token expirou — e
+    # levanta invalid_grant se o REFRESH token expirou (6 meses).
+    token_info = None
+    try:
+        token_info = auth.get_cached_token()
+    except Exception as e:
+        if _eh_invalid_grant(e):
+            print("[SPOTIFY] Refresh token expirado (invalid_grant) — refazendo login.")
+            _descartar_token()
+        else:
+            raise
+
     if token_info and not auth.is_token_expired(token_info):
-        _sp_client = spotipy.Spotify(auth_manager=auth)
-        print("[SPOTIFY] Token em cache OK.")
+        if _sp_client is None:
+            _sp_client = spotipy.Spotify(auth_manager=auth)
         return _sp_client
 
-    # Exibe URL de autorização e abre o browser
+    # Sem token válido (1ª vez OU refresh token expirado) → sign-in completo.
+    _sp_client = None
     auth_url = auth.get_authorize_url()
-    print(f"[SPOTIFY] Abrindo navegador para autorização...")
+    print("[SPOTIFY] Abrindo navegador para autorização...")
     webbrowser.open(auth_url)
     print(f"[SPOTIFY] Aguardando callback em {_REDIRECT_URI} ...")
 

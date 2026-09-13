@@ -72,6 +72,32 @@ def dev_config_override() -> Path:
     return project_root() / "config.user.toml"
 
 
+def model_dir() -> "Path | None":
+    """Diretório SIDECAR do modelo local externo (orquestrador customizado).
+
+    Resolução (primeiro que existir vence): env `JARVIS_MODELO_DIR` →
+    `config.MODELO_LOCAL_DIR` (settável pela UI) → pasta-padrão
+    `project_root()/modelo_local`. Retorna `None` se nenhuma existir → o JARVIS
+    degrada para o MiniLM/API. O modelo NUNCA vem do repo nem do `.exe`; checa só
+    a EXISTÊNCIA da pasta (não abre nem inspeciona os pesos).
+    """
+    # 1. env JARVIS_MODELO_DIR (override de máquina / credentials/.env)
+    env = os.environ.get("JARVIS_MODELO_DIR", "").strip()
+    if env and Path(env).expanduser().is_dir():
+        return Path(env).expanduser()
+    # 2. config.MODELO_LOCAL_DIR (settável pela UI — aba 🧠 Cérebro)
+    try:
+        import config as _cfg
+        cfg_dir = (getattr(_cfg, "MODELO_LOCAL_DIR", "") or "").strip()
+        if cfg_dir and Path(cfg_dir).expanduser().is_dir():
+            return Path(cfg_dir).expanduser()
+    except Exception:
+        pass
+    # 3. pasta-padrão ao lado do exe (frozen) / na raiz do repo (dev)
+    default = project_root() / "modelo_local"
+    return default if default.is_dir() else None
+
+
 __all__ = [
     "project_root",
     "user_config_dir",
@@ -81,4 +107,5 @@ __all__ = [
     "logs_dir",
     "browser_profiles_dir",
     "dev_config_override",
+    "model_dir",
 ]

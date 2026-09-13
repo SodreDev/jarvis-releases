@@ -205,6 +205,67 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 /* ═══════════════════ RESIZE OVERLAY ═══════════════════ */
 .pcard.resizing{border-color:var(--accent) !important;box-shadow:0 0 20px rgba(0,216,255,.15) !important}
+
+/* ═══════════════════ SIDENAV (navbar lateral macOS) ═══════════════════ */
+#sidenav{width:64px;min-width:64px;flex-shrink:0;background:rgba(4,6,12,.97);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;
+  padding:12px 0;gap:6px}
+.nav-item{width:48px;height:48px;border-radius:11px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--text-dim);
+  border:1px solid transparent;transition:all .18s}
+.nav-item:hover{color:var(--accent);background:var(--accent-glow)}
+.nav-item.active{color:var(--accent);background:var(--accent-glow);border-color:var(--accent-dim);
+  box-shadow:0 0 12px var(--accent-glow)}
+.nav-item .ni-ico{font-size:19px;line-height:1}
+.nav-item .ni-lbl{font-family:var(--font-hud);font-size:7px;letter-spacing:.5px}
+
+/* ═══════════════════ CÉREBRO (brain) VIEW ═══════════════════ */
+#brain-view{flex:1;display:none;flex-direction:column;overflow:hidden;min-width:0}
+#brain-view.show{display:flex}
+.brain-bar{display:flex;align-items:center;gap:12px;padding:10px 14px;flex-shrink:0;
+  border-bottom:1px solid var(--border);background:rgba(0,216,255,.03)}
+.brain-bar .bt{font-family:var(--font-hud);font-size:12px;color:var(--accent);letter-spacing:2px}
+.brain-bar .bsub{font-size:10px;color:var(--text-dim)}
+.brain-seg{margin-left:auto;display:flex;gap:5px;align-items:center}
+.seg-btn{background:none;border:1px solid var(--accent-dim);color:var(--text-dim);
+  font-family:var(--font-hud);font-size:9px;letter-spacing:1px;padding:5px 12px;border-radius:3px;
+  cursor:pointer;transition:all .18s}
+.seg-btn.active{color:var(--accent);background:var(--accent-glow);border-color:var(--accent)}
+.brain-body{flex:1;display:flex;overflow:hidden;min-height:0}
+#brain-graph-wrap{flex:1;position:relative;min-width:0;display:none}
+#brain-graph-wrap.show{display:block}
+#brain-graph{width:100%;height:100%;display:block;cursor:grab}
+#brain-graph:active{cursor:grabbing}
+.graph-legend{position:absolute;top:10px;left:12px;display:flex;flex-direction:column;gap:5px;
+  background:rgba(4,6,12,.72);padding:9px 11px;border:1px solid var(--border);border-radius:5px;font-size:10px}
+.lg-row{display:flex;align-items:center;gap:7px;color:var(--text-dim)}
+.lg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+#brain-tree-wrap{flex:1;overflow-y:auto;padding:10px 6px;min-width:0;display:none}
+#brain-tree-wrap.show{display:block}
+.tree-head{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;border-radius:5px;
+  font-size:12px;color:var(--text)}
+.tree-head:hover{background:var(--accent-glow)}
+.tree-head .tf-ico{font-size:12px;transition:transform .15s}
+.tree-head.collapsed .tf-ico{transform:rotate(-90deg)}
+.tree-head .tf-name{font-weight:600}
+.tree-head .tf-count{margin-left:auto;font-size:9px;color:var(--text-dim);
+  background:rgba(0,216,255,.08);padding:1px 8px;border-radius:9px}
+.tree-children{padding-left:22px}
+.tree-children.hide{display:none}
+.tree-file{display:flex;align-items:center;gap:8px;padding:4px 10px;cursor:pointer;border-radius:5px;
+  font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree-file:hover{background:rgba(0,216,255,.05);color:var(--text)}
+.tree-file.sel{background:var(--accent-glow);color:var(--accent)}
+.tree-file .tfi{font-size:8px;flex-shrink:0}
+#brain-detail{width:330px;min-width:330px;flex-shrink:0;border-left:1px solid var(--border);
+  padding:16px;overflow-y:auto;background:rgba(4,6,12,.6)}
+.bd-empty{color:var(--text-dim);font-size:11px;text-align:center;padding-top:50px;opacity:.55}
+.bd-kind{display:inline-block;font-family:var(--font-hud);font-size:8px;letter-spacing:1px;
+  padding:3px 9px;border-radius:3px;margin-bottom:10px;color:var(--bg);font-weight:700}
+.bd-text{font-size:12.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.bd-meta{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);
+  font-size:10px;color:var(--text-dim);line-height:1.8}
+.bd-meta b{color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -233,6 +294,16 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   <!-- ── BODY ── -->
   <div id="body">
 
+    <!-- ── SIDENAV (navbar lateral macOS) ── -->
+    <div id="sidenav">
+      <div class="nav-item active" data-view="painel" onclick="setView('painel')">
+        <span class="ni-ico">⬡</span><span class="ni-lbl">PAINEL</span>
+      </div>
+      <div class="nav-item" data-view="brain" onclick="setView('brain')">
+        <span class="ni-ico">🧠</span><span class="ni-lbl">CÉREBRO</span>
+      </div>
+    </div>
+
     <!-- ── GRID ── -->
     <div id="grid-wrap">
       <div id="grid">
@@ -241,6 +312,28 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
           <div class="empty-title">PAINEL AGUARDANDO JARVIS</div>
           <div class="empty-hint">Diga: "mostrar notícias sobre tecnologia" · "abrir YouTube no painel" · "montar carteira de investimentos"</div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── CÉREBRO (brain) VIEW ── -->
+    <div id="brain-view">
+      <div class="brain-bar">
+        <button class="seg-btn" id="brain-back" style="display:none" onclick="backToOverview()">← camadas</button>
+        <span class="bt">🧠 CÉREBRO</span>
+        <span class="bsub" id="brain-sub">memórias do JARVIS</span>
+        <div class="brain-seg">
+          <button class="seg-btn active" id="seg-graph" onclick="setBrainMode('graph')">⬡ GRAFO</button>
+          <button class="seg-btn" id="seg-tree" onclick="setBrainMode('tree')">▤ PASTAS</button>
+          <button class="seg-btn" onclick="loadBrain(true)" title="Reindexar instruções das tools">↻ SYNC</button>
+        </div>
+      </div>
+      <div class="brain-body">
+        <div id="brain-graph-wrap" class="show">
+          <canvas id="brain-graph"></canvas>
+          <div class="graph-legend" id="graph-legend"></div>
+        </div>
+        <div id="brain-tree-wrap"></div>
+        <div id="brain-detail"><div class="bd-empty">Clique num nó (grafo) ou arquivo (pastas) para ver o conteúdo.</div></div>
       </div>
     </div>
 
@@ -739,6 +832,282 @@ function safeOpen(url) {
   // Only allow http/https URLs to prevent javascript: injection
   if (url && /^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  CÉREBRO — viewer de memórias (grafo estilo Obsidian + pastas)
+// ═══════════════════════════════════════════════════════════════
+let _brainData=null, _brainMode='graph', _brainLoaded=false, _brainLevel=null;
+let _graph=null, _gctx=null, _gcv=null;
+const _gview={ox:0,oy:0,scale:1,_init:false};
+let _gdrag=null, _ghover=-1, _gmoved=false;
+
+function setView(v){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===v));
+  const brain=(v==='brain');
+  document.getElementById('grid-wrap').style.display=brain?'none':'';
+  document.getElementById('chat-side').style.display=brain?'none':'';
+  document.getElementById('brain-view').classList.toggle('show',brain);
+  if(brain && !_brainLoaded) loadBrain();
+  else if(brain && _brainMode==='graph') requestAnimationFrame(resizeGraph);
+}
+
+function setBrainMode(m){
+  _brainMode=m;
+  document.getElementById('seg-graph').classList.toggle('active',m==='graph');
+  document.getElementById('seg-tree').classList.toggle('active',m==='tree');
+  document.getElementById('brain-graph-wrap').classList.toggle('show',m==='graph');
+  document.getElementById('brain-tree-wrap').classList.toggle('show',m==='tree');
+  if(m==='graph') requestAnimationFrame(resizeGraph);
+}
+
+function loadBrain(sync){
+  const sub=document.getElementById('brain-sub');
+  sub.textContent=sync?'reindexando…':'carregando…';
+  const go=()=>fetch('/api/brain').then(r=>r.ok?r.json():null).then(d=>{
+    if(!d){sub.textContent='erro ao carregar';return;}
+    _brainData=d;_brainLoaded=true;_brainLevel=null;
+    const lays=d.layers||[]; const tot=lays.reduce((a,l)=>a+(l.count||0),0);
+    sub.textContent=`${lays.length} camadas · ${tot} memórias`;
+    buildGraph(); renderTree(); updateCrumb();
+    if(_brainMode==='graph') resizeGraph();
+  }).catch(()=>{sub.textContent='erro';});
+  if(sync) fetch('/api/brain/sync',{method:'POST'}).then(()=>go(),()=>go()); else go();
+}
+
+function _rnd(){return (Math.random()*2-1)*150;}
+function _add(nodes,idx,n){n.x=_rnd();n.y=_rnd();n.vx=0;n.vy=0;nodes.push(n);if(n.id)idx[n.id]=nodes.length-1;return nodes.length-1;}
+function _szCount(c){return 7+Math.min(13,Math.sqrt(c||0)*1.7);}
+
+function buildGraph(){
+  const nodes=[],links=[],idx={};
+  const lays=(_brainData&&_brainData.layers)||[];
+  if(!_brainLevel){
+    // OVERVIEW: cérebro + 1 círculo grande por CAMADA
+    _add(nodes,idx,{id:'__root',label:'CÉREBRO',color:'#00d8ff',type:'root',r:16});
+    lays.forEach(lay=>{
+      const ni=_add(nodes,idx,{id:'lay:'+lay.id,label:(lay.icon?lay.icon+' ':'')+lay.name,
+        color:lay.color,type:'layer',r:_szCount(lay.count),data:{isLayer:true,layer:lay}});
+      links.push({a:idx['__root'],b:ni});
+    });
+  } else {
+    // DENTRO de uma camada: centro = camada; sub-hubs + folhas (itens)
+    const lay=_brainLevel;
+    _add(nodes,idx,{id:'__center',label:(lay.icon?lay.icon+' ':'')+lay.name,color:lay.color,
+      type:'layerCenter',r:14,data:{isLayer:true,layer:lay}});
+    const leaf=(it,parent)=>{const ni=_add(nodes,idx,{id:null,label:(it.label||'').slice(0,18),
+      color:lay.color,type:'leaf',r:5,data:{kind:lay.name,color:lay.color,text:it.text||'',meta:it.meta||{}}});
+      links.push({a:parent,b:ni});};
+    if(lay.subs&&lay.subs.length){
+      lay.subs.forEach((sub,si)=>{
+        const hi=_add(nodes,idx,{id:'sub:'+si,label:sub.name,color:lay.color,type:'sub',r:9,
+          data:{isSub:true,name:sub.name,count:sub.count}});
+        links.push({a:idx['__center'],b:hi});
+        (sub.items||[]).forEach(it=>leaf(it,hi));
+      });
+    }
+    (lay.items||[]).forEach(it=>leaf(it,idx['__center']));
+  }
+  _graph={nodes,links};
+  layoutGraph();
+  _gview._fitted=false;
+  renderLegend();
+}
+
+function drillLayer(id){
+  const lay=((_brainData&&_brainData.layers)||[]).find(l=>l.id===id);
+  if(!lay) return;
+  _brainLevel=lay; buildGraph(); updateCrumb();
+  if(_brainMode==='graph') resizeGraph(); else renderTree();
+  showDetail({isLayer:true,layer:lay});
+}
+function backToOverview(){
+  _brainLevel=null; buildGraph(); updateCrumb();
+  if(_brainMode==='graph') resizeGraph(); else renderTree();
+  document.getElementById('brain-detail').innerHTML='<div class="bd-empty">Clique numa camada para explorar.</div>';
+}
+function updateCrumb(){
+  const back=document.getElementById('brain-back');
+  if(back) back.style.display=_brainLevel?'':'none';
+}
+
+function layoutGraph(){
+  if(!_graph) return;
+  const N=_graph.nodes, L=_graph.links;
+  for(let it=0;it<420;it++){
+    for(let i=0;i<N.length;i++){
+      let fx=0,fy=0;
+      for(let j=0;j<N.length;j++){if(i===j)continue;
+        let dx=N[i].x-N[j].x,dy=N[i].y-N[j].y,d2=dx*dx+dy*dy+.01,f=520/d2;
+        fx+=dx*f;fy+=dy*f;}
+      N[i].vx=(N[i].vx+fx)*0.86;N[i].vy=(N[i].vy+fy)*0.86;
+    }
+    for(const e of L){const a=N[e.a],b=N[e.b];
+      let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||1;
+      let t=(a.type==='root'||b.type==='root')?95:52,f=(d-t)*0.02,ux=dx/d,uy=dy/d;
+      a.vx+=ux*f;a.vy+=uy*f;b.vx-=ux*f;b.vy-=uy*f;}
+    for(const n of N){n.vx-=n.x*0.011;n.vy-=n.y*0.011;
+      n.x+=Math.max(-9,Math.min(9,n.vx));n.y+=Math.max(-9,Math.min(9,n.vy));}
+  }
+  N[0].x=0;N[0].y=0;
+}
+
+function fitGraph(){
+  if(!_graph||!_gcv) return;
+  let mnX=1e9,mnY=1e9,mxX=-1e9,mxY=-1e9;
+  for(const n of _graph.nodes){if(n.x<mnX)mnX=n.x;if(n.x>mxX)mxX=n.x;if(n.y<mnY)mnY=n.y;if(n.y>mxY)mxY=n.y;}
+  const w=Math.max(1,mxX-mnX), hh=Math.max(1,mxY-mnY), pad=70;
+  _gview.scale=Math.max(.12,Math.min(1.6,Math.min((_gcv.width-pad*2)/w,(_gcv.height-pad*2)/hh)));
+  const cx=(mnX+mxX)/2, cy=(mnY+mxY)/2;
+  _gview.ox=_gcv.width/2-cx*_gview.scale;
+  _gview.oy=_gcv.height/2-cy*_gview.scale;
+}
+
+function resizeGraph(){
+  const wrap=document.getElementById('brain-graph-wrap'),cv=document.getElementById('brain-graph');
+  if(!wrap||!cv) return;
+  const r=wrap.getBoundingClientRect();
+  cv.width=Math.max(120,Math.floor(r.width));cv.height=Math.max(120,Math.floor(r.height));
+  _gcv=cv;_gctx=cv.getContext('2d');
+  if(!_gview._init){_gview.ox=cv.width/2;_gview.oy=cv.height/2;_gview.scale=1;_gview._init=true;bindGraph(cv);}
+  if(_graph && !_gview._fitted){ fitGraph(); _gview._fitted=true; }
+  drawGraph();
+}
+
+function W2S(x,y){return [x*_gview.scale+_gview.ox, y*_gview.scale+_gview.oy];}
+function S2W(sx,sy){return [(sx-_gview.ox)/_gview.scale,(sy-_gview.oy)/_gview.scale];}
+
+function drawGraph(){
+  if(!_gctx||!_graph) return;
+  const ctx=_gctx,cv=_gcv;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.lineWidth=1;ctx.strokeStyle='rgba(0,216,255,.13)';
+  for(const e of _graph.links){
+    const a=_graph.nodes[e.a],b=_graph.nodes[e.b];
+    const A=W2S(a.x,a.y),B=W2S(b.x,b.y);
+    ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
+  }
+  for(let i=0;i<_graph.nodes.length;i++){
+    const n=_graph.nodes[i];const P=W2S(n.x,n.y);const rr=Math.max(2,n.r*_gview.scale);
+    ctx.beginPath();ctx.arc(P[0],P[1],rr,0,6.283);
+    ctx.fillStyle=n.color;ctx.globalAlpha=(i===_ghover)?1:.92;ctx.fill();ctx.globalAlpha=1;
+    if(i===_ghover){ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.stroke();}
+    if(n.type!=='leaf' || i===_ghover){
+      ctx.fillStyle=(n.type==='leaf')?'#d9e7ff':n.color;
+      ctx.font=(n.type==='root'?'700 13px ':(n.type==='leaf'?'400 10px ':'600 11px '))+"'Rajdhani',sans-serif";
+      ctx.textAlign='center';ctx.fillText(n.label, P[0], P[1]-rr-4);
+    }
+  }
+}
+
+function bindGraph(cv){
+  cv.addEventListener('mousedown',e=>{
+    const i=pickNode(e);_gmoved=false;
+    _gdrag={i,sx:e.offsetX,sy:e.offsetY,ox:_gview.ox,oy:_gview.oy};
+  });
+  cv.addEventListener('mousemove',e=>{
+    if(_gdrag){
+      const dx=e.offsetX-_gdrag.sx,dy=e.offsetY-_gdrag.sy;
+      if(Math.abs(dx)+Math.abs(dy)>3)_gmoved=true;
+      if(_gdrag.i>=0){const W=S2W(e.offsetX,e.offsetY);_graph.nodes[_gdrag.i].x=W[0];_graph.nodes[_gdrag.i].y=W[1];}
+      else{_gview.ox=_gdrag.ox+dx;_gview.oy=_gdrag.oy+dy;}
+      drawGraph();
+    } else {
+      const i=pickNode(e);
+      if(i!==_ghover){_ghover=i;cv.style.cursor=i>=0?'pointer':'grab';drawGraph();}
+    }
+  });
+  cv.addEventListener('mouseup',()=>{
+    if(_gdrag && !_gmoved && _gdrag.i>=0){
+      const n=_graph.nodes[_gdrag.i];
+      if(n.type==='layer' && n.data && n.data.layer) drillLayer(n.data.layer.id);
+      else if(n.type==='layerCenter') backToOverview();
+      else if(n.data) showDetail(n.data);
+    }
+    _gdrag=null;
+  });
+  cv.addEventListener('mouseleave',()=>{_gdrag=null;_ghover=-1;drawGraph();});
+  cv.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const W=S2W(e.offsetX,e.offsetY);
+    _gview.scale=Math.max(.3,Math.min(3,_gview.scale*(e.deltaY<0?1.12:.89)));
+    _gview.ox=e.offsetX-W[0]*_gview.scale;_gview.oy=e.offsetY-W[1]*_gview.scale;
+    drawGraph();
+  },{passive:false});
+}
+
+function pickNode(e){
+  if(!_graph) return -1;
+  const mx=e.offsetX,my=e.offsetY;let best=-1,bd=1e9;
+  for(let i=0;i<_graph.nodes.length;i++){
+    const n=_graph.nodes[i];const P=W2S(n.x,n.y);
+    const d=Math.hypot(mx-P[0],my-P[1]),rr=n.r*_gview.scale+5;
+    if(d<=rr && d<bd){bd=d;best=i;}
+  }
+  return best;
+}
+
+function renderLegend(){
+  const el=document.getElementById('graph-legend');
+  if(!_brainLevel){
+    const n=((_brainData&&_brainData.layers)||[]).length;
+    el.innerHTML=`<div class="lg-row"><span class="lg-dot" style="background:#00d8ff"></span>${n} camadas — clique numa para abrir</div>`;
+  } else {
+    el.innerHTML=`<div class="lg-row"><span class="lg-dot" style="background:${_brainLevel.color}"></span>${h(_brainLevel.name)} — ${_brainLevel.count||0} itens · clique no centro p/ voltar</div>`;
+  }
+}
+
+function renderTree(){
+  const wrap=document.getElementById('brain-tree-wrap');
+  const lays=(_brainData&&_brainData.layers)||[];
+  if(!lays.length){wrap.innerHTML='<div class="bd-empty">Sem memórias ainda.</div>';return;}
+  const fileHTML=(its,color,kind)=>(its||[]).map(it=>{
+    const d={kind:kind,color:color,text:it.text||'',meta:it.meta||{}};
+    return `<div class="tree-file" data-d="${attr(JSON.stringify(d))}"><span class="tfi" style="color:${color}">●</span>${h(it.label||'')}</div>`;
+  }).join('');
+  wrap.innerHTML=lays.map(lay=>{
+    let inner=`<div class="tree-file" style="cursor:default;color:var(--text-dim);font-style:italic" title="${attr(lay.purpose||'')}">${h(lay.desc||'')}</div>`;
+    inner+=fileHTML(lay.items,lay.color,lay.name);
+    if(lay.subs&&lay.subs.length){
+      inner+=lay.subs.map(sub=>`<div class="tree-folder"><div class="tree-head"><span class="tf-ico">▾</span><span class="tf-name">${h(sub.name)}</span><span class="tf-count">${sub.count}</span></div><div class="tree-children">${fileHTML(sub.items,lay.color,lay.name)}</div></div>`).join('');
+    }
+    return `<div class="tree-folder"><div class="tree-head"><span class="tf-ico">▾</span><span class="tf-name">${h((lay.icon||'')+' '+lay.name)}</span><span class="tf-count">${lay.count}</span></div><div class="tree-children">${inner}</div></div>`;
+  }).join('');
+  wrap.querySelectorAll('.tree-head').forEach(hd=>hd.addEventListener('click',()=>{
+    hd.classList.toggle('collapsed');const ch=hd.nextElementSibling;if(ch)ch.classList.toggle('hide');
+  }));
+  wrap.querySelectorAll('.tree-file[data-d]').forEach(fl=>fl.addEventListener('click',()=>{
+    wrap.querySelectorAll('.tree-file.sel').forEach(x=>x.classList.remove('sel'));
+    fl.classList.add('sel');
+    try{showDetail(JSON.parse(fl.dataset.d));}catch(e){}
+  }));
+}
+
+function showDetail(data){
+  const el=document.getElementById('brain-detail');
+  if(data && data.isLayer){
+    const L=data.layer;
+    el.innerHTML=`<span class="bd-kind" style="background:${L.color}">${h((L.icon||'')+' '+L.name)}</span>`+
+      `<div class="bd-text">${h(L.desc||'')}</div>`+
+      `<div class="bd-meta"><div><b>Quando consultar:</b> ${h(L.purpose||'')}</div>`+
+      `<div><b>Itens:</b> ${L.count||0}</div>`+
+      `<div><b>Gravável:</b> ${L.writable?'sim — a Nila pode salvar aqui':'não — reconstruída'}</div></div>`+
+      (!_brainLevel?`<div style="margin-top:12px"><button class="seg-btn" onclick="drillLayer('${eid(L.id)}')">abrir camada →</button></div>`:'');
+    return;
+  }
+  if(data && data.isSub){
+    el.innerHTML=`<span class="bd-kind" style="background:#7aa0c8">SUBCAMADA</span><div class="bd-text">${h(data.name)}</div><div class="bd-meta"><div><b>Itens:</b> ${data.count||0}</div></div>`;
+    return;
+  }
+  const meta=(data&&data.meta)||{};
+  const metaHTML=Object.keys(meta).map(k=>`<div><b>${h(k)}:</b> ${h(String(meta[k]))}</div>`).join('');
+  el.innerHTML=`<span class="bd-kind" style="background:${(data&&data.color)||'#7aa0c8'}">${h((data&&data.kind)||'')}</span>`+
+    `<div class="bd-text">${h((data&&data.text)||'')}</div>`+
+    (metaHTML?`<div class="bd-meta">${metaHTML}</div>`:'');
+}
+
+window.addEventListener('resize',()=>{
+  if(document.getElementById('brain-view').classList.contains('show')&&_brainMode==='graph')resizeGraph();
+});
 
 // ── BOOT ─────────────────────────────────────────────────────────
 connectWS();

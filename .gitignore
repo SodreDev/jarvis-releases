@@ -78,14 +78,18 @@ VozIa/kokoro_cache/
 # Build artifacts
 build/
 dist/
+dist_new/
 *.spec.bak
 
 # Dados gerados em runtime (Fases 2-6 — mensageria, perfis web, memória de pessoas)
 data/browser_profiles/
+# Memória episódica/semântica/skills do Jarvis sobre o usuário (dados pessoais)
+data/memory/
 data/people_memory/
 data/people.json
 data/jarvis_workspace/
 data/temp_charts/
+data/img_cache/
 data/image_cache/
 data/ocr_cache/
 data/panel_state.json
@@ -108,8 +112,21 @@ installer/output/
 *.exe
 JARVIS.spec.bak
 
+# ── Modelo local externo (SIDECAR — IP CONFIDENCIAL do dono, NUNCA subir) ──
+# Binário Rust + pesos (.safetensors) + ambiente do modelo. Fornecido pelo
+# usuário, vive FORA do repo; resolvido em runtime por env/config. (*.exe acima
+# já cobre o binário.) Se a pasta um dia for posta no repo em dev, NÃO vaza.
+*.safetensors
+modelo_local/
+modelo_router/
+data/modelo_local/
+
 # Documentos gerados (apresentações, PDFs, planilhas do usuário)
 data/documents/
+
+# Corpus de treino gerado p/ o modelo local (Fase B2) — artefato derivado do
+# tool_registry; alimenta o treino da Nila FORA do repo. Não versionar.
+data/nila/
 
 # Backups acidentais
 *.bak
@@ -122,6 +139,12 @@ planning/SECRETS_AUDIT.md
 # IDE caches
 .vscode/
 .idea/
+
+# ── Caches de runtime / config local de máquina (NUNCA subir) ─────────────
+# Gerados em runtime ou específicos da máquina/usuário. O .example fica versionado.
+config/apps_cache.json
+core/dev_mode/dev_config.json
+.claude/
 
 # Node / extensão VS Code
 node_modules/

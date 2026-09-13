@@ -84,6 +84,7 @@ SKIP_DIRS = {
     "credentials", "data", "temp", "logs", "memories", ".idea", ".vscode",
     "VozIa", "kokoro_cache",  # VozIa pode ter binários grandes
     "vscode_extension",  # tem node_modules com centenas de milhares de arquivos
+    "modelo_local", "modelo_router",  # modelo SIDECAR — IP do dono, nunca empacotar
 }
 
 # Extensões a escanear
@@ -240,9 +241,10 @@ PAYLOAD_INCLUDE_FILES = [
 PAYLOAD_EXCLUDE_PARTS = {
     "__pycache__", "kokoro_cache", "gesture_data", "browser_profiles",
     "people_memory", ".cache", "image_cache", "ocr_cache",
+    "modelo_local", "modelo_router",  # modelo SIDECAR — IP do dono, nunca no payload
 }
 PAYLOAD_EXCLUDE_SUFFIX = {".pyc", ".pyo", ".log", ".bak", ".tmp", ".vcf",
-                          ".env", ".jsonl"}
+                          ".env", ".jsonl", ".safetensors"}
 
 
 def _should_pack(rel: Path) -> bool:
@@ -338,6 +340,11 @@ O JARVIS funciona em qualquer pasta — não há caminhos hard-coded.
 
 def write_release_notes(version: str) -> Path:
     out = OUTPUT_DIR / f"release_notes_v{version}.md"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # NÃO sobrescreve notas já escritas à mão (evita voltar ao placeholder).
+    if out.is_file() and "(preencha aqui" not in out.read_text(encoding="utf-8", errors="ignore"):
+        print(f"  [OK] {out} já preenchido — mantendo (não sobrescreve).")
+        return out
     out.write_text(NOTES_TEMPLATE.format(version=version), encoding="utf-8")
     print(f"  [OK] {out} (edite manualmente antes de publicar)")
     return out

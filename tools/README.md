@@ -38,7 +38,7 @@ gh release create v2.0.1 `
     installer\output\update_payload_v2.0.1.zip `
     installer\output\SHA256SUMS.txt `
     --notes-file installer\output\release_notes_v2.0.1.md `
-    --repo lilianarchaide/jarvis-releases
+    --repo NinjaZinS2/jarvis-releases
 ```
 
 Para repo privado, garanta que `gh auth login` foi feito com escopo `repo`
