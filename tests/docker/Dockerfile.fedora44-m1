@@ -1,0 +1,21 @@
+# Imagem DERIVADA para o marco M1 (smoke boot N2/N3): reaproveita o
+# /app/.venv-linux já instalado em localhost/jarvis-fedora44:latest (o
+# rebuild completo do zero está quebrado agora por causa do instagrapi
+# resolvendo para uma versão com sdist quebrado quando junto com
+# --extra-index-url -- ver Dockerfile.fedora44, corrigir depois).
+#
+# Só adiciona a lib de sistema que faltava (libXtst) e sobrescreve o
+# código com uma cópia via `git archive` (preserva .venv-linux, que não
+# está versionado e por isso não é tocado pelo COPY).
+FROM localhost/jarvis-fedora44:latest
+
+RUN dnf -y install libXtst && dnf clean all
+
+COPY . /app/
+
+ENV JARVIS_TEST_SANDBOXED=1
+ENV SDL_AUDIODRIVER=dummy
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu
+
+CMD ["xvfb-run", "-a", "/app/.venv-linux/bin/python", "-m", "pytest", "-m", "x11", "tests/smoke"]
