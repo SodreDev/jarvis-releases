@@ -51,9 +51,15 @@ COPY tests/docker/requirements-linux.txt /app/tests/docker/requirements-linux.tx
 RUN uv venv --python 3.12 /app/.venv-linux
 # torch pelo índice CPU (--extra-index-url mantém o PyPI normal pro resto
 # do arquivo e evita puxar as wheels CUDA, muito maiores e inúteis aqui).
+# --index-strategy unsafe-best-match: sem isso, o uv considera os índices
+# em ordem e cruza versões entre eles de um jeito que resolve instagrapi
+# num sdist quebrado (1.3.7) e requests numa versão velha demais (achado
+# no N1) — com a flag ele escolhe a melhor versão por pacote entre os dois
+# índices, que é o comportamento esperado aqui.
 RUN uv pip install --python /app/.venv-linux/bin/python \
         -r /app/tests/docker/requirements-linux.txt \
-        --extra-index-url https://download.pytorch.org/whl/cpu
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        --index-strategy unsafe-best-match
 
 # Resto do código por último.
 COPY . /app
