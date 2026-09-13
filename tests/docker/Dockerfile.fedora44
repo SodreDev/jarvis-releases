@@ -1,0 +1,21 @@
+FROM registry.fedoraproject.org/fedora:44
+
+RUN dnf install -y \
+        curl \
+        gcc \
+        git \
+        xz \
+    && dnf clean all
+
+ENV UV_INSTALL_DIR=/usr/local/bin
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+WORKDIR /app
+COPY . /app
+
+RUN uv venv --python 3.12 /app/.venv-linux
+RUN uv pip install --python /app/.venv-linux/bin/python -r /app/tests/docker/requirements-linux.txt
+
+ENV PATH="/app/.venv-linux/bin:${PATH}"
+
+CMD ["/app/.venv-linux/bin/python", "-m", "pytest", "tests/smoke", "-v"]

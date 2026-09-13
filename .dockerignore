@@ -1,0 +1,15 @@
+.git/
+.venv/
+.venv-linux/
+venv/
+__pycache__/
+*.pyc
+build/
+dist/
+dist_new/
+data/
+credentials/
+logs/
+*.log
+node_modules/
+.claude/

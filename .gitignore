@@ -68,6 +68,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.venv-linux/
 *.egg-info/
 
 # Sessões / cache
