@@ -11,6 +11,7 @@ from tests.smoke._boot_helpers import BOOT_TIMEOUT, REPO_ROOT, skip_unless_sandb
 
 pytestmark = [
     pytest.mark.linux_only,
+    pytest.mark.x11,
     pytest.mark.needs_display,
     pytest.mark.slow,
 ]
