@@ -23,11 +23,13 @@ def _log_size(path: Path) -> int:
     return path.stat().st_size if path.exists() else 0
 
 
-def run_boot_smoke(kind: str, *, session_type: str, extra_env: dict | None = None) -> None:
+def run_boot_smoke(kind: str, *, session_type: str, extra_env: dict | None = None) -> str:
     """Sobe `python main.py` com `JARVIS_SMOKE_SECONDS=8` e cobra o M1 da SPEC:
     stdout com `JARVIS_SMOKE_READY kind=<kind>`, saída 0 em <=90s, nenhuma
     entrada nova em crash.log, crash_native.log <=5MB, última linha
-    `JARVIS_SMOKE_EXIT children_alive=<0 ou n/a>`.
+    `JARVIS_SMOKE_EXIT children_alive=<0 ou n/a>`. Devolve o stdout
+    completo pra quem precisar conferir linhas extras (ex.:
+    `JARVIS_SMOKE_HOTKEYS`/`JARVIS_SMOKE_PTT`).
     """
     crash_log = REPO_ROOT / "crash.log"
     crash_native_log = REPO_ROOT / "crash_native.log"
@@ -66,8 +68,10 @@ def run_boot_smoke(kind: str, *, session_type: str, extra_env: dict | None = Non
     assert exit_line is not None, lines[-5:]
     children_alive = exit_line.split("=", 1)[1].strip()
     # antes da F1-14 (limpeza de filhos) é aceito "n/a"
-    assert children_alive in {"0", "n/a"}, last_line
+    assert children_alive in {"0", "n/a"}, exit_line
 
     assert _log_size(crash_log) == crash_log_before, "crash.log ganhou entrada nova durante o smoke"
     if crash_native_log.exists():
         assert crash_native_log.stat().st_size <= 5_000_000, "crash_native.log passou de 5 MB"
+
+    return stdout
