@@ -12,6 +12,7 @@ nenhum dos dois, a bandeja fica indisponível -- comportamento provado
 via `private_session_bus` (barramento privado SEM watcher nenhum
 registrado), nunca com gancho de teste no construtor de produção.
 """
+import time
 import types
 
 import pytest
@@ -81,6 +82,48 @@ def test_setup_on_x11_returns_true_and_starts_hidden():
     ok = tray.setup("J.A.R.V.I.S.", _fake_image, items)
     assert ok is True
     tray.stop()
+
+
+def test_register_status_notifier_item_only_after_set_visible_true(private_session_bus):
+    """SPEC F2-02 + golden (`visible=False` igual ao pystray do Windows):
+    a bandeja NASCE OCULTA, e o Qt só se registra de verdade no watcher
+    (`RegisterStatusNotifierItem`) quando fica visível -- confirmado pelo
+    executor no N3 real: oculto dá `calls=[]`, visível dá o Register.
+    Decisão do dono: a produção fica como está, o teste que confere DEPOIS
+    de `set_visible(True)`, não logo após `setup()`."""
+    from PySide6.QtWidgets import QApplication
+
+    from jarvis.platform.linux.tray_qt import QtSystemTray
+    from jarvis.platform.protocols import TrayItem
+    from tests.fakes.dbus_services import fake_dbus_service
+
+    app = QApplication.instance() or QApplication([])
+
+    with fake_dbus_service(
+        "org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher"
+    ) as (mock, _real):
+        mock.AddMethod("org.kde.StatusNotifierWatcher", "RegisterStatusNotifierItem", "s", "", "")
+
+        tray = QtSystemTray(ctx=types.SimpleNamespace(kind="linux-wayland"))
+        ok = tray.setup("J.A.R.V.I.S.", _fake_image, [TrayItem("Encerrar", lambda: None)])
+        assert ok is True
+
+        # oculto -- ainda não se registrou no watcher.
+        assert mock.GetCalls() == []
+
+        tray.set_visible(True)
+
+        end = time.monotonic() + 2.0
+        method_names = []
+        while time.monotonic() < end:
+            app.processEvents()
+            method_names = [c[1] for c in mock.GetCalls()]
+            if "RegisterStatusNotifierItem" in method_names:
+                break
+            time.sleep(0.02)
+        assert "RegisterStatusNotifierItem" in method_names, method_names
+
+        tray.stop()
 
 
 def test_set_visible_and_stop_do_not_raise():
