@@ -30,6 +30,7 @@ RUN pacman -Syu --noconfirm && pacman -S --noconfirm \
         libxfixes \
         ttf-dejavu \
         noto-fonts \
+        pkgconf \
     && pacman -Scc --noconfirm \
     && fc-cache -f
 
@@ -45,6 +46,10 @@ RUN uv pip install --python /app/.venv-linux/bin/python \
         -r /app/tests/docker/requirements-linux.txt \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         --index-strategy unsafe-best-match
+# dbus-python + python-dbusmock: só teste (tests/fakes/dbus_services.py,
+# private_session_bus), nunca em produção. Extensão C, compila contra o
+# Python da venv (3.12) — dbus e glib2 (acima) já trazem os headers no Arch.
+RUN uv pip install --python /app/.venv-linux/bin/python dbus-python python-dbusmock
 
 COPY . /app
 

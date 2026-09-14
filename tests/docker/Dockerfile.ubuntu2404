@@ -34,6 +34,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libglib2.0-0t64 \
         libxfixes3 \
         ca-certificates \
+        libdbus-1-dev \
+        libglib2.0-dev \
+        pkg-config \
     && rm -r /var/lib/apt/lists/*
 
 ENV UV_INSTALL_DIR=/usr/local/bin
@@ -48,6 +51,10 @@ RUN uv pip install --python /app/.venv-linux/bin/python \
         -r /app/tests/docker/requirements-linux.txt \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         --index-strategy unsafe-best-match
+# dbus-python + python-dbusmock: só teste (tests/fakes/dbus_services.py,
+# private_session_bus), nunca em produção. Extensão C, compila contra o
+# Python da venv (3.12) — daí libdbus-1-dev/libglib2.0-dev/pkg-config acima.
+RUN uv pip install --python /app/.venv-linux/bin/python dbus-python python-dbusmock
 
 COPY . /app
 

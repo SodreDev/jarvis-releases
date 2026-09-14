@@ -42,6 +42,9 @@ RUN dnf install -y \
         dbus-daemon \
         kglobalacceld \
         kf6-kglobalaccel \
+        dbus-devel \
+        glib2-devel \
+        pkgconf-pkg-config \
     && dnf clean all
 
 ENV UV_INSTALL_DIR=/usr/local/bin
@@ -68,6 +71,12 @@ RUN uv pip install --python /app/.venv-linux/bin/python \
         -r /app/tests/docker/requirements-linux.txt \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         --index-strategy unsafe-best-match
+# dbus-python + python-dbusmock: só teste (tests/fakes/dbus_services.py,
+# private_session_bus), nunca embarcados em produção — por isso não estão
+# em requirements-linux.txt. dbus-python é extensão C, tem que compilar
+# contra o Python DA VENV (3.12): o python3-dbus do sistema (Fedora 44 usa
+# Python 3.14) não é compatível, daí dbus-devel/glib2-devel/pkgconf acima.
+RUN uv pip install --python /app/.venv-linux/bin/python dbus-python python-dbusmock
 
 # Resto do código por último.
 COPY . /app
