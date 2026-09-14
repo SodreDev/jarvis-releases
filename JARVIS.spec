@@ -190,6 +190,7 @@ hidden = [
     'jarvis.platform.windows.clipboard', 'jarvis.platform.linux.clipboard_klipper',
     'jarvis.platform.linux_wayland', 'jarvis.platform.linux_wayland.clipboard',
     'jarvis.platform.linux_x11.clipboard',
+    'jarvis.platform.windows.volume', 'jarvis.platform.linux.volume',
     # tomli (fallback se tomllib stdlib não estiver presente; >=3.11 tem)
     'tomllib',
     # ── Fases 2026: painel, documentos, updater ──────────────────────────

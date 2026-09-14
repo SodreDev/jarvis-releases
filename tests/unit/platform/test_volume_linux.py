@@ -5,7 +5,7 @@ real do host.
 """
 import pytest
 
-pytestmark = [pytest.mark.linux_only, pytest.mark.xfail(strict=True, reason="F2-03")]
+pytestmark = [pytest.mark.linux_only]
 
 
 # ── WpctlVolume ──

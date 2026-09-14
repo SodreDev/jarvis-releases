@@ -86,109 +86,61 @@ def tirar_screenshot(pasta: str = "screenshots") -> tuple[str, str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# VOLUME DO SISTEMA (Windows — pycaw)
+# VOLUME DO SISTEMA (jarvis.platform: pycaw no Windows, wpctl/pactl no Linux)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _get_audio_volume():
-    """Obtém a interface de volume do sistema (robusta para diferentes versões pycaw)."""
-    import comtypes
-    from ctypes import cast, POINTER
-    from comtypes import CLSCTX_ALL
-    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+def _volume():
+    """Backend de volume da plataforma (Cap.VOLUME)."""
+    from jarvis.platform import Cap, get as _plat_get
+    return _plat_get(Cap.VOLUME)
 
-    # Garante COM inicializado nesta thread (essencial quando chamado de threads)
-    try:
-        comtypes.CoInitialize()
-    except OSError:
-        pass  # Já inicializado
 
-    speakers = AudioUtilities.GetSpeakers()
-
-    # Compatibilidade: pycaw pode retornar IMMDevice (COM) ou AudioDevice wrapper
-    if not hasattr(speakers, 'Activate'):
-        dev = getattr(speakers, '_dev', None)
-        if dev is not None and hasattr(dev, 'Activate'):
-            speakers = dev
-        else:
-            raise RuntimeError(
-                f"Dispositivo de áudio incompatível: {type(speakers).__name__}"
-            )
-
-    interface = speakers.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-    return cast(interface, POINTER(IAudioEndpointVolume))
+def _motivo_audio(e: Exception) -> str:
+    """Texto do erro de áudio; sem backend vira uma frase curta, sem caminhos."""
+    from jarvis.platform import CapabilityUnavailable
+    if isinstance(e, CapabilityUnavailable):
+        return "nenhum controle de volume disponível nesta sessão"
+    return f"{e}"
 
 
 def set_volume(nivel: int) -> str:
     nivel = max(0, min(100, nivel))
     try:
-        vol = _get_audio_volume()
-        vol.SetMasterVolumeLevelScalar(nivel / 100.0, None)
+        _volume().set_output(nivel)
         return f"Volume do sistema ajustado para {nivel}%, Senhor."
     except Exception as e:
-        return f"Não foi possível ajustar o volume: {e}"
+        return f"Não foi possível ajustar o volume: {_motivo_audio(e)}"
 
 
 def get_volume() -> str:
     try:
-        vol = _get_audio_volume()
-        pct = int(vol.GetMasterVolumeLevelScalar() * 100)
+        pct = _volume().get_output()
         return f"Volume atual do sistema: {pct}%, Senhor."
     except Exception as e:
-        return f"Não foi possível obter o volume: {e}"
+        return f"Não foi possível obter o volume: {_motivo_audio(e)}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# VOLUME DO MICROFONE (Windows — pycaw)
+# VOLUME DO MICROFONE (jarvis.platform: pycaw no Windows, wpctl/pactl no Linux)
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _get_mic_volume():
-    """Obtém a interface de volume do microfone padrão (input device)."""
-    import comtypes
-    from ctypes import cast, POINTER
-    from comtypes import CLSCTX_ALL
-    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-
-    try:
-        comtypes.CoInitialize()
-    except OSError:
-        pass
-
-    mic = AudioUtilities.GetMicrophone()
-    if mic is None:
-        raise RuntimeError("Nenhum microfone encontrado no sistema.")
-
-    if not hasattr(mic, 'Activate'):
-        dev = getattr(mic, '_dev', None)
-        if dev is not None and hasattr(dev, 'Activate'):
-            mic = dev
-        else:
-            raise RuntimeError(
-                f"Dispositivo de microfone incompatível: {type(mic).__name__}"
-            )
-
-    interface = mic.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-    return cast(interface, POINTER(IAudioEndpointVolume))
-
 
 def set_mic_volume(nivel: int) -> str:
     """Define o volume do microfone (0–100%)."""
     nivel = max(0, min(100, nivel))
     try:
-        vol = _get_mic_volume()
-        vol.SetMasterVolumeLevelScalar(nivel / 100.0, None)
+        _volume().set_input(nivel)
         return f"Volume do microfone ajustado para {nivel}%, Senhor."
     except Exception as e:
-        return f"Não foi possível ajustar o volume do microfone: {e}"
+        return f"Não foi possível ajustar o volume do microfone: {_motivo_audio(e)}"
 
 
 def get_mic_volume() -> str:
     """Retorna o volume atual do microfone."""
     try:
-        vol = _get_mic_volume()
-        pct = int(vol.GetMasterVolumeLevelScalar() * 100)
+        pct = _volume().get_input()
         return f"Volume atual do microfone: {pct}%, Senhor."
     except Exception as e:
-        return f"Não foi possível obter o volume do microfone: {e}"
+        return f"Não foi possível obter o volume do microfone: {_motivo_audio(e)}"
 
 
 def maximizar_mic() -> str:
@@ -222,8 +174,7 @@ def desativar_ajuste_automatico_mic() -> str:
 
     # 2. Maximizar volume do microfone
     try:
-        vol = _get_mic_volume()
-        vol.SetMasterVolumeLevelScalar(1.0, None)
+        _volume().set_input(100)
         msgs.append("volume do microfone maximizado para 100%")
     except Exception as e:
         msgs.append(f"falha ao maximizar microfone: {e}")
@@ -234,11 +185,11 @@ def desativar_ajuste_automatico_mic() -> str:
 def garantir_mic_maximo() -> None:
     """Chamada silenciosa: garante mic em 100%. Não retorna mensagem."""
     try:
-        vol = _get_mic_volume()
-        current = vol.GetMasterVolumeLevelScalar()
-        if current < 0.99:
-            vol.SetMasterVolumeLevelScalar(1.0, None)
-            print(f"[MIC] Volume estava em {int(current*100)}% — restaurado para 100%")
+        vol = _volume()
+        current = vol.get_input()
+        if current < 99:
+            vol.set_input(100)
+            print(f"[MIC] Volume estava em {current}% — restaurado para 100%")
     except Exception:
         pass  # silencioso
 

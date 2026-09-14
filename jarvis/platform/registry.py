@@ -36,6 +36,13 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
             "jarvis.platform.linux.open_path:GioOpen",
         ),
     },
+    Cap.VOLUME: {
+        "win32": ("jarvis.platform.windows.volume:PycawVolume",),
+        "linux-*": (
+            "jarvis.platform.linux.volume:WpctlVolume",
+            "jarvis.platform.linux.volume:PactlVolume",
+        ),
+    },
     # F2-04: headless sem clipboard.
     Cap.CLIPBOARD: {
         "win32": ("jarvis.platform.windows.clipboard:WindowsClipboard",),
