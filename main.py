@@ -135,7 +135,7 @@ if _plat_current().is_windows:
 import numpy as np
 try:
     import sounddevice as sd
-except OSError as _e_sd:
+except (OSError, ImportError) as _e_sd:
     sd = None
     print(f"[AUDIO] sounddevice indisponível: {_e_sd} — instale PortAudio (dnf install portaudio | pacman -S portaudio | apt install libportaudio2)")
 import edge_tts

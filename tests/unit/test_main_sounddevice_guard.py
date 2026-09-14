@@ -1,6 +1,8 @@
-"""F1-05 (AST, sem importar main.py): sounddevice protegido quando falta PortAudio.
+"""F1-05/F2-10b (AST, sem importar main.py): sounddevice protegido quando falta
+PortAudio (OSError) ou o próprio pacote (ImportError).
 
-- o import de sounddevice fica em Try cujo except captura OSError e zera sd;
+- o import de sounddevice fica em Try cujo except captura OSError e ImportError
+  no mesmo handler e zera sd;
 - todo método que usa `sd.<algo>` tem a guarda `sd is None` antes do primeiro uso.
 """
 import ast
@@ -14,7 +16,7 @@ def _tree() -> ast.Module:
     return ast.parse(MAIN.read_text(encoding="utf-8-sig", errors="replace"))
 
 
-def test_import_sounddevice_try_except_oserror():
+def test_import_sounddevice_try_except_oserror_e_importerror():
     tree = _tree()
     ok = False
     for node in ast.walk(tree):
@@ -27,13 +29,13 @@ def test_import_sounddevice_try_except_oserror():
         if not importa_sd:
             continue
         for h in node.handlers:
-            # except OSError (ou tupla contendo OSError)
+            # except (OSError, ImportError): os dois no mesmo handler
             nomes = []
             if isinstance(h.type, ast.Name):
                 nomes = [h.type.id]
             elif isinstance(h.type, ast.Tuple):
                 nomes = [e.id for e in h.type.elts if isinstance(e, ast.Name)]
-            if "OSError" not in nomes:
+            if not {"OSError", "ImportError"} <= set(nomes):
                 continue
             zera = any(
                 isinstance(s, ast.Assign)
@@ -43,7 +45,7 @@ def test_import_sounddevice_try_except_oserror():
             )
             if zera:
                 ok = True
-    assert ok, "import de sounddevice deve estar em try/except OSError que zera sd"
+    assert ok, "import de sounddevice deve estar em try/except (OSError, ImportError) que zera sd"
 
 
 def _usa_sd(node) -> int | None:
