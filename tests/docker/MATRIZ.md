@@ -23,6 +23,7 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
 | Fontconfig | `fontconfig` | `libfontconfig1` | `fontconfig` |
 | D-Bus (libdbus, QtWebEngine) | já vem com o sistema base | `libdbus-1-3` | `dbus` |
 | XInput2 (libXi, Qt xcb) | já vem com o sistema base | `libxi6` | `libxi` |
+| Fontes (QtWebEngine renderiza texto; sem fonte nenhuma, trava em loop de `remote_font_face_source.cc NOTREACHED` antes de chegar a `JARVIS_SMOKE_READY`) | já vem com o sistema base (google-noto-fonts) | já vem com o sistema base (fonts-dejavu-core) | **`ttf-dejavu noto-fonts`** (Arch não traz nenhuma por padrão) — rodar `fc-cache -f` depois de instalar |
 | GLib (base do Qt/QtWebEngine) | já vem com o sistema base | `libglib2.0-0` (Debian 12) / **`libglib2.0-0t64`** (Ubuntu 24.04, transição t64) | `glib2` |
 | XFixes (Qt xcb/WebEngine, achado no Ubuntu) | já vem com o sistema base | `libxfixes3` | `libxfixes` |
 | Xvfb (N2, X11 virtual) | `xorg-x11-server-Xvfb` | `xvfb` | `xorg-server-xvfb` |
