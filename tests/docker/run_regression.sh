@@ -134,17 +134,44 @@ for distro in "${DISTROS[@]}"; do
     RELOAD_RC=$?
     [ "$RELOAD_RC" -eq 0 ] && RELOAD_STATUS=ok || { RELOAD_STATUS=FALHOU; OVERALL_RC=1; }
 
+    N2TRAY_NAME="jarvis-reg-${distro}-n2tray-$$"
+    ACTIVE_CONTAINERS+=("$N2TRAY_NAME")
+    run_pytest_step "$distro N2 tray" "/tmp/jarvis-reg-${distro}-n2-tray.log" \
+        timeout --signal=KILL 150 podman run --rm --init --timeout 130 --name "$N2TRAY_NAME" "jarvis-${distro}" \
+        xvfb-run -a pytest -m x11 tests/smoke/test_tray_n2_n3.py
+    TRAY_RC=$?
+    [ "$TRAY_RC" -eq 0 ] && TRAY_STATUS=ok || { TRAY_STATUS=FALHOU; OVERALL_RC=1; }
+
+    N2AUDIO_NAME="jarvis-reg-${distro}-n2audio-$$"
+    ACTIVE_CONTAINERS+=("$N2AUDIO_NAME")
+    run_pytest_step "$distro N2 audio" "/tmp/jarvis-reg-${distro}-n2-audio.log" \
+        timeout --signal=KILL 150 podman run --rm --init --timeout 130 --name "$N2AUDIO_NAME" "jarvis-${distro}" \
+        xvfb-run -a pytest -m x11 tests/smoke/test_audio_exit.py
+    AUDIO_RC=$?
+    [ "$AUDIO_RC" -eq 0 ] && AUDIO_STATUS=ok || { AUDIO_STATUS=FALHOU; OVERALL_RC=1; }
+
+    N2PTT_NAME="jarvis-reg-${distro}-n2ptt-$$"
+    ACTIVE_CONTAINERS+=("$N2PTT_NAME")
+    run_pytest_step "$distro N2 PTT pynput" "/tmp/jarvis-reg-${distro}-n2-ptt.log" \
+        timeout --signal=KILL 150 podman run --rm --init --timeout 130 --name "$N2PTT_NAME" "jarvis-${distro}" \
+        xvfb-run -a pytest -m x11 tests/smoke/test_hotkeys_n2_n3.py
+    PTT_RC=$?
+    [ "$PTT_RC" -eq 0 ] && PTT_STATUS=ok || { PTT_STATUS=FALHOU; OVERALL_RC=1; }
+
     N3_STATUS="pulado"
     if [ "$WITH_N3" = "1" ]; then
-        run_pytest_step "$distro N3 boot wayland" "/tmp/jarvis-reg-${distro}-n3-boot.log" \
-            env JARVIS_N3_IMAGE="jarvis-${distro}" JARVIS_N3_TIMEOUT=160 timeout --signal=KILL 180 \
+        # combina boot + tray (com e sem watcher) + áudio + PTT numa única
+        # subida de kwin_wayland (mais barato que uma por arquivo).
+        run_pytest_step "$distro N3 wayland (boot/tray/audio/PTT)" "/tmp/jarvis-reg-${distro}-n3.log" \
+            env JARVIS_N3_IMAGE="jarvis-${distro}" JARVIS_N3_TIMEOUT=280 timeout --signal=KILL 300 \
             "$REPO_ROOT/tests/docker/run_n3_wayland.sh" \
-            pytest -m wayland tests/smoke/test_boot_wayland.py
+            pytest -m wayland tests/smoke/test_boot_wayland.py tests/smoke/test_tray_n2_n3.py \
+            tests/smoke/test_audio_exit.py tests/smoke/test_hotkeys_n2_n3.py
         N3_RC=$?
         [ "$N3_RC" -eq 0 ] && N3_STATUS=ok || { N3_STATUS=FALHOU; OVERALL_RC=1; }
     fi
 
-    SUMMARY[$distro]="build=ok import=$IMPORT_STATUS N1=$N1_STATUS N2=$N2_STATUS reload=$RELOAD_STATUS N3=$N3_STATUS"
+    SUMMARY[$distro]="build=ok import=$IMPORT_STATUS N1=$N1_STATUS N2boot=$N2_STATUS reload=$RELOAD_STATUS tray=$TRAY_STATUS audio=$AUDIO_STATUS ptt=$PTT_STATUS N3=$N3_STATUS"
 
     find "$CTX" -mindepth 1 -delete
     rmdir "$CTX"
