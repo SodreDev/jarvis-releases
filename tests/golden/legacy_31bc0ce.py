@@ -426,4 +426,127 @@ __all__ = [
     "legacy_volume_down",
     "legacy_get_media_info_ps",
     "legacy_o_que_esta_tocando",
+    "legacy_is_g_key",
+    "legacy_shift_keys",
+    "legacy_start_keyboard_listener",
+    "legacy_start_global_hotkeys",
+    "legacy_ptt_iniciar",
+    "legacy_ptt_finalizar",
+    "legacy_criar_tray_menu",
+    "legacy_criar_tray_icon",
 ]
+
+
+# ── F2-01: hotkeys — main.py:201/260/11647-11699/11845-11911 ──
+
+
+def legacy_is_g_key(key) -> bool:
+    """`main.py:260-265` (`_is_g_key`), literal."""
+    try:
+        return key.char is not None and key.char.lower() == "g"
+    except AttributeError:
+        return False
+
+
+def legacy_shift_keys(Key):
+    """`main.py:201` (`_SHIFT_KEYS`), literal — `Key` é o
+    `pynput.keyboard.Key` (falso ou real)."""
+    return {Key.shift, Key.shift_r, Key.shift_l} if Key is not None else set()
+
+
+def legacy_start_keyboard_listener(keyboard_mod, *, has_feature: bool, on_press, on_release, print_fn=print):
+    """`main.py:11647-11656` (`_start_keyboard_listener`), literal.
+    Devolve o listener criado (ou `None` se o portão barrar)."""
+    if keyboard_mod is None or not has_feature:
+        print_fn("[PTT] Atalho global indisponível nesta sessão — use o botão de microfone ou a wake word.")
+        return None
+    listener = keyboard_mod.Listener(on_press=on_press, on_release=on_release)
+    listener.start()
+    return listener
+
+
+def legacy_start_global_hotkeys(
+    global_hotkeys_cls,
+    *,
+    has_feature: bool,
+    raw: dict,
+    hotkey_cmds: dict,
+    make_handler,
+    print_fn=print,
+    log_info=lambda _msg: None,
+):
+    """`main.py:11666-11698` (`_start_global_hotkeys`), literal: filtra
+    `raw` (combo -> ação) pelo mapa `_HOTKEY_CMDS`, ignora ação
+    desconhecida, monta `handlers` e instancia `GlobalHotKeys(handlers)`.
+    `make_handler(cmd)` substitui a closure `_handler` (o corpo dela é
+    UI/thread, fora do escopo do oráculo)."""
+    if not has_feature:
+        print_fn("[PTT] Atalho global indisponível nesta sessão — use o botão de microfone ou a wake word.")
+        return None
+    if not raw:
+        return None
+    handlers: dict = {}
+    for combo, acao in raw.items():
+        cmd = hotkey_cmds.get(acao)
+        if not cmd:
+            print_fn(f"[HOTKEYS] Ação desconhecida ignorada: {acao!r}")
+            continue
+        handlers[combo] = make_handler(cmd)
+    if not handlers:
+        return None
+    listener = global_hotkeys_cls(handlers)
+    listener.start()
+    log_info(f"HOTKEYS: {len(handlers)} atalho(s) registrado(s): {', '.join(handlers)}")
+    return listener
+
+
+def legacy_ptt_iniciar(*, set_recording, notify_recording, clear_mic_frames, print_fn, set_status, after_fn, stop_tts, start_thread):
+    """Corpo do ramo PTT de `_on_key_press` (`main.py:11868-11875`),
+    extraído literalmente para `_ptt_iniciar` (F2-01). Cada efeito
+    colateral é uma função injetada, chamada NA MESMA ORDEM do original."""
+    set_recording(True)
+    notify_recording(True)
+    clear_mic_frames()
+    print_fn("[PTT] Gravando...")
+    set_status("▤  OUVINDO...  (Solte G para enviar)", "_RED")
+    after_fn()
+    stop_tts()
+    start_thread()
+
+
+def legacy_ptt_finalizar(*, set_recording, notify_recording, print_fn, set_status, after_fn, get_frames, start_thread_with_frames):
+    """Corpo do ramo PTT de `_on_key_release` (`main.py:11901-11910`),
+    extraído literalmente para `_ptt_finalizar` (F2-01)."""
+    set_recording(False)
+    notify_recording(False)
+    print_fn("[PTT] Parou. Enviando...")
+    set_status("⟳  Processando áudio...", "_CYAN")
+    after_fn()
+    frames = get_frames()
+    if frames:
+        start_thread_with_frames(frames)
+    else:
+        set_status("PRONTO  |  Segure Shift+G para falar", "_TEXT_DIM")
+
+
+# ── F2-02: tray — main.py:13361-13404 (_criar_tray_icon, pystray) ──
+
+
+def legacy_criar_tray_menu(pystray_mod, *, on_restaurar, on_briefing, on_encerrar):
+    """`main.py:13383-13388`, literal: 4 itens, `default=True` no
+    primeiro, `SEPARATOR` antes do último."""
+    return pystray_mod.Menu(
+        pystray_mod.MenuItem("Restaurar JARVIS", on_restaurar, default=True),
+        pystray_mod.MenuItem("Briefing", on_briefing),
+        pystray_mod.Menu.SEPARATOR,
+        pystray_mod.MenuItem("Encerrar", on_encerrar),
+    )
+
+
+def legacy_criar_tray_icon(pystray_mod, image, menu):
+    """`main.py:13390-13404`, literal: `Icon("JARVIS", img, "J.A.R.V.I.S.",
+    menu)`, começa com `.visible = False`, `.run` roda numa thread daemon
+    (a thread em si não é responsabilidade do oráculo — só a construção)."""
+    icon = pystray_mod.Icon("JARVIS", image, "J.A.R.V.I.S.", menu)
+    icon.visible = False
+    return icon
