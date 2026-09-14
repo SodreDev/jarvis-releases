@@ -23,8 +23,9 @@ _GRACE_TOTAL_S = 2.0
 class PosixProcesses(BackendBase):
     name = "linux.posix"
 
-    def __init__(self, ctx=None):
+    def __init__(self, ctx=None, *, popen_fn=None):
         self.ctx = ctx
+        self._popen_fn = popen_fn  # injetável só para os testes
         self._children = []  # list[(proc, tree)]
         self._lock = threading.Lock()
         self._cleanup_registered = False
@@ -96,3 +97,31 @@ class PosixProcesses(BackendBase):
 
     def hidden_console_flags(self) -> int:
         return 0
+
+    # ── restart (F2-09) ──────────────────────────────────────────────────────
+    def restart_self(self, *, main_path: str, frozen: bool, argv=None) -> None:
+        """Dispara a nova instância numa sessão própria; NÃO sai do processo atual.
+
+        AppImage → [APPIMAGE] + argv; frozen → [sys.executable] + argv;
+        dev → [sys.executable, main_path] + argv (argv padrão: sys.argv[1:]).
+        cwd = pasta do main_path, env herdado, stdin fechado, sem shell. A nova
+        instância NÃO é registrada como filho: ela tem de sobreviver a esta.
+        """
+        import subprocess
+        import sys
+
+        args = list(sys.argv[1:] if argv is None else argv)
+        appimage = os.environ.get("APPIMAGE")
+        if appimage:
+            cmd = [appimage] + args
+        elif frozen:
+            cmd = [sys.executable] + args
+        else:
+            cmd = [sys.executable, main_path] + args
+        popen = self._popen_fn or subprocess.Popen
+        popen(
+            cmd,
+            cwd=os.path.dirname(main_path),
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+        )

@@ -107,8 +107,12 @@ def install_kill_on_close_job(ct=None, wt=None):
 class WindowsProcesses(BackendBase):
     name = "windows.job_object"
 
-    def __init__(self, ctx=None):
+    def __init__(self, ctx=None, *, popen_fn=None, executable=None, path_mod=None):
         self.ctx = ctx
+        # Injetáveis só para os testes (W2); em produção: Popen, sys.executable, os.path.
+        self._popen_fn = popen_fn
+        self._executable = executable
+        self._path_mod = path_mod
 
     def hidden_console_flags(self) -> int:
         import subprocess
@@ -126,3 +130,36 @@ class WindowsProcesses(BackendBase):
 
     def new_session_kwargs(self) -> dict:
         return {}
+
+    def restart_self(self, *, main_path: str, frozen: bool, argv=None) -> None:
+        """Cópia literal do `_fazer_restart` do main.py (31bc0ce). O sleep, o
+        destroy e o os._exit continuam no main.py. `argv` é ignorado: o restart
+        do Windows nunca repassou argumentos."""
+        import subprocess
+        import sys
+
+        popen = self._popen_fn or subprocess.Popen
+        executable = self._executable or sys.executable
+
+        if frozen:
+            # Exe compilado: relança o próprio executável diretamente
+            popen([executable])
+        else:
+            # Modo dev (.py): abre novo PowerShell com venv ativado
+            path = self._path_mod
+            if path is None:
+                import os.path as path
+            _root = path.dirname(main_path)
+            _venv_activate = path.join(_root, ".venv", "Scripts", "Activate.ps1")
+            _main = path.join(_root, "main.py")
+            _ps_cmd = (
+                f"Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force; "
+                f"& '{_venv_activate}'; "
+                f"Clear-Host; "
+                f"Write-Host '  J.A.R.V.I.S. — iniciando...' -ForegroundColor Cyan; "
+                f"& python '{_main}'"
+            )
+            popen(
+                ["powershell", "-NoLogo", "-NoExit", "-Command", _ps_cmd],
+                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0x10),  # 0x10 no Windows
+            )

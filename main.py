@@ -6463,25 +6463,12 @@ class JarvisApp:
             import time as _t
             _t.sleep(1.2)   # espera a animação completar
 
-            if getattr(sys, 'frozen', False):
-                # Exe compilado: relança o próprio executável diretamente
-                subprocess.Popen([sys.executable])
-            else:
-                # Modo dev (.py): abre novo PowerShell com venv ativado
-                _root = os.path.dirname(os.path.abspath(__file__))
-                _venv_activate = os.path.join(_root, ".venv", "Scripts", "Activate.ps1")
-                _main = os.path.join(_root, "main.py")
-                _ps_cmd = (
-                    f"Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force; "
-                    f"& '{_venv_activate}'; "
-                    f"Clear-Host; "
-                    f"Write-Host '  J.A.R.V.I.S. — iniciando...' -ForegroundColor Cyan; "
-                    f"& python '{_main}'"
-                )
-                subprocess.Popen(
-                    ["powershell", "-NoLogo", "-NoExit", "-Command", _ps_cmd],
-                    creationflags=subprocess.CREATE_NEW_CONSOLE,
-                )
+            # Windows: exe → relança o executável; dev → PowerShell com venv.
+            # Linux: nova instância em sessão própria (AppImage/frozen/dev).
+            _plat_processes().restart_self(
+                main_path=os.path.abspath(__file__),
+                frozen=getattr(sys, "frozen", False),
+            )
 
             try:
                 self._window.destroy()
@@ -12964,6 +12951,17 @@ class JarvisApp:
         except Exception:
             sandbox = "n/a"
         print(f"JARVIS_SMOKE_READY kind={ctx.kind} qpa={qpa} sandbox={sandbox}", flush=True)
+
+        # F2-09: JARVIS_SMOKE_RESTART=1 relança UMA vez. A 2ª instância herda
+        # "done", só avisa o próprio PID e segue o smoke normal.
+        smoke_restart = os.environ.get("JARVIS_SMOKE_RESTART", "").strip()
+        if smoke_restart == "done":
+            print(f"JARVIS_SMOKE_RESTARTED pid={os.getpid()}", flush=True)
+        elif smoke_restart == "1":
+            os.environ["JARVIS_SMOKE_RESTART"] = "done"
+            print(f"JARVIS_SMOKE_RESTART pid={os.getpid()}", flush=True)
+            self._reiniciar_jarvis()
+            return
 
         reloads = os.environ.get("JARVIS_SMOKE_RELOADS", "").strip()
         if reloads:

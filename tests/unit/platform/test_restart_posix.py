@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-pytestmark = [pytest.mark.linux_only, pytest.mark.xfail(strict=True, reason="F2-09")]
+pytestmark = [pytest.mark.linux_only]
 
 
 def _fake_popen():
