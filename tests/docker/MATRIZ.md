@@ -75,3 +75,22 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
   Confirmado manualmente contra o daemon REAL (não um fake dbusmock):
   `doRegister`/`setShortcut`/`getComponent` funcionam e
   `org.kde.kglobalaccel` aparece em `busctl --user list`.
+- **N3 e `org.kde.StatusNotifierWatcher` (F2-02, tray)**: ao contrário do
+  `kglobalacceld` (daemon real do sistema, sempre precisa estar no ar pra
+  PTT funcionar), o watcher da bandeja normalmente vem do `plasmashell` —
+  na imagem de teste não tem `plasmashell`, então o barramento privado do
+  N3 fica SEM watcher por padrão. Isso é intencional: a SPEC F2-02 manda o
+  app fechar quando não acha um watcher, e esse é justamente o cenário que
+  `run_n3_wayland.sh` já cobre sem nenhuma mudança (confirmado: sem fake
+  nenhum registrado, `RegisterStatusNotifierItem` dá
+  `org.freedesktop.DBus.Error.ServiceUnknown`, como esperado).
+  Para o caso COM watcher, um teste sobe um FAKE via `python-dbusmock`
+  (mesmo padrão de `tests/fakes/dbus_services.fake_dbus_service`, bus_name
+  `org.kde.StatusNotifierWatcher`, path `/StatusNotifierWatcher`,
+  interface `org.kde.StatusNotifierWatcher`) — SEM precisar mexer no
+  `run_n3_wayland.sh`, porque diferente do KGlobalAccel o item se registra
+  chamando o método `RegisterStatusNotifierItem(s)` (retorno vazio) uma
+  vez, não fica um processo de fundo rodando o tempo todo. Confirmado:
+  `mock.AddMethod(IFACE, "RegisterStatusNotifierItem", "s", "", "")` +
+  chamar `RegisterStatusNotifierItem("org.jarvis.tray/StatusNotifierItem")`
+  aparece em `mock.GetCalls()`.
