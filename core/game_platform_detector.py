@@ -583,13 +583,14 @@ def discover_xbox_games() -> list[GameInfo]:
     """
     games: list[GameInfo] = []
     try:
+        from jarvis.platform import processes as _plat_processes
         proc = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Get-AppxPackage | Where-Object { $_.IsFramework -eq $false } | "
              "Select-Object Name,PackageFamilyName,InstallLocation | "
              "ConvertTo-Json -Compress"],
             capture_output=True, text=True, timeout=30,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            creationflags=_plat_processes().hidden_console_flags(),
         )
         if proc.returncode != 0:
             return games

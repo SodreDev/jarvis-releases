@@ -12783,7 +12783,7 @@ class JarvisApp:
             proc = subprocess.Popen(
                 ff_args, stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                creationflags=_plat_processes().hidden_console_flags(),
             )
             self._tts_process = proc
             _plat_processes().register_child(proc)  # no-op no Windows (Job Object)

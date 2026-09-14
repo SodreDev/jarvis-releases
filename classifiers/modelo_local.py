@@ -107,7 +107,8 @@ class _SidecarClient:
             self._dead = True
             return False
         binp, weights, cwd = info
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        from jarvis.platform import processes as _plat_processes
+        flags = _plat_processes().hidden_console_flags()  # Windows: CREATE_NO_WINDOW; Linux: 0
         try:
             self._q = queue.Queue()
             self._proc = subprocess.Popen(

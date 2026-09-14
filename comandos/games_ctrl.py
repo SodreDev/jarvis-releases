@@ -28,10 +28,11 @@ def _shell_open(target: str) -> bool:
         return True
     except Exception:
         try:
+            from jarvis.platform import processes as _plat_processes
             subprocess.Popen(
                 ["cmd", "/c", "start", "", target],
                 shell=False,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                creationflags=_plat_processes().hidden_console_flags(),
             )
             return True
         except Exception:

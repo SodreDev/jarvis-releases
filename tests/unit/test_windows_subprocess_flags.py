@@ -8,7 +8,10 @@ Só usa a stdlib (ast + pathlib): varre os .py do repositório e falha
 listando arquivo:linha de cada acesso direto desprotegido.
 """
 import ast
+import subprocess
 from pathlib import Path
+
+import pytest
 
 WINDOWS_ONLY = {
     "CREATE_NO_WINDOW",
@@ -87,6 +90,74 @@ def test_no_unprotected_windows_subprocess_flags():
         "(quebra no Linux); use getattr(..., 0) ou guarde com "
         "if sys.platform == 'win32':\n" + "\n".join(sorted(offenders))
     )
+
+
+# ── F2-10a: flag de console pela fachada da camada de plataforma ───────────────
+# Nestes lugares o `creationflags` vem de processes().hidden_console_flags():
+# no Windows é o mesmo getattr(subprocess, "CREATE_NO_WINDOW", 0), no Linux 0.
+# DETACHED_PROCESS/CREATE_NEW_PROCESS_GROUP do browser_ctrl ficam para a Fase 4.
+FACHADA_OBRIGATORIA = (
+    "main.py",
+    "comandos/games_ctrl.py",
+    "core/game_platform_detector.py",
+    "classifiers/modelo_local.py",
+)
+
+
+def _tree_rel(rel: str) -> ast.Module:
+    return ast.parse((REPO_ROOT / rel).read_text(encoding="utf-8-sig", errors="replace"))
+
+
+def _linhas_create_no_window(tree: ast.Module) -> list:
+    """Linhas com CREATE_NO_WINDOW direto (atributo ou string do getattr)."""
+    return sorted(
+        n.lineno
+        for n in ast.walk(tree)
+        if (isinstance(n, ast.Attribute) and n.attr == "CREATE_NO_WINDOW")
+        or (isinstance(n, ast.Constant) and n.value == "CREATE_NO_WINDOW")
+    )
+
+
+def _chama_hidden_console_flags(tree: ast.Module) -> bool:
+    return any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "hidden_console_flags"
+        for n in ast.walk(tree)
+    )
+
+
+@pytest.mark.parametrize("rel", FACHADA_OBRIGATORIA)
+def test_flag_de_console_vem_da_fachada(rel):
+    tree = _tree_rel(rel)
+    assert _chama_hidden_console_flags(tree), f"{rel}: falta processes().hidden_console_flags()"
+    linhas = _linhas_create_no_window(tree)
+    assert not linhas, f"{rel}: CREATE_NO_WINDOW direto nas linhas {linhas}"
+
+
+def test_modelo_local_sem_os_name():
+    """C1 diminui: o `os.name == "nt"` do modelo_local saiu junto com a flag."""
+    tree = _tree_rel("classifiers/modelo_local.py")
+    usos = [
+        n.lineno
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Attribute)
+        and isinstance(n.value, ast.Name)
+        and f"{n.value.id}.{n.attr}" in ("os.name", "sys.platform")
+    ]
+    assert not usos, f"classifiers/modelo_local.py ainda usa os.name/sys.platform: {usos}"
+
+
+def test_valor_da_fachada_igual_ao_legado(monkeypatch):
+    from jarvis.platform.linux.processes import PosixProcesses
+    from jarvis.platform.windows.processes import WindowsProcesses
+
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    legado = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    assert WindowsProcesses.hidden_console_flags(object.__new__(WindowsProcesses)) == legado
+    monkeypatch.delattr(subprocess, "CREATE_NO_WINDOW")
+    assert WindowsProcesses.hidden_console_flags(object.__new__(WindowsProcesses)) == 0
+    assert PosixProcesses.hidden_console_flags(object.__new__(PosixProcesses)) == 0
 
 
 if __name__ == "__main__":
