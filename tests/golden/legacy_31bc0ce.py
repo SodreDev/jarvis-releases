@@ -201,6 +201,194 @@ def legacy_monitor_loop_iteration(get_clipboard_text_fn, history: list, last):
     return last
 
 
+# ── F2-03: volume/mic — comandos/system_ctrl.py:92-191 (pycaw) ──
+
+
+def legacy_discover_audio_volume_interface(*, audio_utilities, iaudio_endpoint_volume, comtypes_mod, cast_fn, pointer_fn, clsctx_all):
+    """`system_ctrl.py:_get_audio_volume` (`:92-118`), literal: inicializa
+    COM, pega os alto-falantes, tolera o wrapper `AudioDevice` (`_dev`)
+    além do `IMMDevice` puro, e ativa a interface de volume."""
+    try:
+        comtypes_mod.CoInitialize()
+    except OSError:
+        pass
+
+    speakers = audio_utilities.GetSpeakers()
+    if not hasattr(speakers, "Activate"):
+        dev = getattr(speakers, "_dev", None)
+        if dev is not None and hasattr(dev, "Activate"):
+            speakers = dev
+        else:
+            raise RuntimeError(f"Dispositivo de áudio incompatível: {type(speakers).__name__}")
+
+    interface = speakers.Activate(iaudio_endpoint_volume._iid_, clsctx_all, None)
+    return cast_fn(interface, pointer_fn(iaudio_endpoint_volume))
+
+
+def legacy_discover_mic_volume_interface(*, audio_utilities, iaudio_endpoint_volume, comtypes_mod, cast_fn, pointer_fn, clsctx_all):
+    """`system_ctrl.py:_get_mic_volume` (`:144-170`), literal — igual ao
+    de saída, mas com `GetMicrophone()` e `mic is None` levantando."""
+    try:
+        comtypes_mod.CoInitialize()
+    except OSError:
+        pass
+
+    mic = audio_utilities.GetMicrophone()
+    if mic is None:
+        raise RuntimeError("Nenhum microfone encontrado no sistema.")
+    if not hasattr(mic, "Activate"):
+        dev = getattr(mic, "_dev", None)
+        if dev is not None and hasattr(dev, "Activate"):
+            mic = dev
+        else:
+            raise RuntimeError(f"Dispositivo de microfone incompatível: {type(mic).__name__}")
+
+    interface = mic.Activate(iaudio_endpoint_volume._iid_, clsctx_all, None)
+    return cast_fn(interface, pointer_fn(iaudio_endpoint_volume))
+
+
+def legacy_set_volume(get_audio_volume_fn, nivel: int) -> str:
+    """`system_ctrl.py:set_volume` (`:121-128`), literal — clampa 0-100."""
+    nivel = max(0, min(100, nivel))
+    try:
+        vol = get_audio_volume_fn()
+        vol.SetMasterVolumeLevelScalar(nivel / 100.0, None)
+        return f"Volume do sistema ajustado para {nivel}%, Senhor."
+    except Exception as e:
+        return f"Não foi possível ajustar o volume: {e}"
+
+
+def legacy_get_volume(get_audio_volume_fn) -> str:
+    """`system_ctrl.py:get_volume` (`:131-137`), literal."""
+    try:
+        vol = get_audio_volume_fn()
+        pct = int(vol.GetMasterVolumeLevelScalar() * 100)
+        return f"Volume atual do sistema: {pct}%, Senhor."
+    except Exception as e:
+        return f"Não foi possível obter o volume: {e}"
+
+
+def legacy_set_mic_volume(get_mic_volume_fn, nivel: int) -> str:
+    """`system_ctrl.py:set_mic_volume` (`:173-181`), literal."""
+    nivel = max(0, min(100, nivel))
+    try:
+        vol = get_mic_volume_fn()
+        vol.SetMasterVolumeLevelScalar(nivel / 100.0, None)
+        return f"Volume do microfone ajustado para {nivel}%, Senhor."
+    except Exception as e:
+        return f"Não foi possível ajustar o volume do microfone: {e}"
+
+
+def legacy_get_mic_volume(get_mic_volume_fn) -> str:
+    """`system_ctrl.py:get_mic_volume` (`:184-191`), literal."""
+    try:
+        vol = get_mic_volume_fn()
+        pct = int(vol.GetMasterVolumeLevelScalar() * 100)
+        return f"Volume atual do microfone: {pct}%, Senhor."
+    except Exception as e:
+        return f"Não foi possível obter o volume do microfone: {e}"
+
+
+# ── F2-08: mídia — comandos/midia_ctrl.py:18-147 (teclas virtuais + SMTC/PowerShell) ──
+
+VK_MEDIA_PLAY_PAUSE = 0xB3
+VK_MEDIA_STOP = 0xB4
+VK_MEDIA_NEXT_TRACK = 0xB0
+VK_MEDIA_PREV_TRACK = 0xB1
+VK_VOLUME_MUTE = 0xAD
+VK_VOLUME_DOWN = 0xAE
+VK_VOLUME_UP = 0xAF
+
+
+def legacy_press_key(keybd_event_fn, vk: int, *, sleep_fn=lambda s: None) -> None:
+    """`midia_ctrl.py:_press_key` (`:47-51`), literal — down, `sleep(0.05)`
+    (injetável para espionar sem esperar de verdade), up com
+    `KEYEVENTF_KEYUP=0x0002`."""
+    keybd_event_fn(vk, 0, 0, 0)
+    sleep_fn(0.05)
+    keybd_event_fn(vk, 0, 0x0002, 0)
+
+
+def legacy_play_pause(keybd_event_fn, **kw) -> str:
+    legacy_press_key(keybd_event_fn, VK_MEDIA_PLAY_PAUSE, **kw)
+    return "Play/Pause enviado, senhor."
+
+
+def legacy_parar(keybd_event_fn, **kw) -> str:
+    legacy_press_key(keybd_event_fn, VK_MEDIA_STOP, **kw)
+    return "Mídia parada, senhor."
+
+
+def legacy_proxima_faixa(keybd_event_fn, **kw) -> str:
+    legacy_press_key(keybd_event_fn, VK_MEDIA_NEXT_TRACK, **kw)
+    return "Próxima faixa, senhor."
+
+
+def legacy_faixa_anterior(keybd_event_fn, **kw) -> str:
+    legacy_press_key(keybd_event_fn, VK_MEDIA_PREV_TRACK, **kw)
+    return "Faixa anterior, senhor."
+
+
+def legacy_mutar(keybd_event_fn, **kw) -> str:
+    legacy_press_key(keybd_event_fn, VK_VOLUME_MUTE, **kw)
+    return "Volume mutado/desmutado, senhor."
+
+
+def legacy_volume_up(keybd_event_fn, steps: int = 3, **kw) -> str:
+    for _ in range(steps):
+        legacy_press_key(keybd_event_fn, VK_VOLUME_UP, **kw)
+    return f"Volume aumentado {steps} nível(is), senhor."
+
+
+def legacy_volume_down(keybd_event_fn, steps: int = 3, **kw) -> str:
+    for _ in range(steps):
+        legacy_press_key(keybd_event_fn, VK_VOLUME_DOWN, **kw)
+    return f"Volume reduzido {steps} nível(is), senhor."
+
+
+def legacy_get_media_info_ps(run_fn) -> dict:
+    """`midia_ctrl.py:_get_media_info_ps` (`:97-125`), literal — só o
+    parsing do stdout do PowerShell (`run_fn` substitui `subprocess.run`,
+    o script em si não muda)."""
+    try:
+        r = run_fn(["powershell", "-NoProfile", "-Command", "<script SMTC>"], capture_output=True, text=True, timeout=8)
+        line = r.stdout.strip()
+        if line and line != "NULL":
+            parts = line.split("|", 3)
+            return {
+                "title": parts[0] if len(parts) > 0 else "",
+                "artist": parts[1] if len(parts) > 1 else "",
+                "status": parts[2] if len(parts) > 2 else "",
+                "app": parts[3] if len(parts) > 3 else "",
+            }
+    except Exception:
+        pass
+    return {}
+
+
+def legacy_o_que_esta_tocando(run_fn) -> str:
+    """`midia_ctrl.py:o_que_esta_tocando` (`:128-147`), literal — mapa de
+    status e formatação da frase, com/sem artista."""
+    info = legacy_get_media_info_ps(run_fn)
+    if not info or not info.get("title"):
+        return "Nenhuma mídia em reprodução detectada, senhor."
+    titulo = info.get("title", "?")
+    artista = info.get("artist", "")
+    status = info.get("status", "")
+    app = info.get("app", "").split("!")[-1] or "reprodutor desconhecido"
+
+    status_map = {
+        "Playing": "tocando", "Paused": "pausado",
+        "Stopped": "parado", "0": "parado", "1": "parado",
+        "3": "tocando", "4": "pausado",
+    }
+    estado = status_map.get(status, status.lower())
+
+    if artista:
+        return f"Está {estado} '{titulo}' — {artista}, via {app}, senhor."
+    return f"Está {estado} '{titulo}' via {app}, senhor."
+
+
 __all__ = [
     "OPEN_PATH_CALL_SITES",
     "NOTEPAD_CALL_SITE_LINE",
@@ -215,4 +403,27 @@ __all__ = [
     "legacy_set_clipboard",
     "CLIPBOARD_HISTORY_MAX",
     "legacy_monitor_loop_iteration",
+    "legacy_discover_audio_volume_interface",
+    "legacy_discover_mic_volume_interface",
+    "legacy_set_volume",
+    "legacy_get_volume",
+    "legacy_set_mic_volume",
+    "legacy_get_mic_volume",
+    "VK_MEDIA_PLAY_PAUSE",
+    "VK_MEDIA_STOP",
+    "VK_MEDIA_NEXT_TRACK",
+    "VK_MEDIA_PREV_TRACK",
+    "VK_VOLUME_MUTE",
+    "VK_VOLUME_DOWN",
+    "VK_VOLUME_UP",
+    "legacy_press_key",
+    "legacy_play_pause",
+    "legacy_parar",
+    "legacy_proxima_faixa",
+    "legacy_faixa_anterior",
+    "legacy_mutar",
+    "legacy_volume_up",
+    "legacy_volume_down",
+    "legacy_get_media_info_ps",
+    "legacy_o_que_esta_tocando",
 ]
