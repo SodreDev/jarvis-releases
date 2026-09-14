@@ -30,6 +30,7 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
 | Xvfb (N2, X11 virtual) | `xorg-x11-server-Xvfb` | `xvfb` | `xorg-server-xvfb` |
 | xauth (`xvfb-run` precisa, achado no Debian: "xauth command not found") | já vem com `xorg-x11-server-Xvfb` | `xauth` | `xorg-xauth` |
 | Toolchain de build (evdev do pynput etc.) | `gcc`, `python3-devel`, `kernel-headers` | `gcc`, `python3-dev`, `build-essential` | `gcc`, `base-devel` |
+| ffmpeg/ffplay (RUNTIME — TTS via edge_tts + ffplay, F2-10c smoke de áudio; sem isso `self._ffplay` fica None e `JARVIS_SMOKE_AUDIO ffplay=ausente`) | **`ffmpeg-free`** (Fedora não traz `ffmpeg` puro nos repos padrão; `ffmpeg-free` tem `ffplay` sem os codecs com patente) | `ffmpeg` | `ffmpeg` |
 
 ## Notas
 

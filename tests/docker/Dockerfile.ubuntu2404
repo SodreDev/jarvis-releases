@@ -38,6 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libdbus-1-dev \
         libglib2.0-dev \
         pkg-config \
+        ffmpeg \
     && rm -r /var/lib/apt/lists/*
 
 ENV UV_INSTALL_DIR=/usr/local/bin
