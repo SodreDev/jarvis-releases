@@ -22,6 +22,7 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
 | Mesa EGL | `mesa-libEGL` | `libegl1` | `mesa` (inclui) |
 | Fontconfig | `fontconfig` | `libfontconfig1` | `fontconfig` |
 | D-Bus (libdbus, QtWebEngine) | já vem com o sistema base | `libdbus-1-3` | `dbus` |
+| XInput2 (libXi, Qt xcb) | já vem com o sistema base | `libxi6` | `libxi` |
 | Xvfb (N2, X11 virtual) | `xorg-x11-server-Xvfb` | `xvfb` | `xorg-server-xvfb` |
 | Toolchain de build (evdev do pynput etc.) | `gcc`, `python3-devel`, `kernel-headers` | `gcc`, `python3-dev`, `build-essential` | `gcc`, `base-devel` |
 

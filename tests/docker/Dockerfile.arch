@@ -24,6 +24,7 @@ RUN pacman -Syu --noconfirm && pacman -S --noconfirm \
         mesa \
         fontconfig \
         dbus \
+        libxi \
     && pacman -Scc --noconfirm
 
 ENV UV_INSTALL_DIR=/usr/local/bin
