@@ -1440,7 +1440,11 @@ class _RootProxy:
             except Exception:
                 pass
         else:
-            threading.Timer(ms / 1000, fn, args=args).start()
+            # F2-10c: daemon — um after() pendente não segura o processo no fechamento
+            t = threading.Timer(ms / 1000, fn, args=args)
+            t.daemon = True
+            t.name = "RootAfter"
+            t.start()
     def destroy(self):
         try:
             w = self._app._window
@@ -13060,10 +13064,41 @@ class JarvisApp:
                     _time_s.sleep(0.05)
                 _time_s.sleep(0.3)  # 300 ms entre os reloads
 
+        # F2-10c: JARVIS_SMOKE_AUDIO=1 exercita o ffplay e o register_child
+        if os.environ.get("JARVIS_SMOKE_AUDIO", "").strip() == "1":
+            self._smoke_audio()
+
         secs = _smoke_seconds()
-        timer = _th_s.Timer(secs, self._window.destroy)
+        # F2-10c: fecha pelo mesmo caminho do "Encerrar" da bandeja, sem o os._exit
+        timer = _th_s.Timer(secs, self._encerrar_de_tray, kwargs={"sair_do_processo": False})
         timer.daemon = True
+        timer.name = "SmokeClose"
         timer.start()
+
+    def _smoke_audio(self):
+        """F2-10c: enfileira na _audio_queue um WAV de 0,3 s (senoide, numpy) e o
+        flush b"", e confere via alive_children() que o ffplay foi registrado."""
+        import time as _time_a
+        if not self._ffplay:
+            print("JARVIS_SMOKE_AUDIO ffplay=ausente", flush=True)
+            return
+        taxa = 22050
+        t = np.arange(int(taxa * 0.3)) / taxa
+        amostras = (np.sin(2 * np.pi * 440.0 * t) * 0.2 * 32767).astype(np.int16)
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(taxa)
+            wf.writeframes(amostras.tobytes())
+        self._audio_queue.put((buf.getvalue(), "wav"))
+        self._audio_queue.put((b"", "wav"))
+        registrados = 0
+        deadline = _time_a.monotonic() + 3.0
+        while not registrados and _time_a.monotonic() < deadline:
+            registrados = len(_plat_processes().alive_children())
+            _time_a.sleep(0.01)
+        print(f"JARVIS_SMOKE_AUDIO ffplay_registrado={registrados}", flush=True)
 
     def _on_webview_ready(self):
         """Chamada após o webview carregar o HTML. Envia dados iniciais."""
@@ -13540,15 +13575,22 @@ class JarvisApp:
             daemon=True,
         ).start()
 
-    def _encerrar_de_tray(self, icon=None, item=None):
-        """Encerra o JARVIS da bandeja."""
+    def _encerrar_de_tray(self, icon=None, item=None, *, sair_do_processo=True):
+        """Encerra o JARVIS da bandeja. O smoke (F2-10c) usa este mesmo caminho com
+        sair_do_processo=False: o webview.start retorna e o processo sai sozinho."""
         if self._tray_icon:
             self._tray_icon.stop()
+        try:
+            # sem a interceptação do X, o destroy fecha a janela em vez de minimizar
+            self._window.events.closing -= self._on_window_close_request
+        except Exception:
+            pass
         try:
             self._window.destroy()
         except Exception:
             pass
-        os._exit(0)
+        if sair_do_processo:
+            os._exit(0)
 
     def _on_window_close_request(self):
         """Intercepta o botão X: esconde para a bandeja em vez de fechar.
@@ -13655,16 +13697,30 @@ if __name__ == "__main__":
         # debug=True mantém DevTools vivo (+200 MB RAM) — só ativar com JARVIS_DEV=1
         webview.start(_on_ready, debug=os.environ.get("JARVIS_DEV") == "1", storage_path=_wv_data, **_wv_start_kwargs)
         if _smoke_seconds() is not None:
+            # F2-10c: encerra pelo caminho normal (sys.exit → atexit), sem os._exit.
+            # Os filhos registrados (ex.: ffplay) morrem antes da contagem.
+            _plat_processes().shutdown_children(2.0)
             print(f"JARVIS_SMOKE_EXIT children_alive={len(_plat_processes().alive_children())}", flush=True)
             _vivas = [
                 t.name for t in _th_crash.enumerate()
                 if not t.daemon and t.is_alive() and t is not _th_crash.current_thread()
             ]
             print(f"JARVIS_SMOKE_THREADS {','.join(_vivas)}", flush=True)
-            # Encerra pelo mesmo caminho do fechamento normal do app (X/tray →
-            # _encerrar_de_tray/_RootProxy.destroy terminam em os._exit(0)): threads
-            # não-daemon (ex.: servidor do dashboard) seguram o processo senão.
-            os._exit(0)
+
+            def _forcar():
+                # rede de segurança: só dispara se algo segurar o fim normal por 10 s
+                _presas = [
+                    t.name for t in _th_crash.enumerate()
+                    if not t.daemon and t.is_alive() and t is not _th_crash.current_thread()
+                ]
+                print(f"JARVIS_SMOKE_FORCED_EXIT threads={','.join(_presas)}", flush=True)
+                os._exit(0)
+
+            _t_forcar = _th_crash.Timer(10, _forcar)
+            _t_forcar.daemon = True
+            _t_forcar.name = "SmokeForcedExit"
+            _t_forcar.start()
+            _sys_crash.exit(0)
     except Exception:
         _write_crash("BOOT", *_sys_crash.exc_info())
         raise

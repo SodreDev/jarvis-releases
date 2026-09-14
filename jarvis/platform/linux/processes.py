@@ -51,13 +51,17 @@ class PosixProcesses(BackendBase):
             self._cleanup_registered = True
 
     def _cleanup(self) -> None:
+        self.shutdown_children(_GRACE_TOTAL_S)
+
+    def shutdown_children(self, timeout: float = _GRACE_TOTAL_S) -> None:
+        """Limpeza explícita (F2-10c): a mesma rotina do atexit, com `timeout`."""
         with self._lock:
             entries = list(self._children)
         # Fase 1: SIGTERM
         for proc, tree in entries:
             self._signal(proc, tree, signal.SIGTERM)
-        # Espera até _GRACE_TOTAL_S no total
-        deadline = time.monotonic() + _GRACE_TOTAL_S
+        # Espera até `timeout` no total
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if all(proc.poll() is not None for proc, _t in entries):
                 break
@@ -66,6 +70,14 @@ class PosixProcesses(BackendBase):
         for proc, tree in entries:
             if proc.poll() is None:
                 self._signal(proc, tree, signal.SIGKILL)
+        # Recolhe os mortos para alive_children() refletir o estado real
+        for proc, _t in entries:
+            try:
+                proc.wait(timeout=0.5)
+            except Exception:
+                pass
+        with self._lock:
+            self._prune_locked()
 
     def _signal(self, proc, tree: bool, sig: int) -> None:
         pid = proc.pid

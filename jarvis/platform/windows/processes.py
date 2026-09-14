@@ -128,6 +128,10 @@ class WindowsProcesses(BackendBase):
     def alive_children(self) -> list:
         return []
 
+    def shutdown_children(self, timeout: float = 2.0) -> None:
+        # No Windows o Job Object (KILL_ON_JOB_CLOSE) mata os filhos; no-op.
+        return None
+
     def new_session_kwargs(self) -> dict:
         return {}
 
