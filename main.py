@@ -152,6 +152,7 @@ from jarvis.platform import has_feature as _has_feature
 from jarvis.platform import paths as _plat_paths
 from jarvis.platform import Cap, get as _plat_get, has as _plat_has, processes as _plat_processes
 from jarvis.platform import open_path as _open_path, open_text_file as _open_text_file
+from jarvis.platform.protocols import HotkeyBinding
 
 # Migra credenciais/dados legados para credentials/ ANTES de importar config,
 # para que load_dotenv() encontre o .env já na nova localização.
@@ -257,6 +258,13 @@ def _is_whisper_hallucination(texto: str) -> bool:
     if "amara.org" in t:
         return True
     return False
+
+def _ptt_trigger() -> str:
+    """Gatilho do PTT nos backends de atalho exclusivo (portal/KGlobalAccel):
+    config.PTT_TRIGGER_GLOBAL, no formato pynput (D-F2-1)."""
+    import config as _cfg_ptt
+    return getattr(_cfg_ptt, "PTT_TRIGGER_GLOBAL", "<cmd>+<shift>+g")
+
 
 def _is_g_key(key) -> bool:
     """True para tecla G independente de maiúsculo/minúsculo ou modificadores."""
@@ -11632,15 +11640,20 @@ class JarvisApp:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _start_keyboard_listener(self):
-        if keyboard is None or not _has_feature("global_hotkeys"):
+        hk = _plat_get(Cap.HOTKEYS) if _has_feature("global_hotkeys") and _plat_has(Cap.HOTKEYS) else None
+        if hk is None:
             self._listener = None
+            self._ptt_descricao = None
             print("[PTT] Atalho global indisponível nesta sessão — use o botão de microfone ou a wake word.")
             return
-        self._listener = keyboard.Listener(
-            on_press=self._on_key_press,
-            on_release=self._on_key_release,
-        )
-        self._listener.start()
+        # win32/x11 (pynput): Shift+G passivo tecla a tecla, como antes
+        if hk.listen_keys(self._on_key_press, self._on_key_release):
+            self._ptt_descricao = "Shift+G"
+            return
+        # backends de atalho exclusivo (Wayland): o PTT vira um atalho global próprio
+        efetivos = hk.bind([HotkeyBinding("ptt", "Falar com o JARVIS (segurar)", _ptt_trigger(),
+                                          self._ptt_iniciar, self._ptt_finalizar)])
+        self._ptt_descricao = (efetivos or {}).get("ptt")
 
     # Mapa ação → comando canônico que _detectar_comando_sistema entende
     _HOTKEY_CMDS: dict[str, str] = {
@@ -11651,8 +11664,9 @@ class JarvisApp:
     }
 
     def _start_global_hotkeys(self):
-        """Registra os atalhos globais definidos em config.HOTKEYS via pynput GlobalHotKeys."""
-        if keyboard is None or not _has_feature("global_hotkeys"):
+        """Registra os atalhos globais definidos em config.HOTKEYS pelo backend de hotkeys
+        (pynput GlobalHotKeys no Windows/X11)."""
+        if not _has_feature("global_hotkeys") or not _plat_has(Cap.HOTKEYS):
             print("[PTT] Atalho global indisponível nesta sessão — use o botão de microfone ou a wake word.")
             return
         import sys as _sys
@@ -11660,7 +11674,7 @@ class JarvisApp:
         raw: dict = getattr(_cfg, "HOTKEYS", {}) if _cfg else {}
         if not raw:
             return
-        handlers: dict[str, callable] = {}
+        bindings: list[HotkeyBinding] = []
         for combo, acao in raw.items():
             cmd = self._HOTKEY_CMDS.get(acao)
             if not cmd:
@@ -11669,20 +11683,11 @@ class JarvisApp:
             # captura cmd por valor (closure) — chama _processar_texto no thread principal
             def _handler(texto=cmd):
                 self.root.after(0, lambda t=texto: self._processar_texto(t, "hotkey"))
-            handlers[combo] = _handler
-        if not handlers:
+            bindings.append(HotkeyBinding(id=acao, description=cmd, trigger=combo, on_press=_handler))
+        if not bindings:
             return
-        try:
-            # Para listener anterior se existir
-            old = getattr(self, "_hotkeys_listener", None)
-            if old is not None:
-                try: old.stop()
-                except Exception: pass
-            self._hotkeys_listener = GlobalHotKeys(handlers)
-            self._hotkeys_listener.start()
-            _log.info(f"HOTKEYS: {len(handlers)} atalho(s) registrado(s): {', '.join(handlers)}")
-        except Exception as e:
-            _log.warn(f"HOTKEYS: Falha ao registrar atalhos: {e}", exc_info=e)
+        # o backend para o registro anterior e loga sucesso/falha (pynput: GlobalHotKeys(handlers))
+        _plat_get(Cap.HOTKEYS).bind(bindings)
 
     # ── Hot Reload de config.py ───────────────────────────────────────────────
 
@@ -11852,14 +11857,7 @@ class JarvisApp:
         if self._activation_mode != "ptt":
             return  # PTT desabilitado em modo wake
         if _is_g_key(key) and self._shift_held and not self.recording:
-            self.recording = True
-            self._notify_recording(True)
-            self._mic_frames.clear()
-            print("[PTT] Gravando...")
-            self._set_status("▤  OUVINDO...  (Solte G para enviar)", _RED)
-            self.root.after(0, lambda: self._lbl_mic_state.config(text="● REC", fg=_RED))
-            self._stop_tts()
-            threading.Thread(target=self._gravar_audio, daemon=True).start()
+            self._ptt_iniciar()
 
     def _on_key_release(self, key):
         if key in _SHIFT_KEYS:
@@ -11885,16 +11883,39 @@ class JarvisApp:
         if self._activation_mode != "ptt":
             return  # PTT desabilitado em modo wake
         if _is_g_key(key) and self.recording:
-            self.recording = False
-            self._notify_recording(False)
-            print("[PTT] Parou. Enviando...")
-            self._set_status("⟳  Processando áudio...", _CYAN)
-            self.root.after(0, lambda: self._lbl_mic_state.config(text="MIC PRONTO", fg=_GREEN))
-            frames = list(self._mic_frames)
-            if frames:
-                threading.Thread(target=self._processar_audio, args=(frames,), daemon=True).start()
-            else:
-                self._set_status("PRONTO  |  Segure Shift+G para falar", _TEXT_DIM)
+            self._ptt_finalizar()
+
+    def _ptt_iniciar(self):
+        """Começa a gravação do PTT (corpo extraído literalmente de _on_key_press, F2-01).
+        No smoke só avisa, sem abrir o microfone."""
+        if _smoke_seconds() is not None:
+            print("JARVIS_SMOKE_PTT press", flush=True)
+            return
+        self.recording = True
+        self._notify_recording(True)
+        self._mic_frames.clear()
+        print("[PTT] Gravando...")
+        self._set_status("▤  OUVINDO...  (Solte G para enviar)", _RED)
+        self.root.after(0, lambda: self._lbl_mic_state.config(text="● REC", fg=_RED))
+        self._stop_tts()
+        threading.Thread(target=self._gravar_audio, daemon=True).start()
+
+    def _ptt_finalizar(self):
+        """Encerra a gravação do PTT e envia (corpo extraído literalmente de _on_key_release).
+        No smoke só avisa."""
+        if _smoke_seconds() is not None:
+            print("JARVIS_SMOKE_PTT release", flush=True)
+            return
+        self.recording = False
+        self._notify_recording(False)
+        print("[PTT] Parou. Enviando...")
+        self._set_status("⟳  Processando áudio...", _CYAN)
+        self.root.after(0, lambda: self._lbl_mic_state.config(text="MIC PRONTO", fg=_GREEN))
+        frames = list(self._mic_frames)
+        if frames:
+            threading.Thread(target=self._processar_audio, args=(frames,), daemon=True).start()
+        else:
+            self._set_status("PRONTO  |  Segure Shift+G para falar", _TEXT_DIM)
 
     def _gravar_audio(self):
         """Captura microfone com sounddevice enquanto recording == True."""
@@ -12951,6 +12972,15 @@ class JarvisApp:
         except Exception:
             sandbox = "n/a"
         print(f"JARVIS_SMOKE_READY kind={ctx.kind} qpa={qpa} sandbox={sandbox}", flush=True)
+
+        # F2-01: qual backend de atalhos o boot usou e qual é o gatilho do PTT
+        if os.environ.get("JARVIS_SMOKE_HOTKEYS", "").strip() == "1":
+            try:
+                hk_nome = (_plat_get(Cap.HOTKEYS).name
+                           if _has_feature("global_hotkeys") and _plat_has(Cap.HOTKEYS) else "none")
+            except Exception:
+                hk_nome = "none"
+            print(f"JARVIS_SMOKE_HOTKEYS backend={hk_nome} ptt={getattr(self, '_ptt_descricao', None)}", flush=True)
 
         # F2-09: JARVIS_SMOKE_RESTART=1 relança UMA vez. A 2ª instância herda
         # "done", só avisa o próprio PID e segue o smoke normal.

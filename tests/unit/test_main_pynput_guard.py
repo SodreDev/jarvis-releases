@@ -88,22 +88,31 @@ def _uso_pynput_lineno(func) -> int | None:
     return _primeiro_lineno(func, eh_uso)
 
 
+def _uso_backend_lineno(func, metodo) -> int | None:
+    """F2-01: keyboard.Listener/GlobalHotKeys vivem no backend pynput; o main.py
+    chama hk.listen_keys(...)/hk.bind(...)."""
+    return _primeiro_lineno(
+        func,
+        lambda n: isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == metodo,
+    )
+
+
 def test_keyboard_listener_atras_do_portao():
     func = _func(_tree(MAIN), "_start_keyboard_listener")
     guard = _guard_lineno(func)
-    uso = _uso_pynput_lineno(func)
+    uso = _uso_backend_lineno(func, "listen_keys")
     assert guard is not None, "falta o portão _has_feature('global_hotkeys')"
-    assert uso is not None, "esperava keyboard.Listener(...)"
-    assert guard < uso, "o portão deve vir antes de keyboard.Listener(...)"
+    assert uso is not None, "esperava hk.listen_keys(...)"
+    assert guard < uso, "o portão deve vir antes de hk.listen_keys(...)"
 
 
 def test_global_hotkeys_atras_do_portao():
     func = _func(_tree(MAIN), "_start_global_hotkeys")
     guard = _guard_lineno(func)
-    uso = _uso_pynput_lineno(func)
+    uso = _uso_backend_lineno(func, "bind")
     assert guard is not None, "falta o portão _has_feature('global_hotkeys')"
-    assert uso is not None, "esperava GlobalHotKeys(...)"
-    assert guard < uso, "o portão deve vir antes de GlobalHotKeys(...)"
+    assert uso is not None, "esperava hk.bind(...)"
+    assert guard < uso, "o portão deve vir antes de hk.bind(...)"
 
 
 def test_jarvis_platform_no_spec_e_launcher():

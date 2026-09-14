@@ -172,6 +172,8 @@ def test_refresh_reresolve():
 def test_report_estrutura():
     B = _make_backend("rep")
     _instalar_modulo("fake_plat_rep", B=B)
+    # só a entrada falsa: report() não pode sondar backend real (ex.: pynput abre o X de quem testa)
+    registry.REGISTRY.clear()
     registry.REGISTRY[Cap.PATHS] = {"linux-x11": ("fake_plat_rep:B",)}
     rep = registry.report(CTX)
     assert rep["kind"] == "linux-x11"

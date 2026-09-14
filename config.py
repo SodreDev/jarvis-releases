@@ -756,6 +756,10 @@ HOTKEYS: dict[str, str] = {
     "<ctrl>+<shift>+h": "hist_hoje",           # Ver histórico de comandos de hoje
 }
 
+# PTT como atalho global exclusivo (Wayland: portal GlobalShortcuts → KGlobalAccel).
+# No Windows e no X11 o PTT continua sendo Shift+G passivo. Formato pynput (D-F2-1).
+PTT_TRIGGER_GLOBAL = "<cmd>+<shift>+g"
+
 # ==========================================
 # 🔐 SEGURANÇA
 # ==========================================

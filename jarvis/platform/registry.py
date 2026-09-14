@@ -36,6 +36,11 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
             "jarvis.platform.linux.open_path:GioOpen",
         ),
     },
+    # F2-01: pynput no win32/x11 (Shift+G passivo). Wayland: portal → KGlobalAccel.
+    Cap.HOTKEYS: {
+        "win32": ("jarvis.platform.common.pynput_hotkeys:PynputHotkeys",),
+        "linux-x11": ("jarvis.platform.common.pynput_hotkeys:PynputHotkeys",),
+    },
     # F2-08: headless sem mídia.
     Cap.MEDIA: {
         "win32": ("jarvis.platform.windows.media:VirtualKeyMedia",),
