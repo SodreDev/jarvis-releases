@@ -29,6 +29,13 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
         "win32": ("jarvis.platform.windows.processes:WindowsProcesses",),
         "linux-*": ("jarvis.platform.linux.processes:PosixProcesses",),
     },
+    Cap.OPEN_PATH: {
+        "win32": ("jarvis.platform.windows.open_path:StartfileOpenPath",),
+        "linux-*": (
+            "jarvis.platform.linux.open_path:XdgOpen",
+            "jarvis.platform.linux.open_path:GioOpen",
+        ),
+    },
     # F2-05: só Linux com sessão gráfica; win32 sem notifier nesta fase (D-F2-5).
     Cap.NOTIFIER: {
         "linux-wayland": (

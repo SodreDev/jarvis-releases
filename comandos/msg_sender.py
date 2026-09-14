@@ -11,6 +11,7 @@ import time
 import unicodedata
 
 from config import PATHS
+from jarvis.platform import open_path as _open_path
 
 _CONTATOS_FILE = PATHS["contatos"]
 
@@ -429,7 +430,7 @@ def enviar_whatsapp(phone: str, mensagem: str, country_code: str = "55") -> str:
         uri = f"whatsapp://send?phone={phone_clean}&text={texto_encoded}"
 
         # Abre conversa (sem forçar foco ainda)
-        os.startfile(uri)
+        _open_path(uri)
 
         # Aguarda WhatsApp abrir e a conversa carregar
         hwnd = _hwnd_whatsapp()
@@ -523,7 +524,7 @@ def enviar_discord_usuario(guild_id: str, channel_id: str, mensagem: str) -> str
         import pyperclip
 
         uri = f"discord://discord.com/channels/{guild_id}/{channel_id}"
-        os.startfile(uri)
+        _open_path(uri)
 
         hwnd = _focar_janela_discord(timeout=8.0)
         if hwnd is None:
@@ -575,7 +576,7 @@ def enviar_discord_por_nome(nome: str, mensagem: str) -> str:
         hwnd = _focar_janela_discord(timeout=3.0)
         if hwnd is None:
             try:
-                os.startfile("discord://")
+                _open_path("discord://")
             except Exception:
                 import subprocess
                 subprocess.Popen(["discord.exe"])
@@ -706,7 +707,7 @@ def enviar_whatsapp_por_nome(nome_contato: str, mensagem: str) -> str:
         import pyautogui, pyperclip
 
         # Abre o WhatsApp (URI scheme — mantém sessão existente)
-        os.startfile("whatsapp://")
+        _open_path("whatsapp://")
 
         hwnd = _hwnd_whatsapp()
         deadline = time.time() + 10.0

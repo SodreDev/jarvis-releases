@@ -12,19 +12,20 @@ import re
 import subprocess
 import webbrowser
 
+from jarvis.platform import open_path as _open_path
+
 
 def _abrir_url_navegador_padrao(url: str) -> bool:
     """Abre URL no NAVEGADOR PADRÃO do Windows via Popen direto no exe
     (robusto: funciona com navegador fechado, qualquer thread).
-    Fallback: os.startfile, webbrowser."""
+    Fallback: jarvis.platform.open_path (os.startfile / xdg-open), webbrowser."""
     try:
         from comandos import browser_ctrl as _bc
         return _bc.abrir_url_padrao(url)
     except Exception as _e:
         print(f"[executor] abrir_url_padrao falhou: {_e}")
     try:
-        if hasattr(os, "startfile"):
-            os.startfile(url)  # type: ignore[attr-defined]
+        if _open_path(url):
             return True
     except Exception:
         pass

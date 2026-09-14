@@ -13,6 +13,8 @@ import shutil
 import time
 import unicodedata
 
+from jarvis.platform import open_path as _open_path
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # GERENCIAMENTO DE JANELAS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -245,7 +247,7 @@ def _try_uri_scheme(nome_n: str) -> str | None:
     """Tenta abrir via URI scheme do Windows (ms-settings:, ms-photos:, etc.)."""
     uri = _URI_SCHEMES.get(nome_n)
     if uri:
-        os.startfile(uri)
+        _open_path(uri)
         return uri
     return None
 
@@ -257,7 +259,7 @@ def _try_alias_shutil(nome_n: str) -> str | None:
         return None
     # Se o alias já é um URI scheme, abre direto
     if cmd.endswith(":"):
-        os.startfile(cmd)
+        _open_path(cmd)
         return cmd
     # Se é um .msc (snap-in do Windows), abre com mmc
     if cmd.endswith(".msc"):
@@ -637,7 +639,7 @@ def abrir_app(nome: str) -> str:
     if pasta_nome:
         caminho = os.path.join(os.path.expanduser("~"), pasta_nome)
         if os.path.isdir(caminho):
-            os.startfile(caminho)
+            _open_path(caminho)
             return f"Abrindo pasta {pasta_nome}, senhor."
 
     # ── Estratégias em ordem de prioridade ───────────────────────────────

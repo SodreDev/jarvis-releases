@@ -32,6 +32,8 @@ __all__ = [
     "paths",
     "processes",
     "webview_engine",
+    "open_path",
+    "open_text_file",
 ]
 
 _CTX: Optional[PlatformContext] = None
@@ -79,6 +81,22 @@ def paths() -> "Paths":
 
 def processes() -> "Processes":
     return get(Cap.PROCESSES)
+
+
+# ── Fachadas F2 ─────────────────────────────────────────────────────────────────
+
+def open_path(target: str) -> bool:
+    """Abre arquivo, pasta, URL ou esquema (whatsapp://) no app padrão (F2-06).
+
+    Windows: os.startfile literal; Linux: xdg-open → gio open. Erros PROPAGAM (os
+    call sites já têm try/except); sem backend, levanta CapabilityUnavailable.
+    """
+    return get(Cap.OPEN_PATH).open(target)
+
+
+def open_text_file(path: str) -> bool:
+    """Abre um .txt para leitura: notepad.exe no Windows, editor padrão no Linux."""
+    return get(Cap.OPEN_PATH).open_text_file(path)
 
 
 def webview_engine() -> "WebviewEngine":

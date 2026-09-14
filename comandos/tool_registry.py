@@ -30,6 +30,8 @@ import webbrowser as _wb
 from typing import Any, Callable
 from urllib.parse import quote_plus as _qp
 
+from jarvis.platform import open_path as _open_path
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Tool definition
@@ -1758,7 +1760,7 @@ def _t_gerar_imagem(app, descricao: str = "") -> str:
             try:
                 caminho = gerar_imagem(descricao, groq_client=groq)
                 # Abre no visualizador padrão do SO
-                os.startfile(caminho)
+                _open_path(caminho)
                 # Notifica via JARVIS UI se disponível
                 _exibir = getattr(app, "_exibir_resposta", None)
                 root    = getattr(app, "root", None)
@@ -2085,8 +2087,7 @@ def _t_criar_apresentacao(app, titulo="", subtitulo="", tema="", gerar_imagens=T
     except Exception as e:
         return f"ERRO: falha ao gerar apresentação: {e}"
     try:
-        import os as _os
-        _os.startfile(path)  # type: ignore[attr-defined]  # abre no PowerPoint (Windows)
+        _open_path(path)  # abre no app padrão (PowerPoint no Windows)
     except Exception:
         pass
     return f"Apresentação criada com {len(slides or [])} slides e aberta: {path}"
@@ -2195,8 +2196,7 @@ def _t_criar_relatorio(app, titulo="", subtitulo="", tema="", tipo_fonte="generi
     except Exception as e:
         return f"ERRO: falha ao gerar relatório: {e}"
     try:
-        import os as _os
-        _os.startfile(path)  # type: ignore[attr-defined]
+        _open_path(path)
     except Exception:
         pass
     return f"Relatório PDF criado com {len(secoes or [])} seções e aberto: {path}"
@@ -2351,8 +2351,7 @@ def _t_criar_documento_word(app, titulo="", subtitulo="", fonte_dossie="", forma
     except Exception as e:
         return f"ERRO: falha ao gerar Word: {e}"
     try:
-        import os as _os
-        _os.startfile(path)  # type: ignore[attr-defined]
+        _open_path(path)
     except Exception:
         pass
     return f"Documento Word criado com {len(secoes)} seções e aberto: {path}"
@@ -2385,8 +2384,7 @@ def _t_exportar_pdf(app, arquivo=""):
         return ("ERRO: não consegui converter. Instale o MS Office ou o LibreOffice "
                 "(https://libreoffice.org) para conversão de Word/Excel/PowerPoint → PDF.")
     try:
-        import os as _os
-        _os.startfile(pdf)  # type: ignore[attr-defined]
+        _open_path(pdf)
     except Exception:
         pass
     return f"PDF gerado e aberto: {pdf}"
@@ -2441,8 +2439,7 @@ def _t_criar_planilha(app, titulo="", tema="", abas=None):
     except Exception as e:
         return f"ERRO: falha ao gerar planilha: {e}"
     try:
-        import os as _os
-        _os.startfile(path)  # type: ignore[attr-defined]
+        _open_path(path)
     except Exception:
         pass
     return f"Planilha criada com {len(abas or [])} aba(s) e aberta: {path}"

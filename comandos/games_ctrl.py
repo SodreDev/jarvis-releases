@@ -17,14 +17,15 @@ import time
 from pathlib import Path
 
 from core import game_library
+from jarvis.platform import open_path as _open_path
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
 def _shell_open(target: str) -> bool:
-    """os.startfile com try/except. True se chamada não levantou."""
+    """open_path (os.startfile no Windows) com try/except. True se não levantou."""
     try:
-        os.startfile(target)  # type: ignore[attr-defined]
+        _open_path(target)
         return True
     except Exception:
         try:

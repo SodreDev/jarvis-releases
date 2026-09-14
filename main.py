@@ -151,6 +151,7 @@ except Exception as _e_pynput:
 from jarvis.platform import has_feature as _has_feature
 from jarvis.platform import paths as _plat_paths
 from jarvis.platform import Cap, get as _plat_get, has as _plat_has, processes as _plat_processes
+from jarvis.platform import open_path as _open_path, open_text_file as _open_text_file
 
 # Migra credenciais/dados legados para credentials/ ANTES de importar config,
 # para que load_dotenv() encontre o .env já na nova localização.
@@ -2925,7 +2926,7 @@ class JarvisApp:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(str(content or ""))
             try:
-                subprocess.Popen(["notepad.exe", path], close_fds=True)
+                _open_text_file(path)  # Windows: notepad.exe; Linux: editor padrão
             except Exception:
                 pass
         except Exception:
@@ -8966,8 +8967,7 @@ class JarvisApp:
                 raise ValueError(f"tipo desconhecido: {tipo}")
 
             try:
-                import os as _os
-                _os.startfile(path)  # type: ignore[attr-defined]
+                _open_path(path)
             except Exception:
                 pass
             self.root.after(0, self._exibir_resposta,
@@ -8988,7 +8988,7 @@ class JarvisApp:
             groq = getattr(self, "_groq", None)
             caminho = gerar_imagem(descricao, groq_client=groq)
             try:
-                _os.startfile(caminho)  # type: ignore[attr-defined]
+                _open_path(caminho)
             except Exception:
                 pass
             nome = _os.path.basename(caminho)
