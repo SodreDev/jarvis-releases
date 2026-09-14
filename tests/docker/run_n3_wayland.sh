@@ -75,6 +75,7 @@ else
     CMD=("${DEFAULT_CMD[@]}")
 fi
 
+set +e
 podman run --rm --init \
     --security-opt label=disable \
     -v "$RUNTIME_DIR/$SOCKET_NAME:/run/jt/$SOCKET_NAME" \
@@ -84,3 +85,14 @@ podman run --rm --init \
     -e JARVIS_TEST_SANDBOXED=1 \
     "$IMAGE" \
     "${CMD[@]}"
+RUN_RC=$?
+set -e
+
+# rc=5 do pytest = "nenhum teste coletado" (ex.: marcador -m errado, ou
+# caminho sem teste nenhum) -- passa despercebido se só olharmos "não deu
+# erro de infra"; achado no smoke de regressão do reload x10, onde faltava
+# o marcador x11 em tests/smoke/test_reload_ui_qt.py.
+if [ "$RUN_RC" -eq 5 ]; then
+    echo "[N3] FALHA: pytest rc=5 -- nenhum teste coletado (marcador/caminho errado?)" >&2
+fi
+exit "$RUN_RC"
