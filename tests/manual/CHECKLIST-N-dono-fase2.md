@@ -22,6 +22,19 @@ Wayland do Plasma ativa (`echo $XDG_SESSION_TYPE` → `wayland`).
   modo "ouvindo" (indicação visual de gravação).
 - [ ] Soltar o atalho: o Jarvis deve parar de gravar e começar a
   processar o áudio.
+- [ ] No Wayland, **só o PTT (Meta+Shift+G) é global**. Os 4 atalhos
+  extras de `config.HOTKEYS` (os que funcionam no Windows/X11) ficam
+  DESLIGADOS nesta sessão — decisão registrada: no Wayland eles seriam
+  exclusivos (tirariam as teclas dos outros apps por completo, não só
+  quando o Jarvis está em foco).
+  - [ ] Confira que aparece UMA ÚNICA vez no terminal/log a mensagem
+    `[HOTKEYS] Atalhos do config.HOTKEYS desligados nesta sessão: aqui
+    seriam exclusivos e tirariam essas teclas dos outros apps.` (não
+    repete a cada tentativa).
+  - [ ] Confira que **Ctrl+Shift+C** e **Ctrl+Shift+S** (ou os atalhos
+    que o `config.HOTKEYS` desta instalação usa) continuam funcionando
+    NORMALMENTE nos outros apps (ex.: copiar cor/tirar print no
+    navegador, no terminal, etc.) — não foram capturados pelo Jarvis.
 
 ## 2. Bandeja do sistema
 
