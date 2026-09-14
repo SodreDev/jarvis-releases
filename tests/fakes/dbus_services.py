@@ -6,10 +6,12 @@ F2-05 (Notifications) e F2-07 (ScreenSaver/Mutter/logind).
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from contextlib import contextmanager
 
 import dbus
+import dbus.bus
 from dbusmock import DBusTestCase
 
 
@@ -22,15 +24,24 @@ def fake_dbus_service(bus_name: str, obj_path: str, interface: str):
     o comportamento; `mock_iface.EmitSignal(...)` dispara sinais;
     `real_iface` é o proxy pela interface real, para o código sob teste
     (ou o próprio teste) chamar como se fosse o serviço de verdade.
+
+    Conexão NOVA por chamada (`dbus.bus.BusConnection`, fechada no
+    teardown) em vez de `dbus.SessionBus()`: essa é uma conexão
+    compartilhada e cacheada pela lib `dbus-python` — a partir do
+    segundo teste que a usa, ela continua apontando para o barramento
+    privado de um teste ANTERIOR já encerrado (`Disconnected`), porque
+    o `private_session_bus` sobe um `dbus-daemon` novo por teste mas o
+    cache de conexão não sabe disso.
     """
     proc: subprocess.Popen = DBusTestCase.spawn_server(bus_name, obj_path, interface, system_bus=False)
+    bus = dbus.bus.BusConnection(os.environ["DBUS_SESSION_BUS_ADDRESS"])
     try:
-        bus = dbus.SessionBus()
         obj = bus.get_object(bus_name, obj_path)
         mock_iface = dbus.Interface(obj, "org.freedesktop.DBus.Mock")
         real_iface = dbus.Interface(obj, interface)
         yield mock_iface, real_iface
     finally:
+        bus.close()
         proc.terminate()
         try:
             proc.wait(timeout=3)

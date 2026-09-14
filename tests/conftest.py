@@ -55,6 +55,14 @@ def private_session_bus(monkeypatch):
     aponta `DBUS_SESSION_BUS_ADDRESS` pra ele e mata só esse PID no fim.
     Regra da SPEC F2: "nenhum teste pode falar com o DBUS_SESSION_BUS_ADDRESS
     do host". Devolve o endereço do barramento (string).
+
+    Também aponta `DBUS_SYSTEM_BUS_ADDRESS` pro MESMO barramento privado
+    (F2-07: `LogindSession` em produção fala com o barramento de SISTEMA
+    de verdade — `org.freedesktop.login1` mora lá — via
+    `DBUS_SYSTEM_BUS_ADDRESS` se definida, senão
+    `unix:path=/run/dbus/system_bus_socket`). Sem isso, qualquer teste
+    que exercite esse caminho falaria por acidente com o D-Bus de
+    SISTEMA de verdade do host.
     """
     if shutil.which("dbus-daemon") is None:
         pytest.skip("dbus-daemon não está instalado neste host/container")
@@ -70,6 +78,7 @@ def private_session_bus(monkeypatch):
     address, pid = lines[0], int(lines[1])
 
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", address)
+    monkeypatch.setenv("DBUS_SYSTEM_BUS_ADDRESS", address)
     try:
         yield address
     finally:
