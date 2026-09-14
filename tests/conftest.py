@@ -1,7 +1,14 @@
 """Fixtures compartilhadas dos testes do Jarvis."""
+import os
+import shutil
+import signal
+import subprocess
 import sys
 
 import pytest
+
+from tests.fakes.tools import install_fake_tools, prepend_to_path
+from tests.fakes.windll import FakeWinDLL, build_fake_ctypes
 
 
 @pytest.fixture
@@ -40,3 +47,66 @@ def isolated_home(tmp_path, monkeypatch):
         "data": data_dir,
         "state": state_dir,
     }
+
+
+@pytest.fixture
+def private_session_bus(monkeypatch):
+    """Sobe um `dbus-daemon --session` PRIVADO (nunca o D-Bus do host),
+    aponta `DBUS_SESSION_BUS_ADDRESS` pra ele e mata só esse PID no fim.
+    Regra da SPEC F2: "nenhum teste pode falar com o DBUS_SESSION_BUS_ADDRESS
+    do host". Devolve o endereço do barramento (string).
+    """
+    if shutil.which("dbus-daemon") is None:
+        pytest.skip("dbus-daemon não está instalado neste host/container")
+
+    result = subprocess.run(
+        ["dbus-daemon", "--session", "--fork", "--print-address=1", "--print-pid=1"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=True,
+    )
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    address, pid = lines[0], int(lines[1])
+
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", address)
+    try:
+        yield address
+    finally:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+
+@pytest.fixture
+def fake_tools(tmp_path, monkeypatch):
+    """Devolve `build(scripts) -> {nome: caminho do .calls}`: cria um
+    executável por entrada de `scripts` (nome da ferramenta -> corpo do
+    shell script, ex.: `{"wpctl": "echo '0.50'"}`), coloca a pasta na
+    FRENTE do PATH (só para este teste) e devolve onde ler os argumentos
+    que cada chamada recebeu.
+    """
+    bin_dir = tmp_path / "fake_tools_bin"
+    calls_dir = tmp_path / "fake_tools_calls"
+
+    def _build(scripts: dict[str, str]) -> dict:
+        calls_paths = install_fake_tools(bin_dir, calls_dir, scripts)
+        monkeypatch.setenv("PATH", prepend_to_path(bin_dir))
+        return calls_paths
+
+    return _build
+
+
+@pytest.fixture
+def fake_windll():
+    """Devolve `build(dlls, *, last_error=0) -> módulo ctypes falso`.
+    `dlls` é `{"kernel32": FakeWinDLL(), "user32": FakeWinDLL(), ...}` —
+    ver `tests/fakes/windll.py` (`FakeWinDLL`, `FakeWinFunc`). Só
+    `ctypes.WinDLL`/`ctypes.get_last_error` são trocados; o resto do
+    `ctypes` continua sendo o real do host.
+    """
+    return build_fake_ctypes
+
+
+__all__ = ["FakeWinDLL"]  # reexportado por conveniência (from tests.conftest import FakeWinDLL)

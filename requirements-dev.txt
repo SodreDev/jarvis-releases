@@ -1,0 +1,9 @@
+# Dependências só de teste/CI, nunca embarcadas no build de produção nem
+# no AppImage. Não misturar com requirements.txt (dependências do Jarvis
+# em si).
+-r requirements.txt
+
+# Fase 2 (T0): mock de serviços D-Bus (portal, watcher, MPRIS) em
+# barramento privado — nunca fala com o D-Bus real. Só faz sentido no
+# Linux (a Fase 1 não tinha equivalente Windows para isso).
+python-dbusmock; sys_platform == "linux"
