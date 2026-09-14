@@ -36,6 +36,19 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
             "jarvis.platform.linux.open_path:GioOpen",
         ),
     },
+    # F2-04: headless sem clipboard.
+    Cap.CLIPBOARD: {
+        "win32": ("jarvis.platform.windows.clipboard:WindowsClipboard",),
+        "linux-wayland": (
+            "jarvis.platform.linux_wayland.clipboard:WlClipboard",
+            "jarvis.platform.linux.clipboard_klipper:KlipperClipboard",
+        ),
+        "linux-x11": (
+            "jarvis.platform.linux_x11.clipboard:XclipClipboard",
+            "jarvis.platform.linux_x11.clipboard:XselClipboard",
+            "jarvis.platform.linux.clipboard_klipper:KlipperClipboard",
+        ),
+    },
     # F2-07: XdgSession fecha as cadeias Linux (sem idle, mas locale/fuso sempre).
     Cap.SESSION: {
         "win32": ("jarvis.platform.windows.session:WindowsSession",),

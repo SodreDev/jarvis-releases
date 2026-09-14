@@ -187,6 +187,9 @@ hidden = [
     'jarvis.platform.windows.open_path', 'jarvis.platform.linux.open_path',
     'jarvis.platform.windows.session', 'jarvis.platform.linux.session',
     'jarvis.platform.linux_x11', 'jarvis.platform.linux_x11.session',
+    'jarvis.platform.windows.clipboard', 'jarvis.platform.linux.clipboard_klipper',
+    'jarvis.platform.linux_wayland', 'jarvis.platform.linux_wayland.clipboard',
+    'jarvis.platform.linux_x11.clipboard',
     # tomli (fallback se tomllib stdlib não estiver presente; >=3.11 tem)
     'tomllib',
     # ── Fases 2026: painel, documentos, updater ──────────────────────────

@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-pytestmark = pytest.mark.xfail(strict=True, reason="F2-04")
+pytestmark = []
 
 
 class _FakeCapClipboard:

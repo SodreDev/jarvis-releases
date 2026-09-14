@@ -20,8 +20,10 @@ _SNIPPET = (
 def test_import_nao_carrega_pesados():
     # report() sonda as capacidades (F2: NOTIFIER via D-Bus). Aponta o D-Bus
     # para um socket inexistente: o teste nunca fala com o barramento do host.
+    # headless: report() não roda wl-paste/xclip na sessão gráfica de quem testa.
     env = dict(
         os.environ,
+        JARVIS_PLATFORM="linux-headless",
         DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/jarvis-sem-barramento",
         DBUS_SYSTEM_BUS_ADDRESS="unix:path=/nonexistent/jarvis-sem-barramento-sistema",
     )

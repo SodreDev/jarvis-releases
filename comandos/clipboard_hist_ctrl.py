@@ -3,12 +3,16 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import annotations
-import threading, ctypes, time
+import threading, ctypes
+
+from jarvis.platform import Cap, get as _plat_get
 
 _history: list[str] = []
 _MAX = 50
 _monitor_thread: threading.Thread | None = None
 _stop_event = threading.Event()
+_last: str | None = None
+_aviso_sem_monitor = False
 
 # Instâncias PRIVADAS de user32/kernel32 (F1-12): criadas uma vez, com protótipos
 # próprios. Não usar ctypes.windll (compartilhado) — definir restype/argtypes nele
@@ -73,30 +77,52 @@ def _get_clipboard_text() -> str | None:
         user32.CloseClipboard()
 
 
-def _monitor_loop():
-    last = None
-    while not _stop_event.is_set():
-        try:
-            txt = _get_clipboard_text()
-            if txt and txt != last and len(txt.strip()) > 1:
-                last = txt
-                if not _history or _history[-1] != txt:
-                    _history.append(txt)
-                    if len(_history) > _MAX:
-                        _history.pop(0)
-        except Exception:
-            pass
-        time.sleep(0.8)
+def _plat_get_clipboard():
+    """Backend de clipboard da plataforma (Cap.CLIPBOARD)."""
+    return _plat_get(Cap.CLIPBOARD)
+
+
+def _on_change(txt):
+    """Regras do histórico: não repete o último, ignora 1 caractere, limite _MAX."""
+    global _last
+    if txt and txt != _last and len(txt.strip()) > 1:
+        _last = txt
+        if not _history or _history[-1] != txt:
+            _history.append(txt)
+            if len(_history) > _MAX:
+                _history.pop(0)
+
+
+def _monitor_loop(backend):
+    try:
+        backend.watch(_on_change, _stop_event)
+    except Exception as e:
+        print(f"[CLIPBOARD] monitor de clipboard parou: {e}")
 
 
 def start_monitor():
-    """Inicia o monitor de clipboard em background."""
-    global _monitor_thread
+    """Inicia o monitor de clipboard em background (watch do backend numa thread).
+
+    Sem backend que consiga monitorar, avisa UMA vez e não inicia nada (D-F2-8).
+    """
+    global _monitor_thread, _last, _aviso_sem_monitor
     if _monitor_thread and _monitor_thread.is_alive():
         return
+    backend = _plat_get_clipboard()
+    try:
+        pode = bool(backend.can_watch)
+    except Exception:
+        pode = False
+    if not pode:
+        if not _aviso_sem_monitor:
+            _aviso_sem_monitor = True
+            print("[CLIPBOARD] monitor de clipboard desligado: nesta sessão nenhum backend "
+                  "consegue acompanhar a área de transferência.")
+        return
     _stop_event.clear()
+    _last = None
     _monitor_thread = threading.Thread(
-        target=_monitor_loop, daemon=True, name="clipboard-hist"
+        target=_monitor_loop, args=(backend,), daemon=True, name="clipboard-hist"
     )
     _monitor_thread.start()
 

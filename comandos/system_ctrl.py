@@ -249,16 +249,17 @@ def garantir_mic_maximo() -> None:
 
 def get_clipboard() -> str:
     try:
-        import pyperclip
-        return pyperclip.paste() or ""
+        from jarvis.platform import Cap, get as _plat_get
+        return _plat_get(Cap.CLIPBOARD).get_text() or ""
     except Exception:
         return ""
 
 
 def set_clipboard(texto: str) -> str:
     try:
-        import pyperclip
-        pyperclip.copy(texto)
+        from jarvis.platform import Cap, get as _plat_get
+        if not _plat_get(Cap.CLIPBOARD).set_text(texto):
+            raise RuntimeError("área de transferência indisponível")
         return "Copiado para a área de transferência, Senhor."
     except Exception as e:
         return f"Não foi possível copiar: {e}"
