@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
 # Smoke de regressão de uma (ou das 4) distro(s): build a partir do HEAD
 # commitado (git archive -- nunca a working tree, pra não pegar trabalho
-# uncommitted de outro agente), import de smoke, N1 (sem display) e N2 X11
-# (Xvfb). N3 Wayland fica de fora daqui (precisa de kwin_wayland no HOST,
-# ver tests/docker/run_n3_wayland.sh) -- rode-o à parte se precisar.
+# uncommitted de outro agente), import de smoke, N1 (sem display), N2 X11
+# (Xvfb, boot + reload x10) e, opcionalmente, N3 Wayland (via
+# run_n3_wayland.sh, precisa de kwin_wayland no HOST).
 #
 # Uso:
-#   tests/docker/run_regression.sh                      # só fedora44
-#   tests/docker/run_regression.sh fedora44 debian12     # distros escolhidas
-#   tests/docker/run_regression.sh all                   # as 4
+#   tests/docker/run_regression.sh                       # só fedora44
+#   tests/docker/run_regression.sh fedora44 debian12      # distros escolhidas
+#   tests/docker/run_regression.sh all                    # as 4
+#   JARVIS_REGRESSION_N3=1 tests/docker/run_regression.sh fedora44   # + N3
+#
+# N3 é opt-in (`JARVIS_REGRESSION_N3=1`) porque precisa de `kwin_wayland`
+# no host e é mais lento -- sem a variável, o comportamento é o mesmo de
+# antes (N1 + N2 boot + N2 reload).
 #
 # Log por distro em /tmp/jarvis-build-<distro>-reg.log. Todo `podman run`
 # usa `--init` (sem ele um neto órfão vira zumbi pra sempre em vez de ser
-# recolhido -- achado no N1, ver MATRIZ.md).
+# recolhido -- achado no N1, ver MATRIZ.md). rc=5 do pytest ("nenhum teste
+# coletado") conta como FALHA, não sucesso silencioso.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -26,8 +32,10 @@ else
     DISTROS=("$@")
 fi
 
+WITH_N3="${JARVIS_REGRESSION_N3:-0}"
 HEAD_SHA="$(git rev-parse HEAD)"
 OVERALL_RC=0
+declare -A SUMMARY
 
 # rc=5 do pytest = "nenhum teste coletado" (marcador/caminho errado) --
 # sem isso vira sucesso silencioso. Ver a lição de test_reload_ui_qt.py
@@ -65,6 +73,7 @@ for distro in "${DISTROS[@]}"; do
     if [ "$BUILD_RC" -ne 0 ]; then
         echo "== $distro: build falhou, pulando resto ==" >> "$LOG"
         OVERALL_RC=1
+        SUMMARY[$distro]="build=FALHOU"
         find "$CTX" -mindepth 1 -delete
         rmdir "$CTX"
         continue
@@ -75,26 +84,46 @@ for distro in "${DISTROS[@]}"; do
         python -c "import jeepney, webview, PySide6.QtWebEngineWidgets; print('ok')" >> "$LOG" 2>&1
     IMPORT_RC=$?
     echo "import_rc=$IMPORT_RC" >> "$LOG"
-    [ "$IMPORT_RC" -ne 0 ] && OVERALL_RC=1
+    [ "$IMPORT_RC" -eq 0 ] && IMPORT_STATUS=ok || { IMPORT_STATUS=FALHOU; OVERALL_RC=1; }
 
     run_pytest_step "$distro N1" "/tmp/jarvis-reg-${distro}-n1.log" \
         timeout --signal=KILL 600 podman run --rm --init -e JARVIS_TEST_SANDBOXED=0 "jarvis-${distro}" \
-        pytest -m "not needs_display and not windows_only and not slow" \
-        || OVERALL_RC=1
+        pytest -m "not needs_display and not windows_only and not slow"
+    N1_RC=$?
+    [ "$N1_RC" -eq 0 ] && N1_STATUS=ok || { N1_STATUS=FALHOU; OVERALL_RC=1; }
 
     run_pytest_step "$distro N2 boot x11" "/tmp/jarvis-reg-${distro}-n2-boot.log" \
         timeout --signal=KILL 150 podman run --rm --init "jarvis-${distro}" \
-        xvfb-run -a pytest -m x11 tests/smoke/test_boot_x11.py \
-        || OVERALL_RC=1
+        xvfb-run -a pytest -m x11 tests/smoke/test_boot_x11.py
+    N2_RC=$?
+    [ "$N2_RC" -eq 0 ] && N2_STATUS=ok || { N2_STATUS=FALHOU; OVERALL_RC=1; }
 
     run_pytest_step "$distro N2 reload x10" "/tmp/jarvis-reg-${distro}-n2-reload.log" \
         timeout --signal=KILL 150 podman run --rm --init "jarvis-${distro}" \
-        xvfb-run -a pytest -m x11 tests/smoke/test_reload_ui_qt.py \
-        || OVERALL_RC=1
+        xvfb-run -a pytest -m x11 tests/smoke/test_reload_ui_qt.py
+    RELOAD_RC=$?
+    [ "$RELOAD_RC" -eq 0 ] && RELOAD_STATUS=ok || { RELOAD_STATUS=FALHOU; OVERALL_RC=1; }
+
+    N3_STATUS="pulado"
+    if [ "$WITH_N3" = "1" ]; then
+        run_pytest_step "$distro N3 boot wayland" "/tmp/jarvis-reg-${distro}-n3-boot.log" \
+            env JARVIS_N3_IMAGE="jarvis-${distro}" timeout --signal=KILL 180 \
+            "$REPO_ROOT/tests/docker/run_n3_wayland.sh" \
+            pytest -m wayland tests/smoke/test_boot_wayland.py
+        N3_RC=$?
+        [ "$N3_RC" -eq 0 ] && N3_STATUS=ok || { N3_STATUS=FALHOU; OVERALL_RC=1; }
+    fi
+
+    SUMMARY[$distro]="build=ok import=$IMPORT_STATUS N1=$N1_STATUS N2=$N2_STATUS reload=$RELOAD_STATUS N3=$N3_STATUS"
 
     find "$CTX" -mindepth 1 -delete
     rmdir "$CTX"
     echo "== $distro: fim $(date -Iseconds) ==" >> "$LOG"
+done
+
+echo "--- resumo ---"
+for distro in "${DISTROS[@]}"; do
+    echo "[$distro] ${SUMMARY[$distro]:-sem_resultado}"
 done
 
 echo "REGRESSAO_TERMINOU overall_rc=$OVERALL_RC"
