@@ -59,3 +59,19 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
   usar também, ex.: `podman run --rm --init -e JARVIS_TEST_SANDBOXED=0
   jarvis-fedora44 pytest -m "not needs_display and not windows_only and
   not slow"`.
+- **N3 e `kglobalacceld` (F2-01, fallback do portal)**: `run_n3_wayland.sh`
+  sobe `dbus-run-session` + `/usr/libexec/kglobalacceld` (binário sem
+  atalho no PATH) ANTES do comando real, no mesmo barramento de sessão.
+  Duas variáveis só para o processo do daemon:
+  - `QT_QPA_PLATFORM=offscreen` — é app Qt; sem display real aborta com
+    core dump tentando o plugin xcb (achado no N1/N3 do G-C, commit
+    dcd0611).
+  - `XDG_SESSION_TYPE=x11` — com `XDG_SESSION_TYPE=wayland` (o valor que
+    o resto do container usa) o binário sai em SILÊNCIO, código 0, sem
+    logar nada: ele assume que o compositor Wayland já provê shortcuts
+    globais e se recusa a rodar standalone. Com `x11` ele roda normal
+    mesmo com `WAYLAND_DISPLAY` real setado (achado preparando o N3 antes
+    da F2-01).
+  Confirmado manualmente contra o daemon REAL (não um fake dbusmock):
+  `doRegister`/`setShortcut`/`getComponent` funcionam e
+  `org.kde.kglobalaccel` aparece em `busctl --user list`.

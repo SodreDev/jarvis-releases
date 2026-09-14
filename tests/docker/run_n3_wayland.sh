@@ -75,6 +75,23 @@ else
     CMD=("${DEFAULT_CMD[@]}")
 fi
 
+# `dbus-run-session` + `kglobalacceld` sobem ANTES do comando real, no
+# mesmo barramento de sessão do container: o smoke de PTT via KGlobalAccel
+# (F2-01, fallback do portal) precisa de org.kde.kglobalaccel no ar quando
+# o Jarvis tentar se registrar. Duas variáveis são sobrescritas SÓ para o
+# processo do daemon (o comando real continua com o Wayland de verdade via
+# `WAYLAND_DISPLAY`), achadas testando manualmente (ver MATRIZ.md):
+#   - `QT_QPA_PLATFORM=offscreen`: é um app Qt: sem display real ele aborta
+#     tentando o plugin xcb.
+#   - `XDG_SESSION_TYPE=x11`: com `XDG_SESSION_TYPE=wayland` (o valor que
+#     este script usa para o container todo) o binário sai em SILÊNCIO com
+#     código 0 sem logar nada -- ele assume que o compositor Wayland já
+#     provê shortcuts globais e se recusa a rodar standalone. Com `x11`
+#     ele roda normalmente mesmo com WAYLAND_DISPLAY setado.
+# Confirmado: `doRegister` + `setShortcut` + `getComponent` funcionam
+# contra o daemon real assim.
+INNER_SCRIPT='XDG_SESSION_TYPE=x11 QT_QPA_PLATFORM=offscreen /usr/libexec/kglobalacceld >/tmp/kglobalacceld.log 2>&1 & sleep 2; exec "$@"'
+
 set +e
 podman run --rm --init \
     --security-opt label=disable \
@@ -84,7 +101,7 @@ podman run --rm --init \
     -e XDG_SESSION_TYPE=wayland \
     -e JARVIS_TEST_SANDBOXED=1 \
     "$IMAGE" \
-    "${CMD[@]}"
+    dbus-run-session -- bash -c "$INNER_SCRIPT" bash "${CMD[@]}"
 RUN_RC=$?
 set -e
 
