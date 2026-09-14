@@ -150,7 +150,7 @@ except Exception as _e_pynput:
     print(f"[HOTKEYS] pynput indisponível: {_e_pynput}")
 from jarvis.platform import has_feature as _has_feature
 from jarvis.platform import paths as _plat_paths
-from jarvis.platform import processes as _plat_processes
+from jarvis.platform import Cap, get as _plat_get, has as _plat_has, processes as _plat_processes
 
 # Migra credenciais/dados legados para credentials/ ANTES de importar config,
 # para que load_dotenv() encontre o .env já na nova localização.
@@ -12505,6 +12505,15 @@ class JarvisApp:
             self._set_status("●  WAKE · ESCUTANDO  |  Diga 'Ei Jarvis'")
         else:
             self._set_status("● PRONTO  |  Segure Shift+G para falar")
+        # F2-05: com a janela escondida na bandeja, avisa por notificação do
+        # sistema. No win32 não há notifier no registro (D-F2-5): nada muda.
+        if getattr(self, "_tray_visible", False) and _plat_has(Cap.NOTIFIER):
+            def _notificar(_corpo=(texto or "")[:200]):
+                try:
+                    _plat_get(Cap.NOTIFIER).notify("J.A.R.V.I.S.", _corpo)
+                except Exception as _e_notif:
+                    print(f"[NOTIF] falhou: {_e_notif}")
+            threading.Thread(target=_notificar, daemon=True, name="Notifier").start()
         # Captura a troca de voz para o contexto multi-turno
         if self._voz_pending_input is not None:
             self._voz_ctx.append({

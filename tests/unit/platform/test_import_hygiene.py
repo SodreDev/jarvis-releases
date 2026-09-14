@@ -1,4 +1,5 @@
 """Higiene de import: importar/usar jarvis.platform não puxa dependências pesadas."""
+import os
 import subprocess
 import sys
 
@@ -17,11 +18,15 @@ _SNIPPET = (
 
 
 def test_import_nao_carrega_pesados():
+    # report() sonda as capacidades (F2: NOTIFIER via D-Bus). Aponta o D-Bus
+    # para um socket inexistente: o teste nunca fala com o barramento do host.
+    env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/jarvis-sem-barramento")
     proc = subprocess.run(
         [sys.executable, "-c", _SNIPPET],
         capture_output=True,
         text=True,
         timeout=60,
+        env=env,
     )
     assert proc.returncode == 0, (
         f"jarvis.platform carregou módulos pesados no import/uso:\n"

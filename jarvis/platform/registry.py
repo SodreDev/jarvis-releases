@@ -29,6 +29,17 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
         "win32": ("jarvis.platform.windows.processes:WindowsProcesses",),
         "linux-*": ("jarvis.platform.linux.processes:PosixProcesses",),
     },
+    # F2-05: só Linux com sessão gráfica; win32 sem notifier nesta fase (D-F2-5).
+    Cap.NOTIFIER: {
+        "linux-wayland": (
+            "jarvis.platform.linux.notifier:DbusNotifier",
+            "jarvis.platform.linux.notifier:NotifySendNotifier",
+        ),
+        "linux-x11": (
+            "jarvis.platform.linux.notifier:DbusNotifier",
+            "jarvis.platform.linux.notifier:NotifySendNotifier",
+        ),
+    },
 }
 
 _CACHE: Dict[Cap, object] = {}
