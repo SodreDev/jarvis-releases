@@ -4,11 +4,12 @@ import dentro de cada teste). `xfail(strict=True, reason="F2-08")`.
 MPRIS: DOIS players D-Bus falsos no barramento privado
 (`private_session_bus` + `tests/fakes/dbus_services.fake_dbus_service`).
 """
+import dbus
 import pytest
 
 from tests.fakes.dbus_services import fake_dbus_service
 
-pytestmark = [pytest.mark.linux_only, pytest.mark.xfail(strict=True, reason="F2-08")]
+pytestmark = [pytest.mark.linux_only]
 
 
 def _spawn_player(exit_stack, suffix: str, *, status: str, title: str, artist: str):
@@ -22,7 +23,10 @@ def _spawn_player(exit_stack, suffix: str, *, status: str, title: str, artist: s
     mock.AddProperty(
         "org.mpris.MediaPlayer2.Player",
         "Metadata",
-        {"xesam:title": title, "xesam:artist": [artist]},
+        dbus.Dictionary(
+            {"xesam:title": title, "xesam:artist": dbus.Array([artist], signature="s")},
+            signature="sv",
+        ),
     )
     mock.AddMethod("org.mpris.MediaPlayer2.Player", "PlayPause", "", "", "")
     mock.AddMethod("org.mpris.MediaPlayer2.Player", "Next", "", "", "")
@@ -64,7 +68,7 @@ def test_next_and_previous_go_to_active_player(private_session_bus):
 
 
 def test_no_player_raises_capability_unavailable(private_session_bus):
-    from jarvis.platform.common.errors import CapabilityUnavailable
+    from jarvis.platform.errors import CapabilityUnavailable
     from jarvis.platform.linux.media import MprisMedia
 
     try:
