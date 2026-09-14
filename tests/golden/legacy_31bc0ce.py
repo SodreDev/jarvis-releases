@@ -21,35 +21,42 @@ fase 1.
 from __future__ import annotations
 
 
-# ── F2-06: open_path — main.py:8970/8991 (_os.startfile) e :2928 (notepad) ──
+# ── F2-06: open_path — main.py (_gerar_documento_thread/_gerar_imagem_thread)
+# e _mostrar_texto_longo (notepad) ──
 
-# (arquivo, linha, expressão-fonte do argumento) em 31bc0ce — usado pelo
-# AST de tests/golden/test_startfile_callsites.py para conferir que cada
-# call site continua passando A MESMA expressão de argumento, seja para
+# (arquivo, nome QUALIFICADO da função que envolve a chamada, expressão-fonte
+# do argumento) em 31bc0ce — usado pelo AST de
+# tests/golden/test_startfile_callsites.py para conferir que cada call site
+# continua passando A MESMA expressão de argumento, seja para
 # `os.startfile`/`_os.startfile` (hoje) ou para `_open_path` (depois de
-# F2-06).
-OPEN_PATH_CALL_SITES: list[tuple[str, int, str]] = [
-    ("main.py", 8970, "path"),
-    ("main.py", 8991, "caminho"),
-    ("comandos/executor.py", 27, "url"),
-    ("comandos/games_ctrl.py", 27, "target"),
-    ("comandos/msg_sender.py", 432, "uri"),
-    ("comandos/msg_sender.py", 526, "uri"),
-    ("comandos/msg_sender.py", 578, '"discord://"'),
-    ("comandos/msg_sender.py", 709, '"whatsapp://"'),
-    ("comandos/janela_ctrl.py", 248, "uri"),
-    ("comandos/janela_ctrl.py", 260, "cmd"),
-    ("comandos/janela_ctrl.py", 640, "caminho"),
-    ("comandos/tool_registry.py", 1761, "caminho"),
-    ("comandos/tool_registry.py", 2089, "path"),
-    ("comandos/tool_registry.py", 2199, "path"),
-    ("comandos/tool_registry.py", 2355, "path"),
-    ("comandos/tool_registry.py", 2389, "pdf"),
-    ("comandos/tool_registry.py", 2445, "path"),
+# F2-06). ÂNCORA POR NOME DE FUNÇÃO, não por número de linha: número de
+# linha se desloca com qualquer edição acima do call site (ex.: um import
+# novo no topo do arquivo) mesmo sem o comportamento mudar — visto na F2-05
+# (091fa27), ver FILA. O nome de função é único por call site em cada
+# arquivo (conferido manualmente contra 31bc0ce).
+OPEN_PATH_CALL_SITES: list[tuple[str, str, str]] = [
+    ("main.py", "_gerar_documento_thread", "path"),
+    ("main.py", "_gerar_imagem_thread", "caminho"),
+    ("comandos/executor.py", "_abrir_url_navegador_padrao", "url"),
+    ("comandos/games_ctrl.py", "_shell_open", "target"),
+    ("comandos/msg_sender.py", "enviar_whatsapp", "uri"),
+    ("comandos/msg_sender.py", "enviar_discord_usuario", "uri"),
+    ("comandos/msg_sender.py", "enviar_discord_por_nome", '"discord://"'),
+    ("comandos/msg_sender.py", "enviar_whatsapp_por_nome", '"whatsapp://"'),
+    ("comandos/janela_ctrl.py", "_try_uri_scheme", "uri"),
+    ("comandos/janela_ctrl.py", "_try_alias_shutil", "cmd"),
+    ("comandos/janela_ctrl.py", "abrir_app", "caminho"),
+    ("comandos/tool_registry.py", "_t_gerar_imagem._gen", "caminho"),
+    ("comandos/tool_registry.py", "_t_criar_apresentacao", "path"),
+    ("comandos/tool_registry.py", "_t_criar_relatorio", "path"),
+    ("comandos/tool_registry.py", "_t_criar_documento_word", "path"),
+    ("comandos/tool_registry.py", "_t_exportar_pdf", "pdf"),
+    ("comandos/tool_registry.py", "_t_criar_planilha", "path"),
 ]
 
-# main.py:2928 — `subprocess.Popen(["notepad.exe", path], close_fds=True)`
-NOTEPAD_CALL_SITE_LINE = 2928
+# main.py, dentro de `_mostrar_texto_longo` —
+# `subprocess.Popen(["notepad.exe", path], close_fds=True)`
+NOTEPAD_CALL_SITE_FUNC = "_mostrar_texto_longo"
 NOTEPAD_CALL_SITE_ARGS = ['"notepad.exe"', "path"]  # expressões-fonte exatas
 
 
@@ -391,7 +398,7 @@ def legacy_o_que_esta_tocando(run_fn) -> str:
 
 __all__ = [
     "OPEN_PATH_CALL_SITES",
-    "NOTEPAD_CALL_SITE_LINE",
+    "NOTEPAD_CALL_SITE_FUNC",
     "NOTEPAD_CALL_SITE_ARGS",
     "legacy_open_path_windows",
     "legacy_open_text_file_windows",
