@@ -39,6 +39,9 @@ RUN dnf install -y \
         mesa-libGL \
         mesa-libEGL \
         fontconfig \
+        dbus-daemon \
+        kglobalacceld \
+        kf6-kglobalaccel \
     && dnf clean all
 
 ENV UV_INSTALL_DIR=/usr/local/bin
