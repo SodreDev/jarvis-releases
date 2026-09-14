@@ -121,23 +121,28 @@ def _clear_all() -> None:
 def report(ctx=None) -> dict:
     """Relatório do estado da resolução para diagnóstico."""
     ctx = _default_ctx(ctx)
-    from .features import features_for
+    from .features import effective_features
 
     caps: Dict[str, dict] = {}
     for cap in Cap:
+        chain = list(_chain_for(cap, ctx.kind))
         inst = resolve(cap, ctx)
         if isinstance(inst, Unavailable):
-            caps[cap.value] = {"backend": None, "tried": list(inst._tried)}
+            caps[cap.value] = {"backend": None, "chain": chain, "tried": list(inst._tried)}
         else:
             caps[cap.value] = {
                 "backend": getattr(inst, "name", type(inst).__name__),
+                "chain": chain,
                 "tried": [],
             }
 
+    features = effective_features(
+        ctx, has=lambda c: has(c, ctx), get=lambda c: resolve(c, ctx)
+    )
     return {
         "kind": ctx.kind,
         "source": ctx.source,
         "desktops": list(ctx.desktops),
         "capabilities": caps,
-        "features": sorted(features_for(ctx)),
+        "features": sorted(features),
     }

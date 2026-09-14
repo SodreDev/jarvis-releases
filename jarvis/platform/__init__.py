@@ -15,7 +15,7 @@ from . import registry
 from .capabilities import Cap
 from .detect import PlatformContext, detect
 from .errors import CapabilityUnavailable
-from .features import features_for
+from .features import feature_enabled
 
 if TYPE_CHECKING:  # pragma: no cover - só para type checkers
     from .protocols import Paths, Processes, WebviewEngine
@@ -56,8 +56,14 @@ def has(cap: Cap) -> bool:
 
 
 def has_feature(name: str) -> bool:
-    """True se a feature está ativa no contexto atual."""
-    return name in features_for(current())
+    """True se a feature está ativa no contexto atual.
+
+    Estático (features_for) OU, só no Linux, derivado da capacidade real:
+    global_hotkeys = has(HOTKEYS), tray = has(TRAY), clipboard_monitor =
+    has(CLIPBOARD) e can_watch. O "-nome" do JARVIS_FEATURES vence o derivado.
+    No win32 é o estático puro, sem sondar nada.
+    """
+    return feature_enabled(current(), name, has=has, get=get)
 
 
 def report() -> dict:

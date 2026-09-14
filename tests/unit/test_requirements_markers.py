@@ -18,7 +18,8 @@ GOLDEN = REPO_ROOT / "tests" / "golden" / "requirements_1c32e38.txt"
 CURRENT = REPO_ROOT / "requirements.txt"
 
 REMOVED_ON_LINUX = {"pywin32", "pycaw", "uiautomation", "pygetwindow", "pystray"}
-ADDED_ON_LINUX = {"pyside6", "qtpy"}
+# F2-00: jeepney (D-Bus) só no Linux (D-F2-4).
+ADDED_ON_LINUX = {"pyside6", "qtpy", "jeepney"}
 
 
 def _parse(path: Path) -> list[Requirement]:

@@ -52,6 +52,7 @@ pycaw; sys_platform == "win32"
 uiautomation; sys_platform == "win32"
 pyperclip
 pystray; sys_platform == "win32"          # tray Linux = SNI na Fase 2
+jeepney>=0.8,<1; sys_platform == "linux"  # D-Bus puro Python (portal, SNI, notificações, MPRIS)
 plyer
 
 # ── Mídia ─────────────────────────────────────────────────────────────────────
