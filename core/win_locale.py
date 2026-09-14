@@ -28,6 +28,8 @@ try:
 except ImportError:                         # pragma: no cover
     _zi = None  # Python < 3.9 fallback
 
+from jarvis.platform import Cap, current as _plat_current, get as _plat_get
+
 
 # ── Mapa Windows TimeZoneKeyName → IANA ───────────────────────────────────
 # Lista curta com os fusos mais comuns. Para os outros, caímos no offset.
@@ -99,6 +101,8 @@ def _read_winreg_tz_name() -> Optional[str]:
 
 def get_timezone_name() -> str:
     """Retorna nome IANA do timezone do Windows. Fallback: 'UTC'."""
+    if not _plat_current().is_windows:
+        return _plat_get(Cap.SESSION).timezone_name()
     win_name = _read_winreg_tz_name()
     if win_name and win_name in _WIN_TZ_TO_IANA:
         return _WIN_TZ_TO_IANA[win_name]
@@ -127,6 +131,8 @@ def get_now() -> _dt.datetime:
 
 def get_locale() -> str:
     """Retorna locale do Windows no formato 'pt-BR'. Fallback: 'pt-BR'."""
+    if not _plat_current().is_windows:
+        return _plat_get(Cap.SESSION).locale()
     try:
         # locale.getdefaultlocale() → ('pt_BR', 'cp1252')
         loc, _enc = _locale.getdefaultlocale()

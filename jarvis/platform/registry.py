@@ -36,6 +36,26 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
             "jarvis.platform.linux.open_path:GioOpen",
         ),
     },
+    # F2-07: XdgSession fecha as cadeias Linux (sem idle, mas locale/fuso sempre).
+    Cap.SESSION: {
+        "win32": ("jarvis.platform.windows.session:WindowsSession",),
+        "linux-wayland": (
+            "jarvis.platform.linux.session:ScreenSaverSession",
+            "jarvis.platform.linux.session:MutterSession",
+            "jarvis.platform.linux.session:LogindSession",
+            "jarvis.platform.linux.session:XdgSession",
+        ),
+        "linux-x11": (
+            "jarvis.platform.linux.session:ScreenSaverSession",
+            "jarvis.platform.linux_x11.session:XssSession",
+            "jarvis.platform.linux.session:LogindSession",
+            "jarvis.platform.linux.session:XdgSession",
+        ),
+        "linux-headless": (
+            "jarvis.platform.linux.session:LogindSession",
+            "jarvis.platform.linux.session:XdgSession",
+        ),
+    },
     # F2-05: só Linux com sessão gráfica; win32 sem notifier nesta fase (D-F2-5).
     Cap.NOTIFIER: {
         "linux-wayland": (

@@ -7194,22 +7194,11 @@ class JarvisApp:
     def _idle_seconds(self) -> float:
         """
         Retorna quantos segundos o sistema está sem entrada de teclado ou mouse.
-        Usa GetLastInputInfo (Win32) via ctypes puro — sem dependências extras.
+        Windows: GetLastInputInfo; Linux: ScreenSaver/Mutter/logind/XScreenSaver
+        (jarvis.platform, Cap.SESSION). Desconhecido conta como 0 (não ausente).
         """
-        try:
-            import ctypes
-            import ctypes.wintypes
-
-            class _LASTINPUTINFO(ctypes.Structure):
-                _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
-
-            lii = _LASTINPUTINFO()
-            lii.cbSize = ctypes.sizeof(lii)
-            ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii))
-            millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
-            return max(0.0, millis / 1000.0)
-        except Exception:
-            return 0.0
+        v = _plat_get(Cap.SESSION).idle_seconds()
+        return 0.0 if v is None else v
 
     def _is_away(self) -> bool:
         """

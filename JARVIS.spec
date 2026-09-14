@@ -185,6 +185,8 @@ hidden = [
     'jarvis.platform.linux.dbus', 'jarvis.platform.linux.tools', 'jarvis.platform.linux.app_id',
     'jarvis.platform.linux.notifier',
     'jarvis.platform.windows.open_path', 'jarvis.platform.linux.open_path',
+    'jarvis.platform.windows.session', 'jarvis.platform.linux.session',
+    'jarvis.platform.linux_x11', 'jarvis.platform.linux_x11.session',
     # tomli (fallback se tomllib stdlib não estiver presente; >=3.11 tem)
     'tomllib',
     # ── Fases 2026: painel, documentos, updater ──────────────────────────

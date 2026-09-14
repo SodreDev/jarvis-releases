@@ -9,7 +9,7 @@ import pytest
 
 from tests.fakes.dbus_services import fake_dbus_service
 
-pytestmark = [pytest.mark.linux_only, pytest.mark.xfail(strict=True, reason="F2-07")]
+pytestmark = [pytest.mark.linux_only]
 
 
 def test_screensaver_session_reads_idle_seconds(private_session_bus):
