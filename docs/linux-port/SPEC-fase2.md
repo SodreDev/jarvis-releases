@@ -319,9 +319,11 @@ class Processes(Protocol):                     # acrescenta à F1
 **Risco Windows:** médio (fechar-para-bandeja). Golden + N4.
 
 **Aceite:**
-- N1: o watcher falso recebe `RegisterStatusNotifierItem`;
-- N3: watcher falso no barramento do container → registrado; sem watcher → X fecha o app e o processo sai com código 0;
-- N-dono: ícone aparece no painel, e Restaurar/Briefing/Encerrar funcionam.
+- O tray **nasce oculto** (`visible=False`, igual ao golden do pystray no Windows), e o Qt só se registra no watcher quando o ícone fica visível (provado no N3 em `a886ee9`: oculto → `calls=[]`; visível → `Register`);
+- N1/K: o watcher falso recebe `RegisterStatusNotifierItem` **só depois de `set_visible(True)`**; antes disso, nenhuma chamada;
+- N3 com watcher falso no barramento do container: feature `tray` ativa (`setup()` devolve True) e o processo sai com código 0;
+- N3 sem watcher: igual a hoje (tray indisponível, o X fecha o app e o processo sai com código 0);
+- N-dono: ícone aparece no painel ao minimizar para a bandeja, e Restaurar/Briefing/Encerrar funcionam.
 
 **Testes:**
 - qa, antes: C `tests/golden/test_tray_windows.py` (AST/literal: itens, ordem, `default=True`, `SEPARATOR`, thread `.run`, `visible=False`);
