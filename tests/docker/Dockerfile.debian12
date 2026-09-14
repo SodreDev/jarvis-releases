@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libdbus-1-3 \
         libxi6 \
         libglib2.0-0 \
+        libxfixes3 \
         ca-certificates \
     && rm -r /var/lib/apt/lists/*
 
