@@ -9,6 +9,7 @@ RUN pacman -Syu --noconfirm && pacman -S --noconfirm \
         base-devel \
         portaudio \
         xorg-server-xvfb \
+        xorg-xauth \
         nss \
         libxkbcommon \
         libxkbcommon-x11 \

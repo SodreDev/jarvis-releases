@@ -25,6 +25,7 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
 | XInput2 (libXi, Qt xcb) | já vem com o sistema base | `libxi6` | `libxi` |
 | GLib (base do Qt/QtWebEngine) | já vem com o sistema base | `libglib2.0-0` (Debian 12) / **`libglib2.0-0t64`** (Ubuntu 24.04, transição t64) | `glib2` |
 | Xvfb (N2, X11 virtual) | `xorg-x11-server-Xvfb` | `xvfb` | `xorg-server-xvfb` |
+| xauth (`xvfb-run` precisa, achado no Debian: "xauth command not found") | já vem com `xorg-x11-server-Xvfb` | `xauth` | `xorg-xauth` |
 | Toolchain de build (evdev do pynput etc.) | `gcc`, `python3-devel`, `kernel-headers` | `gcc`, `python3-dev`, `build-essential` | `gcc`, `base-devel` |
 
 ## Notas

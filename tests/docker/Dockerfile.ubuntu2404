@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libportaudio2 \
         xvfb \
+        xauth \
         libnss3 \
         libxkbcommon0 \
         libxcomposite1 \
