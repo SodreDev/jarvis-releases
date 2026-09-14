@@ -1,7 +1,6 @@
-"""K — contrato (F2-01): `jarvis.platform.linux_wayland.hotkeys_portal`
-(ainda não existe — import dentro de cada teste). Portal FALSO no
-barramento privado (`private_session_bus` + `fake_dbus_service`), nunca
-o `xdg-desktop-portal` do host. `xfail(strict=True, reason="F2-01")`.
+"""K — contrato (F2-01): `jarvis.platform.linux_wayland.hotkeys_portal`.
+Portal FALSO no barramento privado (`private_session_bus` +
+`fake_dbus_service`), nunca o `xdg-desktop-portal` do host.
 
 Usa só os métodos do Protocol (`jarvis.platform.protocols.Hotkeys`):
 `bind(bindings)`, `listen_keys(on_press, on_release)`, `stop()`. Nenhum
@@ -42,6 +41,23 @@ def _wait_until(predicate, *, timeout: float = 2.0, step: float = 0.02) -> bool:
             return True
         time.sleep(step)
     return predicate()
+
+
+@pytest.fixture
+def _reset_jeepney_router():
+    """`PortalGlobalShortcuts` fala com o portal via `jarvis.platform.linux.dbus`
+    (jeepney), que mantém um roteador/thread de recepção compartilhado do
+    processo. Sem resetar ANTES do `private_session_bus` derrubar o
+    `dbus-daemon` privado, a thread receptora do jeepney continua lendo do
+    socket que acabou de morrer e registra um `ConnectionResetError`
+    inofensivo (barulho no teste). Pedir este fixture DEPOIS de
+    `private_session_bus` na assinatura do teste garante que o teardown
+    dele roda ANTES (pytest desmonta na ordem inversa de montagem)."""
+    yield
+    from jarvis.platform.linux.dbus import reset
+
+    reset()
+
 
 pytestmark = [pytest.mark.linux_only]
 
@@ -118,7 +134,7 @@ def _mount_portal(mock, *, bind_response_code: int = 0):
     )
 
 
-def test_registry_register_called_before_create_session(private_session_bus, isolated_home):
+def test_registry_register_called_before_create_session(private_session_bus, isolated_home, _reset_jeepney_router):
     from jarvis.platform.linux_wayland.hotkeys_portal import PortalGlobalShortcuts
     from jarvis.platform.protocols import HotkeyBinding
 
@@ -126,14 +142,19 @@ def test_registry_register_called_before_create_session(private_session_bus, iso
         _mount_portal(mock)
 
         binding = HotkeyBinding("ptt", "Falar com o JARVIS", "<shift>+g", lambda: None, lambda: None)
-        PortalGlobalShortcuts(app_id="jarvis").bind([binding])
+        hk = PortalGlobalShortcuts(app_id="jarvis")
+        hk.bind([binding])
 
         method_names = [call[1] for call in mock.GetCalls()]
         assert "Register" in method_names and "CreateSession" in method_names
         assert method_names.index("Register") < method_names.index("CreateSession")
+        # PortalGlobalShortcuts usa uma conexão DEDICADA (SPEC), não a
+        # compartilhada de jarvis.platform.linux.dbus -- _reset_jeepney_router
+        # não cobre essa; stop() fecha o roteador dedicado explicitamente.
+        hk.stop()
 
 
-def test_session_handle_only_arrives_via_response_signal(private_session_bus, isolated_home):
+def test_session_handle_only_arrives_via_response_signal(private_session_bus, isolated_home, _reset_jeepney_router):
     """`CreateSession` sozinho não devolve `session_handle` nenhum -- só o
     caminho do Request. `BindShortcuts` só pode ter sido chamado DEPOIS do
     sinal `Response` do `CreateSession` ter entregue a sessão."""
@@ -144,7 +165,8 @@ def test_session_handle_only_arrives_via_response_signal(private_session_bus, is
         _mount_portal(mock)
 
         binding = HotkeyBinding("ptt", "Falar com o JARVIS", "<shift>+g", lambda: None, lambda: None)
-        PortalGlobalShortcuts(app_id="jarvis").bind([binding])
+        hk = PortalGlobalShortcuts(app_id="jarvis")
+        hk.bind([binding])
 
         calls = [(c[1], c[2]) for c in mock.GetCalls()]
         create_session_calls = [args for name, args in calls if name == "CreateSession"]
@@ -155,9 +177,10 @@ def test_session_handle_only_arrives_via_response_signal(private_session_bus, is
         # veio pelo sinal Response do CreateSession -- não um valor
         # qualquer inventado sem esperar o sinal.
         assert bind_calls[0][0] == _SESSION_PATH
+        hk.stop()
 
 
-def test_response_code_1_is_capability_unavailable_and_does_not_repeat(private_session_bus, isolated_home):
+def test_response_code_1_is_capability_unavailable_and_does_not_repeat(private_session_bus, isolated_home, _reset_jeepney_router):
     from jarvis.platform.errors import CapabilityUnavailable
     from jarvis.platform.linux_wayland.hotkeys_portal import PortalGlobalShortcuts
     from jarvis.platform.protocols import HotkeyBinding
@@ -184,9 +207,10 @@ def test_response_code_1_is_capability_unavailable_and_does_not_repeat(private_s
         except CapabilityUnavailable:
             pass
         assert len(mock.GetCalls()) == calls_before
+        hk.stop()
 
 
-def test_activated_signal_becomes_on_press(private_session_bus, isolated_home):
+def test_activated_signal_becomes_on_press(private_session_bus, isolated_home, _reset_jeepney_router):
     from jarvis.platform.linux_wayland.hotkeys_portal import PortalGlobalShortcuts
     from jarvis.platform.protocols import HotkeyBinding
 
@@ -197,7 +221,8 @@ def test_activated_signal_becomes_on_press(private_session_bus, isolated_home):
         binding = HotkeyBinding(
             "ptt", "Falar com o JARVIS", "<shift>+g", lambda: pressed.append("press"), lambda: None
         )
-        PortalGlobalShortcuts(app_id="jarvis").bind([binding])
+        hk = PortalGlobalShortcuts(app_id="jarvis")
+        hk.bind([binding])
 
         mock.EmitSignal(
             "org.freedesktop.portal.GlobalShortcuts",
@@ -206,9 +231,10 @@ def test_activated_signal_becomes_on_press(private_session_bus, isolated_home):
             [_SESSION_PATH, "ptt", 0, dbus.Dictionary({}, signature="sv")],
         )
         assert _wait_until(lambda: pressed == ["press"]), f"pressed={pressed!r}"
+        hk.stop()
 
 
-def test_deactivated_signal_becomes_on_release(private_session_bus, isolated_home):
+def test_deactivated_signal_becomes_on_release(private_session_bus, isolated_home, _reset_jeepney_router):
     from jarvis.platform.linux_wayland.hotkeys_portal import PortalGlobalShortcuts
     from jarvis.platform.protocols import HotkeyBinding
 
@@ -219,7 +245,8 @@ def test_deactivated_signal_becomes_on_release(private_session_bus, isolated_hom
         binding = HotkeyBinding(
             "ptt", "Falar com o JARVIS", "<shift>+g", lambda: None, lambda: released.append("release")
         )
-        PortalGlobalShortcuts(app_id="jarvis").bind([binding])
+        hk = PortalGlobalShortcuts(app_id="jarvis")
+        hk.bind([binding])
 
         mock.EmitSignal(
             "org.freedesktop.portal.GlobalShortcuts",
@@ -228,6 +255,7 @@ def test_deactivated_signal_becomes_on_release(private_session_bus, isolated_hom
             [_SESSION_PATH, "ptt", 0, dbus.Dictionary({}, signature="sv")],
         )
         assert _wait_until(lambda: released == ["release"]), f"released={released!r}"
+        hk.stop()
 
 
 def test_listen_keys_returns_false():

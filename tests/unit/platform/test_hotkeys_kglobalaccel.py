@@ -1,7 +1,6 @@
-"""K — contrato (F2-01): `jarvis.platform.linux.hotkeys_kglobalaccel`
-(ainda não existe — import dentro de cada teste). KGlobalAccel FALSO no
-barramento privado (`private_session_bus` + `fake_dbus_service`, conexão
-nova por teste). `xfail(strict=True, reason="F2-01")`.
+"""K — contrato (F2-01): `jarvis.platform.linux.hotkeys_kglobalaccel`.
+KGlobalAccel FALSO no barramento privado (`private_session_bus` +
+`fake_dbus_service`, conexão nova por teste).
 
 Usa só os métodos do Protocol (`jarvis.platform.protocols.Hotkeys`):
 `bind(bindings)`, `listen_keys(on_press, on_release)`, `stop()`. Nenhum
@@ -37,6 +36,23 @@ def _wait_until(predicate, *, timeout: float = 2.0, step: float = 0.02) -> bool:
     return predicate()
 
 
+@pytest.fixture
+def _reset_jeepney_router():
+    """`KGlobalAccelHotkeys` fala com o kglobalaccel via
+    `jarvis.platform.linux.dbus` (jeepney), que mantém um roteador/thread
+    de recepção compartilhado do processo. Sem resetar ANTES do
+    `private_session_bus` derrubar o `dbus-daemon` privado, a thread
+    receptora do jeepney continua lendo do socket que acabou de morrer e
+    registra um `ConnectionResetError` inofensivo (barulho no teste).
+    Pedir este fixture DEPOIS de `private_session_bus` na assinatura do
+    teste garante que o teardown dele roda ANTES (pytest desmonta na
+    ordem inversa de montagem)."""
+    yield
+    from jarvis.platform.linux.dbus import reset
+
+    reset()
+
+
 def _mount_kglobalaccel(mock, *, set_shortcut_ret="[71]"):
     mock.AddMethod("org.kde.KGlobalAccel", "doRegister", "as", "", "")
     mock.AddMethod("org.kde.KGlobalAccel", "setShortcut", "asaiu", "ai", f"ret = {set_shortcut_ret}")
@@ -46,7 +62,7 @@ def _mount_kglobalaccel(mock, *, set_shortcut_ret="[71]"):
     )
 
 
-def test_register_and_set_shortcut_called(private_session_bus):
+def test_register_and_set_shortcut_called(private_session_bus, _reset_jeepney_router):
     from jarvis.platform.linux.hotkeys_kglobalaccel import KGlobalAccelHotkeys
     from jarvis.platform.protocols import HotkeyBinding
 
@@ -61,7 +77,7 @@ def test_register_and_set_shortcut_called(private_session_bus):
         assert "setShortcut" in method_names
 
 
-def test_set_shortcut_called_with_is_default_then_set_present_flags(private_session_bus):
+def test_set_shortcut_called_with_is_default_then_set_present_flags(private_session_bus, _reset_jeepney_router):
     """SPEC F2-01 §5: `setShortcut` é chamado com `IsDefault` (8) pra
     definir o atalho padrão e DEPOIS com `SetPresent` (2) pra ativá-lo de
     verdade -- os dois valores de flags precisam aparecer nas chamadas."""
@@ -79,7 +95,7 @@ def test_set_shortcut_called_with_is_default_then_set_present_flags(private_sess
         assert 2 in set_shortcut_flags, f"esperava flags=SetPresent(2) em alguma chamada, veio {set_shortcut_flags}"
 
 
-def test_conflicting_shortcut_empty_list_gives_warning_trigger(private_session_bus):
+def test_conflicting_shortcut_empty_list_gives_warning_trigger(private_session_bus, _reset_jeepney_router):
     from jarvis.platform.linux.hotkeys_kglobalaccel import KGlobalAccelHotkeys
     from jarvis.platform.protocols import HotkeyBinding
 
@@ -91,7 +107,7 @@ def test_conflicting_shortcut_empty_list_gives_warning_trigger(private_session_b
         assert "sem atalho" in result["ptt"].lower()
 
 
-def test_global_shortcut_pressed_signal_dispatches(private_session_bus):
+def test_global_shortcut_pressed_signal_dispatches(private_session_bus, _reset_jeepney_router):
     from jarvis.platform.linux.hotkeys_kglobalaccel import KGlobalAccelHotkeys
     from jarvis.platform.protocols import HotkeyBinding
 
@@ -115,7 +131,7 @@ def test_global_shortcut_pressed_signal_dispatches(private_session_bus):
         assert _wait_until(lambda: pressed == ["ptt"]), f"pressed={pressed!r}"
 
 
-def test_global_shortcut_released_signal_dispatches(private_session_bus):
+def test_global_shortcut_released_signal_dispatches(private_session_bus, _reset_jeepney_router):
     from jarvis.platform.linux.hotkeys_kglobalaccel import KGlobalAccelHotkeys
     from jarvis.platform.protocols import HotkeyBinding
 
@@ -139,7 +155,7 @@ def test_global_shortcut_released_signal_dispatches(private_session_bus):
         assert _wait_until(lambda: released == ["ptt"]), f"released={released!r}"
 
 
-def test_invoke_shortcut_triggers_pressed_signal(private_session_bus):
+def test_invoke_shortcut_triggers_pressed_signal(private_session_bus, _reset_jeepney_router):
     """`invokeShortcut(shortcutName)` existe no componente REAL (conferido
     contra o `kglobalacceld` de verdade em container, sem fake nenhum) e é
     o gancho que o smoke N3 (`JARVIS_SMOKE_PTT=press`) usa pra simular um
@@ -188,7 +204,7 @@ def test_invoke_shortcut_triggers_pressed_signal(private_session_bus):
         assert _wait_until(lambda: pressed == ["ptt"]), f"pressed={pressed!r}"
 
 
-def test_stop_calls_unregister_for_each_action(private_session_bus):
+def test_stop_calls_unregister_for_each_action(private_session_bus, _reset_jeepney_router):
     from jarvis.platform.linux.hotkeys_kglobalaccel import KGlobalAccelHotkeys
     from jarvis.platform.protocols import HotkeyBinding
 
