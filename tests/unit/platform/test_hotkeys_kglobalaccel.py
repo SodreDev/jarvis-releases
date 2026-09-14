@@ -17,7 +17,7 @@ import pytest
 
 from tests.fakes.dbus_services import fake_dbus_service
 
-pytestmark = [pytest.mark.linux_only, pytest.mark.xfail(strict=True, reason="F2-01")]
+pytestmark = [pytest.mark.linux_only]
 
 _BUS = "org.kde.kglobalaccel"
 _PATH = "/kglobalaccel"

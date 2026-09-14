@@ -84,6 +84,9 @@ if False:                                # pragma: no cover  # noqa: SIM108
     import jarvis.platform.windows.media  # noqa: F401, E402
     import jarvis.platform.linux.media  # noqa: F401, E402
     import jarvis.platform.common.pynput_hotkeys  # noqa: F401, E402
+    import jarvis.platform.linux_wayland.hotkeys_portal  # noqa: F401, E402
+    import jarvis.platform.linux.hotkeys_kglobalaccel  # noqa: F401, E402
+    import jarvis.platform.linux.desktop_entry  # noqa: F401, E402
 
 
 # ── Detecção do source ao vivo ────────────────────────────────────────────────

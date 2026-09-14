@@ -98,8 +98,36 @@ def test_start_keyboard_listener_listen_keys_antes_do_bind_do_ptt():
             chamadas.setdefault(n.func.attr, n)
     assert chamadas["listen_keys"].lineno < chamadas["bind"].lineno
     fonte_bind = ast.unparse(chamadas["bind"])
-    assert "HotkeyBinding('ptt'" in fonte_bind
-    assert "self._ptt_iniciar" in fonte_bind and "self._ptt_finalizar" in fonte_bind and "_ptt_trigger()" in fonte_bind
+    assert "HotkeyBinding('ptt'" in fonte_bind and "_ptt_trigger()" in fonte_bind
+    assert "self._ptt_global_press" in fonte_bind and "self._ptt_global_release" in fonte_bind
+
+
+def test_bind_do_ptt_roda_em_thread_daemon_portal_hotkeys():
+    fonte = ast.unparse(_func(_tree(), "_start_keyboard_listener"))
+    assert "threading.Thread(target=_bind_ptt, daemon=True, name='PortalHotkeys').start()" in fonte
+
+
+def test_ptt_global_mesmas_condicoes_do_shift_g_via_root_after():
+    press = ast.unparse(_func(_tree(), "_ptt_global_press"))
+    release = ast.unparse(_func(_tree(), "_ptt_global_release"))
+    assert "self._activation_mode == 'ptt' and (not self.recording)" in press and "self._ptt_iniciar()" in press
+    assert "self._activation_mode == 'ptt' and self.recording" in release and "self._ptt_finalizar()" in release
+    assert "self.root.after(0, _press)" in press and "self.root.after(0, _release)" in release
+
+
+def test_smoke_ptt_press_so_no_smoke():
+    fonte = ast.unparse(_func(_tree(), "_bind_ptt"))
+    assert "_smoke_seconds() is not None and os.environ.get('JARVIS_SMOKE_PTT', '').strip() == 'press'" in fonte
+    assert "invoke_shortcut" in fonte
+
+
+def test_hotkeys_do_config_nao_viram_atalho_exclusivo():
+    func = _func(_tree(), "_start_global_hotkeys")
+    pulo = next(n for n in ast.walk(func)
+                if isinstance(n, ast.If) and "_hotkeys_exclusivos" in ast.unparse(n.test))
+    bind = next(n for n in ast.walk(func)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "bind")
+    assert pulo.lineno < bind.lineno and isinstance(pulo.body[-1], ast.Return)
 
 
 def test_gancho_de_smoke_de_hotkeys():

@@ -11648,12 +11648,48 @@ class JarvisApp:
             return
         # win32/x11 (pynput): Shift+G passivo tecla a tecla, como antes
         if hk.listen_keys(self._on_key_press, self._on_key_release):
+            self._hotkeys_exclusivos = False
             self._ptt_descricao = "Shift+G"
             return
-        # backends de atalho exclusivo (Wayland): o PTT vira um atalho global próprio
-        efetivos = hk.bind([HotkeyBinding("ptt", "Falar com o JARVIS (segurar)", _ptt_trigger(),
-                                          self._ptt_iniciar, self._ptt_finalizar)])
-        self._ptt_descricao = (efetivos or {}).get("ptt")
+        # Wayland (portal → KGlobalAccel): o PTT vira um atalho global exclusivo. O bind pode
+        # esperar o diálogo do KDE (até 120 s), então roda fora do boot; o PTT fica inativo até lá.
+        self._hotkeys_exclusivos = True
+        self._ptt_descricao = None
+
+        def _bind_ptt():
+            try:
+                efetivos = hk.bind([HotkeyBinding("ptt", "Falar com o JARVIS (segurar)", _ptt_trigger(),
+                                                  self._ptt_global_press, self._ptt_global_release)])
+            except Exception as e:
+                print(f"[PTT] Atalho global indisponível: {e}")
+                return
+            self._ptt_descricao = (efetivos or {}).get("ptt")
+            print(f"[PTT] Atalho global: {self._ptt_descricao} ({hk.name})")
+            # smoke: dispara o atalho pelo backend para exercitar o sinal até o press
+            if _smoke_seconds() is not None and os.environ.get("JARVIS_SMOKE_PTT", "").strip() == "press":
+                invocar = getattr(hk, "invoke_shortcut", None)
+                if invocar is None:
+                    print(f"JARVIS_SMOKE_PTT sem_invoke backend={hk.name}", flush=True)
+                else:
+                    try:
+                        invocar("ptt")
+                    except Exception as e:
+                        print(f"JARVIS_SMOKE_PTT erro={e}", flush=True)
+
+        threading.Thread(target=_bind_ptt, daemon=True, name="PortalHotkeys").start()
+
+    def _ptt_global_press(self):
+        """PTT por atalho global exclusivo (Wayland): mesmas condições do Shift+G."""
+        def _press():
+            if _smoke_seconds() is not None or (self._activation_mode == "ptt" and not self.recording):
+                self._ptt_iniciar()
+        self.root.after(0, _press)
+
+    def _ptt_global_release(self):
+        def _release():
+            if _smoke_seconds() is not None or (self._activation_mode == "ptt" and self.recording):
+                self._ptt_finalizar()
+        self.root.after(0, _release)
 
     # Mapa ação → comando canônico que _detectar_comando_sistema entende
     _HOTKEY_CMDS: dict[str, str] = {
@@ -11668,6 +11704,13 @@ class JarvisApp:
         (pynput GlobalHotKeys no Windows/X11)."""
         if not _has_feature("global_hotkeys") or not _plat_has(Cap.HOTKEYS):
             print("[PTT] Atalho global indisponível nesta sessão — use o botão de microfone ou a wake word.")
+            return
+        if getattr(self, "_hotkeys_exclusivos", False):
+            # Wayland: os atalhos seriam exclusivos e tirariam Ctrl+Shift+C/S/T/H dos outros apps
+            if not getattr(self, "_aviso_hotkeys_exclusivos", False):
+                self._aviso_hotkeys_exclusivos = True
+                print("[HOTKEYS] Atalhos do config.HOTKEYS desligados nesta sessão: aqui seriam "
+                      "exclusivos e tirariam essas teclas dos outros apps.")
             return
         import sys as _sys
         _cfg = _sys.modules.get("config")

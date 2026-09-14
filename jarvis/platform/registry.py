@@ -9,7 +9,9 @@ um Unavailable e não retenta.
 from __future__ import annotations
 
 import importlib
+import os
 import threading
+import warnings
 from typing import Dict, List, Optional, Tuple
 
 from .capabilities import Cap
@@ -39,7 +41,14 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
     # F2-01: pynput no win32/x11 (Shift+G passivo). Wayland: portal → KGlobalAccel.
     Cap.HOTKEYS: {
         "win32": ("jarvis.platform.common.pynput_hotkeys:PynputHotkeys",),
-        "linux-x11": ("jarvis.platform.common.pynput_hotkeys:PynputHotkeys",),
+        "linux-wayland": (
+            "jarvis.platform.linux_wayland.hotkeys_portal:PortalGlobalShortcuts",
+            "jarvis.platform.linux.hotkeys_kglobalaccel:KGlobalAccelHotkeys",
+        ),
+        "linux-x11": (
+            "jarvis.platform.common.pynput_hotkeys:PynputHotkeys",
+            "jarvis.platform.linux.hotkeys_kglobalaccel:KGlobalAccelHotkeys",
+        ),
     },
     # F2-08: headless sem mídia.
     Cap.MEDIA: {
@@ -120,7 +129,35 @@ def _candidate_keys(kind: str) -> List[str]:
     return keys
 
 
+# Override de dev/teste da escolha da cadeia (como JARVIS_PLATFORM/JARVIS_FEATURES),
+# só no Linux: variável → {valor: backend}. Valor inválido: aviso e ignora.
+_ENV_OVERRIDES: Dict[Cap, Tuple[str, Dict[str, str]]] = {
+    Cap.HOTKEYS: ("JARVIS_HOTKEYS_BACKEND", {
+        "pynput": "jarvis.platform.common.pynput_hotkeys:PynputHotkeys",
+        "portal": "jarvis.platform.linux_wayland.hotkeys_portal:PortalGlobalShortcuts",
+        "kglobalaccel": "jarvis.platform.linux.hotkeys_kglobalaccel:KGlobalAccelHotkeys",
+    }),
+}
+
+
+def _env_override(cap: Cap, kind: str) -> Tuple[str, ...]:
+    regra = _ENV_OVERRIDES.get(cap)
+    if regra is None or not kind.startswith("linux"):
+        return ()
+    variavel, opcoes = regra
+    valor = os.environ.get(variavel, "").strip().lower()
+    if not valor:
+        return ()
+    if valor not in opcoes:
+        warnings.warn(f"{variavel} inválido: {valor!r} (ignorado)")
+        return ()
+    return (opcoes[valor],)
+
+
 def _chain_for(cap: Cap, kind: str) -> Tuple[str, ...]:
+    override = _env_override(cap, kind)
+    if override:
+        return override
     table = REGISTRY.get(cap, {})
     for key in _candidate_keys(kind):
         if key in table:

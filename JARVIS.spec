@@ -193,6 +193,8 @@ hidden = [
     'jarvis.platform.windows.volume', 'jarvis.platform.linux.volume',
     'jarvis.platform.windows.media', 'jarvis.platform.linux.media',
     'jarvis.platform.common.pynput_hotkeys',
+    'jarvis.platform.linux_wayland.hotkeys_portal', 'jarvis.platform.linux.hotkeys_kglobalaccel',
+    'jarvis.platform.linux.desktop_entry',
     # tomli (fallback se tomllib stdlib não estiver presente; >=3.11 tem)
     'tomllib',
     # ── Fases 2026: painel, documentos, updater ──────────────────────────

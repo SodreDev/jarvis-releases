@@ -43,7 +43,7 @@ def _wait_until(predicate, *, timeout: float = 2.0, step: float = 0.02) -> bool:
         time.sleep(step)
     return predicate()
 
-pytestmark = [pytest.mark.linux_only, pytest.mark.xfail(strict=True, reason="F2-01")]
+pytestmark = [pytest.mark.linux_only]
 
 _PORTAL_BUS = "org.freedesktop.portal.Desktop"
 _PORTAL_PATH = "/org/freedesktop/portal/desktop"

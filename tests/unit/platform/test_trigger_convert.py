@@ -5,7 +5,7 @@ existem — import dentro de cada teste. `xfail(strict=True, reason="F2-01")`.
 """
 import pytest
 
-pytestmark = pytest.mark.xfail(strict=True, reason="F2-01")
+pytestmark = []
 
 
 def test_portal_trigger_shift_g():
