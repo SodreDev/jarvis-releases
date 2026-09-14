@@ -22,6 +22,7 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
 | Mesa EGL | `mesa-libEGL` | `libegl1` | `mesa` (inclui) |
 | Fontconfig | `fontconfig` | `libfontconfig1` | `fontconfig` |
 | D-Bus (libdbus, QtWebEngine) | já vem com o sistema base | `libdbus-1-3` | `dbus` |
+| D-Bus runtime (`dbus-run-session`/`dbus-daemon` — N1 K com `private_session_bus`, N3 `run_n3_wayland.sh`; achado no M1 da fase 2: sem isso, N3 falha com "catatonit: failed to exec pid1", e os K com `private_session_bus` só SKIPAM, não falham, escondendo o problema no N1) | `dbus-daemon` (já listado desde o T0) | **`dbus-daemon`** (puxa `dbus-bin`, que dá `dbus-run-session`; não vem só com `libdbus-1-3`/`libdbus-1-dev`) | `dbus` (já traz) |
 | XInput2 (libXi, Qt xcb) | já vem com o sistema base | `libxi6` | `libxi` |
 | Fontes (QtWebEngine renderiza texto; sem fonte nenhuma, trava em loop de `remote_font_face_source.cc NOTREACHED` antes de chegar a `JARVIS_SMOKE_READY`) | já vem com o sistema base (google-noto-fonts) | já vem com o sistema base (fonts-dejavu-core) | **`ttf-dejavu noto-fonts`** (Arch não traz nenhuma por padrão) — rodar `fc-cache -f` depois de instalar |
 | GLib (base do Qt/QtWebEngine) | já vem com o sistema base | `libglib2.0-0` (Debian 12) / **`libglib2.0-0t64`** (Ubuntu 24.04, transição t64) | `glib2` |
