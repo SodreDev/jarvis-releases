@@ -50,6 +50,12 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
             "jarvis.platform.linux.hotkeys_kglobalaccel:KGlobalAccelHotkeys",
         ),
     },
+    # F2-02: Linux só com StatusNotifierWatcher; headless sem tray.
+    Cap.TRAY: {
+        "win32": ("jarvis.platform.windows.tray:PystrayTray",),
+        "linux-wayland": ("jarvis.platform.linux.tray_qt:QtSystemTray",),
+        "linux-x11": ("jarvis.platform.linux.tray_qt:QtSystemTray",),
+    },
     # F2-08: headless sem mídia.
     Cap.MEDIA: {
         "win32": ("jarvis.platform.windows.media:VirtualKeyMedia",),

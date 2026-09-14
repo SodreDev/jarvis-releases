@@ -152,7 +152,7 @@ from jarvis.platform import has_feature as _has_feature
 from jarvis.platform import paths as _plat_paths
 from jarvis.platform import Cap, get as _plat_get, has as _plat_has, processes as _plat_processes
 from jarvis.platform import open_path as _open_path, open_text_file as _open_text_file
-from jarvis.platform.protocols import HotkeyBinding
+from jarvis.platform.protocols import HotkeyBinding, TrayItem
 
 # Migra credenciais/dados legados para credentials/ ANTES de importar config,
 # para que load_dotenv() encontre o .env já na nova localização.
@@ -13325,6 +13325,9 @@ class JarvisApp:
             # ── Tray icon ──
             if _has_feature("tray"):
                 self._criar_tray_icon()
+            else:
+                # F2-02: sem bandeja nesta sessão (Linux sem StatusNotifierWatcher); o X fecha o app
+                print("[TRAY] Bandeja indisponível nesta sessão — fechar a janela encerra o JARVIS.")
             # ── Verificador de atualizações (background, 30s delay) ──
             if _smoke_seconds() is None and _has_feature("self_update_payload"):
                 self._iniciar_verificador_updates()
@@ -13439,36 +13442,47 @@ class JarvisApp:
             pass
 
     def _criar_tray_icon(self):
-        """Cria ícone na bandeja do sistema com pystray."""
+        """Cria ícone na bandeja do sistema pelo backend de tray
+        (pystray no Windows, Qt/StatusNotifierItem no Linux)."""
         try:
-            import pystray
             from PIL import Image, ImageDraw
         except ImportError:
             print("[TRAY] pystray ou Pillow não instalado — tray desabilitado.")
             self._tray_icon = None
             # Sem tray, fechar janela encerra o app
             return
+        if not _plat_has(Cap.TRAY):
+            print("[TRAY] pystray ou Pillow não instalado — tray desabilitado.")
+            self._tray_icon = None
+            return
 
         # Gera ícone programaticamente (circulo ciano com J)
-        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        draw.ellipse([4, 4, 60, 60], fill=(0, 212, 255), outline=(0, 170, 210), width=2)
-        try:
-            from PIL import ImageFont
-            font = ImageFont.truetype("consola.ttf", 32)
-        except Exception:
-            font = ImageFont.load_default()
-        draw.text((20, 10), "J", fill=(2, 11, 20), font=font)
+        def _make_img():
+            img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            draw.ellipse([4, 4, 60, 60], fill=(0, 212, 255), outline=(0, 170, 210), width=2)
+            try:
+                from PIL import ImageFont
+                font = ImageFont.truetype("consola.ttf", 32)
+            except Exception:
+                font = ImageFont.load_default()
+            draw.text((20, 10), "J", fill=(2, 11, 20), font=font)
+            return img
 
-        menu = pystray.Menu(
-            pystray.MenuItem("Restaurar JARVIS", self._restaurar_da_tray, default=True),
-            pystray.MenuItem("Briefing", lambda: self.root.after(0, self._fazer_briefing_tray)),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Encerrar", self._encerrar_de_tray),
-        )
+        items = [
+            TrayItem("Restaurar JARVIS", self._restaurar_da_tray, default=True),
+            TrayItem("Briefing", lambda: self.root.after(0, self._fazer_briefing_tray)),
+            TrayItem("", None, separator=True),
+            TrayItem("Encerrar", self._encerrar_de_tray),
+        ]
 
-        self._tray_icon = pystray.Icon("JARVIS", img, "J.A.R.V.I.S.", menu)
+        # o backend monta menu/ícone, inicia o tray em background e deixa oculto
+        tray = _plat_get(Cap.TRAY)
+        ok = tray.setup("J.A.R.V.I.S.", _make_img, items)
+        self._tray_icon = tray if ok else None
         self._tray_visible = False
+        if not ok:
+            return
 
         # Intercepta botão X: minimiza para bandeja em vez de fechar
         try:
@@ -13477,11 +13491,6 @@ class JarvisApp:
                 print("[TRAY] Interceptação do botão X ativa — fecha para bandeja.")
         except Exception as _e:
             print(f"[TRAY] Não foi possível wiar events.closing: {_e}")
-
-        # Inicia o tray em background (não mostra até minimizar)
-        threading.Thread(target=self._tray_icon.run, daemon=True).start()
-        # Começa oculto
-        self._tray_icon.visible = False
 
     def _get_main_hwnd(self) -> int:
         """Retorna o HWND da janela principal do JARVIS (0 se não encontrado)."""
@@ -13505,14 +13514,14 @@ class JarvisApp:
             self._window.hide()
         except Exception as _e:
             print(f"[TRAY] hide: {_e}")
-        self._tray_icon.visible = True
+        self._tray_icon.set_visible(True)
         self._tray_visible = True
         print("[TRAY] JARVIS minimizado para a bandeja.")
 
     def _restaurar_da_tray(self, icon=None, item=None):
         """Restaura a janela da bandeja via pywebview show()."""
         if self._tray_icon:
-            self._tray_icon.visible = False
+            self._tray_icon.set_visible(False)
         self._tray_visible = False
 
         def _do_restore():

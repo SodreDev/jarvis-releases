@@ -15,7 +15,6 @@ pytestmark = [
     pytest.mark.wayland,
     pytest.mark.needs_display,
     pytest.mark.slow,
-    pytest.mark.xfail(strict=True, reason="F2-02"),
 ]
 
 

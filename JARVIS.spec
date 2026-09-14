@@ -195,6 +195,7 @@ hidden = [
     'jarvis.platform.common.pynput_hotkeys',
     'jarvis.platform.linux_wayland.hotkeys_portal', 'jarvis.platform.linux.hotkeys_kglobalaccel',
     'jarvis.platform.linux.desktop_entry',
+    'jarvis.platform.windows.tray', 'jarvis.platform.linux.tray_qt', 'jarvis.platform.linux.qt_gui',
     # tomli (fallback se tomllib stdlib não estiver presente; >=3.11 tem)
     'tomllib',
     # ── Fases 2026: painel, documentos, updater ──────────────────────────
