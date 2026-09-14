@@ -1,7 +1,19 @@
-"""K — contrato (F2-02): `jarvis.platform.linux.tray_qt` (QSystemTrayIcon,
-ainda não existe — import dentro de cada teste). N2/N3 (precisa de display
-real via Xvfb/KWin virtual). `xfail(strict=True, reason="F2-02")`.
+"""K — contrato (F2-02): `jarvis.platform.linux.tray_qt.QtSystemTray`
+(ainda não existe — import dentro de cada teste). N2/N3 (precisa de
+display real via Xvfb/KWin virtual). `xfail(strict=True, reason="F2-02")`.
+
+Usa só o Protocol (`jarvis.platform.protocols.Tray`):
+`setup(title, make_image, items) -> bool`, `set_visible(visible)`,
+`stop()`. Nenhum nome inventado (`menu()`, `isVisible()`, `icon_path=`).
+
+Sonda (SPEC F2-02): `org.kde.StatusNotifierWatcher` tem dono OU
+`ctx.kind == "linux-x11"` (XEmbed do próprio Qt, sem watcher). Sem
+nenhum dos dois, a bandeja fica indisponível -- comportamento provado
+via `private_session_bus` (barramento privado SEM watcher nenhum
+registrado), nunca com gancho de teste no construtor de produção.
 """
+import types
+
 import pytest
 
 pytestmark = [
@@ -14,54 +26,74 @@ pytestmark = [
 ]
 
 
-def test_tray_menu_has_four_items_in_order():
+def _fake_image():
+    from PIL import Image
+
+    return Image.new("RGB", (8, 8))
+
+
+def test_probe_true_on_x11_even_without_watcher(private_session_bus):
+    from jarvis.platform.linux.tray_qt import QtSystemTray
+
+    # barramento privado sem NENHUM serviço registrado -- x11 com DISPLAY
+    # não depende do watcher (XEmbed do próprio Qt).
+    ctx = types.SimpleNamespace(kind="linux-x11")
+    assert QtSystemTray.probe(ctx).ok is True
+
+
+def test_probe_false_on_wayland_without_watcher(private_session_bus):
+    from jarvis.platform.linux.tray_qt import QtSystemTray
+
+    ctx = types.SimpleNamespace(kind="linux-wayland")
+    probe = QtSystemTray.probe(ctx)
+    assert probe.ok is False
+
+
+def test_probe_true_on_wayland_with_watcher(private_session_bus):
+    from jarvis.platform.linux.tray_qt import QtSystemTray
+
+    from tests.fakes.dbus_services import fake_dbus_service
+
+    with fake_dbus_service(
+        "org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher"
+    ):
+        ctx = types.SimpleNamespace(kind="linux-wayland")
+        assert QtSystemTray.probe(ctx).ok is True
+
+
+def test_setup_on_x11_returns_true_and_starts_hidden():
     from PySide6.QtWidgets import QApplication
 
-    from jarvis.platform.linux.tray_qt import QtTray
+    from jarvis.platform.linux.tray_qt import QtSystemTray
 
     QApplication.instance() or QApplication([])
+
+    from jarvis.platform.protocols import TrayItem
 
     calls = []
-    tray = QtTray(
-        icon_path=None,
-        on_restaurar=lambda: calls.append("restaurar"),
-        on_briefing=lambda: calls.append("briefing"),
-        on_encerrar=lambda: calls.append("encerrar"),
-    )
-    actions = tray.menu().actions()
-    labels = [a.text() for a in actions if not a.isSeparator()]
-    assert labels == ["Restaurar JARVIS", "Briefing", "Encerrar"]
-    assert any(a.isSeparator() for a in actions)
+    items = [
+        TrayItem("Restaurar JARVIS", lambda: calls.append("restaurar"), default=True),
+        TrayItem("Briefing", lambda: calls.append("briefing")),
+        TrayItem("", None, separator=True),
+        TrayItem("Encerrar", lambda: calls.append("encerrar")),
+    ]
+
+    tray = QtSystemTray(ctx=types.SimpleNamespace(kind="linux-x11"))
+    ok = tray.setup("J.A.R.V.I.S.", _fake_image, items)
+    assert ok is True
+    tray.stop()
 
 
-def test_tray_starts_hidden_and_callbacks_fire():
+def test_set_visible_and_stop_do_not_raise():
     from PySide6.QtWidgets import QApplication
 
-    from jarvis.platform.linux.tray_qt import QtTray
+    from jarvis.platform.linux.tray_qt import QtSystemTray
+    from jarvis.platform.protocols import TrayItem
 
     QApplication.instance() or QApplication([])
 
-    calls = []
-    tray = QtTray(
-        icon_path=None,
-        on_restaurar=lambda: calls.append("restaurar"),
-        on_briefing=lambda: calls.append("briefing"),
-        on_encerrar=lambda: calls.append("encerrar"),
-    )
-    assert tray.isVisible() is False
-
-    restaurar_action = next(a for a in tray.menu().actions() if a.text() == "Restaurar JARVIS")
-    restaurar_action.trigger()
-    assert calls == ["restaurar"]
-
-
-def test_tray_default_action_is_restaurar():
-    from PySide6.QtWidgets import QApplication
-
-    from jarvis.platform.linux.tray_qt import QtTray
-
-    QApplication.instance() or QApplication([])
-
-    tray = QtTray(icon_path=None, on_restaurar=lambda: None, on_briefing=lambda: None, on_encerrar=lambda: None)
-    restaurar_action = next(a for a in tray.menu().actions() if a.text() == "Restaurar JARVIS")
-    assert tray.menu().defaultAction() is restaurar_action
+    tray = QtSystemTray(ctx=types.SimpleNamespace(kind="linux-x11"))
+    tray.setup("J.A.R.V.I.S.", _fake_image, [TrayItem("Encerrar", lambda: None)])
+    tray.set_visible(True)
+    tray.set_visible(False)
+    tray.stop()

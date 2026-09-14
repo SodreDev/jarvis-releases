@@ -50,7 +50,11 @@ def test_run_in_gui_thread_from_worker_thread():
     assert result.get("thread_name") != "worker-nao-qt"
 
 
-def test_run_in_gui_thread_times_out():
+def test_run_in_gui_thread_from_gui_thread_runs_immediately():
+    """Chamada JÁ vinda da thread da GUI roda `fn` na hora, sem passar por
+    fila/evento nenhum -- esperar ali (como se fosse "de outra thread")
+    travaria o próprio loop do Qt que a chamada precisaria pra ser
+    processada."""
     from PySide6.QtWidgets import QApplication, QWidget
 
     from jarvis.platform.linux.qt_gui import run_in_gui_thread
@@ -58,10 +62,35 @@ def test_run_in_gui_thread_times_out():
     QApplication.instance() or QApplication([])
     window = QWidget()
 
-    # nunca processa eventos -> a chamada tem que estourar o timeout em
-    # vez de travar pra sempre.
     started = time.monotonic()
     result = run_in_gui_thread(window, lambda: 1, timeout=0.2)
     elapsed = time.monotonic() - started
-    assert elapsed < 2.0
-    assert result is None
+    assert result == 1
+    assert elapsed < 0.05, "deveria ter rodado direto, sem esperar timeout nenhum"
+
+
+def test_run_in_gui_thread_times_out_from_worker_thread_without_event_loop():
+    """De uma thread QUE NÃO é a da GUI, sem ninguém bombeando o loop de
+    eventos (`processEvents`), o `fn` nunca roda -- tem que estourar o
+    timeout (devolve None) em vez de travar pra sempre."""
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    from jarvis.platform.linux.qt_gui import run_in_gui_thread
+
+    QApplication.instance() or QApplication([])
+    window = QWidget()
+
+    result = {}
+
+    def _worker():
+        started = time.monotonic()
+        result["returned"] = run_in_gui_thread(window, lambda: 1, timeout=0.2)
+        result["elapsed"] = time.monotonic() - started
+
+    t = threading.Thread(target=_worker, name="worker-nao-qt")
+    t.start()
+    t.join(timeout=2)
+
+    assert not t.is_alive(), "run_in_gui_thread travou em vez de estourar o timeout"
+    assert result.get("returned") is None
+    assert result.get("elapsed", 99) < 2.0
