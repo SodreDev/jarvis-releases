@@ -12,6 +12,9 @@
 #   - Só encerra o PID do kwin_wayland que ESTE script criou.
 #   - Nada de pkill/killall/pgrep -f.
 #   - Sem /dev/snd, PipeWire nem D-Bus da sessão do dono no container.
+#   - `--init`: sem ele o container não tem PID 1 de verdade e um neto
+#     órfão (ex.: teste de PosixProcesses/tree=True) vira zumbi para
+#     sempre em vez de ser recolhido -- achado no N1, ver MATRIZ.md.
 set -euo pipefail
 
 IMAGE="${JARVIS_N3_IMAGE:-jarvis-fedora44}"
@@ -72,7 +75,7 @@ else
     CMD=("${DEFAULT_CMD[@]}")
 fi
 
-podman run --rm \
+podman run --rm --init \
     --security-opt label=disable \
     -v "$RUNTIME_DIR/$SOCKET_NAME:/run/jt/$SOCKET_NAME" \
     -e XDG_RUNTIME_DIR=/run/jt \

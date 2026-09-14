@@ -87,4 +87,7 @@ ENV SDL_AUDIODRIVER=dummy
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu
 
+# `podman run --init ...` sempre (N1/N2/N3): sem init de verdade no
+# container, um neto orfao vira zumbi para sempre em vez de ser
+# recolhido -- ver MATRIZ.md.
 CMD ["xvfb-run", "-a", "/app/.venv-linux/bin/python", "-m", "pytest", "-m", "x11", "tests/smoke"]

@@ -26,6 +26,7 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
 | Fontes (QtWebEngine renderiza texto; sem fonte nenhuma, trava em loop de `remote_font_face_source.cc NOTREACHED` antes de chegar a `JARVIS_SMOKE_READY`) | já vem com o sistema base (google-noto-fonts) | já vem com o sistema base (fonts-dejavu-core) | **`ttf-dejavu noto-fonts`** (Arch não traz nenhuma por padrão) — rodar `fc-cache -f` depois de instalar |
 | GLib (base do Qt/QtWebEngine) | já vem com o sistema base | `libglib2.0-0` (Debian 12) / **`libglib2.0-0t64`** (Ubuntu 24.04, transição t64) | `glib2` |
 | XFixes (Qt xcb/WebEngine, achado no Ubuntu) | já vem com o sistema base | `libxfixes3` | `libxfixes` |
+| XShape (plugin `xcb` do Qt — sem ela o `libqxcb.so` não carrega; a mensagem de erro do Qt aponta pro xcb-cursor, enganosa, o real é `libxcb-shape.so.0`, achado no N2 de Debian/Ubuntu) | já vem com o sistema base | `libxcb-shape0` | já vem com o sistema base |
 | Xvfb (N2, X11 virtual) | `xorg-x11-server-Xvfb` | `xvfb` | `xorg-server-xvfb` |
 | xauth (`xvfb-run` precisa, achado no Debian: "xauth command not found") | já vem com `xorg-x11-server-Xvfb` | `xauth` | `xorg-xauth` |
 | Toolchain de build (evdev do pynput etc.) | `gcc`, `python3-devel`, `kernel-headers` | `gcc`, `python3-dev`, `build-essential` | `gcc`, `base-devel` |
@@ -47,3 +48,14 @@ pacotes nativos (rpm/deb/PKGBUILD) de cada distro.
   do repo) e serve tanto pra N1 (sem display) quanto pra N2 (X11 virtual,
   via `xvfb-run`, CMD padrão). N3 (Wayland) usa `run_n3_wayland.sh` com
   `JARVIS_N3_IMAGE=<tag>`.
+- **`podman run --init`**: sempre usar (N1/N2/N3). Sem init de verdade no
+  container (PID 1 não recolhe órfãos), um neto morto pelo `killpg` que
+  perde o pai antes do `wait()` fica reparentado ao PID 1 do container e
+  vira ZUMBI pra sempre — achado rodando
+  `tests/unit/platform/test_processes_posix.py::test_tree_true_kills_grandchild`
+  no N1 das 4 distros (estado `Z` confirmado em `/proc/<pid>/stat`, ppid
+  1). Não é bug de produção: num desktop real o systemd recolhe o órfão.
+  `run_n3_wayland.sh` já usa `--init`; comandos manuais de N1/N2 devem
+  usar também, ex.: `podman run --rm --init -e JARVIS_TEST_SANDBOXED=0
+  jarvis-fedora44 pytest -m "not needs_display and not windows_only and
+  not slow"`.

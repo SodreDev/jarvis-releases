@@ -22,6 +22,29 @@ def _run_child(script: str) -> subprocess.CompletedProcess:
     )
 
 
+def _is_zombie(pid: int) -> bool:
+    """True se `/proc/<pid>/stat` existe e o 3º campo é `Z` (zombie).
+
+    Dentro de um container sem init (PID 1 não recolhe órfãos), um neto
+    morto pelo `killpg` some junto com o pai que faria o `wait()` dele,
+    fica reparentado ao PID 1 do container e vira zumbi -- permanece na
+    tabela de processos (então `kill(pid, 0)` continua "vivo") sem nunca
+    ser recolhido. Confirmado lendo `/proc/<pid>/stat` no momento da falha
+    em `jarvis-fedora44`: estado "Z", ppid 1. Num desktop real o systemd
+    recolhe o órfão, então isso não indica bug do `PosixProcesses` -- é
+    só o ambiente de teste sem init.
+    """
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
+            stat = f.read()
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+    # campo 2 (comm) pode ter espaços/parênteses -- corta pelo último ')'.
+    after_comm = stat.rsplit(")", 1)[-1].split()
+    state = after_comm[0] if after_comm else ""
+    return state == "Z"
+
+
 def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -29,6 +52,8 @@ def _pid_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    if _is_zombie(pid):
+        return False
     return True
 
 
