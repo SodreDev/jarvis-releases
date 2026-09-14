@@ -1,0 +1,55 @@
+# N1 (sem display) da matriz de distros — Ubuntu 24.04 "noble", apt.
+# ATENÇÃO à transição t64 (ABI de time_t 64-bit): libasound2 virou
+# libasound2t64 nesta versão. As libs X11/XCB/Wayland usadas aqui não
+# entraram nessa lista (nomes iguais ao Debian 12).
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        gcc \
+        git \
+        xz-utils \
+        python3-dev \
+        build-essential \
+        libportaudio2 \
+        xvfb \
+        libnss3 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        libxtst6 \
+        libxcb-cursor0 \
+        libxkbcommon-x11-0 \
+        libxcb-icccm4 \
+        libxcb-keysyms1 \
+        libwayland-cursor0 \
+        libasound2t64 \
+        libgl1 \
+        libegl1 \
+        libfontconfig1 \
+        ca-certificates \
+    && rm -r /var/lib/apt/lists/*
+
+ENV UV_INSTALL_DIR=/usr/local/bin
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+COPY tests/docker/requirements-linux.txt /app/tests/docker/requirements-linux.txt
+RUN uv venv --python 3.12 /app/.venv-linux
+RUN uv pip install --python /app/.venv-linux/bin/python \
+        -r /app/tests/docker/requirements-linux.txt \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        --index-strategy unsafe-best-match
+
+COPY . /app
+
+ENV PATH="/app/.venv-linux/bin:${PATH}"
+ENV JARVIS_TEST_SANDBOXED=1
+ENV SDL_AUDIODRIVER=dummy
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu
+
+CMD ["xvfb-run", "-a", "/app/.venv-linux/bin/python", "-m", "pytest", "-m", "x11", "tests/smoke"]

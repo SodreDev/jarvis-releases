@@ -1,0 +1,49 @@
+# N1 (sem display) da matriz de distros — Arch Linux (rolling), pacman.
+FROM archlinux:latest
+
+RUN pacman -Syu --noconfirm && pacman -S --noconfirm \
+        curl \
+        gcc \
+        git \
+        xz \
+        base-devel \
+        portaudio \
+        xorg-server-xvfb \
+        nss \
+        libxkbcommon \
+        libxkbcommon-x11 \
+        libxcomposite \
+        libxdamage \
+        libxrandr \
+        libxtst \
+        xcb-util-cursor \
+        xcb-util-wm \
+        xcb-util-keysyms \
+        wayland \
+        alsa-lib \
+        mesa \
+        fontconfig \
+    && pacman -Scc --noconfirm
+
+ENV UV_INSTALL_DIR=/usr/local/bin
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+COPY tests/docker/requirements-linux.txt /app/tests/docker/requirements-linux.txt
+RUN uv venv --python 3.12 /app/.venv-linux
+RUN uv pip install --python /app/.venv-linux/bin/python \
+        -r /app/tests/docker/requirements-linux.txt \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        --index-strategy unsafe-best-match
+
+COPY . /app
+
+ENV PATH="/app/.venv-linux/bin:${PATH}"
+ENV JARVIS_TEST_SANDBOXED=1
+ENV SDL_AUDIODRIVER=dummy
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu
+
+CMD ["xvfb-run", "-a", "/app/.venv-linux/bin/python", "-m", "pytest", "-m", "x11", "tests/smoke"]
