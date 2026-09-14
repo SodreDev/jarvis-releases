@@ -28,7 +28,10 @@ RUN pacman -Syu --noconfirm && pacman -S --noconfirm \
         libxi \
         glib2 \
         libxfixes \
-    && pacman -Scc --noconfirm
+        ttf-dejavu \
+        noto-fonts \
+    && pacman -Scc --noconfirm \
+    && fc-cache -f
 
 ENV UV_INSTALL_DIR=/usr/local/bin
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
