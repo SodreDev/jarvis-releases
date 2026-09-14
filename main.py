@@ -2829,6 +2829,17 @@ class JarvisApp:
                 _chc.start_monitor()
             except Exception as _e:
                 print(f"[CLIPBOARD HIST] Monitor não iniciado: {_e}")
+        else:
+            # F2-04b (D-F2-8): sem monitor de clipboard nesta sessão. Avisa uma vez,
+            # sem thread e sem stack trace (o boot passa aqui uma vez só).
+            _motivo_clip = "a área de transferência desta sessão não avisa mudanças"
+            try:
+                _tentativas_clip = getattr(_plat_get(Cap.CLIPBOARD), "_tried", None)
+                if _tentativas_clip:
+                    _motivo_clip = "; ".join(m for _c, m in _tentativas_clip)
+            except Exception:
+                pass
+            print(f"[CLIPBOARD HIST] Monitor indisponível nesta sessão: {_motivo_clip}")
         # ── Rotinas Agendadas ─────────────────────────────────────────────────
         try:
             from comandos import rotinas_ctrl as _rctrl
