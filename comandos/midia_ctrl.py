@@ -51,89 +51,74 @@ def _press_key(vk: int) -> None:
     _user32.keybd_event(vk, 0, 0x0002, 0)  # KEYEVENTF_KEYUP
 
 
+def _media():
+    """Backend de mídia da plataforma (Cap.MEDIA): teclas virtuais no Windows,
+    MPRIS/playerctl no Linux."""
+    from jarvis.platform import Cap, get as _plat_get
+    return _plat_get(Cap.MEDIA)
+
+
+_SEM_PLAYER = "Nenhum player de mídia ativo, Senhor."
+
+
+def _media_ou_aviso(acao) -> Optional[str]:
+    """Roda a ação no backend; sem player (CapabilityUnavailable) devolve o aviso."""
+    from jarvis.platform import CapabilityUnavailable
+    try:
+        acao(_media())
+    except CapabilityUnavailable:
+        return _SEM_PLAYER
+    return None
+
+
 # ── Controles básicos ─────────────────────────────────────────────────────────
 
 def play_pause() -> str:
-    _press_key(VK_MEDIA_PLAY_PAUSE)
-    return "Play/Pause enviado, senhor."
+    return _media_ou_aviso(lambda m: m.play_pause()) or "Play/Pause enviado, senhor."
 
 
 def parar() -> str:
-    _press_key(VK_MEDIA_STOP)
-    return "Mídia parada, senhor."
+    return _media_ou_aviso(lambda m: m.stop()) or "Mídia parada, senhor."
 
 
 def proxima_faixa() -> str:
-    _press_key(VK_MEDIA_NEXT_TRACK)
-    return "Próxima faixa, senhor."
+    return _media_ou_aviso(lambda m: m.next()) or "Próxima faixa, senhor."
 
 
 def faixa_anterior() -> str:
-    _press_key(VK_MEDIA_PREV_TRACK)
-    return "Faixa anterior, senhor."
+    return _media_ou_aviso(lambda m: m.previous()) or "Faixa anterior, senhor."
 
 
 def mutar() -> str:
-    _press_key(VK_VOLUME_MUTE)
-    return "Volume mutado/desmutado, senhor."
+    return _media_ou_aviso(lambda m: m.toggle_mute()) or "Volume mutado/desmutado, senhor."
 
 
 def volume_up(steps: int = 3) -> str:
-    for _ in range(steps):
-        _press_key(VK_VOLUME_UP)
-        time.sleep(0.02)
-    return f"Volume aumentado {steps} nível(is), senhor."
+    # passo ≤ 0 não aperta nada, como o range(steps) de antes
+    return (_media_ou_aviso(lambda m: m.volume_step(max(0, steps)))
+            or f"Volume aumentado {steps} nível(is), senhor.")
 
 
 def volume_down(steps: int = 3) -> str:
-    for _ in range(steps):
-        _press_key(VK_VOLUME_DOWN)
-        time.sleep(0.02)
-    return f"Volume reduzido {steps} nível(is), senhor."
+    return (_media_ou_aviso(lambda m: m.volume_step(-max(0, steps)))
+            or f"Volume reduzido {steps} nível(is), senhor.")
 
 
 # ── Informação de mídia em execução (Windows Media Session) ──────────────────
 
-def _get_media_info_ps() -> dict:
-    """Usa PowerShell para consultar a SMTC (System Media Transport Controls)."""
-    ps_script = """
-$sessions = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager,Windows.Media.Control,ContentType=WindowsRuntime]
-$mgr = $sessions::RequestAsync().GetAwaiter().GetResult()
-$session = $mgr.GetCurrentSession()
-if ($null -eq $session) { Write-Output 'NULL'; exit }
-$info = $session.TryGetMediaPropertiesAsync().GetAwaiter().GetResult()
-$pb = $session.GetPlaybackInfo()
-$app = $session.SourceAppUserModelId
-Write-Output ("{0}|{1}|{2}|{3}" -f $info.Title, $info.Artist, $pb.PlaybackStatus, $app)
-"""
-    try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_script],
-            capture_output=True, text=True, timeout=8
-        )
-        line = r.stdout.strip()
-        if line and line != "NULL":
-            parts = line.split("|", 3)
-            return {
-                "title":  parts[0] if len(parts) > 0 else "",
-                "artist": parts[1] if len(parts) > 1 else "",
-                "status": parts[2] if len(parts) > 2 else "",
-                "app":    parts[3] if len(parts) > 3 else "",
-            }
-    except Exception:
-        pass
-    return {}
-
-
 def o_que_esta_tocando() -> str:
-    """Retorna o que está tocando no sistema agora via SMTC."""
-    info = _get_media_info_ps()
+    """Retorna o que está tocando agora (SMTC no Windows, MPRIS no Linux)."""
+    from jarvis.platform import CapabilityUnavailable
+    try:
+        info = _media().now_playing()
+    except CapabilityUnavailable:
+        return _SEM_PLAYER
     if not info or not info.get("title"):
         return "Nenhuma mídia em reprodução detectada, senhor."
     titulo  = info.get("title", "?")
     artista = info.get("artist", "")
     status  = info.get("status", "")
-    app     = info.get("app", "").split("!")[-1] or "reprodutor desconhecido"
+    app     = (info.get("app") or info.get("player") or "").split("!")[-1] or "reprodutor desconhecido"
 
     status_map = {
         "Playing": "tocando", "Paused": "pausado",

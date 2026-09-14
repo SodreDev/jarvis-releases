@@ -81,6 +81,8 @@ if False:                                # pragma: no cover  # noqa: SIM108
     import jarvis.platform.linux_x11.clipboard  # noqa: F401, E402
     import jarvis.platform.windows.volume  # noqa: F401, E402
     import jarvis.platform.linux.volume  # noqa: F401, E402
+    import jarvis.platform.windows.media  # noqa: F401, E402
+    import jarvis.platform.linux.media  # noqa: F401, E402
 
 
 # ── Detecção do source ao vivo ────────────────────────────────────────────────

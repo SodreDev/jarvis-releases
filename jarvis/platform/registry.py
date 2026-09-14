@@ -36,6 +36,18 @@ REGISTRY: Dict[Cap, Dict[str, Tuple[str, ...]]] = {
             "jarvis.platform.linux.open_path:GioOpen",
         ),
     },
+    # F2-08: headless sem mídia.
+    Cap.MEDIA: {
+        "win32": ("jarvis.platform.windows.media:VirtualKeyMedia",),
+        "linux-wayland": (
+            "jarvis.platform.linux.media:MprisMedia",
+            "jarvis.platform.linux.media:PlayerctlMedia",
+        ),
+        "linux-x11": (
+            "jarvis.platform.linux.media:MprisMedia",
+            "jarvis.platform.linux.media:PlayerctlMedia",
+        ),
+    },
     Cap.VOLUME: {
         "win32": ("jarvis.platform.windows.volume:PycawVolume",),
         "linux-*": (
