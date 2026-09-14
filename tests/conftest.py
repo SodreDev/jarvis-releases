@@ -4,6 +4,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -50,7 +51,7 @@ def isolated_home(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def private_session_bus(monkeypatch):
+def private_session_bus(request, monkeypatch):
     """Sobe um `dbus-daemon --session` PRIVADO (nunca o D-Bus do host),
     aponta `DBUS_SESSION_BUS_ADDRESS` pra ele e mata só esse PID no fim.
     Regra da SPEC F2: "nenhum teste pode falar com o DBUS_SESSION_BUS_ADDRESS
@@ -63,6 +64,19 @@ def private_session_bus(monkeypatch):
     `unix:path=/run/dbus/system_bus_socket`). Sem isso, qualquer teste
     que exercite esse caminho falaria por acidente com o D-Bus de
     SISTEMA de verdade do host.
+
+    Limpeza: o PID impresso por `--print-pid` é guardado num finalizer de
+    `request` (roda mesmo se o SETUP da fixture falhar depois de já ter
+    subido o daemon, ex. erro no `monkeypatch.setenv`) -- terminate,
+    espera curta e kill só se precisar. `--fork` faz o `dbus-daemon`
+    desanexar (novo ppid, reparented pro init) DE PROPÓSITO, então o
+    finalizer é a única forma de encerrar -- não tem processo-filho
+    "natural" pra monitorar. ATENÇÃO: isso não sobrevive a um SIGKILL do
+    processo do pytest (achado real: 4 PIDs vazados depois de várias
+    rodadas com `timeout --signal=KILL` enquanto um teste travava antes
+    de um fix -- finally/finalizer nunca rodam sob SIGKILL, é limitação
+    do SO, não da fixture). Prefira SIGTERM (`timeout` sem `--signal`)
+    pra matar um pytest travado usando esta fixture.
     """
     if shutil.which("dbus-daemon") is None:
         pytest.skip("dbus-daemon não está instalado neste host/container")
@@ -77,15 +91,31 @@ def private_session_bus(monkeypatch):
     lines = [line for line in result.stdout.splitlines() if line.strip()]
     address, pid = lines[0], int(lines[1])
 
-    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", address)
-    monkeypatch.setenv("DBUS_SYSTEM_BUS_ADDRESS", address)
-    try:
-        yield address
-    finally:
+    def _kill_daemon():
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
+            return
+        for _ in range(20):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.05)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
             pass
+
+    # addfinalizer (não try/finally em volta do yield): cobre também uma
+    # falha DEPOIS de já termos o PID mas ANTES do yield (ex.:
+    # monkeypatch.setenv), que um try/finally só em volta do yield não
+    # pegaria.
+    request.addfinalizer(_kill_daemon)
+
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", address)
+    monkeypatch.setenv("DBUS_SYSTEM_BUS_ADDRESS", address)
+    yield address
 
 
 @pytest.fixture
