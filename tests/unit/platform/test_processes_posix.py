@@ -66,13 +66,23 @@ def test_child_cleanup_kills_registered_process_on_normal_exit():
 
 _CHILD_TREE = """
 import subprocess
+import sys
 from jarvis.platform.linux.processes import PosixProcesses
 
 procs = PosixProcesses()
 # "filho" em sessão própria (start_new_session=True) que por sua vez gera
-# um NETO -- como um navegador faria com os processos dele.
+# um NETO -- como um navegador faria com os processos dele. Neto criado
+# via Python (subprocess com sys.executable), não `sh -c "... & ..."`:
+# /bin/sh é dash no Debian/Ubuntu, cujo job-control ($!) se comporta
+# diferente do bash e não reproduzia o cenário de forma confiável.
+_grandchild_script = (
+    "import subprocess; "
+    "p = subprocess.Popen(['sleep', '60']); "
+    "print(f'GRANDCHILD_PID={p.pid}', flush=True); "
+    "p.wait()"
+)
 proc = subprocess.Popen(
-    ["sh", "-c", "sleep 60 & echo GRANDCHILD_PID=$!; wait"],
+    [sys.executable, "-c", _grandchild_script],
     start_new_session=True,
     stdout=subprocess.PIPE,
     text=True,
@@ -115,7 +125,7 @@ atexit.register(lambda: print(f"VIOLATIONS={len(violations)}", flush=True))
 from jarvis.platform.linux.processes import PosixProcesses
 
 procs = PosixProcesses()
-proc = subprocess.Popen(["sh", "-c", "sleep 60 & wait"], start_new_session=True)
+proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
 procs.register_child(proc, tree=True)
 procs.install_child_cleanup()
 """
