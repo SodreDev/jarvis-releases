@@ -35,6 +35,7 @@ rembg
 yfinance
 pynput
 pyautogui
+jeepney
 psutil
 pyperclip
 plyer
