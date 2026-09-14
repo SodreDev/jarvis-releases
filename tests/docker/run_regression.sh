@@ -19,10 +19,31 @@
 # usa `--init` (sem ele um neto órfão vira zumbi pra sempre em vez de ser
 # recolhido -- achado no N1, ver MATRIZ.md). rc=5 do pytest ("nenhum teste
 # coletado") conta como FALHA, não sucesso silencioso.
+#
+# Todo `podman run` usa `--timeout <s>` (mata o CONTAINER, do lado do
+# servidor podman) além do `timeout --signal=KILL` do host (mata só o
+# cliente `podman run`): sem `--timeout`, um `timeout --signal=KILL` no
+# host mata o cliente mas o container continua rodando -- achado real, 7
+# containers vazados de sessões de debug anteriores rodando 7-8h. Também
+# usa `--name` único, guardado em `$ACTIVE_CONTAINERS`; um `trap` no EXIT
+# do script para (`podman stop`, nunca `-a`/pkill) qualquer um que ainda
+# esteja rodando.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
+
+ACTIVE_CONTAINERS=()
+cleanup_containers() {
+    local name
+    for name in "${ACTIVE_CONTAINERS[@]:-}"; do
+        [ -z "$name" ] && continue
+        if podman inspect "$name" >/dev/null 2>&1; then
+            podman stop -t 2 "$name" >/dev/null 2>&1 || true
+        fi
+    done
+}
+trap cleanup_containers EXIT
 
 if [ "$#" -eq 0 ]; then
     DISTROS=(fedora44)
@@ -80,26 +101,35 @@ for distro in "${DISTROS[@]}"; do
     fi
 
     echo "-- import jeepney/webview/QtWebEngineWidgets --" >> "$LOG"
-    timeout --signal=KILL 120 podman run --rm --init "jarvis-${distro}" \
+    IMPORT_NAME="jarvis-reg-${distro}-import-$$"
+    ACTIVE_CONTAINERS+=("$IMPORT_NAME")
+    timeout --signal=KILL 120 podman run --rm --init --timeout 100 --name "$IMPORT_NAME" "jarvis-${distro}" \
         python -c "import jeepney, webview, PySide6.QtWebEngineWidgets; print('ok')" >> "$LOG" 2>&1
     IMPORT_RC=$?
     echo "import_rc=$IMPORT_RC" >> "$LOG"
     [ "$IMPORT_RC" -eq 0 ] && IMPORT_STATUS=ok || { IMPORT_STATUS=FALHOU; OVERALL_RC=1; }
 
+    N1_NAME="jarvis-reg-${distro}-n1-$$"
+    ACTIVE_CONTAINERS+=("$N1_NAME")
     run_pytest_step "$distro N1" "/tmp/jarvis-reg-${distro}-n1.log" \
-        timeout --signal=KILL 600 podman run --rm --init -e JARVIS_TEST_SANDBOXED=0 "jarvis-${distro}" \
+        timeout --signal=KILL 600 podman run --rm --init --timeout 580 --name "$N1_NAME" \
+        -e JARVIS_TEST_SANDBOXED=0 "jarvis-${distro}" \
         pytest -m "not needs_display and not windows_only and not slow"
     N1_RC=$?
     [ "$N1_RC" -eq 0 ] && N1_STATUS=ok || { N1_STATUS=FALHOU; OVERALL_RC=1; }
 
+    N2BOOT_NAME="jarvis-reg-${distro}-n2boot-$$"
+    ACTIVE_CONTAINERS+=("$N2BOOT_NAME")
     run_pytest_step "$distro N2 boot x11" "/tmp/jarvis-reg-${distro}-n2-boot.log" \
-        timeout --signal=KILL 150 podman run --rm --init "jarvis-${distro}" \
+        timeout --signal=KILL 150 podman run --rm --init --timeout 130 --name "$N2BOOT_NAME" "jarvis-${distro}" \
         xvfb-run -a pytest -m x11 tests/smoke/test_boot_x11.py
     N2_RC=$?
     [ "$N2_RC" -eq 0 ] && N2_STATUS=ok || { N2_STATUS=FALHOU; OVERALL_RC=1; }
 
+    N2RELOAD_NAME="jarvis-reg-${distro}-n2reload-$$"
+    ACTIVE_CONTAINERS+=("$N2RELOAD_NAME")
     run_pytest_step "$distro N2 reload x10" "/tmp/jarvis-reg-${distro}-n2-reload.log" \
-        timeout --signal=KILL 150 podman run --rm --init "jarvis-${distro}" \
+        timeout --signal=KILL 150 podman run --rm --init --timeout 130 --name "$N2RELOAD_NAME" "jarvis-${distro}" \
         xvfb-run -a pytest -m x11 tests/smoke/test_reload_ui_qt.py
     RELOAD_RC=$?
     [ "$RELOAD_RC" -eq 0 ] && RELOAD_STATUS=ok || { RELOAD_STATUS=FALHOU; OVERALL_RC=1; }
@@ -107,7 +137,7 @@ for distro in "${DISTROS[@]}"; do
     N3_STATUS="pulado"
     if [ "$WITH_N3" = "1" ]; then
         run_pytest_step "$distro N3 boot wayland" "/tmp/jarvis-reg-${distro}-n3-boot.log" \
-            env JARVIS_N3_IMAGE="jarvis-${distro}" timeout --signal=KILL 180 \
+            env JARVIS_N3_IMAGE="jarvis-${distro}" JARVIS_N3_TIMEOUT=160 timeout --signal=KILL 180 \
             "$REPO_ROOT/tests/docker/run_n3_wayland.sh" \
             pytest -m wayland tests/smoke/test_boot_wayland.py
         N3_RC=$?

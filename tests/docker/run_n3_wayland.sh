@@ -22,6 +22,13 @@ SOCKET_NAME="jarvis-test-0"
 WIDTH=1400
 HEIGHT=900
 BOOT_TIMEOUT_S=20
+# `podman run --timeout`: mata o CONTAINER do lado do servidor podman se o
+# comando não terminar sozinho -- diferente de um `timeout --signal=KILL`
+# do CALLER deste script, que só mata o cliente podman e deixa o
+# container rodando (achado real: 7 containers vazados de sessões de
+# debug antigas rodando 7-8h). Sobrescrevível com JARVIS_N3_TIMEOUT.
+CONTAINER_TIMEOUT_S="${JARVIS_N3_TIMEOUT:-300}"
+CONTAINER_NAME="jarvis-n3-$$"
 
 RUNTIME_DIR="$(mktemp -d "${TMPDIR:-/tmp}/jarvis-n3-runtime.XXXXXX")"
 chmod 0700 "$RUNTIME_DIR"
@@ -32,6 +39,10 @@ cleanup() {
     if [ -n "$KWIN_PID" ] && kill -0 "$KWIN_PID" 2>/dev/null; then
         kill "$KWIN_PID" 2>/dev/null || true
         wait "$KWIN_PID" 2>/dev/null || true
+    fi
+    # container próprio desta execução, pelo nome -- nunca `podman stop -a`.
+    if podman inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        podman stop -t 2 "$CONTAINER_NAME" >/dev/null 2>&1 || true
     fi
     # pasta própria criada por mktemp -d nesta mesma execução -- flags
     # longas de propósito (a política de segurança bloqueia o padrão curto
@@ -93,7 +104,7 @@ fi
 INNER_SCRIPT='XDG_SESSION_TYPE=x11 QT_QPA_PLATFORM=offscreen /usr/libexec/kglobalacceld >/tmp/kglobalacceld.log 2>&1 & sleep 2; exec "$@"'
 
 set +e
-podman run --rm --init \
+podman run --rm --init --timeout "$CONTAINER_TIMEOUT_S" --name "$CONTAINER_NAME" \
     --security-opt label=disable \
     -v "$RUNTIME_DIR/$SOCKET_NAME:/run/jt/$SOCKET_NAME" \
     -e XDG_RUNTIME_DIR=/run/jt \
