@@ -6,6 +6,9 @@
 # Uso:
 #   tests/docker/run_n3_wayland.sh                       # padrão: pytest -m wayland tests/smoke
 #   tests/docker/run_n3_wayland.sh <comando...>           # roda outro comando dentro do container
+#   JARVIS_EXPECT_KGLOBALACCEL=1 tests/docker/run_n3_wayland.sh ...  # repassa
+#     pro container (0 por padrão) -- test_hotkeys_n2_n3.py exige o backend
+#     kglobalaccel de verdade quando vale 1, só jarvis-fedora44 tem o pacote.
 #
 # Regras de segurança (memória "Ambiente de teste do port Linux"):
 #   - XDG_RUNTIME_DIR PRÓPRIO do teste (mktemp -d, 0700) -- nunca o do dono.
@@ -111,6 +114,7 @@ podman run --rm --init --timeout "$CONTAINER_TIMEOUT_S" --name "$CONTAINER_NAME"
     -e WAYLAND_DISPLAY="$SOCKET_NAME" \
     -e XDG_SESSION_TYPE=wayland \
     -e JARVIS_TEST_SANDBOXED=1 \
+    -e JARVIS_EXPECT_KGLOBALACCEL="${JARVIS_EXPECT_KGLOBALACCEL:-0}" \
     "$IMAGE" \
     dbus-run-session -- bash -c "$INNER_SCRIPT" bash "${CMD[@]}"
 RUN_RC=$?

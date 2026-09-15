@@ -160,10 +160,22 @@ for distro in "${DISTROS[@]}"; do
 
     N3_STATUS="pulado"
     if [ "$WITH_N3" = "1" ]; then
+        # kglobalacceld só está instalado em jarvis-fedora44 (dependência
+        # de sistema do KDE, não algo que o Jarvis embarca) -- fixa a
+        # expectativa do PTT por IMAGEM, não sondando o binário dentro do
+        # teste (frágil: se a fedora44 perder o pacote um dia, um teste
+        # "esperto" que se adapta sozinho passaria com backend=none sem
+        # ninguém perceber a regressão).
+        if [ "$distro" = "fedora44" ]; then
+            EXPECT_KGA=1
+        else
+            EXPECT_KGA=0
+        fi
         # combina boot + tray (com e sem watcher) + áudio + PTT numa única
         # subida de kwin_wayland (mais barato que uma por arquivo).
         run_pytest_step "$distro N3 wayland (boot/tray/audio/PTT)" "/tmp/jarvis-reg-${distro}-n3.log" \
-            env JARVIS_N3_IMAGE="jarvis-${distro}" JARVIS_N3_TIMEOUT=280 timeout --signal=KILL 300 \
+            env JARVIS_N3_IMAGE="jarvis-${distro}" JARVIS_N3_TIMEOUT=280 JARVIS_EXPECT_KGLOBALACCEL="$EXPECT_KGA" \
+            timeout --signal=KILL 300 \
             "$REPO_ROOT/tests/docker/run_n3_wayland.sh" \
             pytest -m wayland tests/smoke/test_boot_wayland.py tests/smoke/test_tray_n2_n3.py \
             tests/smoke/test_audio_exit.py tests/smoke/test_hotkeys_n2_n3.py
