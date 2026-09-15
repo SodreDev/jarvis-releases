@@ -25,7 +25,7 @@
 
 **Não entra:**
 - Fases 3 e 4;
-- publicação da release (é do dono, D-F5-6);
+- release normal/Windows (só depois do N4). A **pré-release Linux** é publicada pela CLI release, sob ordem do orquestrador, depois do M2 (D-F5-6);
 - aarch64 (D-F5-7);
 - Flatpak, rpm e deb;
 - mudança no build do Windows.
@@ -49,7 +49,9 @@
 
 **N-dono:** duplo clique no Plasma real (montagem FUSE de verdade), item no menu via `.desktop`, aviso de atualização, e o checklist N-dono da Fase 2 **dentro do AppImage**.
 
-**Proibido:** instalar qualquer coisa no host do dono, rodar o AppImage na sessão real ou publicar release. Tudo roda em container, no KWin virtual ou na sandbox.
+**Proibido:** instalar qualquer coisa no host do dono, rodar o AppImage na sessão real ou publicar fora do fluxo da D-F5-6 (só pré-release Linux, pela CLI release, sob ordem do orquestrador, depois do M2 verde). Tudo roda em container, no KWin virtual ou na sandbox.
+
+**Publicação (D-F5-6):** o M2 verde (matriz + sandbox) libera a pré-release. O N-dono é recomendado, mas não bloqueia a pré-release.
 
 ## 1. Níveis de teste
 
@@ -241,7 +243,8 @@ O custo é duplicar as listas `collect_all`. A mitigação é a hidden list do L
    - `usr/share/applications/<APP_ID>.desktop`;
    - `usr/share/icons/hicolor/{256x256,512x512}/apps/<APP_ID>.png`;
    - `.DirIcon`;
-   - `usr/share/metainfo/<APP_ID>.metainfo.xml`.
+   - `usr/share/metainfo/<APP_ID>.metainfo.xml`;
+   - **`THIRD_PARTY_LICENSES.txt`** na raiz do AppDir (D-F5-4): gerado no build com a licença do Jarvis (Apache-2.0), mais os textos de licença das wheels coletadas (`importlib.metadata` → `License`/arquivos `LICENSE*` do `dist-info`), do Qt/PySide6 (LGPLv3), do ffmpeg LGPL (com a origem e o sha256 do build) e do PortAudio. O build falha se faltar a licença de ffmpeg, Qt ou PortAudio.
 4. **Remover do AppDir** as libs que precisam vir do sistema (§5, lista "PROIBIDO EMBUTIR"). O build **falha** se alguma sobrar.
 5. **Checagem de glibc:** falha se algum ELF exigir `GLIBC_2.29` ou mais.
 6. `appimagetool` com **runtime estático** (type2-runtime; release **fixada por versão + sha256** em `tests/docker/Dockerfile.appimage-build`): `ARCH=x86_64 appimagetool -u "gh-releases-zsync|NinjaZinS2|jarvis-releases|latest-pre|JARVIS-*-x86_64.AppImage.zsync" AppDir dist-appimage/JARVIS-<TAG>-x86_64.AppImage`, que gera também o `.zsync`. `<TAG>` = `v<VERSION>-linux.<N>` (§4 F5-11), passado por `JARVIS_BUILD_TAG`;
@@ -271,7 +274,7 @@ O custo é duplicar as listas `collect_all`. A mitigação é a hidden list do L
 
 **Proteção do updater do Windows** (`updater/check_update.py`, âncora `url = f"{API_BASE}/repos/{repo}/releases/latest"`). Ele consulta `/releases/latest`, que **ignora pré-releases**. Depois escolhe asset `name.lower()` que `startswith("update_payload") and endswith(".zip")` (payload aplicado automaticamente) ou que `endswith(".exe") and "setup" in name` (instalador). Três travas independentes:
 
-1. **Nunca "Latest".** Toda release Linux é criada com `--prerelease --latest=false` (subcomando `create` do `gh release`) e nunca é editada para release normal. Para o Linux, o `tools/make_release_linux.py` (F5-12) **só imprime** comandos com essas duas flags. Um teste K garante isso, e nenhum outro comando de publicação existe no script.
+1. **Nunca "Latest".** Toda release Linux é criada com `gh release create ... --prerelease --latest=false` e nunca é editada para release normal. O `tools/make_release_linux.py` (F5-12) imprime esse comando e, só no modo `--publish`, o executa com as duas flags. Um teste K garante isso, e nenhum outro comando de publicação existe no script.
 2. **Nomes de asset que não casam com o updater do Windows:**
    - `JARVIS-<TAG>-x86_64.AppImage`;
    - `JARVIS-<TAG>-x86_64.AppImage.zsync`;
@@ -330,8 +333,26 @@ O custo é duplicar as listas `collect_all`. A mitigação é a hidden list do L
   4. `write_checksums([AppImage, zsync])` → `SHA256SUMS-linux.txt`;
   5. assinatura GPG destacada `SHA256SUMS-linux.txt.asc` **só** com `--sign` e chave configurada (**D-F5-5**);
   6. valida a tag (`^v\d+\.\d+\.\d+-linux\.\d+$`, com base igual ao `VERSION`) e os nomes dos assets (nenhum `update_payload*`, `.zip`, `.exe` ou "setup");
-  7. gera `RELEASE_NOTES-linux.md` e **imprime** para o dono o comando de publicação com o subcomando `create` do `gh release`, sempre com `--prerelease --latest=false`, título "J.A.R.V.I.S. <TAG> (Linux, pré-release)" e os 4 assets. **Nunca publica.**
-- **Aceite:** K com uma árvore falsa contendo um segredo de mentira → aborta; `SHA256SUMS-linux.txt` confere com `sha256sum -c`; tag ou nome de asset fora da regra → aborta; o comando impresso tem `--prerelease` **e** `--latest=false`; nenhum `subprocess` de publicação é chamado (espião).
+  7. gera `RELEASE_NOTES-linux.md` e **imprime** o comando de publicação: `gh release create <TAG> --repo NinjaZinS2/jarvis-releases --prerelease --latest=false --title "J.A.R.V.I.S. <TAG> (Linux, pré-release)" --notes-file RELEASE_NOTES-linux.md <4 assets>`. **Por padrão só imprime.**
+  8. **Modo `--publish` (explícito, D-F5-6):** executa **exatamente** esse comando.
+     - A **CLI release** só roda com ordem do orquestrador, depois do M2 da Fase 5 verde.
+     - Pré-condições (cada uma aborta sem publicar):
+       - scan limpo (repo e AppDir);
+       - `sha256sum -c` ok;
+       - tag e nomes de asset válidos;
+       - a tag ainda não existe no repo;
+       - o comando montado contém `--prerelease` **e** `--latest=false`.
+     - Não existe caminho no script para release normal, para `--latest` nem para editar release existente.
+     - Depois de publicar, confere via API que a release tem `prerelease: true` e que `/releases/latest` **não** mudou.
+- **Aceite:**
+  - K com uma árvore falsa contendo um segredo de mentira → aborta;
+  - `SHA256SUMS-linux.txt` confere com `sha256sum -c`;
+  - tag ou nome de asset fora da regra → aborta;
+  - o comando impresso tem `--prerelease` **e** `--latest=false`;
+  - **sem `--publish`**, nenhum `subprocess` de publicação é chamado (espião);
+  - **com `--publish`** e pré-condição falhando → aborta sem chamar;
+  - **com `--publish`** e tudo ok → exatamente uma chamada, com as duas flags;
+  - verificação pós-publicação com API falsa (`prerelease: false` ou `/releases/latest` mudado → erro alto).
 - **Testes (executor):** K `tests/unit/test_make_release_linux.py`.
 
 ### F5-13 — Smoke do AppImage (qa)
@@ -416,7 +437,7 @@ A imagem `appimage-bare` instala **só** a coluna SISTEMA (nomes apt da MATRIZ).
 - `comandos/discord_ctrl.py`;
 - `main.py`.
 
-**Recomendação (D-F5-3):** v1 = **Núcleo**, meta **≤ 450 MB**; teto duro de 700 MB, acima disso o build falha.
+**DECIDIDO (D-F5-3, 2026-09-14):** v1 = **Núcleo**, meta **≤ 450 MB**; teto duro de 700 MB, acima disso o build falha.
 - TTS por edge-tts/ElevenLabs/Gemini (nuvem), STT pelo Groq (nuvem).
 - VAD e embeddings desligados com mensagem **se** a F5-01 (inventário) confirmar que degradam sem quebrar.
 - Os pesados voltam depois como **"Pacote de modelos"** opcional: wheels baixadas para `$XDG_DATA_HOME/jarvis/extras/python3.12/site-packages`, entrando no `sys.path` pelo `rthook_linux`. Mesma ABI do Python embutido.
@@ -443,19 +464,20 @@ A imagem `appimage-bare` instala **só** a coluna SISTEMA (nomes apt da MATRIZ).
 | R9 | Pré-release Linux chegando às instalações Windows por auto-update, ou update do AppImage apontando para release só-Windows | três travas da F5-11 (nunca Latest, nomes de asset, esquema de tag); `latest-pre` + regra "toda pré-release leva assets Linux"; verificação própria via `/releases` filtrando pré-release e `*.AppImage`; plano B: tag fixa `linux-stable` |
 | R10 | Sessão/portal: `.desktop` com `Exec` antigo depois de mover o AppImage | F5-05 regrava quando o `Exec` muda |
 | R11 | Segredos ou PII no bundle (`datas` puxando pastas locais) | scan no AppDir + lista de ausência (F5-12) |
-| R12 | Licenças: ffmpeg GPL, Qt LGPL (PySide6 dinâmico está ok), libs no bundle | D-F5-4; `THIRD_PARTY_LICENSES.txt` gerado no AppDir (backlog se não couber na F5-10) |
+| R12 | Licenças: ffmpeg, Qt LGPL (PySide6 dinâmico está ok), libs no bundle | D-F5-4 decidida (ffmpeg LGPL, Jarvis Apache-2.0); `THIRD_PARTY_LICENSES.txt` obrigatório na F5-10 |
+| R13 | Publicação automatizada virar release normal ou "Latest" | F5-12 `--publish` só com pré-condições; só `--prerelease --latest=false`; verificação pós-publicação de `/releases/latest`; só a CLI release roda, sob ordem do orquestrador, depois do M2 |
 
-## 8. Decisões do dono (não bloqueiam; a FILA usa a recomendação)
+## 8. Decisões D-F5 (todas DECIDIDAS em 2026-09-14: D-F5-1 pelo dono; as demais pelo orquestrador, com autonomia delegada pelo dono)
 
 | ID | Decisão | Recomendação |
 |---|---|---|
 | **D-F5-1** | **DECIDIDA pelo dono (2026-09-14):** o AppImage sai como **pré-release no `NinjaZinS2/jarvis-releases`**; o Windows só ganha release depois do N4 | Aplicado na F5-11/F5-12: `--prerelease --latest=false`; tags `v<VERSION>-linux.<N>`; assets sem `update_payload`/`.zip`/`.exe`/"setup"; update-info `gh-releases-zsync|NinjaZinS2|jarvis-releases|latest-pre|JARVIS-*-x86_64.AppImage.zsync`; plano B: tag fixa `linux-stable` |
-| **D-F5-2** | App ID definitivo (pendente desde D-F2-2): nome do `.desktop`/metainfo/ícone | `io.github.ninjazins2.Jarvis` |
-| **D-F5-3** | Escopo/tamanho: AppImage **Núcleo** (~300–400 MB, sem torch/kokoro/easyocr/mediapipe…) ou **Completo** (~0,8–1 GB) | Núcleo no v1 + "Pacote de modelos" opcional depois |
-| **D-F5-4** | ffmpeg estático: build **GPL** (com ffplay, mais codecs) ou **LGPL** | LGPL com ffplay, se a `LICENSE` do Jarvis não for GPL; conferir antes do 1º build |
-| **D-F5-5** | Assinatura: só `SHA256SUMS` ou também GPG destacada (chave sua) | `SHA256SUMS` no v1; GPG quando houver chave dedicada |
-| **D-F5-6** | Publicação: quem sobe a release no GitHub e quando | Você, com os comandos impressos pela F5-12, depois do N-dono |
-| **D-F5-7** | Arquiteturas: só x86_64 no v1 | Só x86_64 |
-| **D-F5-8** | Live-source no Linux congelado: só com `JARVIS_SOURCE` + `JARVIS_DEV=1`, ou desligado | Só com as duas variáveis |
-| **D-F5-9** | Aplicar update: só aviso + link, ou embutir o `appimageupdatetool` no bundle | Aviso + link, aplicando via `appimageupdatetool` só se ele existir no sistema |
-| **D-F5-10** | Atalho no menu: automático no 1º boot ou opt-in | Opt-in ("instalar atalho no menu") + AppImageLauncher/Gear Lever |
+| **D-F5-2** | **DECIDIDA (2026-09-14):** App ID = `io.github.ninjazins2.Jarvis`. Fecha também a D-F2-2. | Aplicado em `jarvis/platform/linux/app_id.py`, `.desktop`, metainfo e ícones. |
+| **D-F5-3** | **DECIDIDA (2026-09-14):** AppImage **Núcleo** no v1, meta **≤ 450 MB**, teto **700 MB** (acima disso o build falha). O "Pacote de modelos" fica para depois. | `excludes` do Núcleo no `JARVIS-linux.spec` (F5-09), com base no inventário da F5-01. |
+| **D-F5-4** | **DECIDIDA (2026-09-14):** ffmpeg estático **LGPL com ffplay**. A `LICENSE` do Jarvis será **Apache-2.0** (decisão do dono). | Versão fixada com sha256 no container de build. O `THIRD_PARTY_LICENSES.txt` no AppDir entra **na F5-10**, não no backlog. |
+| **D-F5-5** | **DECIDIDA (2026-09-14):** só `SHA256SUMS-linux.txt` no v1, sem GPG. | A opção `--sign` da F5-12 fica fora do v1. |
+| **D-F5-6** | **DECIDIDA (2026-09-14), MUDOU:** o dono autorizou o orquestrador a publicar depois dos testes. A **pré-release Linux** é publicada pela **CLI release, sob ordem do orquestrador**, depois do **M2 da Fase 5 verde** (matriz + sandbox). O N-dono é recomendado, mas **não bloqueia** a pré-release. A release normal/Windows continua **só depois do N4**. | Modo `--publish` explícito da F5-12, sempre `--prerelease --latest=false`. |
+| **D-F5-7** | **DECIDIDA (2026-09-14):** só x86_64. | — |
+| **D-F5-8** | **DECIDIDA (2026-09-14):** live-source no Linux congelado só com `JARVIS_SOURCE` + `JARVIS_DEV=1`. | F5-07 |
+| **D-F5-9** | **DECIDIDA (2026-09-14):** aviso + link; aplicar via `appimageupdatetool` só se ele existir no sistema (não embutido). | F5-11 |
+| **D-F5-10** | **DECIDIDA (2026-09-14):** atalho no menu é opt-in ("instalar atalho no menu"), além de AppImageLauncher/Gear Lever. | F5-05 |
