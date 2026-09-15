@@ -420,8 +420,9 @@ Gera em `installer/output/`:
 
 ## Licença
 
-JARVIS Personal Use License v1.0 — uso pessoal e não-comercial.  
-Veja [LICENSE](LICENSE) para os termos completos.
+Distribuído sob a **Apache License 2.0** — veja [LICENSE](LICENSE) para os termos completos e [NOTICE](NOTICE) para as atribuições.
+
+Este projeto redistribui modelos pré-treinados do **Google MediaPipe** (`hand_landmarker.task`, `face_landmarker.task`, `blaze_face_short_range.tflite`, em `gesture_interface/gesture_data/`), também sob Apache-2.0 e de propriedade do Google LLC / MediaPipe Authors. Consulte o [NOTICE](NOTICE).
 
 ---
 
@@ -696,8 +697,9 @@ Gera em `installer/output/`:
 
 ## Licença
 
-JARVIS Personal Use License v1.0 — uso pessoal e não-comercial.  
-Veja [LICENSE](LICENSE) para os termos completos.
+Distribuído sob a **Apache License 2.0** — veja [LICENSE](LICENSE) para os termos completos e [NOTICE](NOTICE) para as atribuições.
+
+Este projeto redistribui modelos pré-treinados do **Google MediaPipe** (`hand_landmarker.task`, `face_landmarker.task`, `blaze_face_short_range.tflite`, em `gesture_interface/gesture_data/`), também sob Apache-2.0 e de propriedade do Google LLC / MediaPipe Authors. Consulte o [NOTICE](NOTICE).
 
 ---
 
