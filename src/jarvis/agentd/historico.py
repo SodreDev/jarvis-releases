@@ -1,0 +1,131 @@
+"""Histórico de turno: só o que o dono **ouviu** (regra 4 da §3.3, cartões F1-11 e F1-12).
+
+"Texto enfileirado e não tocado não existe para o modelo." Então a entrada de histórico não sai
+do texto que mandamos sintetizar: sai do `PlaybackProgress`, que conta amostras **consumidas
+pelo sumidouro**, passado pelo mapa texto ↔ amostras do F1-09.
+
+Cada entrada carrega `epoch` e `played_ms`, porque é isso que torna o histórico auditável: dá
+para cruzar com o log encadeado (F0-02) e ver que o que o modelo lembra é o que saiu no
+alto-falante.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+
+from jarvis.agentd.tts import Fala
+from jarvis.audio_io.quadro import TAXA_PADRAO
+from jarvis.barramento.envelope import Envelope, Tipo
+
+
+@dataclass(frozen=True, slots=True)
+class EntradaDeHistorico:
+    """Uma fala nossa, do jeito que o dono ouviu."""
+
+    epoch: int
+    chunk_id: str
+    played_ms: int
+    texto: str
+    truncada: bool
+
+    @property
+    def amostras(self) -> int:
+        return int(self.played_ms * TAXA_PADRAO / 1000)
+
+
+@dataclass(slots=True)
+class Historico:
+    """O histórico do turno, construído a partir de `PlaybackProgress`."""
+
+    entradas: list[EntradaDeHistorico] = field(default_factory=list)
+
+    def registrar(
+        self, progresso: Envelope, fala: Fala, *, amostras_tocadas: int
+    ) -> EntradaDeHistorico:
+        """Anota o que tocou. `amostras_tocadas` é o total consumido pelo sumidouro no turno."""
+        if progresso.type is not Tipo.PLAYBACK_PROGRESS:
+            raise ValueError(f"histórico só registra PlaybackProgress, não {progresso.type}")
+        texto = fala.texto_ate(amostras_tocadas)
+        entrada = EntradaDeHistorico(
+            epoch=int(progresso.payload["epoch"]),
+            chunk_id=str(progresso.payload["chunk_id"]),
+            played_ms=int(progresso.payload["played_ms"]),
+            texto=texto,
+            truncada=texto != fala.texto,
+        )
+        self.entradas.append(entrada)
+        return entrada
+
+    @property
+    def texto_ouvido(self) -> str:
+        """O que o dono ouviu no turno: o prefixo mais longo registrado."""
+        return max((e.texto for e in self.entradas), key=len, default="")
+
+    @property
+    def played_ms_total(self) -> int:
+        return max((e.played_ms for e in self.entradas), default=0)
+
+    def contem(self, trecho: str) -> bool:
+        """`True` se algum texto registrado contém o trecho — usado para provar ausência."""
+        alvo = trecho.strip()
+        return bool(alvo) and any(alvo in e.texto for e in self.entradas)
+
+    def entradas_do_epoch(self, epoch: int) -> list[EntradaDeHistorico]:
+        return [e for e in self.entradas if e.epoch == epoch]
+
+    def para_log(self) -> list[dict[str, object]]:
+        """O que vai para o log encadeado (F0-02): texto, epoch e played_ms."""
+        return [
+            {
+                "epoch": e.epoch,
+                "chunk_id": e.chunk_id,
+                "played_ms": e.played_ms,
+                "texto": e.texto,
+                "truncada": e.truncada,
+            }
+            for e in self.entradas
+        ]
+
+
+def texto_nao_tocado(fala: Fala, amostras_tocadas: int) -> str:
+    """O sufixo que foi sintetizado e **não** saiu: é o que não pode existir no histórico."""
+    return fala.texto[len(fala.texto_ate(amostras_tocadas)) :]
+
+
+def falas_truncadas(entradas: Sequence[EntradaDeHistorico]) -> list[EntradaDeHistorico]:
+    return [e for e in entradas if e.truncada]
+
+
+@dataclass(frozen=True, slots=True)
+class Retomada:
+    """O que o `s2` recebe quando o dono diz "continua" (regra 5 da §3.3).
+
+    **Só o trecho tocado.** O plano antigo não volta: o que foi enfileirado e não saiu não
+    existe para o modelo, então ele não pode ser "retomado" — o modelo decide o que dizer agora
+    a partir do que o dono ouviu. É por isso que esta estrutura **não tem** campo para o sufixo
+    não tocado: a ausência é a garantia.
+    """
+
+    ouvido: str
+    epoch: int
+    played_ms: int
+
+    @property
+    def contexto(self) -> str:
+        """O texto que vai para o `s2` decidir a retomada."""
+        return self.ouvido
+
+    def ressuscita(self, texto_antigo: str) -> bool:
+        """`True` se o contexto traria de volta algo que o dono não ouviu — tem de ser falso."""
+        faltante = texto_antigo[len(self.ouvido) :].strip()
+        return bool(faltante) and faltante in self.contexto
+
+
+def retomar(historico: Historico, *, epoch: int) -> Retomada:
+    """Monta a retomada a partir do histórico: o prefixo tocado e mais nada."""
+    return Retomada(
+        ouvido=historico.texto_ouvido,
+        epoch=epoch,
+        played_ms=historico.played_ms_total,
+    )

@@ -843,3 +843,56 @@ transcritor (F1-05).
 - **Voz de verdade no playback**: aqui o TTS é o paramétrico — o que se mede é o caminho de
   cancelamento, e a voz está medida no F1-09.
 - Windows: a medição rodou só em Linux.
+
+---
+
+## F1-11 — suíte de cancelamento em 20 pontos
+
+### A lista é arquivo, e cada ponto tem porquê
+
+`jarvis.agentd.turno_completo.PONTOS` tem os vinte pontos nomeados, cada um com o motivo
+escrito e as regras da §3.3 que ele exercita. A suíte parametriza por essa lista, então **ponto
+novo sem teste é impossível**: o teste nasce do próprio arquivo. E há um teste de que a lista
+tem vinte nomes distintos — nome repetido esconderia um ponto não testado.
+
+As três invariantes, conferidas em **todos** os vinte: zero áudio novo no sumidouro depois do
+`Cancel` (medido com mais vinte ticks depois de tudo), zero presença do sufixo não tocado no
+histórico, zero tool disparada depois do `Cancel`.
+
+### Dois pontos que mediam o vácuo (e o conserto)
+
+1. **`com_fila_cheia` não enchia nada.** A primeira versão enchia a fila de prioridade com
+   `PartialTranscript` — que **coalesce** (F0-02): hipótese nova substitui a antiga, e a fila
+   nunca passa de um item por banda. O ponto existia e media vácuo. Agora enche com
+   `DesktopObservation`, que é **fato** e não coalesce, e o cenário **afirma** que houve recusa
+   por fila cheia antes de cancelar.
+2. **A exceção da regra 3 passava por motivo errado.** O `ToolResult` era construído com o
+   epoch **de agora**, então parecia sempre fresco e "não entrou no estado" nunca era testado de
+   verdade. Agora ele carrega o epoch **da chamada** — é isso que o torna `stale` quando o turno
+   morreu no meio, e o teste passou a provar o que diz: leitura em voo **pode** terminar, e o
+   resultado só entra se o `s2` reavaliar no epoch novo.
+
+### A regra 5 entrou de verdade, não como caixa marcada
+
+Faltava a regra 5 ("'continua' não ressuscita o plano antigo") na cobertura. Em vez de marcar a
+regra como coberta, implementei a retomada (`jarvis.agentd.historico.retomar`): ela devolve
+**só** o trecho tocado, e a estrutura `Retomada` **não tem campo** para o sufixo não tocado — a
+ausência é a garantia. O método `ressuscita()` existe para o teste poder afirmar o negativo.
+
+### Fuzz com semente comitada
+
+1 000 execuções com ponto de interrupção sorteado (semente `20261015`), as três invariantes em
+todas. Fuzz que não se reproduz é anedota, não regressão — por isso a semente está no arquivo.
+Custo: ~34 s, o que é aceitável para um portão que protege o aceite mais duro da fase.
+
+### Portão próprio no `verificar.py` (aceite (d))
+
+A suíte tem marcador `cancelamento` e roda como etapa **própria** no `tools/verificar.py`, além
+de entrar no `pytest` geral. Virou regressão, não evento único.
+
+### Não verificado
+
+- **O áudio já entregue ao driver.** A invariante é sobre o **nosso** sumidouro. A fila do
+  dispositivo aceita amostras e as entrega quando quiser: nela o áudio velho sobrevive ao nosso
+  `Cancel`, e isso só se mede com alto-falante (F1-16).
+- Cancelamento de tool de **escrita** é F4 (fora do escopo do cartão).

@@ -18,6 +18,9 @@ ETAPAS: tuple[tuple[str, list[str]], ...] = (
     ("linter", ["ruff", "check", "."]),
     ("tipos", ["mypy"]),
     ("testes", ["pytest"]),
+    # Cartão F1-11, aceite (d): a suíte de cancelamento entra aqui como portão próprio,
+    # para o aceite (b) da F1 ser regressão e não evento único.
+    ("cancelamento (20 pontos)", ["pytest", "-m", "cancelamento", "-q"]),
     ("adrs", ["python", "tools/adr.py", "conferir"]),
     ("corpus", ["python", "tools/corpus.py", "verificar"]),
     ("manifestos", ["python", "tools/manifesto.py", "validar"]),

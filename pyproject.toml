@@ -109,3 +109,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers --strict-config"
+markers = [
+  # Cartão F1-11: a suíte de cancelamento é o aceite (b) da F1 e roda como portão próprio no
+  # `tools/verificar.py`, para virar regressão em vez de evento único.
+  "cancelamento: suíte de cancelamento em 20 pontos (cartão F1-11)",
+]
