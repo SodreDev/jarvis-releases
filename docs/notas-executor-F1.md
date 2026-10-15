@@ -527,3 +527,115 @@ quem o recalibra é o dono, com voz real.
   350 itens do split com esta estratégia custaria ~2 h de CPU, e o número que importa (voz
   real) é de outro cartão.
 - Windows: a medição rodou só em Linux.
+
+---
+
+## F1-07 — detector de turno: semântico vs silêncio fixo
+
+### A regra de empate está em código, não em prosa no fim do relatório
+
+`aplicar_regra_de_empate` implementa a regra do cartão: o semântico entra só se **não for
+pior** em nenhuma das duas dimensões (dentro do IC) e for **estritamente melhor** em pelo menos
+uma (fora do IC). Empate dentro do intervalo → fica o `silencio_fixo`. Há teste para os três
+casos: empate, vitória por falso corte, e a tentação de aceitar quem melhora o atraso piorando
+o falso corte.
+
+O ponto de operação também tem critério declarado antes: no `calibracao`, o limiar de **menor
+atraso p50 entre os que têm falso corte ≤ 3%** (alvo do SLO-9); se nenhum alcança, o de menor
+falso corte. O número publicado sai do `retido`, com IC de 95% por *bootstrap* de itens.
+
+### O texto do detector é o do ASR, não o do rótulo
+
+Dar ao detector semântico o texto perfeito do rótulo inflaria justo o eixo em que ele está
+sendo comparado. Então `tools/curva_turno.py --preparar-texto` transcreve, com o `whisper-small`
+do F1-06, o áudio de **cada item até o início da pausa**, e publica o cache em
+`docs/medicoes/f1-07-texto-no-corte.csv` — o que torna a curva reproduzível sem o modelo. O WER
+desse prefixo é ~0,125, e é com esse texto imperfeito que o semântico trabalha.
+
+### Duas armadilhas de método que apareceram antes de qualquer número
+
+1. **Métrica vazia parece boa.** Na primeira execução de fumaça, o cache tinha só os 87
+   primeiros itens do corpus — que são todos de **fim de turno**, porque o gerador escreve essa
+   classe primeiro. Resultado: falso corte 0,000 por **vácuo** (não havia item de meio de frase
+   para cortar) e o critério escolheu o limiar mais rápido. Agora é erro explícito: split sem as
+   duas classes aborta a medição.
+2. **Traço constante leva peso.** `estabilidade` é 1,0 em todo o corpus sintético (o cache
+   guarda o prefixo já fechado), e o treino lhe dava peso +2,98 — que é viés disfarçado de
+   conhecimento. O treino passou a descartar traço de variância zero, dizendo quais descartou.
+
+### O corpus sintético não deixa o semântico ganhar, e isso é da construção dele
+
+Isto precisa estar escrito antes de qualquer leitura da curva: o corpus do F1-02 foi feito com
+**prefixo ambíguo de propósito** (87 dos 90 enunciados completos também aparecem como prefixo
+de um maior). No instante do corte, o texto de um item de fim de turno e o de um item de meio de
+frase são **o mesmo texto**. Então o sinal de texto que um detector semântico exploraria
+simplesmente não existe aqui, e sobra a pausa — que é o que o `silencio_fixo` já usa.
+
+Pior: as faixas de pausa que escolhemos (300–900 ms no fim de turno, 200–1200 ms na hesitação)
+**invertem a monotonia natural** da pausa neste corpus: pausa acima de 900 ms só acontece em
+meio de frase. Em fala real é o contrário — quanto mais longa a pausa, mais provável que o turno
+acabou.
+
+Conclusão de método, não de resultado: **esta curva é conservadora para o semântico**. Ela
+serve para pegar regressão e para provar que o encanamento e a regra de empate funcionam; ela
+**não** é capaz de mostrar o semântico ganhando, e um resultado "fica o silencio_fixo" aqui
+**não** é evidência contra o detector semântico. Quem decide isso é o corpus real (F1-15) na
+máquina do dono (F1-16). O F1-15 precisa ser gravado **sem** essa inversão: pausa de fim de
+turno e de hesitação têm de vir da fala natural do dono, não de faixas escolhidas por nós.
+
+### Números medidos (`docs/medicoes/f1-07-turno.md`), 500 itens, A/B pareado
+
+Curva no `calibracao` (175 itens de fim de turno, 175 de meio de frase):
+
+| detector | limiar | falso corte | atraso p50 | decidiu |
+|---|---:|---:|---:|---:|
+| `silencio_fixo` | 300 ms | 91,4% | 300 ms | 175/175 |
+| `silencio_fixo` | 500 ms | 71,4% | 500 ms | 114/175 |
+| `silencio_fixo` | 700 ms | 52,6% | 700 ms | 60/175 |
+| `silencio_fixo` | 900 ms | 32,6% | 900 ms | 1/175 |
+| `silencio_fixo` | 1200 ms | 0,0% | — | 0/175 |
+| `semantico` | 0,3 | 100,0% | 0 ms | 175/175 |
+| `semantico` | ≥ 0,5 | 0,0% | — | 0/175 |
+
+No `retido`: `silencio_fixo` a 500 ms deu falso corte **0,680 [0,573; 0,787]**; `semantico` a
+0,3 deu **0,587 [0,480; 0,693]** com atraso 0 ms.
+
+**Veredito: INCONCLUSIVO, e fica o `silencio_fixo`.** Nenhum ponto de operação é utilizável —
+os dois interrompem o dono em mais de um turno a cada três, contra um alvo de 3%. Comparar dois
+pontos inúteis não ordena candidato nenhum.
+
+### Três armadilhas de medição que esta curva pegou (e que eu produzi)
+
+1. **"Nunca decidir" ganhava a comparação.** Limiar de 1200 ms dá falso corte 0,0% — porque
+   decide em **zero** itens. A guarda (candidato tem de decidir em ≥ 50% dos itens de fim de
+   turno) entrou **antes** de medir, e o relatório agora imprime "—" em vez de "0 ms" onde
+   ninguém decidiu: zero ali parecia o melhor resultado possível, e era o pior.
+2. **O classificador aprendeu a inversão do corpus.** Com `pausa_s` livre, o peso saiu
+   **−1,622**: "quanto mais longa a pausa, menos provável que o turno acabou" — verdade **neste
+   corpus** (fomos nós que escolhemos 200–1200 ms para hesitação e 300–900 ms para fim de
+   turno), falso na fala humana. O detector virava um degrau: cedia no instante zero ou nunca.
+   Monotonia na pausa passou a ser **restrição do modelo** (gradiente projetado, peso ≥ 0),
+   declarada como propriedade do fenômeno e não descoberta nos dados.
+3. **"Atinge o SLO-4" sem ponto utilizável não é conquista.** Com a monotonia imposta, o peso
+   da pausa foi a zero e o semântico passou a ceder **no instante zero**: atraso p50 = 0 ms, que
+   "atinge" o SLO-4 por construção, com 59% de falso corte. A regra de empate premiou isso na
+   primeira execução real. Agora existe uma guarda explícita: ponto com falso corte fora do
+   alvo do SLO-9 **não é candidato**, e o veredito é `INCONCLUSIVO`. A ressalva anda na mesma
+   linha do número, no relatório.
+
+### Resposta do aceite (e), com número: o alvo do SLO-9 não se sustenta neste corpus
+
+O alvo **[SUPOSIÇÃO]** de ≤ 3% de falso corte não é alcançado por **nenhum** limiar que ainda
+decida: a 900 ms o falso corte é 32,6% e só 1 dos 175 itens decide; a 1200 ms o falso corte é
+0% porque ninguém decide. E a razão é a **construção do corpus**, não o detector: com pausa de
+hesitação indo a 1200 ms e pausa de fim de turno parando em 900 ms, qualquer limiar que decida
+cedo corta hesitação, e qualquer limiar que não corte hesitação não decide nada.
+
+Isso é exatamente o que a SPEC previa ao marcar o SLO-9 como **[SUPOSIÇÃO] a recalibrar com o
+corpus pt-BR da F1**. A recalibração é do F1-15/F1-16, e o F1-15 tem de gravar pausa **natural**
+— sem faixas escolhidas por nós, que foi o que produziu a inversão.
+
+### O custo da decisão não é o problema
+
+3,2 µs p50 por decisão (o nosso código). O SLO-4 mede tempo de **áudio** — quanto o dono espera
+—, não CPU. Confundir os dois faria o relatório parecer ótimo e o assistente parecer lento.

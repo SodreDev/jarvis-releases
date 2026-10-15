@@ -1,0 +1,501 @@
+item,modelo,texto_no_corte,texto_antes,wer
+s-0001,openai/whisper-small,Duplica o documento do Aluguel.,duplica o documento do aluguel,0.0000
+s-0002,openai/whisper-small,Lembra a entrega do relatório.,lembra a entrega do relatório,0.0000
+s-0003,openai/whisper-small,Renomei a planilha do mês.,renomeia a planilha do mês,0.2000
+s-0004,openai/whisper-small,Adianta Playlist de domingo.,adianta a playlist de domingo,0.2000
+s-0005,openai/whisper-small,Ansela o aniversário da minha mãe.,cancela o aniversário da minha mãe,0.1667
+s-0006,openai/whisper-small,Lembra a consulta do dentista.,lembra a consulta do dentista,0.0000
+s-0007,openai/whisper-small,Pausa playlist de domingo.,pausa a playlist de domingo,0.2000
+s-0008,openai/whisper-small,pancela entrega do relatório.,cancela a entrega do relatório,0.4000
+s-0009,openai/whisper-small,a de a renovação do contrato.,adia a renovação do contrato,0.4000
+s-0010,openai/whisper-small,confirmou o aniversário da minha mãe.,confirma o aniversário da minha mãe,0.1667
+s-0011,openai/whisper-small,Duplique a pasta de fotos.,duplica a pasta de fotos,0.2000
+s-0012,openai/whisper-small,Renome a nota da reunião.,renomeia a nota da reunião,0.2000
+s-0013,openai/whisper-small,abaixa a rádio da cozinha.,abaixa a rádio da cozinha,0.0000
+s-0014,openai/whisper-small,Duplica a nota da reunião.,duplica a nota da reunião,0.0000
+s-0015,openai/whisper-small,Fecha a pasta de fotos.,fecha a pasta de fotos,0.0000
+s-0016,openai/whisper-small,Repete a rádio da cozinha.,repete a rádio da cozinha,0.0000
+s-0017,openai/whisper-small,Toca o vídeo da aula.,toca o vídeo da aula,0.0000
+s-0018,openai/whisper-small,Enomei o recíbo da farmácia.,renomeia o recibo da farmácia,0.4000
+s-0019,openai/whisper-small,Pausa o vídeo da aula.,pausa o vídeo da aula,0.0000
+s-0020,openai/whisper-small,Duplica a planilha do mês.,duplica a planilha do mês,0.0000
+s-0021,openai/whisper-small,"Pausa, a música que eu salvei.",pausa a música que eu salvei,0.0000
+s-0022,openai/whisper-small,Fecha a nota da reunião.,fecha a nota da reunião,0.0000
+s-0023,openai/whisper-small,Repete a música que eu salvei.,repete a música que eu salvei,0.0000
+s-0024,openai/whisper-small,Lembra o jogo do fim de semana.,lembra o jogo do fim de semana,0.0000
+s-0025,openai/whisper-small,Paz o podcast da manhã.,pausa o podcast da manhã,0.2000
+s-0026,openai/whisper-small,abaixe o episódio novo.,abaixa o episódio novo,0.2500
+s-0027,openai/whisper-small,Adianto o podcast da manhã!,adianta o podcast da manhã,0.2000
+s-0028,openai/whisper-small,abaixe o podcast da manhã.,abaixa o podcast da manhã,0.2000
+s-0029,openai/whisper-small,Toca a rádio da cozinha.,toca a rádio da cozinha,0.0000
+s-0030,openai/whisper-small,compacta a planilha do mês.,compacta a planilha do mês,0.0000
+s-0031,openai/whisper-small,Duplica o recíbo da farmácia.,duplica o recibo da farmácia,0.2000
+s-0032,openai/whisper-small,enomei a apresentação do curso.,renomeia a apresentação do curso,0.2000
+s-0033,openai/whisper-small,marcou o aniversário da minha mãe.,marca o aniversário da minha mãe,0.1667
+s-0034,openai/whisper-small,Confirma a consulta do dentista.,confirma a consulta do dentista,0.0000
+s-0035,openai/whisper-small,marca a consulta do dentista.,marca a consulta do dentista,0.0000
+s-0036,openai/whisper-small,marca a renovação do contrato.,marca a renovação do contrato,0.0000
+s-0037,openai/whisper-small,e no meio do documento do aluguel.,renomeia o documento do aluguel,0.8000
+s-0038,openai/whisper-small,Toca o episódio novo.,toca o episódio novo,0.0000
+s-0039,openai/whisper-small,Abaixa a música que eu salvei.,abaixa a música que eu salvei,0.0000
+s-0040,openai/whisper-small,Repete o episódio novo.,repete o episódio novo,0.0000
+s-0041,openai/whisper-small,Lembro o aniversário da minha mãe.,lembra o aniversário da minha mãe,0.1667
+s-0042,openai/whisper-small,Renomei a pasta de fotos.,renomeia a pasta de fotos,0.2000
+s-0043,openai/whisper-small,Abre o recíbel da farmácia.,abre o recibo da farmácia,0.2000
+s-0044,openai/whisper-small,A dia entrega do relatório.,adia a entrega do relatório,0.4000
+s-0045,openai/whisper-small,Ansela a renovação do contrato.,cancela a renovação do contrato,0.2000
+s-0046,openai/whisper-small,Tô com um podcast da manhã.,toca o podcast da manhã,0.6000
+s-0047,openai/whisper-small,Adianta o episódio novo.,adianta o episódio novo,0.0000
+s-0048,openai/whisper-small,abaixa a playlist de domingo.,abaixa a playlist de domingo,0.0000
+s-0049,openai/whisper-small,Tausa Rádio da Cozinha.,pausa a rádio da cozinha,0.4000
+s-0050,openai/whisper-small,Taos um episódio novo.,pausa o episódio novo,0.5000
+s-0051,openai/whisper-small,Repete o podcast da manhã.,repete o podcast da manhã,0.0000
+s-0052,openai/whisper-small,Fecha o recebo da farmácia.,fecha o recibo da farmácia,0.2000
+s-0053,openai/whisper-small,Lembra a renovação do contrato.,lembra a renovação do contrato,0.0000
+s-0054,openai/whisper-small,compacta o recíbo da farmácia.,compacta o recibo da farmácia,0.2000
+s-0055,openai/whisper-small,marca o jogo do fim de semana.,marca o jogo do fim de semana,0.0000
+s-0056,openai/whisper-small,Abre a pasta de fotos.,abre a pasta de fotos,0.0000
+s-0057,openai/whisper-small,Adianta rádio da cozinha.,adianta a rádio da cozinha,0.2000
+s-0058,openai/whisper-small,Adianta a música que eu salvei.,adianta a música que eu salvei,0.0000
+s-0059,openai/whisper-small,à dia consulta do dentista.,adia a consulta do dentista,0.4000
+s-0060,openai/whisper-small,Abre a panilha do mês.,abre a planilha do mês,0.2000
+s-0061,openai/whisper-small,Lembra a reunião de Quinta.,lembra a reunião de quinta,0.0000
+s-0062,openai/whisper-small,"Ansela, reunião de quinta.",cancela a reunião de quinta,0.4000
+s-0063,openai/whisper-small,Fecha a apresentação do curso.,fecha a apresentação do curso,0.0000
+s-0064,openai/whisper-small,Confirmo o jogo do fim de semana.,confirma o jogo do fim de semana,0.1429
+s-0065,openai/whisper-small,Adia o aniversário da minha mãe.,adia o aniversário da minha mãe,0.0000
+s-0066,openai/whisper-small,toca playlist de domingo.,toca a playlist de domingo,0.2000
+s-0067,openai/whisper-small,Abaixa o vídeo da aula.,abaixa o vídeo da aula,0.0000
+s-0068,openai/whisper-small,Fecha a planilha do mês.,fecha a planilha do mês,0.0000
+s-0069,openai/whisper-small,Toca a música que eu salvei.,toca a música que eu salvei,0.0000
+s-0070,openai/whisper-small,Confirma a renovação do contrato.,confirma a renovação do contrato,0.0000
+s-0071,openai/whisper-small,Duplicar a apresentação do curso.,duplica a apresentação do curso,0.2000
+s-0072,openai/whisper-small,Adia o jogo do fim de semana.,adia o jogo do fim de semana,0.0000
+s-0073,openai/whisper-small,Confirma entrega do relatório.,confirma a entrega do relatório,0.2000
+s-0074,openai/whisper-small,Fecha o documento do aluguel.,fecha o documento do aluguel,0.0000
+s-0075,openai/whisper-small,marca entrega do relatório.,marca a entrega do relatório,0.2000
+s-0076,openai/whisper-small,compacta a apresentação do curso.,compacta a apresentação do curso,0.0000
+s-0077,openai/whisper-small,Anselho o jogo do fim de semana.,cancela o jogo do fim de semana,0.1429
+s-0078,openai/whisper-small,Confirma reunião de quinta.,confirma a reunião de quinta,0.2000
+s-0079,openai/whisper-small,Adianta o vídeo da aula.,adianta o vídeo da aula,0.0000
+s-0080,openai/whisper-small,Repete a playlist de domingo.,repete a playlist de domingo,0.0000
+s-0081,openai/whisper-small,A dia reunião de quinta.,adia a reunião de quinta,0.4000
+s-0082,openai/whisper-small,compacta a pasta de fotos.,compacta a pasta de fotos,0.0000
+s-0083,openai/whisper-small,Ansela a consulta do dentista.,cancela a consulta do dentista,0.2000
+s-0084,openai/whisper-small,Abre a nota da reunião.,abre a nota da reunião,0.0000
+s-0085,openai/whisper-small,Abre a apresentação do curso.,abre a apresentação do curso,0.0000
+s-0086,openai/whisper-small,Abre o documento do aluguel.,abre o documento do aluguel,0.0000
+s-0087,openai/whisper-small,marca a reunião de quinta.,marca a reunião de quinta,0.0000
+s-0088,openai/whisper-small,Repete o vídeo da aula.,repete o vídeo da aula,0.0000
+s-0089,openai/whisper-small,Compacto o documento do Aluguel.,compacta o documento do aluguel,0.2000
+s-0090,openai/whisper-small,compacta a nota da reunião.,compacta a nota da reunião,0.0000
+s-0091,openai/whisper-small,Duplica o documento do Aluguel.,duplica o documento do aluguel,0.0000
+s-0092,openai/whisper-small,Lembra a entrega do relatório.,lembra a entrega do relatório,0.0000
+s-0093,openai/whisper-small,Renomei a planilha do mês.,renomeia a planilha do mês,0.2000
+s-0094,openai/whisper-small,Adianta Playlist de domingo.,adianta a playlist de domingo,0.2000
+s-0095,openai/whisper-small,Ansela o aniversário da minha mãe.,cancela o aniversário da minha mãe,0.1667
+s-0096,openai/whisper-small,Lembra a consulta do dentista.,lembra a consulta do dentista,0.0000
+s-0097,openai/whisper-small,Pausa a playlist de domingo.,pausa a playlist de domingo,0.0000
+s-0098,openai/whisper-small,pancela entrega do relatório.,cancela a entrega do relatório,0.4000
+s-0099,openai/whisper-small,a de a renovação do contrato.,adia a renovação do contrato,0.4000
+s-0100,openai/whisper-small,confirmou o aniversário da minha mãe.,confirma o aniversário da minha mãe,0.1667
+s-0101,openai/whisper-small,Duplique a pasta de fotos.,duplica a pasta de fotos,0.2000
+s-0102,openai/whisper-small,Renome a nota da reunião.,renomeia a nota da reunião,0.2000
+s-0103,openai/whisper-small,abaixa a rádio da cozinha.,abaixa a rádio da cozinha,0.0000
+s-0104,openai/whisper-small,Duplica a nota da reunião.,duplica a nota da reunião,0.0000
+s-0105,openai/whisper-small,Fecha a pasta de fotos.,fecha a pasta de fotos,0.0000
+s-0106,openai/whisper-small,Repete a rádio da cozinha.,repete a rádio da cozinha,0.0000
+s-0107,openai/whisper-small,Toca o vídeo da aula.,toca o vídeo da aula,0.0000
+s-0108,openai/whisper-small,Eu não meio o recíbo da farmácia.,renomeia o recibo da farmácia,0.8000
+s-0109,openai/whisper-small,Pausa o vídeo da aula.,pausa o vídeo da aula,0.0000
+s-0110,openai/whisper-small,Duplica a planilha do mês.,duplica a planilha do mês,0.0000
+s-0111,openai/whisper-small,"Tausa, a música que eu salvei.",pausa a música que eu salvei,0.1667
+s-0112,openai/whisper-small,Fecha a nota da reunião.,fecha a nota da reunião,0.0000
+s-0113,openai/whisper-small,Repete a música que eu salvei.,repete a música que eu salvei,0.0000
+s-0114,openai/whisper-small,Lembra o jogo do fim de semana.,lembra o jogo do fim de semana,0.0000
+s-0115,openai/whisper-small,Paz o podcast da manhã.,pausa o podcast da manhã,0.2000
+s-0116,openai/whisper-small,abaixe o episódio novo.,abaixa o episódio novo,0.2500
+s-0117,openai/whisper-small,Adianto o podcast da manhã.,adianta o podcast da manhã,0.2000
+s-0118,openai/whisper-small,Abaixe o podcast da manhã.,abaixa o podcast da manhã,0.2000
+s-0119,openai/whisper-small,toca a rádio da cozinha.,toca a rádio da cozinha,0.0000
+s-0120,openai/whisper-small,Compacta a planilha do mês.,compacta a planilha do mês,0.0000
+s-0121,openai/whisper-small,Duplica o recíbo da farmácia.,duplica o recibo da farmácia,0.2000
+s-0122,openai/whisper-small,enomei a apresentação do curso.,renomeia a apresentação do curso,0.2000
+s-0123,openai/whisper-small,marcou o aniversário da minha mãe.,marca o aniversário da minha mãe,0.1667
+s-0124,openai/whisper-small,Confirma a consulta do dentista.,confirma a consulta do dentista,0.0000
+s-0125,openai/whisper-small,marca a consulta do dentista.,marca a consulta do dentista,0.0000
+s-0126,openai/whisper-small,marca a renovação do contrato.,marca a renovação do contrato,0.0000
+s-0127,openai/whisper-small,Renomei o documento do aluguel.,renomeia o documento do aluguel,0.2000
+s-0128,openai/whisper-small,Toca o episódio novo.,toca o episódio novo,0.0000
+s-0129,openai/whisper-small,Abaixa a música que eu salvei.,abaixa a música que eu salvei,0.0000
+s-0130,openai/whisper-small,Repete o episódio novo.,repete o episódio novo,0.0000
+s-0131,openai/whisper-small,Lembrou o aniversário da minha mãe.,lembra o aniversário da minha mãe,0.1667
+s-0132,openai/whisper-small,Tendo meio a pasta de fotos.,renomeia a pasta de fotos,0.4000
+s-0133,openai/whisper-small,Abre o recíbo da farmácia.,abre o recibo da farmácia,0.2000
+s-0134,openai/whisper-small,a dia entrega do relatório.,adia a entrega do relatório,0.4000
+s-0135,openai/whisper-small,Ansela a renovação do contrato.,cancela a renovação do contrato,0.2000
+s-0136,openai/whisper-small,Tocou o podcast da manhã!,toca o podcast da manhã,0.2000
+s-0137,openai/whisper-small,Adianta o episódio novo.,adianta o episódio novo,0.0000
+s-0138,openai/whisper-small,abaixa a playlist de domingo.,abaixa a playlist de domingo,0.0000
+s-0139,openai/whisper-small,causa rádio da cozinha.,pausa a rádio da cozinha,0.4000
+s-0140,openai/whisper-small,Taos um episódio novo.,pausa o episódio novo,0.5000
+s-0141,openai/whisper-small,Repete o podcast da manhã.,repete o podcast da manhã,0.0000
+s-0142,openai/whisper-small,Fecha o recebo da farmácia.,fecha o recibo da farmácia,0.2000
+s-0143,openai/whisper-small,Lembra a renovação do contrato.,lembra a renovação do contrato,0.0000
+s-0144,openai/whisper-small,compacte o recíbo da farmácia.,compacta o recibo da farmácia,0.4000
+s-0145,openai/whisper-small,marca o jogo do fim de semana.,marca o jogo do fim de semana,0.0000
+s-0146,openai/whisper-small,Abre a pasta de fotos.,abre a pasta de fotos,0.0000
+s-0147,openai/whisper-small,Adianta rádio da cozinha.,adianta a rádio da cozinha,0.2000
+s-0148,openai/whisper-small,Adianta a música que eu salvei.,adianta a música que eu salvei,0.0000
+s-0149,openai/whisper-small,a dia consulta do dentista.,adia a consulta do dentista,0.4000
+s-0150,openai/whisper-small,Abre a panilha do mês.,abre a planilha do mês,0.2000
+s-0151,openai/whisper-small,Lembra a reunião de Quinta.,lembra a reunião de quinta,0.0000
+s-0152,openai/whisper-small,"Ansela, reunião de quinta.",cancela a reunião de quinta,0.4000
+s-0153,openai/whisper-small,Fecha a apresentação do curso.,fecha a apresentação do curso,0.0000
+s-0154,openai/whisper-small,Confirmo o jogo do fim de semana.,confirma o jogo do fim de semana,0.1429
+s-0155,openai/whisper-small,Adia o aniversário da minha mãe.,adia o aniversário da minha mãe,0.0000
+s-0156,openai/whisper-small,toca playlist de domingo.,toca a playlist de domingo,0.2000
+s-0157,openai/whisper-small,Abaixa o vídeo da aula.,abaixa o vídeo da aula,0.0000
+s-0158,openai/whisper-small,Fecha a planilha do mês.,fecha a planilha do mês,0.0000
+s-0159,openai/whisper-small,Toca a música que eu salvei.,toca a música que eu salvei,0.0000
+s-0160,openai/whisper-small,Confirma a renovação do contrato.,confirma a renovação do contrato,0.0000
+s-0161,openai/whisper-small,duplicar a apresentação do curso.,duplica a apresentação do curso,0.2000
+s-0162,openai/whisper-small,Adia o jogo do fim de semana.,adia o jogo do fim de semana,0.0000
+s-0163,openai/whisper-small,Confirma entrega do relatório.,confirma a entrega do relatório,0.2000
+s-0164,openai/whisper-small,Fecha o documento do aluguel.,fecha o documento do aluguel,0.0000
+s-0165,openai/whisper-small,marca entrega do relatório.,marca a entrega do relatório,0.2000
+s-0166,openai/whisper-small,compacta a apresentação do curso.,compacta a apresentação do curso,0.0000
+s-0167,openai/whisper-small,Ancelo o jogo do fim de semana.,cancela o jogo do fim de semana,0.1429
+s-0168,openai/whisper-small,confirma reunião de quinta.,confirma a reunião de quinta,0.2000
+s-0169,openai/whisper-small,Adianta o vídeo da aula.,adianta o vídeo da aula,0.0000
+s-0170,openai/whisper-small,Repete a playlist de domingo.,repete a playlist de domingo,0.0000
+s-0171,openai/whisper-small,A dia reunião de quinta.,adia a reunião de quinta,0.4000
+s-0172,openai/whisper-small,Compacta a pasta de fotos.,compacta a pasta de fotos,0.0000
+s-0173,openai/whisper-small,Ansela a consulta do dentista.,cancela a consulta do dentista,0.2000
+s-0174,openai/whisper-small,Abre a nota da reunião.,abre a nota da reunião,0.0000
+s-0175,openai/whisper-small,Abre a apresentação do curso.,abre a apresentação do curso,0.0000
+s-0176,openai/whisper-small,Abre o documento do aluguel.,abre o documento do aluguel,0.0000
+s-0177,openai/whisper-small,marca reunião de quinta.,marca a reunião de quinta,0.2000
+s-0178,openai/whisper-small,Repete o vídeo da aula.,repete o vídeo da aula,0.0000
+s-0179,openai/whisper-small,compacto documento do Aluguel.,compacta o documento do aluguel,0.4000
+s-0180,openai/whisper-small,compacta a nota da reunião.,compacta a nota da reunião,0.0000
+s-0181,openai/whisper-small,Duplique o documento do aluguel.,duplica o documento do aluguel,0.2000
+s-0182,openai/whisper-small,Lembra a entrega do relatório.,lembra a entrega do relatório,0.0000
+s-0183,openai/whisper-small,Renomei a planilha do mês.,renomeia a planilha do mês,0.2000
+s-0184,openai/whisper-small,Adianta playlists de domingo.,adianta a playlist de domingo,0.4000
+s-0185,openai/whisper-small,Ansela o aniversário da minha mãe.,cancela o aniversário da minha mãe,0.1667
+s-0186,openai/whisper-small,Lembra a consulta do dentista.,lembra a consulta do dentista,0.0000
+s-0187,openai/whisper-small,Pausa playlist de domingo.,pausa a playlist de domingo,0.2000
+s-0188,openai/whisper-small,Ansela entrega do relatório.,cancela a entrega do relatório,0.4000
+s-0189,openai/whisper-small,a dia a renovação do contrato.,adia a renovação do contrato,0.4000
+s-0190,openai/whisper-small,confirmou o aniversário da minha mãe.,confirma o aniversário da minha mãe,0.1667
+s-0191,openai/whisper-small,Duplique a pasta de fotos.,duplica a pasta de fotos,0.2000
+s-0192,openai/whisper-small,Eu nomei a nota da reunião.,renomeia a nota da reunião,0.4000
+s-0193,openai/whisper-small,abaixa a rádio da cozinha.,abaixa a rádio da cozinha,0.0000
+s-0194,openai/whisper-small,Duplica a nota da reunião.,duplica a nota da reunião,0.0000
+s-0195,openai/whisper-small,Fecha a pasta de fotos.,fecha a pasta de fotos,0.0000
+s-0196,openai/whisper-small,Repete a rádio da cozinha.,repete a rádio da cozinha,0.0000
+s-0197,openai/whisper-small,Toca o vídeo da aula.,toca o vídeo da aula,0.0000
+s-0198,openai/whisper-small,e no meio recíbo da farmácia.,renomeia o recibo da farmácia,0.8000
+s-0199,openai/whisper-small,Tausam o vídeo da aula.,pausa o vídeo da aula,0.2000
+s-0200,openai/whisper-small,Duplica a planilha do MIS.,duplica a planilha do mês,0.2000
+s-0201,openai/whisper-small,"Tausa, a música que eu salvei.",pausa a música que eu salvei,0.1667
+s-0202,openai/whisper-small,Peixe a nota da reunião.,fecha a nota da reunião,0.2000
+s-0203,openai/whisper-small,Repete a música que eu salvei.,repete a música que eu salvei,0.0000
+s-0204,openai/whisper-small,Lembra o jogo do fim de semana.,lembra o jogo do fim de semana,0.0000
+s-0205,openai/whisper-small,Paz o podcast da manhã.,pausa o podcast da manhã,0.2000
+s-0206,openai/whisper-small,abaixe o episódio novo.,abaixa o episódio novo,0.2500
+s-0207,openai/whisper-small,Adianto o podcast da manhã.,adianta o podcast da manhã,0.2000
+s-0208,openai/whisper-small,Abaixe o podcast da manhã!,abaixa o podcast da manhã,0.2000
+s-0209,openai/whisper-small,Toca a rádio da cozinha.,toca a rádio da cozinha,0.0000
+s-0210,openai/whisper-small,Compacta a planilha do mês.,compacta a planilha do mês,0.0000
+s-0211,openai/whisper-small,Duplica o recíbo da farmácia.,duplica o recibo da farmácia,0.2000
+s-0212,openai/whisper-small,Renomei a apresentação do curso.,renomeia a apresentação do curso,0.2000
+s-0213,openai/whisper-small,marco o aniversário da minha mãe.,marca o aniversário da minha mãe,0.1667
+s-0214,openai/whisper-small,Confirma a consulta do dentista.,confirma a consulta do dentista,0.0000
+s-0215,openai/whisper-small,marca a consulta do dentista.,marca a consulta do dentista,0.0000
+s-0216,openai/whisper-small,marca a renovação do contrato.,marca a renovação do contrato,0.0000
+s-0217,openai/whisper-small,e no meio do documento do aluguel.,renomeia o documento do aluguel,0.8000
+s-0218,openai/whisper-small,Toca o episódio novo.,toca o episódio novo,0.0000
+s-0219,openai/whisper-small,abaixa a música que eu salvei,abaixa a música que eu salvei,0.0000
+s-0220,openai/whisper-small,Repete o episódio novo.,repete o episódio novo,0.0000
+s-0221,openai/whisper-small,Lembrou o aniversário da minha mãe.,lembra o aniversário da minha mãe,0.1667
+s-0222,openai/whisper-small,Enomei a pasta de fotos.,renomeia a pasta de fotos,0.2000
+s-0223,openai/whisper-small,Abre o recíbel da farmácia.,abre o recibo da farmácia,0.2000
+s-0224,openai/whisper-small,a dia entrega do relatório.,adia a entrega do relatório,0.4000
+s-0225,openai/whisper-small,Ansela a renovação do contrato.,cancela a renovação do contrato,0.2000
+s-0226,openai/whisper-small,Tocou o podcast da manhã.,toca o podcast da manhã,0.2000
+s-0227,openai/whisper-small,Adianta o episódio novo.,adianta o episódio novo,0.0000
+s-0228,openai/whisper-small,abaixa a playlist de domingo.,abaixa a playlist de domingo,0.0000
+s-0229,openai/whisper-small,causa rádio da cozinha.,pausa a rádio da cozinha,0.4000
+s-0230,openai/whisper-small,Taos um episódio novo.,pausa o episódio novo,0.5000
+s-0231,openai/whisper-small,Repete o podcast da manhã.,repete o podcast da manhã,0.0000
+s-0232,openai/whisper-small,Fecha o recebo da farmácia.,fecha o recibo da farmácia,0.2000
+s-0233,openai/whisper-small,Lembra a renovação do contrato.,lembra a renovação do contrato,0.0000
+s-0234,openai/whisper-small,Compacto o recíbo da farmácia.,compacta o recibo da farmácia,0.4000
+s-0235,openai/whisper-small,marca o jogo do fim de semana.,marca o jogo do fim de semana,0.0000
+s-0236,openai/whisper-small,Abre a pasta de fotos.,abre a pasta de fotos,0.0000
+s-0237,openai/whisper-small,Adianta rádio da cozinha.,adianta a rádio da cozinha,0.2000
+s-0238,openai/whisper-small,Adianta a música que eu salvei.,adianta a música que eu salvei,0.0000
+s-0239,openai/whisper-small,à dia consulta do dentista.,adia a consulta do dentista,0.4000
+s-0240,openai/whisper-small,Abre a panilha do MIS.,abre a planilha do mês,0.4000
+s-0241,openai/whisper-small,Lembra a reunião de Quinta.,lembra a reunião de quinta,0.0000
+s-0242,openai/whisper-small,Ansela a reunião de quinta.,cancela a reunião de quinta,0.2000
+s-0243,openai/whisper-small,Fecha a apresentação do curso.,fecha a apresentação do curso,0.0000
+s-0244,openai/whisper-small,Confirmo o jogo do fim de semana.,confirma o jogo do fim de semana,0.1429
+s-0245,openai/whisper-small,Adia o aniversário da minha mãe.,adia o aniversário da minha mãe,0.0000
+s-0246,openai/whisper-small,Poca playlist de domingo.,toca a playlist de domingo,0.4000
+s-0247,openai/whisper-small,abaixo o vídeo da aula.,abaixa o vídeo da aula,0.2000
+s-0248,openai/whisper-small,Fecha a planilha do mês.,fecha a planilha do mês,0.0000
+s-0249,openai/whisper-small,Toca a música que eu salvei.,toca a música que eu salvei,0.0000
+s-0250,openai/whisper-small,Confirma a renovação do contrato.,confirma a renovação do contrato,0.0000
+s-0251,openai/whisper-small,compacta a apresentação do curso.,compacta a apresentação do curso,0.0000
+s-0252,openai/whisper-small,Adianta rádio da cozinha.,adianta a rádio da cozinha,0.2000
+s-0253,openai/whisper-small,marca a renovação do contrato.,marca a renovação do contrato,0.0000
+s-0254,openai/whisper-small,Lembra o jogo do fim de semana.,lembra o jogo do fim de semana,0.0000
+s-0255,openai/whisper-small,Compacto o documento do Aluguel.,compacta o documento do aluguel,0.2000
+s-0256,openai/whisper-small,Duplica a nota da reunião.,duplica a nota da reunião,0.0000
+s-0257,openai/whisper-small,Duplica a nota da reunião.,duplica a nota da reunião,0.0000
+s-0258,openai/whisper-small,Repete a música que eu salvei.,repete a música que eu salvei,0.0000
+s-0259,openai/whisper-small,abaixa a rádio da cozinha.,abaixa a rádio da cozinha,0.0000
+s-0260,openai/whisper-small,Auz o podcast da manhã.,pausa o podcast da manhã,0.2000
+s-0261,openai/whisper-small,Escha a nota da reunião.,fecha a nota da reunião,0.2000
+s-0262,openai/whisper-small,Compacta a pasta de fotos.,compacta a pasta de fotos,0.0000
+s-0263,openai/whisper-small,To com o vídeo da aula.,toca o vídeo da aula,0.4000
+s-0264,openai/whisper-small,Toco o vídeo da aula.,toca o vídeo da aula,0.2000
+s-0265,openai/whisper-small,Repete a rádio da cozinha.,repete a rádio da cozinha,0.0000
+s-0266,openai/whisper-small,Adianta a música que eu salvei.,adianta a música que eu salvei,0.0000
+s-0267,openai/whisper-small,confirmou o aniversário da minha mãe.,confirma o aniversário da minha mãe,0.1667
+s-0268,openai/whisper-small,Adianto o podcast da manhã.,adianta o podcast da manhã,0.2000
+s-0269,openai/whisper-small,Adianta rádio da cozinha.,adianta a rádio da cozinha,0.2000
+s-0270,openai/whisper-small,Fecha nota da reunião.,fecha a nota da reunião,0.2000
+s-0271,openai/whisper-small,abaixe o episódio novo.,abaixa o episódio novo,0.2500
+s-0272,openai/whisper-small,Renomei a planilha do mês.,renomeia a planilha do mês,0.2000
+s-0273,openai/whisper-small,Confirmo o jogo do fim de semana.,confirma o jogo do fim de semana,0.1429
+s-0274,openai/whisper-small,Lembra a consulta do dentista.,lembra a consulta do dentista,0.0000
+s-0275,openai/whisper-small,Fechou o documento do aluguel.,fecha o documento do aluguel,0.2000
+s-0276,openai/whisper-small,lembra a entrega do relatório.,lembra a entrega do relatório,0.0000
+s-0277,openai/whisper-small,Duplica a planilha do mês.,duplica a planilha do mês,0.0000
+s-0278,openai/whisper-small,e no meio recebo da farmácia.,renomeia o recibo da farmácia,0.8000
+s-0279,openai/whisper-small,Adianto o podcast da manhã.,adianta o podcast da manhã,0.2000
+s-0280,openai/whisper-small,Confirma reunião de quinta.,confirma a reunião de quinta,0.2000
+s-0281,openai/whisper-small,Adia o aniversário da minha mãe.,adia o aniversário da minha mãe,0.0000
+s-0282,openai/whisper-small,Adia o jogo do fim de semana.,adia o jogo do fim de semana,0.0000
+s-0283,openai/whisper-small,Abre a pasta de fotos.,abre a pasta de fotos,0.0000
+s-0284,openai/whisper-small,Ansela o aniversário da minha mãe.,cancela o aniversário da minha mãe,0.1667
+s-0285,openai/whisper-small,Lembrou o aniversário da minha mãe.,lembra o aniversário da minha mãe,0.1667
+s-0286,openai/whisper-small,Adianta o vídeo da aula.,adianta o vídeo da aula,0.0000
+s-0287,openai/whisper-small,Compacta a pasta de fotos.,compacta a pasta de fotos,0.0000
+s-0288,openai/whisper-small,abaixa a playlist de domingo.,abaixa a playlist de domingo,0.0000
+s-0289,openai/whisper-small,Poca playlist de domingo.,toca a playlist de domingo,0.4000
+s-0290,openai/whisper-small,marca reunião de quinta.,marca a reunião de quinta,0.2000
+s-0291,openai/whisper-small,Confirmo o jogo do fim de semana.,confirma o jogo do fim de semana,0.1429
+s-0292,openai/whisper-small,A dia entrega do relatório.,adia a entrega do relatório,0.4000
+s-0293,openai/whisper-small,Repete o vídeo da aula.,repete o vídeo da aula,0.0000
+s-0294,openai/whisper-small,Repete a playlist de domingo.,repete a playlist de domingo,0.0000
+s-0295,openai/whisper-small,Adia o jogo do fim de semana.,adia o jogo do fim de semana,0.0000
+s-0296,openai/whisper-small,Repete a playlist de domingo.,repete a playlist de domingo,0.0000
+s-0297,openai/whisper-small,compacta o recíbo da farmácia.,compacta o recibo da farmácia,0.2000
+s-0298,openai/whisper-small,Ansela o aniversário da minha mãe.,cancela o aniversário da minha mãe,0.1667
+s-0299,openai/whisper-small,Ansela o aniversário da minha mãe.,cancela o aniversário da minha mãe,0.1667
+s-0300,openai/whisper-small,Pausa playlist de domingo.,pausa a playlist de domingo,0.2000
+s-0301,openai/whisper-small,Duplicar a apresentação do curso.,duplica a apresentação do curso,0.2000
+s-0302,openai/whisper-small,Tá com um episódio novo.,toca o episódio novo,0.7500
+s-0303,openai/whisper-small,Causa música que eu salvei.,pausa a música que eu salvei,0.3333
+s-0304,openai/whisper-small,Repete a rádio da cozinha.,repete a rádio da cozinha,0.0000
+s-0305,openai/whisper-small,Ansela a consulta do dentista.,cancela a consulta do dentista,0.2000
+s-0306,openai/whisper-small,Feche o documento do aluguel.,fecha o documento do aluguel,0.2000
+s-0307,openai/whisper-small,"Ansela, reunião de quinta.",cancela a reunião de quinta,0.4000
+s-0308,openai/whisper-small,Lembra o jogo do fim de semana.,lembra o jogo do fim de semana,0.0000
+s-0309,openai/whisper-small,toca playlist de domingo.,toca a playlist de domingo,0.2000
+s-0310,openai/whisper-small,abaixa o vídeo da aula.,abaixa o vídeo da aula,0.0000
+s-0311,openai/whisper-small,Pausa playlist de domingo.,pausa a playlist de domingo,0.2000
+s-0312,openai/whisper-small,Confirmo o jogo do fim de semana.,confirma o jogo do fim de semana,0.1429
+s-0313,openai/whisper-small,Toca a música que eu salvei.,toca a música que eu salvei,0.0000
+s-0314,openai/whisper-small,marca a consulta do dentista.,marca a consulta do dentista,0.0000
+s-0315,openai/whisper-small,Lembra a reunião de Quinta.,lembra a reunião de quinta,0.0000
+s-0316,openai/whisper-small,Renomei a apresentação do curso.,renomeia a apresentação do curso,0.2000
+s-0317,openai/whisper-small,a de a renovação do contrato.,adia a renovação do contrato,0.4000
+s-0318,openai/whisper-small,Tauza Rádio da Cozinha.,pausa a rádio da cozinha,0.4000
+s-0319,openai/whisper-small,marca o jogo do fim de semana.,marca o jogo do fim de semana,0.0000
+s-0320,openai/whisper-small,Taos um episódio novo.,pausa o episódio novo,0.5000
+s-0321,openai/whisper-small,abaixe o episódio novo.,abaixa o episódio novo,0.2500
+s-0322,openai/whisper-small,Abre a panilha do MIS.,abre a planilha do mês,0.4000
+s-0323,openai/whisper-small,Adia o jogo do fim de semana.,adia o jogo do fim de semana,0.0000
+s-0324,openai/whisper-small,marca a renovação do contrato.,marca a renovação do contrato,0.0000
+s-0325,openai/whisper-small,Duplicar a apresentação do curso.,duplica a apresentação do curso,0.2000
+s-0326,openai/whisper-small,Lembra consulta do dentista.,lembra a consulta do dentista,0.2000
+s-0327,openai/whisper-small,Lembra a renovação do contrato.,lembra a renovação do contrato,0.0000
+s-0328,openai/whisper-small,Ansela a consulta do dentista.,cancela a consulta do dentista,0.2000
+s-0329,openai/whisper-small,compacta a apresentação do curso.,compacta a apresentação do curso,0.0000
+s-0330,openai/whisper-small,Abre a nota da reunião.,abre a nota da reunião,0.0000
+s-0331,openai/whisper-small,pancela entrega do relatório.,cancela a entrega do relatório,0.4000
+s-0332,openai/whisper-small,marcou o aniversário da minha mãe.,marca o aniversário da minha mãe,0.1667
+s-0333,openai/whisper-small,Adianta rádio da cozinha.,adianta a rádio da cozinha,0.2000
+s-0334,openai/whisper-small,abre a apresentação do curso.,abre a apresentação do curso,0.0000
+s-0335,openai/whisper-small,causa a música que eu salvei,pausa a música que eu salvei,0.1667
+s-0336,openai/whisper-small,Ansela a renovação do contrato.,cancela a renovação do contrato,0.2000
+s-0337,openai/whisper-small,Pausa playlist de domingo.,pausa a playlist de domingo,0.2000
+s-0338,openai/whisper-small,e pete o vídeo da aula.,repete o vídeo da aula,0.4000
+s-0339,openai/whisper-small,A dia reunião de quinta.,adia a reunião de quinta,0.4000
+s-0340,openai/whisper-small,marcou o aniversário da minha mãe.,marca o aniversário da minha mãe,0.1667
+s-0341,openai/whisper-small,Duplica a nota da reunião.,duplica a nota da reunião,0.0000
+s-0342,openai/whisper-small,Adianta o vídeo da aula.,adianta o vídeo da aula,0.0000
+s-0343,openai/whisper-small,Adianta o episódio novo.,adianta o episódio novo,0.0000
+s-0344,openai/whisper-small,em meio o recíbo da farmácia.,renomeia o recibo da farmácia,0.6000
+s-0345,openai/whisper-small,Ansela o aniversário da minha mãe.,cancela o aniversário da minha mãe,0.1667
+s-0346,openai/whisper-small,Abaixa a música que eu salvei.,abaixa a música que eu salvei,0.0000
+s-0347,openai/whisper-small,enomei a apresentação do curso.,renomeia a apresentação do curso,0.2000
+s-0348,openai/whisper-small,Renome a nota da reunião.,renomeia a nota da reunião,0.2000
+s-0349,openai/whisper-small,Anselho jogo do fim de semana.,cancela o jogo do fim de semana,0.2857
+s-0350,openai/whisper-small,Lembro o aniversário da minha mãe.,lembra o aniversário da minha mãe,0.1667
+s-0351,openai/whisper-small,Abaixe o vídeo da aula.,abaixa o vídeo da aula,0.2000
+s-0352,openai/whisper-small,Fecha a planilha do mês.,fecha a planilha do mês,0.0000
+s-0353,openai/whisper-small,abaixa a playlist de domingo.,abaixa a playlist de domingo,0.0000
+s-0354,openai/whisper-small,"Tchau, e um episódio novo.",pausa o episódio novo,0.7500
+s-0355,openai/whisper-small,Abre o documento do aluguel.,abre o documento do aluguel,0.0000
+s-0356,openai/whisper-small,Taos um episódio novo.,pausa o episódio novo,0.5000
+s-0357,openai/whisper-small,Renomei-lo do documento do aluguel.,renomeia o documento do aluguel,0.6000
+s-0358,openai/whisper-small,A dia entrega do relatório.,adia a entrega do relatório,0.4000
+s-0359,openai/whisper-small,Adianta a música que eu salvei.,adianta a música que eu salvei,0.0000
+s-0360,openai/whisper-small,marca reunião de quinta.,marca a reunião de quinta,0.2000
+s-0361,openai/whisper-small,Confirma a renovação do contrato.,confirma a renovação do contrato,0.0000
+s-0362,openai/whisper-small,Abaixa a música que eu salvei.,abaixa a música que eu salvei,0.0000
+s-0363,openai/whisper-small,Abre a panilha do MIS.,abre a planilha do mês,0.4000
+s-0364,openai/whisper-small,Pausa o vídeo da aula!,pausa o vídeo da aula,0.0000
+s-0365,openai/whisper-small,Lembra a reunião de Quinta.,lembra a reunião de quinta,0.0000
+s-0366,openai/whisper-small,Lembra a entrega do relatório.,lembra a entrega do relatório,0.0000
+s-0367,openai/whisper-small,marca entrega do relatório.,marca a entrega do relatório,0.2000
+s-0368,openai/whisper-small,e no meio do documento do aluguel.,renomeia o documento do aluguel,0.8000
+s-0369,openai/whisper-small,Toco o vídeo da aula.,toca o vídeo da aula,0.2000
+s-0370,openai/whisper-small,Confirmo o jogo do fim de semana.,confirma o jogo do fim de semana,0.1429
+s-0371,openai/whisper-small,à dia consulta do dentista.,adia a consulta do dentista,0.4000
+s-0372,openai/whisper-small,Compaque o recíbo da farmácia.,compacta o recibo da farmácia,0.4000
+s-0373,openai/whisper-small,enomei a apresentação do curso.,renomeia a apresentação do curso,0.2000
+s-0374,openai/whisper-small,Repete a música que eu salvei.,repete a música que eu salvei,0.0000
+s-0375,openai/whisper-small,Abre a pasta de fotos.,abre a pasta de fotos,0.0000
+s-0376,openai/whisper-small,Adianta rádio da cozinha.,adianta a rádio da cozinha,0.2000
+s-0377,openai/whisper-small,confirma a renovação do contrato.,confirma a renovação do contrato,0.0000
+s-0378,openai/whisper-small,compacta a apresentação do curso.,compacta a apresentação do curso,0.0000
+s-0379,openai/whisper-small,Há de a renovação do contrato.,adia a renovação do contrato,0.4000
+s-0380,openai/whisper-small,Abre o recíbo da farmácia.,abre o recibo da farmácia,0.2000
+s-0381,openai/whisper-small,Eu nomei a pasta de fotos.,renomeia a pasta de fotos,0.4000
+s-0382,openai/whisper-small,Lembra o jogo do fim de semana.,lembra o jogo do fim de semana,0.0000
+s-0383,openai/whisper-small,Compacto o recíbo da farmácia.,compacta o recibo da farmácia,0.4000
+s-0384,openai/whisper-small,Toca a música que eu salvei.,toca a música que eu salvei,0.0000
+s-0385,openai/whisper-small,Adianta o episódio novo.,adianta o episódio novo,0.0000
+s-0386,openai/whisper-small,abaixe o episódio novo.,abaixa o episódio novo,0.2500
+s-0387,openai/whisper-small,Abre o documento do aluguel.,abre o documento do aluguel,0.0000
+s-0388,openai/whisper-small,Fecha a planilha do mês.,fecha a planilha do mês,0.0000
+s-0389,openai/whisper-small,Confirma reunião de Quinta.,confirma a reunião de quinta,0.2000
+s-0390,openai/whisper-small,a dia entrega do relatório.,adia a entrega do relatório,0.4000
+s-0391,openai/whisper-small,a de a renovação do contrato.,adia a renovação do contrato,0.4000
+s-0392,openai/whisper-small,Abre a pasta de fotos.,abre a pasta de fotos,0.0000
+s-0393,openai/whisper-small,Duplicar a apresentação do curso.,duplica a apresentação do curso,0.2000
+s-0394,openai/whisper-small,Duplique o documento do Aluguel.,duplica o documento do aluguel,0.2000
+s-0395,openai/whisper-small,à dia consulta do dentista.,adia a consulta do dentista,0.4000
+s-0396,openai/whisper-small,Repete o episódio novo.,repete o episódio novo,0.0000
+s-0397,openai/whisper-small,Adianta o vídeo da aula.,adianta o vídeo da aula,0.0000
+s-0398,openai/whisper-small,compacta a nota da reunião.,compacta a nota da reunião,0.0000
+s-0399,openai/whisper-small,Adianta o podcast da manhã.,adianta o podcast da manhã,0.0000
+s-0400,openai/whisper-small,Pocahádio da Cozinha.,toca a rádio da cozinha,0.6000
+s-0401,openai/whisper-small,Lembra a reunião de Quinta.,lembra a reunião de quinta,0.0000
+s-0402,openai/whisper-small,Abre o documento do aluguel.,abre o documento do aluguel,0.0000
+s-0403,openai/whisper-small,compacta a nota da reunião.,compacta a nota da reunião,0.0000
+s-0404,openai/whisper-small,Duplica o recíbo da farmácia.,duplica o recibo da farmácia,0.2000
+s-0405,openai/whisper-small,Fecha o documento do aluguel.,fecha o documento do aluguel,0.0000
+s-0406,openai/whisper-small,Duplica a nota da reunião.,duplica a nota da reunião,0.0000
+s-0407,openai/whisper-small,e pancela entrega do relatório.,cancela a entrega do relatório,0.4000
+s-0408,openai/whisper-small,Confirma a consulta do dentista.,confirma a consulta do dentista,0.0000
+s-0409,openai/whisper-small,e a show recebo da farmácia.,fecha o recibo da farmácia,0.8000
+s-0410,openai/whisper-small,Tausa a rádio da cozinha.,pausa a rádio da cozinha,0.2000
+s-0411,openai/whisper-small,Lembra a consulta do dentista.,lembra a consulta do dentista,0.0000
+s-0412,openai/whisper-small,Adi o jogo do fim de semana.,adia o jogo do fim de semana,0.1429
+s-0413,openai/whisper-small,lembra a entrega do relatório.,lembra a entrega do relatório,0.0000
+s-0414,openai/whisper-small,Repete o podcast da manhã.,repete o podcast da manhã,0.0000
+s-0415,openai/whisper-small,confirmou o aniversário da minha mãe.,confirma o aniversário da minha mãe,0.1667
+s-0416,openai/whisper-small,Lembra a renovação do contrato.,lembra a renovação do contrato,0.0000
+s-0417,openai/whisper-small,Paz o podcast da manhã.,pausa o podcast da manhã,0.2000
+s-0418,openai/whisper-small,Adianta o vídeo da aula.,adianta o vídeo da aula,0.0000
+s-0419,openai/whisper-small,A dia reunião de quinta.,adia a reunião de quinta,0.4000
+s-0420,openai/whisper-small,A dia entrega do relatório.,adia a entrega do relatório,0.4000
+s-0421,openai/whisper-small,Adianta a música que eu salvei.,adianta a música que eu salvei,0.0000
+s-0422,openai/whisper-small,Toca o podcast da manhã!,toca o podcast da manhã,0.0000
+s-0423,openai/whisper-small,Compacto documento do aluguel.,compacta o documento do aluguel,0.4000
+s-0424,openai/whisper-small,compacta a nota da reunião.,compacta a nota da reunião,0.0000
+s-0425,openai/whisper-small,Fecha o documento do aluguel.,fecha o documento do aluguel,0.0000
+s-0426,openai/whisper-small,Tocam o episódio novo.,toca o episódio novo,0.2500
+s-0427,openai/whisper-small,compacta a nota da reunião.,compacta a nota da reunião,0.0000
+s-0428,openai/whisper-small,Fecha a apresentação do curso.,fecha a apresentação do curso,0.0000
+s-0429,openai/whisper-small,marca a renovação do contrato.,marca a renovação do contrato,0.0000
+s-0430,openai/whisper-small,Lembra a entrega do relatório.,lembra a entrega do relatório,0.0000
+s-0431,openai/whisper-small,confirma a entrega do relatório.,confirma a entrega do relatório,0.0000
+s-0432,openai/whisper-small,Lembra o jogo do fim de semana.,lembra o jogo do fim de semana,0.0000
+s-0433,openai/whisper-small,Anselho o jogo do fim de semana.,cancela o jogo do fim de semana,0.1429
+s-0434,openai/whisper-small,marca entrega do relatório.,marca a entrega do relatório,0.2000
+s-0435,openai/whisper-small,Adianta o episódio novo.,adianta o episódio novo,0.0000
+s-0436,openai/whisper-small,Ansela a consulta do dentista.,cancela a consulta do dentista,0.2000
+s-0437,openai/whisper-small,Ansela o jogo do fim de semana.,cancela o jogo do fim de semana,0.1429
+s-0438,openai/whisper-small,Lembra a renovação do contrato.,lembra a renovação do contrato,0.0000
+s-0439,openai/whisper-small,Repete o episódio novo.,repete o episódio novo,0.0000
+s-0440,openai/whisper-small,pancela entrega do relatório.,cancela a entrega do relatório,0.4000
+s-0441,openai/whisper-small,Confirma a consulta do dentista.,confirma a consulta do dentista,0.0000
+s-0442,openai/whisper-small,Compacta a planilha do mês.,compacta a planilha do mês,0.0000
+s-0443,openai/whisper-small,abaixa a música que eu salvei.,abaixa a música que eu salvei,0.0000
+s-0444,openai/whisper-small,marcou o aniversário da minha mãe.,marca o aniversário da minha mãe,0.1667
+s-0445,openai/whisper-small,marca entrega do relatório.,marca a entrega do relatório,0.2000
+s-0446,openai/whisper-small,marca entrega do relatório.,marca a entrega do relatório,0.2000
+s-0447,openai/whisper-small,abaixe o episódio novo.,abaixa o episódio novo,0.2500
+s-0448,openai/whisper-small,compacta a pasta de fotos.,compacta a pasta de fotos,0.0000
+s-0449,openai/whisper-small,a dia consulta do dentista.,adia a consulta do dentista,0.4000
+s-0450,openai/whisper-small,Abaixa a música que eu salvei.,abaixa a música que eu salvei,0.0000
+s-0451,openai/whisper-small,e pete a rádio da cozinha.,repete a rádio da cozinha,0.4000
+s-0452,openai/whisper-small,Toca a música que eu salvei.,toca a música que eu salvei,0.0000
+s-0453,openai/whisper-small,Duplica a planilha do mês.,duplica a planilha do mês,0.0000
+s-0454,openai/whisper-small,Fecha o recebo da farmácia.,fecha o recibo da farmácia,0.2000
+s-0455,openai/whisper-small,Tausa a Rádio da Cozinha.,pausa a rádio da cozinha,0.2000
+s-0456,openai/whisper-small,Abre a nota da reunião.,abre a nota da reunião,0.0000
+s-0457,openai/whisper-small,compacte o recíbo da farmácia.,compacta o recibo da farmácia,0.4000
+s-0458,openai/whisper-small,Abre o recebo da farmácia.,abre o recibo da farmácia,0.2000
+s-0459,openai/whisper-small,abaixa a rádio da cozinha.,abaixa a rádio da cozinha,0.0000
+s-0460,openai/whisper-small,Duplica o recíbo da farmácia.,duplica o recibo da farmácia,0.2000
+s-0461,openai/whisper-small,Lembra a entrega do relatório.,lembra a entrega do relatório,0.0000
+s-0462,openai/whisper-small,Renomei-lo do documento do aluguel.,renomeia o documento do aluguel,0.6000
+s-0463,openai/whisper-small,Abaixe o podcast da manhã!,abaixa o podcast da manhã,0.2000
+s-0464,openai/whisper-small,Abaixa a música que eu salvei.,abaixa a música que eu salvei,0.0000
+s-0465,openai/whisper-small,Renome a nota da reunião.,renomeia a nota da reunião,0.2000
+s-0466,openai/whisper-small,Fecha o recebo da farmácia.,fecha o recibo da farmácia,0.2000
+s-0467,openai/whisper-small,confirma a renovação do contrato.,confirma a renovação do contrato,0.0000
+s-0468,openai/whisper-small,compacta o recíbo da farmácia.,compacta o recibo da farmácia,0.2000
+s-0469,openai/whisper-small,Repete o podcast da manhã.,repete o podcast da manhã,0.0000
+s-0470,openai/whisper-small,Duplica a planilha do mês.,duplica a planilha do mês,0.0000
+s-0471,openai/whisper-small,Adia o aniversário da minha mãe.,adia o aniversário da minha mãe,0.0000
+s-0472,openai/whisper-small,Anselho jogo do fim de semana.,cancela o jogo do fim de semana,0.2857
+s-0473,openai/whisper-small,Abaixa o vídeo da aula.,abaixa o vídeo da aula,0.0000
+s-0474,openai/whisper-small,Duplicar a apresentação do curso.,duplica a apresentação do curso,0.2000
+s-0475,openai/whisper-small,Duplica o recíbo da farmácia.,duplica o recibo da farmácia,0.2000
+s-0476,openai/whisper-small,Toca a música que eu salvei.,toca a música que eu salvei,0.0000
+s-0477,openai/whisper-small,Abre o recíbo da farmácia.,abre o recibo da farmácia,0.2000
+s-0478,openai/whisper-small,Repete o vídeo da aula.,repete o vídeo da aula,0.0000
+s-0479,openai/whisper-small,Paz o podcast da manhã.,pausa o podcast da manhã,0.2000
+s-0480,openai/whisper-small,marca a consulta do dentista.,marca a consulta do dentista,0.0000
+s-0481,openai/whisper-small,A dia entrega do relatório.,adia a entrega do relatório,0.4000
+s-0482,openai/whisper-small,"Causa, a música que eu salvei.",pausa a música que eu salvei,0.1667
+s-0483,openai/whisper-small,Abaixa a playlist de domingo.,abaixa a playlist de domingo,0.0000
+s-0484,openai/whisper-small,Abaixe o vídeo da aula.,abaixa o vídeo da aula,0.2000
+s-0485,openai/whisper-small,marca a renovação do contrato.,marca a renovação do contrato,0.0000
+s-0486,openai/whisper-small,marca o jogo do fim de semana.,marca o jogo do fim de semana,0.0000
+s-0487,openai/whisper-small,Duplique o documento do aluguel.,duplica o documento do aluguel,0.2000
+s-0488,openai/whisper-small,Abaixe o podcast da manhã.,abaixa o podcast da manhã,0.2000
+s-0489,openai/whisper-small,Repete o podcast da manhã.,repete o podcast da manhã,0.0000
+s-0490,openai/whisper-small,Tocou o podcast da manhã!,toca o podcast da manhã,0.2000
+s-0491,openai/whisper-small,Faça um episódio novo.,pausa o episódio novo,0.5000
+s-0492,openai/whisper-small,Adia o jogo do fim de semana.,adia o jogo do fim de semana,0.0000
+s-0493,openai/whisper-small,Toca o vídeo da aula.,toca o vídeo da aula,0.0000
+s-0494,openai/whisper-small,Abre a pasta de fotos.,abre a pasta de fotos,0.0000
+s-0495,openai/whisper-small,Abre o recíbo da farmácia.,abre o recibo da farmácia,0.2000
+s-0496,openai/whisper-small,abaixa a rádio da cozinha.,abaixa a rádio da cozinha,0.0000
+s-0497,openai/whisper-small,marca a renovação do contrato.,marca a renovação do contrato,0.0000
+s-0498,openai/whisper-small,Adianta o episódio novo.,adianta o episódio novo,0.0000
+s-0499,openai/whisper-small,Abre a panilha do mês.,abre a planilha do mês,0.2000
+s-0500,openai/whisper-small,Fecha a nota da reunião.,fecha a nota da reunião,0.0000

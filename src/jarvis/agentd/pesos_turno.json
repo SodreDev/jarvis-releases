@@ -1,0 +1,11 @@
+{
+  "descricao": "Pesos do detector semântico de turno (cartão F1-07). Gerados por `tools/curva_turno.py --treinar` no split `calibracao`; não editar à mão.",
+  "n": 2113,
+  "pesos": {
+    "comeca_com_verbo": 0.16009040498077368,
+    "palavras": -0.421976316978682,
+    "pausa_s": 0.0
+  },
+  "treinado_em": "2026-10-15",
+  "vies": -0.09998577151384049
+}
