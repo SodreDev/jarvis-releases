@@ -314,3 +314,78 @@ que só vale no caminho rápido não é garantia.
 - Troca real de ponto de montagem e perda de privilégio em `openat2` sob seccomp.
 - Elevação de verdade (polkit/UAC): o cartão não pede, e o interruptor aqui é só estado de
   política com teste de que nada o muda sem o dono.
+
+---
+
+## F0-05 — harness da memória em grafo
+
+### O `n` não é inventado
+
+O grafo sintético é dimensionado pelo corpus real: **122 episódios**, que é quantas memórias
+o Orchestrator guarda para este projeto em 2026-10-15 (contagem feita com `list_memories`).
+As razões do gerador — 3 entidades e 8 arestas por episódio, grau médio ~5 — são
+**[SUPOSIÇÃO]** declarada; o exportador do cartão F0-08 substitui isso pela contagem real de
+C1. As escalas 10× e 100× existem porque o corpus do dono vai crescer, e é a forma do grafo
+(grau, hub) que a travessia sente, não o tamanho absoluto.
+
+O gerador tem semente fixa: a medição de amanhã mede o mesmo grafo.
+
+### Quatro implementações, de propósito
+
+| implementação | o que é |
+|---|---|
+| `ativar_por_no` | **produção**: uma consulta por nó da fronteira, com `ORDER BY ... LIMIT` dentro da varredura |
+| `ativar_por_salto` | uma consulta por salto, com `ROW_NUMBER() ... WHERE pos <= teto` |
+| `ativar_recursivo_sql` | `WITH RECURSIVE`, uma consulta só |
+| `ativar_em_memoria` | arestas da fronteira trazidas por consulta simples, propagação em Python |
+
+**O achado que mudou a escolha:** `ROW_NUMBER()` obriga o SQLite a ranquear **todas** as
+arestas do nó antes de cortar no teto. Num hub de grau 10 000, a travessia por salto custou
+~31 ms e ainda perdia nós úteis (o `LIMIT` global cortava as arestas do hub); a mesma
+travessia com o teto **dentro** da varredura (uma consulta por nó, `ORDER BY ... LIMIT`, que
+para de ler no teto e usa o índice) custou ~4,8 ms com 1 salto e ~15 ms com 2, achando 35 e
+167 nós. Mais consultas, menos trabalho. `ativar_por_no` passou a ser a de produção; as outras
+ficam no repositório porque são a comparação do aceite (d) — e porque um teste confere que as
+quatro concordam no **conjunto de nós**, sem o que comparar custo não significaria nada.
+
+A `WITH RECURSIVE` não serve: 100–200× mais lenta e estourando o orçamento nas escalas
+maiores. Fica como medição, não como caminho.
+
+### "Nunca espera" vale dentro do SQL
+
+O orçamento em milissegundos é verificado entre saltos **e** dentro da consulta, via
+`sqlite3.Connection.set_progress_handler`: estourado o prazo, a consulta é interrompida, o
+resultado volta com `graph_truncated: true` e o motivo, e as sementes continuam utilizáveis.
+Com `orcamento_ms=0` as quatro implementações devolvem parcial em menos de 200 ms — teste do
+aceite (b).
+
+### Números e veredito
+
+Em `docs/medicoes/f0-05-grafo.md` (gerado por `tools/harness_memoria.py`, com hardware, `n`,
+três execuções, mediana e p95) e `docs/medicoes/f0-05-grafo.csv`. Resumo do que decide:
+
+- **SLO-11 (p95 ≤ 40 ms) é alcançável**: 1 salto ficou em **0,16 ms** p95 na escala 100× e
+  **0,24 ms** no grafo com hub; 2 saltos, em **1,54 ms** na escala 100× (12 200 episódios,
+  ~97 600 arestas) e **12,6 ms** no hub;
+- **SLO-12 (memória pronta, p95 ≤ 250 ms, sem reranker) é alcançável**: pior p95 de **62 ms**
+  na escala 100×, com 0 consulta truncada — folga de ~4×;
+- **2 saltos cabem** em todas as escalas medidas e também com hub;
+- o caso que aperta não é o tamanho do grafo, é o **hub**: com grau 10 029, 2 saltos vão de
+  1,5 ms para 12,6 ms p95. Continua dentro do SLO-11, e é o número que justifica a penalidade
+  de hub da §6.7 ser requisito, não enfeite;
+- **p95 do hub varia entre execuções** (medi 9,4 ms e 12,6 ms em execuções diferentes, com a
+  máquina em uso): o relatório publica as três execuções, e é por isso que ele traz p99 também.
+
+### Não verificado
+
+- **Qualidade de recuperação** (recall, nDCG, abstinência): não é deste cartão. A lista densa
+  da fusão é **simulada** (sobreposição de termos, determinística) — serve para a fusão ter
+  três listas de verdade e o custo do RRF ser medido com o número real de candidatos, e está
+  marcado assim no relatório. Qualidade é a medição da §8.1/§8.2, com corpus anotado, em F3.
+- **Corpus real**: o grafo é sintético; o `n` base é real, o resto é razão declarada.
+- **Windows**: o harness só usa stdlib e SQLite, então roda nos dois sistemas, mas foi
+  **executado apenas em Linux**.
+- **Reranker**: SLO-8 é outra medição, com modelo de licença comercial (ADR-0011).
+- `entity_mention` fica vazia no grafo sintético (a extração de entidade é trabalho de
+  consolidação, §6.7), então a ligação nó → `memory_unit` cai no nome canônico via FTS5. Com
+  o corpus de C1 isso passa a usar as menções de verdade.

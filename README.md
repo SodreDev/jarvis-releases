@@ -23,6 +23,13 @@ uv run --frozen python tools/verificar.py
 `tools/verificar.py` roda, na ordem, o que o CI roda: formatador, linter, tipos, testes e a
 porta de licença. É o mesmo comando em qualquer sistema — é isso que o P11 exige.
 
+Para ver o esqueleto dos sete processos funcionando, ou refazer a medição da memória:
+
+```bash
+uv run --frozen python tools/rodar_esqueleto.py     # evento sintético atravessa os 7 processos
+uv run --frozen python tools/harness_memoria.py     # mede SLO-11 e SLO-12 (docs/medicoes/)
+```
+
 Para rodar um pedaço só:
 
 ```bash
@@ -43,7 +50,10 @@ código de produto de voz: cada cartão entrega esqueleto, teste e número.
 | F0-01 repositório, licença, linter, CI nos dois SOs | feito |
 | F0-02 barramento tipado com log encadeado por hash | feito |
 | F0-09 porta de licença no CI | feito |
-| F0-03 a F0-08, F0-10 | abertos |
+| F0-03 os sete processos e o evento que atravessa tudo | feito |
+| F0-06 política: raízes, canonicalização, suíte de TOCTOU | feito |
+| F0-05 harness da memória em grafo (SLO-11, SLO-12) | feito |
+| F0-04, F0-07, F0-08, F0-10 | abertos |
 
 ## Linguagem do núcleo
 
