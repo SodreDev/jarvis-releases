@@ -1,0 +1,26 @@
+{
+  "arquivos": {
+    "CONSENTIMENTO.md": {
+      "bytes": 2161,
+      "sha256": "90c1c0c97bf721418cf7c0767a184bf6899dc1b81d88cfd4864fbee5b3be3d52"
+    },
+    "README.md": {
+      "bytes": 2806,
+      "sha256": "9a1ff0bb3a36a8f6919c1c487971086b2c151574498fca751ccbfd56c8fe207f"
+    },
+    "cenarios/README.md": {
+      "bytes": 746,
+      "sha256": "e056faaa896f21c92da4671c977727a5403a763c1ca5168597ade2c2603ed925"
+    },
+    "consultas/README.md": {
+      "bytes": 804,
+      "sha256": "b140297b546745e4b5df8522f9c90a714a49d825493bc9a0370e631dc63af71d"
+    },
+    "turnos/README.md": {
+      "bytes": 799,
+      "sha256": "74c1bae2a1755cb5381d0823ad89bf45574306ff3ac649a1649bf4cd429931a5"
+    }
+  },
+  "descricao": "sha256 de cada arquivo do corpus (cartão F0-08). Gerado; não editar.",
+  "versao": 1
+}

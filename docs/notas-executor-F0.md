@@ -510,3 +510,86 @@ manifesto e esquecer de regenerar o stub derruba o CI — era o ponto do cartão
   processo, o gerador ganha um alvo novo; o manifesto não muda, que é o motivo de ele ser dado.
 - `tests` do manifesto declara quais suítes a capacidade exige, mas **nada ainda confere que
   essas suítes existem** — isso só faz sentido quando houver capacidade implementada (F2/F4).
+
+---
+
+## F0-08 — estrutura do corpus e exportador de C1
+
+### O que foi criado, e o que o dono preenche
+
+`corpus/` com `turnos/` (pausa real em pt-BR, F1), `consultas/` (C2 anotado, F3), `cenarios/`
+(política e prompt injection, F2/F4) e `exportado/` (C1 gerado). Cada pasta tem um README com o
+**formato exato em JSONL e um exemplo**; o `corpus/README.md` é a página única pedida no aceite
+(c), e `corpus/CONSENTIMENTO.md` é o modelo de termo (LGPD, com direito de exclusão em cascata e
+identificador do termo que vai no corpus em lugar do documento). **O conteúdo é do dono** — aqui
+só está a estrutura, como ele pediu.
+
+`corpus/exportado/` e `corpus/turnos/audio/` ficam no `.gitignore`: o primeiro é derivado e tem
+texto do dono, o segundo entra por pedido dele e não por acidente de `git add`.
+
+### Manifesto de hashes
+
+`tools/corpus.py manifesto|verificar|resumo`. O `verificar` entrou no CI e no `verificar.py`, e
+acusa as três formas de o corpus mudar: conteúdo alterado (sha256), arquivo novo que ninguém
+registrou e arquivo que saiu. É o que faz medição de hoje continuar comparável amanhã.
+
+### Exportador de C1 (números reais)
+
+`tools/exportar_orchestrator.py` lê a saída de `list_memories` (ou um JSONL) e grava no esquema
+da §6.2 + §6.7, com redação obrigatória. Rodado agora sobre as memórias reais deste projeto:
+
+| tabela | n |
+|---|---:|
+| `episode` | 128 |
+| `entity` | 331 |
+| `assertion` | 128 |
+| `memory_unit` | 128 |
+| `entity_mention` | 943 |
+| `entity_edge` | 2 990 (676 `active`) |
+
+Redação: 2 trechos (dois e-mails). Classe de PII: 12 `sensitive`, 83 `path_only`, 2 `metadata`,
+31 `none`. O exportador **confere no próprio banco** depois de gravar que nenhum padrão de
+segredo sobrou, e sai com erro se sobrar.
+
+**Caminho de segredo não vira entidade:** `~/.ssh/id_rsa` citado numa memória é redigido do
+texto e **não** entra no grafo, nem como nó. Teste próprio.
+
+### A lacuna do F0-05 fechou (e o que ela revelou)
+
+O harness do F0-05 usou `[SUPOSIÇÃO]` de 3 entidades e 8 arestas por episódio. Medido:
+
+| razão | suposto | medido |
+|---|---:|---:|
+| entidades por episódio | 3 | **2,6** |
+| arestas por episódio (todas) | 8 | **23,4** |
+| arestas `active` por episódio | — | **5,3** |
+
+A suposição de entidades estava boa; a de arestas estava **baixa em 3×** se contar todas — mas
+a travessia só lê `status='active'` (§6.8 passo 4), e aí o real (5,3) é **menor** que o suposto
+(8). Ou seja: a medição do F0-05 foi conservadora na direção certa.
+
+**Medição no grafo real**, com `ativar_por_no` e 60 sementes de maior grau (grau médio real
+10,2; grau máximo 131):
+
+| saltos | p50 | p95 | nós alcançados |
+|---|---:|---:|---:|
+| 1 | 0,114 ms | **0,216 ms** | 17,8 |
+| 2 | 1,867 ms | **3,291 ms** | 92,2 |
+
+Confere com o sintético e mantém SLO-11 com ~12× de folga **no corpus do dono**, não em grafo
+inventado.
+
+**Armadilha de medição que custou uma iteração:** o `INSTANTE_PADRAO` da travessia é uma data
+fixa de teste. Medir o C1 com ela devolvia só as sementes, porque as arestas importadas têm
+`valid_from` no momento da importação — o filtro de validade da §6.8 estava funcionando
+**corretamente**. Em produção o instante vem da pergunta; em medição, tem de vir do relógio.
+
+### Não verificado
+
+- **O corpus não tem conteúdo ainda** (é do dono): `turnos/`, `consultas/` e `cenarios/` têm
+  README e formato, zero itens. O `resumo` conta 0 itens, e é isso que se espera agora.
+- **Fonte do exportador é o dump do `list_memories`**, não o banco do Orchestrator: não se toca
+  no ChromaDB do dono. Se o formato do dump mudar, o parser precisa acompanhar (há teste do
+  formato, com os dois cabeçalhos que o Orchestrator usa hoje).
+- **Extração de entidade é determinística** (autor, projeto, tema, caminho, commit). Extração
+  por LLM, resolução de apelido por trigrama e consolidação ficam para F3 (§6.4, §6.7).

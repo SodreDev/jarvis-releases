@@ -13,3 +13,9 @@ __pycache__/
 *.sqlite-wal
 *.sqlite-shm
 /tmp/
+
+# Corpus exportado é derivado e contém texto do dono: fica fora do repositório.
+/corpus/exportado/*
+!/corpus/exportado/README.md
+# Áudio do corpus entra por pedido do dono, nunca por acidente de `git add`.
+/corpus/turnos/audio/

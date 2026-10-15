@@ -17,15 +17,15 @@
 
 | braço | p50 (ms) | p95 (ms) | p99 (ms) | máximo (ms) | pausas de GC | GC total (ms) |
 |---|---:|---:|---:|---:|---:|---:|
-| `rust-std` | 0.0003 | 0.0003 | 0.0004 | 0.0113 | 0 | 0.0 |
-| `python-numpy` | 0.0104 | 0.0143 | 0.0286 | 0.1560 | 0 | 0.0 |
-| `evento-no-barramento` | 0.3764 | 0.4211 | 0.5548 | 0.9028 | 1 | 0.2 |
+| `rust-std` | 0.0003 | 0.0003 | 0.0006 | 0.0103 | 0 | 0.0 |
+| `python-numpy` | 0.0106 | 0.0217 | 0.0395 | 0.2038 | 0 | 0.0 |
+| `evento-no-barramento` | 0.4218 | 0.6261 | 0.6494 | 0.8986 | 1 | 0.1 |
 
 ## Pisos: o que é da máquina, não nosso
 
 | piso | n | p50 (ms) | p95 (ms) | p99 (ms) | observação |
 |---|---:|---:|---:|---:|---|
-| agendamento (laço de 20 ms, sem nosso código) | 200 | 0.077 | 0.087 | 0.098 |  |
+| agendamento (laço de 20 ms, sem nosso código) | 200 | 0.071 | 0.079 | 0.096 |  |
 
 ## Proposta de D1 (linguagem e IPC do núcleo)
 
@@ -33,11 +33,11 @@ O orçamento do SLO-1 é **p95 ≤ 80 ms** de captura a evento. Somando o que é
 
 | caminho | p95 somado (ms) | fração do SLO-1 |
 |---|---:|---:|
-| Python + ONNX (silero) | 0.508 | 0.63% |
-| Rust (VAD barato) + barramento em Python | 0.508 | 0.64% |
+| Python + ONNX (silero) | 0.705 | 0.88% |
+| Rust (VAD barato) + barramento em Python | 0.706 | 0.88% |
 
-- A diferença de linguagem **no VAD** é de 0.0003 ms (Rust) contra 0.0143 ms (Python+numpy, mesma aritmética) e 0.0000 ms (Python+ONNX, VAD neural de verdade). Em termos de SLO-1, a maior dessas é 0.00% do orçamento.
-- O **custo do evento** (0.421 ms p95: envelope, validação de borda, IPC ida e volta e log encadeado) é maior que o custo do VAD em qualquer linguagem. O gargalo do nosso lado é a fronteira, não a aritmética.
+- A diferença de linguagem **no VAD** é de 0.0003 ms (Rust) contra 0.0217 ms (Python+numpy, mesma aritmética) e 0.0000 ms (Python+ONNX, VAD neural de verdade). Em termos de SLO-1, a maior dessas é 0.00% do orçamento.
+- O **custo do evento** (0.626 ms p95: envelope, validação de borda, IPC ida e volta e log encadeado) é maior que o custo do VAD em qualquer linguagem. O gargalo do nosso lado é a fronteira, não a aritmética.
 - O **piso do dispositivo** medido (0.0 ms p95) é uma a duas ordens de grandeza maior que tudo que fazemos — com a ressalva de viés logo abaixo.
 
 **Proposta:** manter **Python 3.12 nos sete processos no v0**, com a fronteira pronta para trocar `audio-io`/`agentd` por Rust sem reescrever contrato (o contrato é dado: `schemas/events.v1.json` e `schemas/event_log.sql`). O número não justifica pagar duas linguagens agora: o nosso custo total é menos de 1% do SLO-1, e o ecossistema de ML (ONNX, ASR, TTS) está em Python.

@@ -45,6 +45,10 @@ jobs:
       - name: testes
         run: uv run --frozen pytest
 
+      # Cartão F0-08: medição só continua comparável se o corpus for o mesmo.
+      - name: corpus confere com o manifesto
+        run: uv run --frozen python tools/corpus.py verificar
+
       # SPEC §4: manifesto é verificado por máquina, e stub velho não entra.
       - name: manifestos e catálogo
         run: |

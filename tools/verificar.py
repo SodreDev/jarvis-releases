@@ -18,6 +18,7 @@ ETAPAS: tuple[tuple[str, list[str]], ...] = (
     ("linter", ["ruff", "check", "."]),
     ("tipos", ["mypy"]),
     ("testes", ["pytest"]),
+    ("corpus", ["python", "tools/corpus.py", "verificar"]),
     ("manifestos", ["python", "tools/manifesto.py", "validar"]),
     ("lint de catálogo", ["python", "tools/manifesto.py", "lint"]),
     ("stubs em dia", ["python", "tools/manifesto.py", "conferir"]),

@@ -42,6 +42,7 @@ uv run ruff format --check .   # formatação
 uv run ruff check .            # linter (barra shell irrestrito, SPEC §4)
 uv run mypy                    # tipos (strict)
 uv run pytest                  # testes
+uv run python tools/corpus.py verificar        # corpus confere com o manifesto de hashes
 uv run python tools/manifesto.py validar       # manifestos de capacidade (§4)
 uv run python tools/manifesto.py lint          # regras de catálogo (§4, ADR-0010)
 uv run python tools/license_gate.py --tabela   # porta de licença (ADR-0011)
@@ -62,7 +63,8 @@ código de produto de voz: cada cartão entrega esqueleto, teste e número.
 | F0-05 harness da memória em grafo (SLO-11, SLO-12) | feito |
 | F0-04 latência de captura e a proposta de D1 | feito |
 | F0-07 ferramental de manifesto de capacidade | feito |
-| F0-08, F0-10 | abertos |
+| F0-08 estrutura do corpus e exportador de C1 | feito |
+| F0-10 | aberto |
 
 ## Linguagem do núcleo
 
