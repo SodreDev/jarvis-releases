@@ -22,6 +22,7 @@ from jarvis.audio_io.ambiente import (
     proibir_dispositivo_em_ci,
 )
 from jarvis.audio_io.backend import fonte_do_ambiente, sumidouro_do_ambiente
+from jarvis.audio_io.captura import Captura
 from jarvis.audio_io.energia import LIMIAR_PADRAO_DB, DetectorDeEnergia
 from jarvis.audio_io.erros import (
     DispositivoIndisponivel,
@@ -35,8 +36,15 @@ from jarvis.audio_io.fontes import (
     FonteDeDispositivo,
     FonteSintetica,
 )
+from jarvis.audio_io.playback import (
+    Cancelamento,
+    FilaDePlayback,
+    Pedaco,
+    em_pedacos,
+)
 from jarvis.audio_io.quadro import (
     AMOSTRAS_POR_QUADRO,
+    BYTES_POR_AMOSTRA,
     BYTES_POR_QUADRO,
     MS_POR_QUADRO,
     PISO_DB,
@@ -71,6 +79,7 @@ from jarvis.audio_io.trilha import Divergencia, EventoDeTrilha
 
 __all__ = [
     "AMOSTRAS_POR_QUADRO",
+    "BYTES_POR_AMOSTRA",
     "BYTES_POR_QUADRO",
     "LIMIAR_PADRAO_DB",
     "MS_POR_QUADRO",
@@ -80,17 +89,21 @@ __all__ = [
     "VARIAVEL_BACKEND",
     "VARIAVEL_CI",
     "Backend",
+    "Cancelamento",
+    "Captura",
     "DetectorDeEnergia",
     "DispositivoIndisponivel",
     "DispositivoProibidoEmCI",
     "Divergencia",
     "ErroDeAudio",
     "EventoDeTrilha",
+    "FilaDePlayback",
     "FonteDeArquivo",
     "FonteDeAudio",
     "FonteDeDispositivo",
     "FonteSintetica",
     "FormatoNaoSuportado",
+    "Pedaco",
     "Quadro",
     "Reproducao",
     "SumidouroDeArquivo",
@@ -107,6 +120,7 @@ __all__ = [
     "de_int16",
     "eco",
     "em_ci",
+    "em_pedacos",
     "em_quadros",
     "energia_db",
     "fala_simulada",

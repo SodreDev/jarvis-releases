@@ -175,3 +175,83 @@ comparação do F1-07 não mediria nada.
   onde existem a voz e o espeak-ng — e, como a inferência é CPU, só é afirmada **nesta
   máquina**; em outro CPU/BLAS o hash pode mudar.
 - O job `windows-latest` continua nunca executado (sem remoto).
+
+---
+
+## F1-03 — `audio-io`: quadros de 20 ms, playback cancelável e `played_ms` real
+
+### O bug que o aceite (a) pegou: byte não é amostra
+
+`amostras_enfileiradas` somava `n_amostras` (amostras) com `_consumido_do_pedaco` (bytes). Com
+800 ms enfileirados e 200 ms tocados ela dizia 600 ms de sobra onde havia 600 ms… de uma conta
+errada que só coincide quando o número é par de propósito. O teste do aceite (a) — "o resto
+nunca aparece em nenhum evento" — foi o que derrubou. Conserto no código, com o comentário
+dizendo qual teste pegou.
+
+### `played_ms` é o que o sumidouro consumiu, não o que oferecemos
+
+O `tick` avança pelo **retorno** de `escrever`, não pelo tamanho da fatia. A diferença só
+aparece com dispositivo saturado (aceita menos de um quadro), e é justo aí que `played_ms`
+mentiria para o histórico (§3.3 regra 4). Há um sumidouro de teste que aceita **metade** do
+quadro, e o teste prova que o progresso acompanha o que saiu: 10 ticks = 100 ms, não 200 ms.
+O harness mede esse erro: **0,0000 ms** em 1 000 cancelamentos.
+
+### `PlaybackProgress` é fato, não hipótese
+
+No barramento (F0-02) `PlaybackProgress` **não** entra no coalescing: perder um muda o
+histórico. Então ele sai nos dois momentos que mudam o histórico — fim de pedaço e
+cancelamento — e não a cada 20 ms. Progresso periódico para interface existe
+(`intervalo_de_progresso_ms`) e está **desligado por padrão**: 50 fatos por segundo seria
+ruído, não informação.
+
+### Quem emite `Cancel` não é o `audio-io`
+
+A §3.2 fixa a origem canônica: `Cancel` é do `agentd`. O `audio-io` **reage** — esvazia a fila
+no mesmo tick e publica o `played_ms` do pedaço truncado. Isso virou teste de integração com
+processos de verdade: `audio-io --capturar --enfileirar-ms 2000` + `agentd`; a captura vê
+`speech_started` aos 220 ms do roteiro, o `agentd` emite `Cancel`, e no log aparece **um** só
+`PlaybackProgress` depois do `Cancel`, com ≤ 200 ms tocados dos 2 s enfileirados.
+
+### O laço do processo lê o barramento sem bloquear
+
+O esqueleto do F0-03 era "recebe evento → reage". Isso não serve para quem fica perto do
+dispositivo: um `Cancel` que chega enquanto esperamos evento não pode esperar o próximo quadro
+para esvaziar a fila. O laço do `audio-io` é captura → playback → barramento **com
+`timeout=0`**, e o ritmo de 20 ms vem da fonte, que dorme no relógio injetado.
+
+A captura de verdade fica atrás de `--capturar` (padrão desligado) para não mudar a cadeia que
+o aceite do F0-03 afirma. No v0, quem liga a captura é quem sobe a sessão; PTT e indicador de
+microfone são o cartão F1-13.
+
+### Privacidade corta na fonte
+
+Com privacidade ligada, o laço **não puxa quadro**: o teste conta as amostras que saíram da
+fonte (um embrulho que conta) e elas param de crescer. Ao ligar no meio da fala sai **um**
+`AudioActivity(speech=false)` com energia no piso — para ninguém no barramento continuar
+achando que o dono está falando — e depois nada. A proibição não é filtro de interface.
+
+### Piso publicado (aceite (e))
+
+`docs/medicoes/f1-03-audio-io.{csv,md}`, 10 000 quadros por execução, 3 execuções, etiqueta
+**piso de software, sem dispositivo**:
+
+| caminho | p50 | p95 |
+|---|---:|---:|
+| `captura→AudioActivity` | 0,2610 ms | 0,2826 ms |
+| `quadro→decisão (sem evento)` | 0,0155 ms | 0,0158 ms |
+| `Cancel→fila vazia` | 0,5413 ms | 0,5660 ms |
+
+O achado da F0-04 se repete: o custo é a **fronteira**, não a aritmética. Decidir sobre o
+quadro custa 0,016 ms; transformar a decisão em evento validado custa 0,26 ms — 17× mais. E
+esvaziar a fila custa 0,57 ms porque o caro é o `PlaybackProgress` (envelope + validação), não
+o `clear()` da fila.
+
+### Não verificado (exige hardware real)
+
+- **SLO-1 de verdade**: este é o piso do nosso código sobre arquivo. Do microfone ao evento
+  faltam AEC (F1-04), VAD (F1-05) e o hardware.
+- **Latência do caminho de saída e cancelamento perceptível ao ouvido**: a fila do driver não é
+  a nossa fila. Esvaziar a nossa em 0,57 ms não garante que o alto-falante parou (F1-10 piso,
+  F1-16 aceite).
+- **Jitter de captura, xruns, período do driver**: nenhum dispositivo foi aberto.
+- Windows: o código é só biblioteca padrão, mas rodou só em Linux.

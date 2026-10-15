@@ -24,9 +24,10 @@ from tools.harness_captura import (
     Resultado,
     compilar_rust,
     gerar_audio,
-    percentil,
     resumo_por_braco,
 )
+
+from jarvis.medicao import percentil
 
 RAIZ = Path(__file__).resolve().parents[2]
 

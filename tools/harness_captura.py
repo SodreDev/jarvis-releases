@@ -28,7 +28,6 @@ import itertools
 import json
 import math
 import os
-import platform
 import shutil
 import statistics
 import struct
@@ -38,6 +37,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
+
+from jarvis.medicao import hardware, percentil
 
 RAIZ: Final = Path(__file__).resolve().parent.parent
 PASTA_SAIDA: Final = RAIZ / "docs" / "medicoes"
@@ -83,39 +84,6 @@ class Piso:
 class Lacuna:
     o_que: str
     por_que: str
-
-
-def percentil(valores: list[float], p: float) -> float:
-    if not valores:
-        return 0.0
-    ordenados = sorted(valores)
-    return ordenados[min(round(p / 100 * (len(ordenados) - 1)), len(ordenados) - 1)]
-
-
-def hardware() -> dict[str, str]:
-    cpu = platform.processor()
-    try:
-        for linha in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
-            if linha.startswith("model name"):
-                cpu = linha.split(":", 1)[1].strip()
-                break
-    except OSError:
-        pass
-    memoria = "?"
-    try:
-        for linha in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
-            if linha.startswith("MemTotal"):
-                memoria = f"{int(linha.split()[1]) / 1024 / 1024:.0f} GiB"
-                break
-    except OSError:
-        pass
-    return {
-        "cpu": cpu or "?",
-        "nucleos": str(os.cpu_count() or "?"),
-        "memoria": memoria,
-        "plataforma": platform.platform(),
-        "python": platform.python_version(),
-    }
 
 
 # --- áudio sintético, igual para todos os braços ----------------------------------
