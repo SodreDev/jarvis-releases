@@ -976,3 +976,59 @@ do corte é o que vem **depois** dele no log.
 - **SLO-2 entre processos como número publicado**: o teste de integração exige que caiba nos
   150 ms, mas é uma execução por rodada de CI, não p50/p95 com três execuções. O número com a
   fila do driver é o F1-16, na máquina do dono.
+
+## F1-13 — PTT e indicador de microfone que não mente
+
+### Por que o controle não é evento do barramento
+
+A §3.2 fecha **onze** tipos de evento, e nenhum é "abra o microfone". Inventar um seria emenda
+de SPEC, que é do dono. Então PTT e *kill switch* usam o mecanismo que a pasta de sessão já
+tem para `sessao`, `pronto` e `quadros-de-audio`: arquivo pequeno trocado por `Path.replace`
+(atômico nos dois sistemas). O barramento continua carregando **decisão**; abrir e fechar
+microfone é **controle de dispositivo**, e quem manda nele é o dono.
+
+### O que faz o indicador não poder mentir
+
+Dois arquivos, em direções opostas: `microfone-pedido.json` é o que a `ui` **pediu**, e
+`microfone-estado.json` é o que o `audio-io` observou da fonte. O indicador lê **só o segundo**,
+e `PainelDoMicrofone.ouvindo` é propriedade **derivada** (`estado.aberta`) — não existe campo
+para alguém escrever "ouvindo" por engano, e há teste que exige `AttributeError` ao tentar.
+
+Do outro lado, `Captura.aberta` não é booleano: é `self._quadros is not None`, a existência do
+iterador. Fonte fechada não tem de onde puxar amostra — então "indicador apagado" e "zero
+amostra" não são duas afirmações que precisam combinar, são **a mesma**.
+
+Três armadilhas que entraram como regra depois de pensar no que o dono veria:
+
+1. **PTT fecha a fonte, não filtra depois de capturar.** Filtrar amostra já capturada deixaria
+   o áudio do dono passar pela nossa memória sem ele querer.
+2. **Estado velho não acende o indicador.** O `audio-io` republica a cada 250 ms; parado há
+   mais de 2 s, o painel mostra apagado e diz que perdeu contato. Indicador aceso porque o
+   processo de áudio **morreu** com a fonte aberta é a pior mentira possível, e era a que
+   passaria sem ninguém notar.
+3. **Pedido ilegível vira `DESLIGADO`.** JSON corrompido não pode virar microfone aberto: na
+   falha, o padrão é o mais silencioso, não o mais útil.
+
+### A contagem de amostras é um retrato
+
+`estado.amostras` é republicado a cada 250 ms (ou na hora em que `aberta`/`modo`/`indisponivel`
+mudam), não a 50 Hz: escrever o arquivo 50 vezes por segundo seria custo sem leitor. A
+consequência honesta está no teste: no tick em que a fonte abre a contagem é 0 **de verdade**, e
+quem atrasa é o número, nunca o zero do fechamento — que é o que o aceite (a) cobra.
+
+### O atalho global está declarado e não implementado, de propósito
+
+`JARVIS_HOTKEYS_BACKEND=falso|portal|windows|nenhum`. O `falso` é arquivo (`1`/`0`), e é por
+isso que o teste de integração consegue apertar a tecla de **outro processo**. `portal`
+(`org.freedesktop.portal.GlobalShortcuts`) e `windows` (`RegisterHotKey`) levantam
+`AtalhoIndisponivel` no `abrir`, a `ui` registra o motivo como **aviso** (linha separada da
+frase do microfone) e cai no botão da tela. Pôr um cliente D-Bus que o CI não pode exercitar
+seria código de produto sem teste no caminho mais sensível da tela.
+
+### Não verificado (exige a máquina do dono — cartão F1-16)
+
+- **atalho global de verdade**: portal/KGlobalAccel no Wayland e `RegisterHotKey` no Windows,
+  inclusive a pergunta que só se responde lá — se **outro aplicativo** já tomou a combinação;
+- **se o indicador é visível onde o dono realmente olha**: aqui ele é uma frase em arquivo
+  (`ui-microfone.txt`), porque a tela é de outra fase;
+- **dispositivo real**: a fonte do teste é a sintética; `CI=1` recusa abrir placa de som.

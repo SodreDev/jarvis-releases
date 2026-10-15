@@ -24,12 +24,14 @@ import time
 from jarvis.audio_io.aec import CadeiaDeAec
 from jarvis.audio_io.backend import fonte_do_ambiente
 from jarvis.audio_io.captura import SEGUNDOS_POR_QUADRO, Captura
+from jarvis.audio_io.controle import ControleDoMicrofone
 from jarvis.audio_io.playback import FilaDePlayback, em_pedacos
 from jarvis.audio_io.quadro import TAXA_PADRAO
 from jarvis.audio_io.sintese import gerar
 from jarvis.audio_io.sumidouros import SumidouroEmMemoria
 from jarvis.barramento.canal_de_audio import CanalDeConexao
 from jarvis.barramento.envelope import Envelope, Prioridade, Tipo, Trust
+from jarvis.microfone import Modo
 from jarvis.processo import Processo, Reacao, analisador
 from jarvis.relogio import RelogioDoSistema
 
@@ -76,32 +78,43 @@ def laco_de_20_ms(
     *,
     timeout: float | None,
     canal: CanalDeConexao | None = None,
+    controle: ControleDoMicrofone | None = None,
 ) -> None:
     """O laço do processo que fica perto do dispositivo: captura, playback e barramento.
 
-    A ordem importa. Primeiro o que é do mundo (captura), depois o que sai para o mundo
-    (playback), e só então o barramento — e o barramento é lido **sem bloquear**, porque um
-    `Cancel` que chega enquanto esperamos evento não pode esperar o próximo quadro para
-    esvaziar a fila (§3.3 regra 2). O ritmo de 20 ms vem da fonte, que dorme no relógio.
+    A ordem importa. Primeiro o que o dono pediu (o controle do microfone, F1-13), depois o que
+    é do mundo (captura), depois o que sai para o mundo (playback), e só então o barramento — e
+    o barramento é lido **sem bloquear**, porque um `Cancel` que chega enquanto esperamos
+    evento não pode esperar o próximo quadro para esvaziar a fila (§3.3 regra 2). O ritmo de
+    20 ms vem da fonte, que dorme no relógio.
+
+    Com o microfone fechado o laço **continua rodando**: ele ainda tem de ler o barramento e
+    tocar o que está na fila. O que não acontece é puxar amostra — e é por isso que o `tick` da
+    captura fica atrás de `captura.aberta`, em vez de a captura devolver silêncio.
     """
     limite = None if timeout is None else relogio.mono_ns() + int(timeout * 1e9)
     while limite is None or relogio.mono_ns() < limite:
         quadros_antes = captura.quadros
-        for envelope in captura.tick():
-            processo.publicar(envelope)
-        if canal is not None and captura.quadros > quadros_antes and captura.ultimo_quadro:
-            # O quadro vai para o `agentd` pelo canal da ADR-0015, com o epoch no cabeçalho:
-            # o barramento carrega decisão, o canal carrega áudio.
-            canal.enviar(captura.ultimo_quadro, epoch=captura.epoch)
-        # Playback pausado enquanto a referência não vale (cartão F1-04).
-        fila.pausado = not captura.aec_ok
+        if controle is not None:
+            controle.tick()
+        if captura.aberta:
+            for envelope in captura.tick():
+                processo.publicar(envelope)
+            if canal is not None and captura.quadros > quadros_antes and captura.ultimo_quadro:
+                # O quadro vai para o `agentd` pelo canal da ADR-0015, com o epoch no
+                # cabeçalho: o barramento carrega decisão, o canal carrega áudio.
+                canal.enviar(captura.ultimo_quadro, epoch=captura.epoch)
+        # Playback pausado enquanto a referência não vale (F1-04) ou enquanto o dono desligou
+        # o microfone no botão (F1-13): o *kill switch* corta os dois lados do áudio.
+        fila.pausado = not captura.aec_ok or (controle is not None and controle.silenciar_playback)
         for envelope in fila.tick():
             processo.publicar(envelope)
         for envelope, veredito in processo.recebidos(timeout=0.0):
             for resposta in processo.reacao(processo, envelope, veredito):
                 processo.publicar(resposta)
         if captura.quadros == quadros_antes and not captura.privacidade:
-            # Fonte esgotada (arquivo acabou): sem isto o laço vira espera ativa.
+            # Fonte esgotada (arquivo acabou) ou fechada pelo dono: sem isto o laço vira
+            # espera ativa.
             relogio.dormir(SEGUNDOS_POR_QUADRO)
 
 
@@ -117,14 +130,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "liga a captura de verdade (quadros de 20 ms pela fonte de JARVIS_AUDIO_BACKEND). "
-            "No v0 o esqueleto não captura por padrão: quem liga é quem sobe a sessão, e o "
-            "botão de privacidade e o PTT são o cartão F1-13"
+            "No v0 o esqueleto não captura por padrão: quem liga é quem sobe a sessão. Com "
+            "--controle-de-microfone, este flag só escolhe o modo inicial (escuta contínua), "
+            "porque quem abre e fecha a fonte passa a ser o dono (F1-13)"
         ),
     )
     analisa.add_argument(
         "--canal-de-audio",
         action="store_true",
         help="envia os quadros capturados para o agentd pelo canal da ADR-0015",
+    )
+    analisa.add_argument(
+        "--controle-de-microfone",
+        action="store_true",
+        help=(
+            "obedece ao pedido de microfone que a ui escreve (PTT e kill switch do F1-13) e "
+            "relata o estado real da fonte para o indicador"
+        ),
     )
     analisa.add_argument(
         "--sem-aec",
@@ -162,6 +184,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     if cadeia is not None:
         fila.escuta = cadeia.referencia
+    controle = (
+        ControleDoMicrofone(
+            raiz=args.raiz,
+            captura=captura,
+            # Sem `--capturar`, o padrão é PTT: quem sobe a sessão não quer microfone aberto
+            # por omissão (§9), e o dono abre segurando a tecla.
+            modo_inicial=Modo.ESCUTA if args.capturar else Modo.PTT,
+        )
+        if args.controle_de_microfone
+        else None
+    )
     try:
         if args.enfileirar_ms > 0:
             audio = gerar(semente=0)
@@ -172,9 +205,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.emitir_fala:
             time.sleep(0.2)  # dá tempo de os outros seis se registrarem
             processo.publicar(atividade(processo, fala=True))
-        if args.capturar or args.enfileirar_ms > 0:
-            captura.abrir()
-            laco_de_20_ms(processo, captura, fila, relogio, timeout=args.timeout, canal=canal)
+        if args.capturar or args.enfileirar_ms > 0 or controle is not None:
+            if controle is None:
+                captura.abrir()
+            # Com controle, quem abre é o pedido do dono — inclusive na primeira volta.
+            laco_de_20_ms(
+                processo,
+                captura,
+                fila,
+                relogio,
+                timeout=args.timeout,
+                canal=canal,
+                controle=controle,
+            )
         else:
             processo.rodar(timeout=args.timeout)
     finally:

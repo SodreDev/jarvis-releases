@@ -59,6 +59,16 @@ class Captura:
     _quadros: Iterator[Quadro] | None = field(default=None, repr=False)
     _privacidade_anunciada: bool = field(default=True, repr=False)
 
+    @property
+    def aberta(self) -> bool:
+        """A fonte está aberta? É o estado **real** de onde o indicador do F1-13 deriva.
+
+        Não é um booleano que alguém liga: é a existência do iterador de quadros. Fonte
+        fechada não tem de onde puxar amostra, então "apagado" e "zero amostra" são a mesma
+        afirmação, e não duas que precisam combinar.
+        """
+        return self._quadros is not None
+
     def abrir(self) -> None:
         self.fonte.abrir()
         self._quadros = iter(self.fonte.quadros())
