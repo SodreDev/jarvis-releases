@@ -1,0 +1,30 @@
+# Manifesto de capacidade (SPEC §4). O validador completo é o cartão F0-07; a política
+# (F0-06) só lê os campos que decidem acesso.
+id: system.read.status
+title: Status do próprio Jarvis
+description: >
+  Devolve estado interno do assistente (processos vivos, epoch, fila). Use quando o usuário
+  perguntar como o Jarvis está. Não lê arquivo do usuário, não sai da máquina.
+input_schema: {type: object, additionalProperties: false, properties: {}}
+output_schema: {type: object, required: [processos, epoch]}
+preconditions: []
+postcondition: "resposta reflete o estado no instante da chamada"
+capability: system.read.status
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: none
+confirmation: never
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 500
+cancellable: true
+platforms: [linux-wayland, linux-x11, windows]
+executor: local-status
+trust_input: untrusted
+tests: [contract, postcondition, linux-wayland, windows, denial]
+version: 1

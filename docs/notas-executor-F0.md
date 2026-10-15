@@ -237,3 +237,80 @@ preservado de ponta a ponta, com o mesmo `call_id` atravessando s2 → policy �
   registro (a cadeia de hash continua de onde parou), mas o teste automatizado cobre o
   reinício de um processo **cliente**. Reiniciar o dono do barramento com os clientes vivos
   exige reconexão automática do cliente, que é trabalho de F1 — anotado como limite conhecido.
+
+---
+
+## F0-06 — política: raízes, canonicalização, TOCTOU e auditoria
+
+### O truque que deixa o item (f) ser provado em Linux
+
+As armadilhas do Windows (`a.txt:oculto`, `PROGRA~1`, `CON`/`NUL`/`COM1`, UNC, `\\?\`,
+`C:foo`, ponto ou espaço final, case-folding) são **lexicais**: dependem da forma do caminho,
+não da API do sistema. Por isso `canonicalizacao.py` recebe o sistema como parâmetro e a suíte
+roda as duas gramáticas em qualquer máquina. O que de fato precisa de Windows — handle com
+`FILE_FLAG_OPEN_REPARSE_POINT`, `GetFinalPathNameByHandleW`, nome 8.3 real criado pelo
+sistema de arquivos — está escrito e **não executado**.
+
+### Dois caminhos de abertura, mesma garantia
+
+`openat2` com `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV`
+é o caminho preferido. Quando ele não existe (kernel < 5.6) ou é bloqueado por seccomp, a
+travessia é componente a componente com `O_NOFOLLOW` e `dir_fd`, conferindo `st_dev` a cada
+passo. **A suíte de TOCTOU roda nos dois caminhos** (`pytest` parametrizado), porque garantia
+que só vale no caminho rápido não é garantia.
+
+### O que a suíte prova, e como
+
+- **(a) corrida de link simbólico:** uma thread alterna um componente entre pasta real e link
+  para fora, enquanto o abridor tenta 400 vezes. O critério de escape é **identidade**
+  (`device:inode` do descritor aberto), não conteúdo: o trocador recria o arquivo de dentro o
+  tempo todo e um arquivo recém-criado pode estar vazio — medir conteúdo dava falso positivo.
+  O teste também exige que o trocador tenha conseguido trocar ao menos uma vez, senão ele não
+  provou nada. Resultado: 0 escapes nos dois caminhos de abertura.
+- **(b) hardlink para fora:** arquivo regular com `st_nlink > 1` é recusado. Caminho dentro da
+  raiz não prova conteúdo dentro da raiz. **Decisão conservadora anotada:** isso recusa
+  também hardlink legítimo dentro da própria raiz; para as capacidades do v1 (§5.6) isso não
+  atrapalha, e quando atrapalhar a saída é permitir por manifesto, não afrouxar no geral.
+- **(c) `..` e unicode:** `..` que sobe acima da raiz é **recusa**, não corte silencioso; NFC
+  e NFD do mesmo nome produzem o mesmo canônico, então negação escrita em uma forma não é
+  burlada pela outra.
+- **(d) ponto de montagem trocado:** o descritor da raiz continua válido quando o caminho
+  passa a ser outro objeto, então `ainda_e_a_mesma()` compara `stat` do caminho com `fstat` do
+  descritor. O teste troca a raiz por outra pasta de mesmo nome — mesma string, outro inode,
+  que é exatamente o efeito de um mount trocado. **Montar de verdade exige privilégio e não é
+  feito em teste** (a regra é nunca pedir root); o mecanismo exercitado é o mesmo.
+- **(e) raiz apagada no meio:** depois de apagar, a próxima abertura é recusada com motivo, em
+  vez de estourar exceção crua do sistema.
+- **(g)** reduzir modo vale na hora, incrementa `policy_epoch`, cancela as chamadas em voo e
+  mata os grants; ampliar fica **pendente** e só vale com `confirmar_ampliacao(dono_presente=True)`.
+- **(h)** varredura do catálogo: nenhuma capacidade mexe em nível, elevação ou `allowed_tools`
+  — com um manifesto plantado (`config.set_access_level`) para provar que a varredura acusa.
+- **(i)** com elevação desligada, `system.install_package` **não aparece na allowlist**: o
+  planejador não pode nem propor. `total` não implica elevação (teste próprio).
+
+### Decisões de implementação
+
+- **Lista de negação por caminho e por nome.** Caminhos conhecidos (`~/.ssh`, `.gnupg`,
+  chaveiros, perfis de Chrome/Firefox, `.password-store`, carteiras, `/etc/shadow`,
+  credenciais do Windows) e nomes que são segredo onde estiverem (`.env`, `id_rsa`,
+  `credentials`). Negação é `deny`, nunca `confirm` — e vence no `total` (teste).
+- **Raiz mais específica ganha.** Um caminho dentro de duas raízes (pasta do Jarvis dentro do
+  lar, no modo `total`) é julgado pela raiz mais profunda, para a permissão por raiz valer.
+- **Auditoria em duas tabelas, duas cadeias** (`schemas/audit_log.sql`): a decisão é imutável
+  e o resultado chega depois em `audit_result`. Assim "decisão registrada **antes** do efeito"
+  deixa de ser promessa: não existe caminho no banco que deixe o resultado reescrever a
+  decisão. Gatilhos abortam `UPDATE`/`DELETE` nas duas; adulterar derrubando o gatilho quebra
+  a cadeia de sha256 (teste).
+- **Catálogo mínimo em `catalogo/`** com três manifestos (`system.read.status`,
+  `files.move_to_trash` da §4, `system.install_package` com `requires_elevation: true`). O
+  validador completo, o codegen e o lint de catálogo são o cartão F0-07; aqui só se lê o que
+  decide acesso, e já se recusa manifesto sem campo de política e id de canivete suíço.
+
+### Não verificado
+
+- Todo o caminho Windows da abertura (handle, `GetFinalPathNameByHandleW`, identidade por
+  volume + file id) e o nome 8.3 criado pelo sistema de arquivos: **escritos, nunca
+  executados**. A parte lexical do item (f) está provada; a parte de API, não.
+- Troca real de ponto de montagem e perda de privilégio em `openat2` sob seccomp.
+- Elevação de verdade (polkit/UAC): o cartão não pede, e o interruptor aqui é só estado de
+  política com teste de que nada o muda sem o dono.

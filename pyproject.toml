@@ -10,6 +10,8 @@ authors = [{ name = "SodreDev" }]
 dependencies = [
   # Validação de schema na borda do barramento (§3.1). MIT.
   "jsonschema>=4.23,<5",
+  # Manifesto de capacidade em YAML (§4). MIT.
+  "pyyaml>=6.0,<7",
 ]
 
 [dependency-groups]
@@ -18,6 +20,7 @@ dev = [
   "pytest>=8.3,<9",
   "ruff>=0.9,<1",
   "types-jsonschema>=4.23,<5",
+  "types-pyyaml>=6.0,<7",
 ]
 
 [build-system]

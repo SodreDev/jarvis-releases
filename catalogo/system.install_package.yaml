@@ -1,0 +1,32 @@
+# Única capacidade do catálogo de exemplo que exige elevação — existe para o teste do
+# aceite (i) do cartão F0-06: com o interruptor desligado, ela não aparece nem na allowlist.
+id: system.install_package
+title: Instalar pacote do sistema
+description: >
+  Instala um pacote da distribuição por id de um registro versionado. Use só quando o dono
+  pedir explicitamente para instalar um programa. Nunca recebe linha de comando.
+input_schema:
+  {type: object, additionalProperties: false, required: [package_id],
+   properties: {package_id: {type: string}}}
+output_schema: {type: object, required: [package_id, version]}
+preconditions: ["package_id no registro versionado", "elevação ligada pelo dono"]
+postcondition: "pacote presente na versão informada"
+capability: system.write.packages
+risk_class: mudanca_de_sistema
+side_effect: persistent
+reversible: false
+idempotent: true
+idempotency: required
+data_egress: network:repositorio-da-distro
+pii_touch: none
+confirmation: per_action
+access_level_min: total
+roots: []
+requires_elevation: true
+timeout_ms: 120000
+cancellable: false
+platforms: [linux-wayland, linux-x11, windows]
+executor: local-packages
+trust_input: untrusted
+tests: [contract, postcondition, linux-wayland, windows, denial]
+version: 1

@@ -1,0 +1,32 @@
+# Exemplo da própria SPEC §4, usado como caso de teste da política (F0-06).
+id: files.move_to_trash
+title: Mover arquivo para a lixeira
+description: >
+  Move um arquivo dentro de uma raiz autorizada para a lixeira do sistema. Use quando o
+  usuário pedir para remover/limpar um arquivo. Não apaga de forma permanente, não sai da
+  raiz autorizada, não lê o conteúdo.
+input_schema:
+  {type: object, additionalProperties: false, required: [path], properties: {path: {type: string}}}
+output_schema: {type: object, required: [trash_id, restored_path_hint]}
+preconditions: ["path dentro de workspace_root", "arquivo existe"]
+postcondition: "arquivo ausente no caminho original E presente na lixeira"
+capability: files.write.trash
+risk_class: escrita_recuperavel
+side_effect: persistent
+reversible: true
+undo: files.restore_from_trash
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: path_only
+confirmation: once_per_batch
+access_level_min: padrao
+roots: [workspace_root]
+requires_elevation: false
+timeout_ms: 3000
+cancellable: true
+platforms: [linux-wayland, linux-x11, windows]
+executor: local-files
+trust_input: untrusted
+tests: [contract, postcondition, linux-wayland, windows, denial]
+version: 1
