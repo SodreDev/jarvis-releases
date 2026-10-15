@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from jarvis.agentd.tts import Fala
 from jarvis.audio_io.quadro import TAXA_PADRAO
 from jarvis.barramento.envelope import Envelope, Tipo
+from jarvis.barramento.log import LogDeEventos
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,3 +130,45 @@ def retomar(historico: Historico, *, epoch: int) -> Retomada:
         epoch=epoch,
         played_ms=historico.played_ms_total,
     )
+
+
+def anexar_ao_log(log: LogDeEventos, progressos: Sequence[Envelope]) -> list[int]:
+    """Grava os `PlaybackProgress` no log encadeado (F0-02) e devolve os `seq` gravados.
+
+    O histórico **é** o log, não uma cópia: cada entrada vem de um `PlaybackProgress`, que já
+    carrega `epoch`, `chunk_id` e `played_ms`. Gravar ali é o que torna o histórico auditável —
+    mexer num `played_ms` depois quebra a cadeia de hash, e o `verificar_cadeia` acusa. Guardar
+    o histórico num arquivo à parte permitiria editar o que o modelo "lembra" sem deixar rastro.
+    """
+    seqs: list[int] = []
+    for progresso in progressos:
+        if progresso.type is not Tipo.PLAYBACK_PROGRESS:
+            raise ValueError(f"o histórico só grava PlaybackProgress, não {progresso.type}")
+        seqs.append(log.anexar(progresso).seq)
+    return seqs
+
+
+def do_log(log: LogDeEventos, fala: Fala, *, session_id: str | None = None) -> Historico:
+    """Reconstrói o histórico **a partir do log** — a prova de que ele não vive em outro lugar.
+
+    **`played_ms` é por pedaço, não do turno.** O `PlaybackProgress` da §3.2 conta o que saiu
+    **daquele** pedaço (F1-03), então o total tocado no turno é a soma dos pedaços — e, quando o
+    mesmo pedaço aparece mais de uma vez (progresso periódico), vale o maior valor dele. A
+    primeira versão desta função tratava `played_ms` como total do turno e devolvia um histórico
+    **mais curto** do que o dono ouviu: o teste de reconstrução pegou.
+    """
+    historico = Historico()
+    por_pedaco: dict[str, int] = {}
+    for registro in log.ler(session_id=session_id):
+        if registro.envelope.type is not Tipo.PLAYBACK_PROGRESS:
+            continue
+        chunk = str(registro.envelope.payload["chunk_id"])
+        played_ms = int(registro.envelope.payload["played_ms"])
+        por_pedaco[chunk] = max(por_pedaco.get(chunk, 0), played_ms)
+        total_ms = sum(por_pedaco.values())
+        historico.registrar(
+            registro.envelope,
+            fala,
+            amostras_tocadas=int(total_ms * TAXA_PADRAO / 1000),
+        )
+    return historico

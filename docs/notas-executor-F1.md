@@ -896,3 +896,49 @@ de entrar no `pytest` geral. Virou regressão, não evento único.
   dispositivo aceita amostras e as entrega quando quiser: nela o áudio velho sobrevive ao nosso
   `Cancel`, e isso só se mede com alto-falante (F1-16).
 - Cancelamento de tool de **escrita** é F4 (fora do escopo do cartão).
+
+---
+
+## F1-12 — histórico com `played_ms` real
+
+### O histórico **é** o log, não uma cópia dele
+
+Cada entrada vem de um `PlaybackProgress`, que já carrega `epoch`, `chunk_id` e `played_ms`, e
+é gravada no log encadeado da F0-02. Guardar o histórico num arquivo à parte permitiria editar
+o que o modelo "lembra" sem deixar rastro; gravado no log, mexer num `played_ms` depois quebra
+a cadeia de hash. O teste prova as duas pontas: reconstrói o histórico **a partir do log** e,
+depois, adultera o `played_ms` no banco e exige `CadeiaRompida`.
+
+Detalhe que o teste revelou sobre o log: ele é **append-only por gatilho**, então o `UPDATE` da
+adulteração só passa derrubando os gatilhos — e mesmo assim a cadeia acusa. A garantia é melhor
+do que a que o cartão pedia.
+
+### Bug que o teste de reconstrução pegou: `played_ms` é por pedaço
+
+`PlaybackProgress.played_ms` conta o que saiu **daquele pedaço** (F1-03), não do turno. A
+primeira versão de `do_log` tratava o valor como total do turno e devolvia um histórico **mais
+curto do que o dono ouviu** — `'Achei três arquivos,'` onde o correto era
+`'Achei três arquivos, o maior é o r'`. O total do turno é a **soma dos pedaços**, com o maior
+valor quando o mesmo pedaço aparece mais de uma vez (progresso periódico). Era um erro que
+diminuía a memória do assistente de forma silenciosa — do tipo que só aparece comparando com o
+mapa.
+
+### Aceite (a) e (b) sobre os vinte pontos
+
+A comparação é **caractere a caractere** com o mapa do F1-09, nos vinte pontos do F1-11: o
+histórico tem exatamente `fala.texto_ate(amostras_tocadas)`. E para o sufixo que foi
+sintetizado e não saiu, o teste exige **ausência** — em todas as entradas, uma por uma. Ponto
+que tocou a resposta inteira é `skip` explícito, não falso verde.
+
+### A retomada não tem onde esconder o plano antigo
+
+`Retomada` carrega `ouvido`, `epoch` e `played_ms` — e **não tem campo** para o sufixo não
+tocado. Não é disciplina de quem escreve o código: é a estrutura não permitir. O teste afirma o
+negativo (`ressuscita()` é falso) e que o contexto que vai para o `s2` é exatamente o trecho
+tocado.
+
+### Não verificado
+
+Nada depende de hardware aqui. O que fica de fora, por não ser deste cartão: resumo e
+consolidação de histórico (F3), e o áudio já entregue ao **driver** — o histórico conta o que
+saiu do **nosso** sumidouro, e a fila do dispositivo é do F1-16.
