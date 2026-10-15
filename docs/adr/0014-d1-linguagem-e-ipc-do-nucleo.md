@@ -1,8 +1,10 @@
 # ADR-0014 — D1: linguagem e IPC do núcleo, decidida por medição
 
-**Data:** 2026-10-15 · **Estado:** proposta (a decisão é do dono) · **Decide:** dono
+**Data:** 2026-10-15 · **Estado:** aceita · **Decide:** orquestrador (diretor, por delegação do dono)
 **Mede:** executor, cartão F0-04 · **Commit da medição:** `85e23a4`
 **Fecha:** a decisão aberta D1 da SPEC §2 e a pendência Q1 do dono.
+**Gatilho de reabertura:** medição da F1 com AEC + ASR + TTS reais em que o p95 de
+captura→evento passe de **80 ms** (SLO-1) na máquina do dono — ver "Como invalidar".
 
 ## Contexto
 
@@ -40,7 +42,8 @@ Três leituras diretas desses números:
 
 ## Decisão
 
-**Python 3.12 nos sete processos no v0**, com IPC local autenticado (`AF_UNIX` no Linux,
+Aceita em 2026-10-15 pelo orquestrador, por delegação do dono: **Python 3.12 nos sete
+processos no v0**, com IPC local autenticado (`AF_UNIX` no Linux,
 `AF_PIPE` no Windows, JSON e nunca pickle) e a fronteira pronta para trocar `audio-io` e
 `agentd` por Rust sem reescrever contrato — porque o contrato é dado (`schemas/events.v1.json`,
 `schemas/event_log.sql`), não código.
@@ -71,10 +74,19 @@ Três leituras diretas desses números:
 
 O que foi medido é **VAD + evento**. **Não** foram medidos AEC/redução de ruído de verdade,
 ASR incremental, TTS streaming nem captura de dispositivo real (o microfone do dono não foi
-gravado, por privacidade). Se a F1 medir que esses componentes em Python estouram SLO-1 ou
-SLO-2 na máquina do dono, D1 volta para a mesa e a troca é local, em dois processos.
+gravado, por privacidade). A decisão foi aceita **com essa lacuna no texto**, de propósito: ela
+é exatamente o que a F1 vai medir, e a troca continua local, em dois processos.
 
-## Como invalidar esta decisão
+## Como invalidar esta decisão — o gatilho é explícito
 
-Medição de F1 com AEC + ASR + TTS mostrando p95 de captura→evento acima de 80 ms ou de
-barge-in acima de 150 ms em Python, na máquina do dono.
+D1 **reabre automaticamente** quando a medição da F1, com AEC + ASR + TTS reais e captura de
+dispositivo de verdade, na máquina do dono, mostrar qualquer um destes:
+
+1. **p95 de captura→evento acima de 80 ms** (SLO-1) com os sete processos em Python; ou
+2. **p95 de barge-in acima de 150 ms** (SLO-2); ou
+3. pausa de GC no caminho de áudio que, sozinha, estoure o orçamento de um frame de 20 ms.
+
+Quem medir isso na F1 **não precisa pedir autorização para reabrir**: anexa o número a esta
+ADR, abre a emenda e `audio-io` + `agentd` passam a ser candidatos a Rust. O contrato não muda
+(`schemas/events.v1.json`, `schemas/event_log.sql`), que é o motivo de a fronteira ter ficado
+trocável desde o primeiro commit.

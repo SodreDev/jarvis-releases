@@ -32,14 +32,17 @@ def test_adr_de_medicao_cita_commit_e_n(nome: str) -> None:
     assert conferir_adr(PASTA / nome) == []
 
 
-def test_adr_de_d1_registra_a_lacuna_e_quem_decide() -> None:
-    """O cartão F0-04 pediu proposta com a lacuna explícita; a ADR tem de dizer isso."""
+def test_adr_de_d1_registra_a_lacuna_o_decisor_e_o_gatilho() -> None:
+    """D1 foi aceita com a lacuna no texto: o gatilho de reabertura tem de ser verificável."""
     texto = (PASTA / "0014-d1-linguagem-e-ipc-do-nucleo.md").read_text(encoding="utf-8")
 
-    assert "**Decide:** dono" in texto
+    assert "**Estado:** aceita" in texto
+    assert "**Decide:** orquestrador" in texto  # delegação do dono, registrada
     assert "lacuna" in texto.casefold()
     assert "AEC" in texto
     assert "ASR" in texto
+    assert "Gatilho de reabertura" in texto
+    assert "80 ms" in texto and "150 ms" in texto
     assert "Como invalidar esta decisão" in texto
 
 

@@ -68,15 +68,16 @@ código de produto de voz: cada cartão entrega esqueleto, teste e número.
 
 ## Linguagem do núcleo
 
-**D1 foi medida** (cartão F0-04) e a proposta está na
-[ADR-0014](docs/adr/0014-d1-linguagem-e-ipc-do-nucleo.md), **aguardando o dono**: Python 3.12
-nos sete processos no v0, porque todo o nosso caminho de captura→evento soma 0,575 ms p95 —
-0,72% do orçamento de 80 ms do SLO-1 — e a diferença para Rust é 0,14% do orçamento.
+**D1 está decidida**: [ADR-0014](docs/adr/0014-d1-linguagem-e-ipc-do-nucleo.md), aceita em
+2026-10-15 — **Python 3.12 nos sete processos no v0**, porque todo o nosso caminho de
+captura→evento soma 0,575 ms p95 (0,72% do orçamento de 80 ms do SLO-1) e a diferença para
+Rust é 0,14% do orçamento.
 
 A fronteira continua trocável de propósito: o contrato do barramento vive em arquivos de dados
 (`schemas/events.v1.json`, `schemas/event_log.sql`, `schemas/manifesto.v1.json`), então trocar
-a linguagem de `audio-io` ou `agentd` não reescreve contrato. A lacuna que pode derrubar a
-proposta está escrita na própria ADR: AEC, ASR e TTS reais ainda não foram medidos.
+a linguagem de `audio-io` ou `agentd` não reescreve contrato. O **gatilho de reabertura** está
+escrito na ADR: se a medição da F1, com AEC, ASR e TTS reais, passar de 80 ms p95 em
+captura→evento, D1 reabre e esses dois processos voltam a ser candidatos a Rust.
 
 ## Licença
 
