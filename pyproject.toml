@@ -1,0 +1,74 @@
+[project]
+name = "jarvis"
+version = "0.0.0"
+description = "Assistente pessoal desktop com voz bidirecional, Linux (Wayland e X11) e Windows"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "SodreDev" }]
+dependencies = [
+  # Validação de schema na borda do barramento (§3.1). MIT.
+  "jsonschema>=4.23,<5",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.14,<2",
+  "pytest>=8.3,<9",
+  "ruff>=0.9,<1",
+]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jarvis"]
+
+[tool.uv]
+# A versão do núcleo é a decisão D1 (SPEC §2, cartão F0-04). Até lá: 3.12 fixo,
+# com a fronteira do barramento em arquivos de dados (schemas/) para que uma
+# reimplementação em outra linguagem use o mesmo contrato sem tradução.
+required-version = ">=0.5"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tools", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",    # pycodestyle
+  "F",         # pyflakes
+  "I",         # isort
+  "UP",        # pyupgrade
+  "B",         # bugbear
+  "SIM",       # simplify
+  "ANN",       # anotações obrigatórias (tipos fechados, SPEC §3)
+  "S",         # bandit: barra shell irrestrito e exec (SPEC §4, proibição de canivete suíço)
+  "PTH",       # pathlib em vez de os.path (portabilidade, P11)
+  "RUF",
+]
+ignore = [
+  "ANN401",  # Any explícito é permitido em payload cru vindo de fora
+  "S101",    # assert
+  # Docs e docstrings são em português: travessão, aspas curvas e acento não são ambiguidade.
+  "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Os testes podem usar subprocess para provar os portões (lint, licença, epoch).
+"tests/*" = ["S603", "S404", "S607"]
+"tools/*" = ["S603", "S404"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tools", "tests"]
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"

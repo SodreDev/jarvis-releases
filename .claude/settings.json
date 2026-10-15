@@ -1,0 +1,38 @@
+{
+  "enabledMcpjsonServers": [
+    "orchestrator"
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/home/sodre/.local/lib/orchestrator/orchestrator-hook",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "cat \"/home/sodre/GranaFacil/J.A.R.V.I.S/.claude/orchestrator-rules.md\"",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "/home/sodre/.local/lib/orchestrator/orchestrator-hook",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

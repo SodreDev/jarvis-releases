@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+*.egg-info/
+# Ferramentas
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+# Medições e artefatos locais (medição publicada entra em docs/medicoes/)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/tmp/

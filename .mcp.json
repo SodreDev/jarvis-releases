@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "orchestrator": {
+      "args": [],
+      "command": "/home/sodre/.local/lib/orchestrator/orchestrator-mcp"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # P11: o que não roda nos dois sistemas não fecha tarefa.
+  verificacao:
+    name: verificação (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.5.29"
+          enable-cache: true
+
+      - name: sincronizar ambiente (Python 3.12 do projeto)
+        run: uv sync --frozen --group dev
+
+      - name: formatação
+        run: uv run --frozen ruff format --check .
+
+      - name: linter
+        run: uv run --frozen ruff check --output-format=github .
+
+      - name: tipos
+        run: uv run --frozen mypy
+
+      - name: testes
+        run: uv run --frozen pytest
