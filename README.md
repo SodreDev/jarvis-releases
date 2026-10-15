@@ -28,6 +28,11 @@ Para ver o esqueleto dos sete processos funcionando, ou refazer a medição da m
 ```bash
 uv run --frozen python tools/rodar_esqueleto.py     # evento sintético atravessa os 7 processos
 uv run --frozen python tools/harness_memoria.py     # mede SLO-11 e SLO-12 (docs/medicoes/)
+
+# Harness de captura (cartão F0-04). Precisa do grupo `medicao`, que NÃO entra no CI nem no
+# produto, e do peso do silero-vad, que não é versionado aqui:
+uv sync --group medicao
+uv run --frozen --group medicao python tools/harness_captura.py --modelo /caminho/silero_vad.onnx
 ```
 
 Para rodar um pedaço só:
@@ -53,7 +58,8 @@ código de produto de voz: cada cartão entrega esqueleto, teste e número.
 | F0-03 os sete processos e o evento que atravessa tudo | feito |
 | F0-06 política: raízes, canonicalização, suíte de TOCTOU | feito |
 | F0-05 harness da memória em grafo (SLO-11, SLO-12) | feito |
-| F0-04, F0-07, F0-08, F0-10 | abertos |
+| F0-04 latência de captura e a proposta de D1 | feito |
+| F0-07, F0-08, F0-10 | abertos |
 
 ## Linguagem do núcleo
 

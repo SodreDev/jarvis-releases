@@ -389,3 +389,64 @@ três execuções, mediana e p95) e `docs/medicoes/f0-05-grafo.csv`. Resumo do q
 - `entity_mention` fica vazia no grafo sintético (a extração de entidade é trabalho de
   consolidação, §6.7), então a ligação nó → `memory_unit` cai no nome canônico via FTS5. Com
   o corpus de C1 isso passa a usar as menções de verdade.
+
+---
+
+## F0-04 — latência de captura e a decisão D1
+
+### O que a máquina já tinha, e o que não foi instalado
+
+`rustc`/`cargo` 1.98.1 já estavam instalados (do dono). Mesmo assim o braço Rust é
+**`std`-only e compila com `rustc -O`**, sem cargo, sem rede e sem baixar crate — a regra era
+não instalar nada, e um teste varre a fonte para garantir que nenhuma linha `use` sai de
+`std::`. Para o braço Python+ONNX, `numpy` e `onnxruntime` entraram num grupo **`medicao`**
+que não é instalado pelo CI nem faz parte do produto; o peso do `silero-vad` (MIT, verificado
+na F0-09) **não é versionado** no repositório — passa-se o caminho em `--modelo`.
+
+### Quatro medidas, não duas
+
+O SLO-1 é `captura → AEC/VAD → **evento**`, então medir só o VAD deixaria de fora a parte que
+a nossa arquitetura cobra:
+
+| braço | p95 (mediana de 3 execuções) |
+|---|---:|
+| `rust-std` (VAD barato, `std` puro) | **0,0003 ms** |
+| `python-numpy` (mesma aritmética, mesmos limiares) | **0,0105 ms** |
+| `python-onnx` (silero-vad, 1 thread) | **0,110 ms** |
+| `evento-no-barramento` (envelope + validação + IPC ida e volta + log com hash) | **0,384 ms** |
+
+Com `n` = 10 000 frames de 20 ms por execução (200 s de áudio), 3 execuções, áudio sintético
+determinístico idêntico nos braços, no Ryzen 5 5600G. Números completos em
+`docs/medicoes/f0-04-captura.{csv,md}`.
+
+**O gargalo do nosso lado é a fronteira, não a aritmética:** publicar o evento custa 3,5× o
+VAD neural e mais de 1000× o VAD em Rust. Trocar a linguagem do VAD muda 0,1 ms num orçamento
+de 80 ms; o que vale otimizar, se algum dia precisar, é o caminho do evento.
+
+### Equivalência antes de comparar
+
+Um teste roda o binário Rust e o braço Python sobre o mesmo áudio e exige **a mesma contagem
+de eventos**. Sem isso, a comparação de linguagens seria comparação de algoritmos diferentes.
+
+### Pisos, e o viés do piso de dispositivo
+
+- **Piso de agendamento** (laço de 20 ms sem processamento): p95 **0,080 ms**. É o chão de
+  qualquer implementação em Python nesta máquina.
+- **Piso do dispositivo**: p95 **20 ms**, medido no **monitor de uma saída ociosa**. Há um
+  viés grande e declarado no relatório: monitor sem produtor ativo entrega em rajada, então
+  esse número é limite superior grosseiro, não jitter de captura em uso.
+- **Microfone não foi gravado, de propósito.** Gravar o microfone do dono para medir jitter
+  seria invadir privacidade sem necessidade; o monitor tem o mesmo caminho de driver. O número
+  honesto do caminho de áudio sai na F1, com captura de verdade e consentimento.
+
+### Proposta de D1 (a decisão é do dono)
+
+**Python 3.12 nos sete processos no v0**, com a fronteira pronta para trocar `audio-io` e
+`agentd` por Rust sem reescrever contrato. Motivo em número: todo o nosso caminho em Python
+soma **0,575 ms p95**, ou **0,72% do SLO-1**; em Rust seria 0,466 ms — a diferença é 0,14% do
+orçamento, e o ecossistema de ASR/TTS/ONNX está em Python.
+
+**A lacuna que pode derrubar a proposta, dita antes de alguém perguntar:** não foram medidos
+AEC/NR de verdade, ASR incremental, TTS streaming nem captura de dispositivo real. Se a F1
+medir estouro do SLO-1 ou do SLO-2 com esses componentes, a troca é local (dois processos) e a
+decisão volta — é exatamente para isso que o contrato está em `schemas/` e não em código.

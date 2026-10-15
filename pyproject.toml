@@ -15,6 +15,13 @@ dependencies = [
 ]
 
 [dependency-groups]
+# Só para os harness de medição (cartões F0-04 e F0-05). NÃO entra no CI nem no produto:
+# instalar com `uv sync --group medicao`. A decisão D1 (linguagem do núcleo) é o que define
+# o que vira dependência de verdade.
+medicao = [
+  "numpy>=2.1,<3",
+  "onnxruntime>=1.20,<2",
+]
 dev = [
   "mypy>=1.14,<2",
   "pytest>=8.3,<9",
@@ -72,6 +79,11 @@ strict = true
 files = ["src", "tools", "tests"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+# onnxruntime não publica stubs e só o harness de medição o importa (grupo `medicao`).
+[[tool.mypy.overrides]]
+module = ["onnxruntime", "onnxruntime.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
