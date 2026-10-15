@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jarvis.invalid/schemas/roteamento.v1.json",
+  "title": "Assinaturas do barramento: quem recebe cada tipo de evento (SPEC §2)",
+  "description": "Dado, não código: o corretor do agentd roteia por esta tabela. Um processo só recebe o que a responsabilidade dele exige — `policy` não vê transcrição, `memoryd` não vê pedido de tool.",
+  "type": "object",
+  "x-assinaturas": {
+    "AudioActivity": ["agentd"],
+    "PartialTranscript": ["s2"],
+    "FinalTranscript": ["s2", "memoryd"],
+    "TurnPrediction": ["s2"],
+    "DesktopObservation": ["s2"],
+    "ToolCallRequested": ["policy"],
+    "PolicyDecision": ["executor", "ui"],
+    "ToolResult": ["s2", "memoryd"],
+    "PlaybackProgress": ["agentd"],
+    "StateRevision": ["memoryd", "ui"],
+    "Cancel": ["audio-io", "s2", "executor", "ui"]
+  },
+  "x-processos": ["audio-io", "agentd", "s2", "policy", "executor", "memoryd", "ui"]
+}

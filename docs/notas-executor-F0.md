@@ -160,3 +160,80 @@ A tabela comitada é `docs/licencas.md`, **gerada** por `--escrever-tabela` e **
   motivo errado. A verificação na origem é manual e datada.
 - Vozes individuais do `rhasspy/piper-voices` podem ter licença própria (algumas CC-BY-SA);
   a voz escolhida tem de ser verificada em F1.
+
+---
+
+## F0-03 — os sete processos como esqueleto e o evento que atravessa tudo
+
+### IPC: três decisões de segurança
+
+1. **Endereço por sistema, nunca porta de rede.** `AF_UNIX` no Linux (socket dentro da pasta
+   de execução, com modo 0600 e a pasta 0700) e named pipe `AF_PIPE` no Windows. Um barramento
+   de desktop não precisa ser alcançável pela rede, então não é.
+2. **JSON, nunca pickle.** `multiprocessing.connection` serializa com pickle no `send`/`recv`,
+   o que transformaria um processo comprometido em execução de código no vizinho. Só se usa
+   `send_bytes`/`recv_bytes` com JSON, com teto de 4 MiB por quadro — payload grande vai por
+   `payload_ref`, como a §3.2 já previa. A autenticação do handshake (HMAC com `authkey`) é a
+   do `multiprocessing`; a chave é gerada por sessão, gravada com permissão restrita e nunca
+   passa pelo `argv`.
+3. **Limite de `sun_path`.** O caminho do socket cai para a pasta temporária do sistema, com
+   nome derivado por hash, quando a pasta de execução é comprida (acontece em teste). É limite
+   do sistema operacional, não escolha de projeto.
+
+### O corretor (dentro do `agentd`)
+
+Ordem fixa para cada quadro: **valida na borda → grava no log → classifica pelo epoch →
+entrega a quem assinou**. Três consequências:
+
+- `trust` é atribuído pela fronteira do processo que publicou (`audio-io` → `user_voice`,
+  `ui` → `user_ui`, `executor` → `tool_result`, resto → `system`), e o quadro não pode se
+  promover;
+- um processo **não publica no lugar de outro**: `source` diferente do nome registrado é
+  recusado e o nome de quem tentou vai para a lista de recusados (um `s2` comprometido não
+  fabrica um `PolicyDecision: allow`);
+- o roteamento vive em `schemas/roteamento.v1.json` (dado, como o resto do contrato):
+  `policy` não recebe transcrição, `memoryd` não recebe pedido de tool.
+
+**Reposição por cursor:** cada processo grava o último `seq` visto em `cursor-<nome>`; ao
+reconectar, pede do cursor e o corretor reenvia do log o que ele perdeu. Isso é o que faz
+"matar e reabrir" não perder evento.
+
+**Idempotência do efeito é do executor, não do cursor.** O executor registra cada `call_id`
+executado em `executor-efeitos.jsonl` antes de responder; mesmo perdendo o cursor e recebendo
+a mesma `PolicyDecision` de novo, o efeito não acontece duas vezes. O teste apaga o cursor de
+propósito para provar isso no pior caso.
+
+**Thread só para aceitar conexão.** Conexão de SQLite não atravessa thread, então a thread de
+aceitação faz apenas o handshake e enfileira; a admissão e a reposição acontecem na thread
+principal, que é a dona do log.
+
+### Ver funcionando
+
+```
+uv run --frozen python tools/rodar_esqueleto.py
+```
+
+Sobe os sete, injeta um `AudioActivity(speech=True)` sintético e imprime o log:
+
+```
+seq  tipo                 origem    epoch  trust
+  1  AudioActivity        audio-io      0  user_voice
+  2  Cancel               agentd        1  system
+  3  FinalTranscript      agentd        1  user_voice
+  4  ToolCallRequested    s2            1  system
+  5  PolicyDecision       policy        1  system
+  6  ToolResult           executor      1  tool_result
+  7  StateRevision        s2            1  system
+```
+
+O epoch sobe uma vez (o `speech_started` da regra 1, antes de qualquer transcrição) e depois é
+preservado de ponta a ponta, com o mesmo `call_id` atravessando s2 → policy → executor → s2.
+
+### Não verificado
+
+- O caminho `AF_PIPE` do Windows: escrito e revisado, **nunca executado** (máquina Linux, sem
+  remoto). É o único trecho de `ipc.py` específico de sistema.
+- Reinício do `agentd`: o cartão pede "qualquer processo", e o corretor reabre o log sem perder
+  registro (a cadeia de hash continua de onde parou), mas o teste automatizado cobre o
+  reinício de um processo **cliente**. Reiniciar o dono do barramento com os clientes vivos
+  exige reconexão automática do cliente, que é trabalho de F1 — anotado como limite conhecido.

@@ -1,0 +1,73 @@
+"""Stub determinístico do `s2`: estado de trabalho e pedido de tool, sem LLM (cartão F0-03).
+
+O que este esqueleto prova: o reasoner reage a evento (nunca a laço cego), pede capacidade
+pelo `tool_id` do catálogo e **não publica fala de epoch morto**.
+"""
+
+from __future__ import annotations
+
+import sys
+
+from jarvis.barramento.envelope import Envelope, Prioridade, Tipo, Trust, uuid7
+from jarvis.processo import Processo, rodar_processo
+
+TOOL_DO_ESQUELETO = "system.read.status"
+
+
+def reagir(processo: Processo, envelope: Envelope, veredito: str) -> list[Envelope]:
+    if envelope.epoch < processo.epoch:
+        # §3.3 regra 6 e aceite (c): nada de epoch morto sai daqui, nem como fala.
+        return []
+    if envelope.type is Tipo.CANCEL:
+        processo.epoch = envelope.epoch
+        return []
+    if envelope.type is Tipo.FINAL_TRANSCRIPT:
+        return [_pedido_de_tool(processo, envelope)]
+    if envelope.type is Tipo.TOOL_RESULT and veredito != "aceitar_stale":
+        return [_revisao_de_estado(processo, envelope)]
+    return []
+
+
+def _pedido_de_tool(processo: Processo, origem: Envelope) -> Envelope:
+    return Envelope(
+        session_id=processo.session_id,
+        epoch=origem.epoch,
+        source="s2",
+        trust=Trust.SYSTEM,
+        priority=Prioridade.P2,
+        type=Tipo.TOOL_CALL_REQUESTED,
+        payload={
+            "call_id": f"c-{uuid7()[:8]}",
+            "tool_id": TOOL_DO_ESQUELETO,
+            "args": {"sobre": origem.payload["text"]},
+            "dry_run": True,
+        },
+    )
+
+
+def _revisao_de_estado(processo: Processo, origem: Envelope) -> Envelope:
+    return Envelope(
+        session_id=processo.session_id,
+        epoch=origem.epoch,
+        source="s2",
+        trust=Trust.SYSTEM,
+        priority=Prioridade.P2,
+        type=Tipo.STATE_REVISION,
+        payload={
+            "task_id": str(origem.payload["call_id"]),
+            "epoch": origem.epoch,
+            "objetivo": "responder ao pedido do dono",
+            "evidencia": [
+                {"ref": str(origem.payload["call_id"]), "resumo": str(origem.payload["status"])}
+            ],
+            "incertezas": [],
+            "tarefas": [{"id": str(origem.payload["call_id"]), "estado": "Succeeded"}],
+            "fala_ouvida": "",
+            "audio_tocado_ms": 0,
+            "cenario": {"nome": "esqueleto", "p": 1.0, "ttl_s": 60},
+        },
+    )
+
+
+if __name__ == "__main__":
+    sys.exit(rodar_processo("s2", reagir))
