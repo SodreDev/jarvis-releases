@@ -247,7 +247,7 @@ O custo é duplicar as listas `collect_all`. A mitigação é a hidden list do L
    - **`THIRD_PARTY_LICENSES.txt`** na raiz do AppDir (D-F5-4): gerado no build com a licença do Jarvis (Apache-2.0), mais os textos de licença das wheels coletadas (`importlib.metadata` → `License`/arquivos `LICENSE*` do `dist-info`), do Qt/PySide6 (LGPLv3), do ffmpeg LGPL (com a origem e o sha256 do build) e do PortAudio. O build falha se faltar a licença de ffmpeg, Qt ou PortAudio.
 4. **Remover do AppDir** as libs que precisam vir do sistema (§5, lista "PROIBIDO EMBUTIR"). O build **falha** se alguma sobrar.
 5. **Checagem de glibc:** falha se algum ELF exigir `GLIBC_2.29` ou mais.
-6. `appimagetool` com **runtime estático** (type2-runtime; release **fixada por versão + sha256** em `tests/docker/Dockerfile.appimage-build`): `ARCH=x86_64 appimagetool -u "gh-releases-zsync|NinjaZinS2|jarvis-releases|latest-pre|JARVIS-*-x86_64.AppImage.zsync" AppDir dist-appimage/JARVIS-<TAG>-x86_64.AppImage`, que gera também o `.zsync`. `<TAG>` = `v<VERSION>-linux.<N>` (§4 F5-11), passado por `JARVIS_BUILD_TAG`;
+6. `appimagetool` com **runtime estático** (type2-runtime; release **fixada por versão + sha256** em `tests/docker/Dockerfile.appimage-build`): `ARCH=x86_64 appimagetool -u "gh-releases-zsync|SodreDev|jarvis-releases|latest-pre|JARVIS-*-x86_64.AppImage.zsync" AppDir dist-appimage/JARVIS-<TAG>-x86_64.AppImage`, que gera também o `.zsync`. `<TAG>` = `v<VERSION>-linux.<N>` (§4 F5-11), passado por `JARVIS_BUILD_TAG`;
 7. `sha256sum` → `dist-appimage/SHA256SUMS-linux.txt`.
 
 - **`AppRun`** (sh):
@@ -270,7 +270,7 @@ O custo é duplicar as listas `collect_all`. A mitigação é a hidden list do L
 ### F5-11 — Atualização no AppImage
 **Estado atual:** `self_update_payload` troca `.py` sobre a pasta do projeto. No AppImage isso é **impossível** (read-only) e **perigoso**: se o `_base_dir` apontasse para XDG, gravaria `.py` que ninguém executa. A feature **já é falsa no Linux** (tabela estática da Fase 1: só win32). Um teste K precisa garantir que continue falsa com `APPIMAGE` definido.
 
-**Canal (DECIDIDO pelo dono em 2026-09-14, D-F5-1):** o AppImage sai como **pré-release no `NinjaZinS2/jarvis-releases`**. O Windows só ganha release depois do N4.
+**Canal (DECIDIDO pelo dono em 2026-09-14, D-F5-1):** o AppImage sai como **pré-release no `SodreDev/jarvis-releases`**. O Windows só ganha release depois do N4.
 
 **Proteção do updater do Windows** (`updater/check_update.py`, âncora `url = f"{API_BASE}/repos/{repo}/releases/latest"`). Ele consulta `/releases/latest`, que **ignora pré-releases**. Depois escolhe asset `name.lower()` que `startswith("update_payload") and endswith(".zip")` (payload aplicado automaticamente) ou que `endswith(".exe") and "setup" in name` (instalador). Três travas independentes:
 
@@ -294,15 +294,15 @@ O custo é duplicar as listas `collect_all`. A mitigação é a hidden list do L
 
 - **Escolhido:**
   ```
-  gh-releases-zsync|NinjaZinS2|jarvis-releases|latest-pre|JARVIS-*-x86_64.AppImage.zsync
+  gh-releases-zsync|SodreDev|jarvis-releases|latest-pre|JARVIS-*-x86_64.AppImage.zsync
   ```
   Hoje toda pré-release do repo é Linux. `latest-all` fica **rejeitado**: quando a primeira release normal do Windows sair (sem AppImage), ela vira a mais recente, o padrão não casa e a atualização do AppImage quebra.
 - **Regra de convivência** (vale enquanto `latest-pre` estiver em uso): **toda pré-release no `jarvis-releases` precisa ter os assets Linux.** Beta do Windows não pode sair como pré-release lá, a menos que a mesma tag leve também o AppImage (versão unificada).
-- **Plano B**, se essa regra não puder ser mantida: tag fixa de canal `linux-stable` (pré-release, assets substituídos a cada build) com `zsync|https://github.com/NinjaZinS2/jarvis-releases/releases/download/linux-stable/JARVIS-x86_64.AppImage.zsync`. Não depende de "latest" nenhum. Ele custa uma release mutável.
-- O repo e o canal ficam em um lugar só: `JARVIS_UPDATE_REPO=NinjaZinS2/jarvis-releases` e `JARVIS_UPDATE_CHANNEL=latest-pre` no `build_appimage.sh`.
+- **Plano B**, se essa regra não puder ser mantida: tag fixa de canal `linux-stable` (pré-release, assets substituídos a cada build) com `zsync|https://github.com/SodreDev/jarvis-releases/releases/download/linux-stable/JARVIS-x86_64.AppImage.zsync`. Não depende de "latest" nenhum. Ele custa uma release mutável.
+- O repo e o canal ficam em um lugar só: `JARVIS_UPDATE_REPO=SodreDev/jarvis-releases` e `JARVIS_UPDATE_CHANNEL=latest-pre` no `build_appimage.sh`.
 
 **No app** (`jarvis/platform/linux/appimage_update.py`) — **verificação própria**, que não depende do zsync:
-- `check() -> dict | None` via `GET /repos/NinjaZinS2/jarvis-releases/releases?per_page=30`:
+- `check() -> dict | None` via `GET /repos/SodreDev/jarvis-releases/releases?per_page=30`:
   - filtra `prerelease is True`, tag que casa com `^v\d+\.\d+\.\d+-linux\.\d+$` e asset que termina em `-x86_64.AppImage`;
   - pega a maior chave `(version_tuple(base), N)` e compara com o `JARVIS_BUILD_TAG` do bundle;
   - devolve `{latest_tag, current_tag, url_pagina, url_appimage}`;
@@ -333,7 +333,7 @@ O custo é duplicar as listas `collect_all`. A mitigação é a hidden list do L
   4. `write_checksums([AppImage, zsync])` → `SHA256SUMS-linux.txt`;
   5. assinatura GPG destacada `SHA256SUMS-linux.txt.asc` **só** com `--sign` e chave configurada (**D-F5-5**);
   6. valida a tag (`^v\d+\.\d+\.\d+-linux\.\d+$`, com base igual ao `VERSION`) e os nomes dos assets (nenhum `update_payload*`, `.zip`, `.exe` ou "setup");
-  7. gera `RELEASE_NOTES-linux.md` e **imprime** o comando de publicação: `gh release create <TAG> --repo NinjaZinS2/jarvis-releases --prerelease --latest=false --title "J.A.R.V.I.S. <TAG> (Linux, pré-release)" --notes-file RELEASE_NOTES-linux.md <4 assets>`. **Por padrão só imprime.**
+  7. gera `RELEASE_NOTES-linux.md` e **imprime** o comando de publicação: `gh release create <TAG> --repo SodreDev/jarvis-releases --prerelease --latest=false --title "J.A.R.V.I.S. <TAG> (Linux, pré-release)" --notes-file RELEASE_NOTES-linux.md <4 assets>`. **Por padrão só imprime.**
   8. **Modo `--publish` (explícito, D-F5-6):** executa **exatamente** esse comando.
      - A **CLI release** só roda com ordem do orquestrador, depois do M2 da Fase 5 verde.
      - Pré-condições (cada uma aborta sem publicar):
@@ -471,7 +471,7 @@ A imagem `appimage-bare` instala **só** a coluna SISTEMA (nomes apt da MATRIZ).
 
 | ID | Decisão | Recomendação |
 |---|---|---|
-| **D-F5-1** | **DECIDIDA pelo dono (2026-09-14):** o AppImage sai como **pré-release no `NinjaZinS2/jarvis-releases`**; o Windows só ganha release depois do N4 | Aplicado na F5-11/F5-12: `--prerelease --latest=false`; tags `v<VERSION>-linux.<N>`; assets sem `update_payload`/`.zip`/`.exe`/"setup"; update-info `gh-releases-zsync|NinjaZinS2|jarvis-releases|latest-pre|JARVIS-*-x86_64.AppImage.zsync`; plano B: tag fixa `linux-stable` |
+| **D-F5-1** | **DECIDIDA pelo dono (2026-09-14):** o AppImage sai como **pré-release no `SodreDev/jarvis-releases`**; o Windows só ganha release depois do N4 | Aplicado na F5-11/F5-12: `--prerelease --latest=false`; tags `v<VERSION>-linux.<N>`; assets sem `update_payload`/`.zip`/`.exe`/"setup"; update-info `gh-releases-zsync|SodreDev|jarvis-releases|latest-pre|JARVIS-*-x86_64.AppImage.zsync`; plano B: tag fixa `linux-stable` |
 | **D-F5-2** | **DECIDIDA (2026-09-14):** App ID = `io.github.ninjazins2.Jarvis`. Fecha também a D-F2-2. | Aplicado em `jarvis/platform/linux/app_id.py`, `.desktop`, metainfo e ícones. |
 | **D-F5-3** | **DECIDIDA (2026-09-14):** AppImage **Núcleo** no v1, meta **≤ 450 MB**, teto **700 MB** (acima disso o build falha). O "Pacote de modelos" fica para depois. | `excludes` do Núcleo no `JARVIS-linux.spec` (F5-09), com base no inventário da F5-01. |
 | **D-F5-4** | **DECIDIDA (2026-09-14):** ffmpeg estático **LGPL com ffplay**. A `LICENSE` do Jarvis será **Apache-2.0** (decisão do dono). | Versão fixada com sha256 no container de build. O `THIRD_PARTY_LICENSES.txt` no AppDir entra **na F5-10**, não no backlog. |

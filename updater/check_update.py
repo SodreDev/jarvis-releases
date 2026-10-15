@@ -3,7 +3,7 @@
 ────────────────────
 Verifica e aplica atualizações via **GitHub Releases**.
 
-O repositório NinjaZinS2/jarvis-releases é público — nenhum token é
+O repositório SodreDev/jarvis-releases é público — nenhum token é
 necessario para checar ou baixar atualizações.
 
 O token PAT (se fornecido) é opcional e só enviado quando presente; serve
@@ -18,7 +18,7 @@ O token é lido de (em ordem de prioridade):
 O repo-alvo vem de:
     1. env JARVIS_UPDATE_REPO  (formato "owner/nome")
     2. credentials/jarvis_prefs.json → updater.repo
-    3. fallback: "NinjaZinS2/jarvis-releases"
+    3. fallback: "SodreDev/jarvis-releases"
 
 Auto-detecção de caminho: TUDO é relativo ao executável/arquivo, NUNCA
 hard-coded — segue o mesmo padrão de version.py e config.py.
@@ -49,7 +49,7 @@ except ImportError:  # rodando dentro do pacote em testes
 
 API_BASE = "https://api.github.com"
 USER_AGENT = "JARVIS-Updater/1.0"
-DEFAULT_REPO = "NinjaZinS2/jarvis-releases"  # ajuste depois de criar o repo
+DEFAULT_REPO = "SodreDev/jarvis-releases"  # ajuste depois de criar o repo
 TIMEOUT = 15
 DOWNLOAD_TIMEOUT = 300
 

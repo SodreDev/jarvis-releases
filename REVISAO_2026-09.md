@@ -28,7 +28,7 @@ jogos, geração de documentos, OCR/visão, gestos (MediaPipe) — acionáveis p
 - **Automação de SO (Windows):** `pywin32`, `uiautomation`, `pycaw` (volume), `pygetwindow`,
   `pyautogui`, `pynput` (hotkeys/input), `pystray` (bandeja), `winsdk`/WinRT (notificações), `winreg`.
 - **Empacotamento:** **PyInstaller** (`JARVIS.spec`) → `.exe`; **Inno Setup** (`installer/jarvis.iss`)
-  → instalador; auto-update via **GitHub Releases** (`updater/check_update.py`, repo `NinjaZinS2/jarvis-releases`).
+  → instalador; auto-update via **GitHub Releases** (`updater/check_update.py`, repo `SodreDev/jarvis-releases`).
 
 **Entrypoint e build:**
 - **`main.py` (13.535 linhas)** — *god object* de produção: `JarvisApp` (UI pywebview, áudio,

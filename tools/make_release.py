@@ -464,7 +464,7 @@ def main(argv: list[str]) -> int:
     print(f"        installer\\output\\update_payload_v{args.version}.zip \\")
     print( "        installer\\output\\SHA256SUMS.txt \\")
     print(f"        --notes-file installer\\output\\release_notes_v{args.version}.md \\")
-    print( "        --repo NinjaZinS2/jarvis-releases")
+    print( "        --repo SodreDev/jarvis-releases")
     print( "        # adicione --prerelease se for RC")
     print("")
     return 0

@@ -13,9 +13,9 @@
 #endif
 
 #define AppName       "J.A.R.V.I.S"
-#define AppPublisher  "NinjaZinS2"
+#define AppPublisher  "SodreDev"
 #define AppExeName    "JARVIS.exe"
-#define AppURL        "https://github.com/NinjaZinS2/jarvis-releases"
+#define AppURL        "https://github.com/SodreDev/jarvis-releases"
 #define SrcRoot       "..\"
 
 [Setup]

@@ -6,9 +6,9 @@
 
 Assistente pessoal de IA desktop para Windows — controlado por voz, texto ou gestos.
 
-[![Versão](https://img.shields.io/badge/versão-2.7.0-blue?style=flat-square)](https://github.com/NinjaZinS2/jarvis-releases/releases/latest)
+[![Versão](https://img.shields.io/badge/versão-2.7.0-blue?style=flat-square)](https://github.com/SodreDev/jarvis-releases/releases/latest)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/NinjaZinS2/jarvis-releases/releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/SodreDev/jarvis-releases/releases/latest)
 [![Auto-update](https://img.shields.io/badge/auto--update-ativo-brightgreen?style=flat-square)](#atualizações-automáticas)
 
 </div>
@@ -93,7 +93,7 @@ O JARVIS é um assistente de IA desktop completo que roda localmente no Windows.
 
 ### Opção 1 — Instalador (recomendado, sem Python necessário)
 
-1. Baixe `JARVIS_Setup_vX.Y.Z.exe` em [Releases](https://github.com/NinjaZinS2/jarvis-releases/releases/latest)
+1. Baixe `JARVIS_Setup_vX.Y.Z.exe` em [Releases](https://github.com/SodreDev/jarvis-releases/releases/latest)
 2. Execute o instalador e siga os passos
 3. Edite `credentials\.env` com suas chaves de API (template em `.env.example`)
 4. Opcional: marque **"Inicializar JARVIS com o Windows"** para aparecer no Gerenciador de Tarefas → Inicialização
@@ -107,7 +107,7 @@ O instalador já vem com Python 3.12 embutido — nenhuma instalação adicional
 
 ```powershell
 # 1. Clone
-git clone https://github.com/NinjaZinS2/jarvis-releases.git
+git clone https://github.com/SodreDev/jarvis-releases.git
 cd jarvis-releases
 
 # 2. Crie o ambiente virtual
@@ -489,7 +489,7 @@ Este projeto redistribui modelos pré-treinados do **Google MediaPipe** (`hand_l
 
 ## Autor
 
-**NinjaZinS2** — [github.com/NinjaZinS2](https://github.com/NinjaZinS2)
+**SodreDev** — [github.com/SodreDev](https://github.com/SodreDev)
 
 ---
 

@@ -26,7 +26,7 @@ Especificação: [SPEC-fase5-appimage.md](SPEC-fase5-appimage.md) · Base: `linu
 
    Valores num lugar só:
    - `APP_ID` em `jarvis/platform/linux/app_id.py`;
-   - `JARVIS_UPDATE_REPO=NinjaZinS2/jarvis-releases`, `JARVIS_UPDATE_CHANNEL=latest-pre` e `JARVIS_BUILD_TAG=v<VERSION>-linux.<N>` no `build_appimage.sh`. O canal pré-release no `jarvis-releases` foi **decidido pelo dono** (D-F5-1).
+   - `JARVIS_UPDATE_REPO=SodreDev/jarvis-releases`, `JARVIS_UPDATE_CHANNEL=latest-pre` e `JARVIS_BUILD_TAG=v<VERSION>-linux.<N>` no `build_appimage.sh`. O canal pré-release no `jarvis-releases` foi **decidido pelo dono** (D-F5-1).
    - lista de `excludes` do Núcleo no `JARVIS-linux.spec`.
 7. **Git e emendas:**
    - `git -C /home/sodre/GranaFacil/J.A.R.V.I.S`, sem push;

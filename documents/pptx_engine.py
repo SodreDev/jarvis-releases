@@ -95,7 +95,7 @@ def _openrouter_image(prompt: str, model: str, key: str, aspect: str,
         headers={
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/NinjaZinS2",
+            "HTTP-Referer": "https://github.com/SodreDev",
             "X-Title": "JARVIS",
         },
         method="POST",

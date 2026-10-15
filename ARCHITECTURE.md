@@ -115,7 +115,7 @@ Só é preciso recompilar para novas wheels nativas, mudança de assets, ou do p
 > `--skip-installer`, `--skip-tag`.
 
 ### Atualização (`updater/check_update.py`)
-Compara `VERSION` com `releases/latest` de `NinjaZinS2/jarvis-releases`, baixa o
+Compara `VERSION` com `releases/latest` de `SodreDev/jarvis-releases`, baixa o
 `update_payload` (ou o instalador), e extrai com validação anti-traversal, **preservando**
 `credentials/`, `data/`, `temp/`, `logs/`, `build/`, `dist/`, `.venv/`, `.git/`.
 

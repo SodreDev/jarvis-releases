@@ -175,7 +175,7 @@ sequenceDiagram
 - `ide/` — FastAPI (`/ide`), terminal multi-sessão (`ide/terminal.py`), workspace isolado; fachada `comandos/ide_ctrl.py` (que também dispara `start_dashboard`).
 
 ### 3.6 (f) Auto-update
-- `JarvisApi.apply_update_now` :1902 e thread `AutoUpdater` :13206 → `updater/check_update.py`: compara `VERSION` com `releases/latest` de `NinjaZinS2/jarvis-releases`, baixa `update_payload` (ou instalador), extrai com validação anti-traversal **preservando** `credentials/`, `data/`, `.venv/`, `.git/`, aplica e **reinicia** (`_restart` → `subprocess.Popen([sys.executable])`). **No AppImage isso muda** para AppImageUpdate/zsync (ver §6).
+- `JarvisApi.apply_update_now` :1902 e thread `AutoUpdater` :13206 → `updater/check_update.py`: compara `VERSION` com `releases/latest` de `SodreDev/jarvis-releases`, baixa `update_payload` (ou instalador), extrai com validação anti-traversal **preservando** `credentials/`, `data/`, `.venv/`, `.git/`, aplica e **reinicia** (`_restart` → `subprocess.Popen([sys.executable])`). **No AppImage isso muda** para AppImageUpdate/zsync (ver §6).
 
 ---
 

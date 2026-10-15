@@ -8,7 +8,7 @@ restantes. Para continuar o trabalho no Claude app sem perder contexto.
 ## 0. ESTADO DO GIT — ⚠️ LEIA PRIMEIRO
 
 **NADA desta sessão está commitado.** Tudo está no *working tree*. A `VERSION` é `2.7.0`
-e o **payload 2.7.0 foi publicado** em `NinjaZinS2/jarvis-releases` (Releases), mas o
+e o **payload 2.7.0 foi publicado** em `SodreDev/jarvis-releases` (Releases), mas o
 **código-fonte não foi commitado** no repo. Último commit real: `ec30af2 bump 2.2.6`.
 
 **Pendência de git (quando quiser):** commitar todo o trabalho desta sessão. Sugestão de
