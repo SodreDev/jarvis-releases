@@ -1,0 +1,10 @@
+cenario,linha,acao,n,p50_us,p95_us,p99_us,max_us
+orçamento estourado,L01,ouvir,10000,0.942,0.991,1.112,8.376
+epoch morto,L02,ouvir,10000,1.222,1.272,1.373,9.869
+aec_fail,L03,cancelar,10000,1.443,1.493,1.533,6.272
+barge-in curto,L04a,ceder,10000,2.164,2.234,2.275,7.685
+barge-in,L04,cancelar,10000,2.565,2.635,2.675,11.281
+backchannel,L06,backchannel,10000,3.857,3.947,4.078,45.606
+nossa vez,L08,falar,10000,3.246,3.327,3.377,13.095
+sem confiança,L10,ouvir,10000,3.968,4.098,4.979,86.994
+esperando,L11,ouvir,10000,4.388,4.488,4.548,54.082

@@ -1,0 +1,141 @@
+{
+  "versao": 1,
+  "descricao": "Tabela de decisão do S1 (SPEC §2, cartão F1-08). A reação rápida (20-100 ms) é ESTA tabela, auditável, e não efeito colateral de LLM. Avaliada de cima para baixo: a primeira linha cujas condições batem decide. Cada linha tem um teste no repositório.",
+  "acoes": [
+    "ouvir",
+    "backchannel",
+    "ceder",
+    "falar",
+    "cancelar"
+  ],
+  "condicoes_aceitas": {
+    "orcamento_estourado": "booleano: o S1 passou do teto de 100 ms",
+    "epoch_morto": "booleano: o evento veio de um epoch menor que o atual (§3.3 regra 6)",
+    "aec_ok": "booleano: a referência da AEC vale (cartão F1-04)",
+    "fala_do_dono": "booleano: AudioActivity com speech verdadeiro",
+    "tocando": "booleano: há playback em curso (PlaybackProgress do F1-03)",
+    "decisao_de_turno": "hold | yield | unknown | ausente (TurnPrediction do F1-07)",
+    "duracao_fala_ms_min": "número: o dono está falando há pelo menos isto",
+    "p_eot_max": "número: p_eot no máximo isto",
+    "duracao_fala_ms_max": "número: o dono está falando há no máximo isto"
+  },
+  "linhas": [
+    {
+      "id": "L01",
+      "quando": {
+        "orcamento_estourado": true
+      },
+      "entao": "ouvir",
+      "porque": "Estourou o teto de 20-100 ms. Guarda do cartão F1-08: estourar cai em ouvir, NUNCA em falar. Decidir com orçamento vencido é decidir com informação velha, e falar errado é pior que esperar."
+    },
+    {
+      "id": "L02",
+      "quando": {
+        "epoch_morto": true
+      },
+      "entao": "ouvir",
+      "porque": "§3.3 regra 6 e proibição do s2 que vale aqui também: nada de epoch morto sai do S1, nem como fala."
+    },
+    {
+      "id": "L03",
+      "quando": {
+        "aec_ok": false
+      },
+      "entao": "cancelar",
+      "porque": "Sem referência de AEC o assistente se ouve falar e se interrompe sozinho (cartão F1-04). Cancelar primeiro, resolver depois."
+    },
+    {
+      "id": "L04a",
+      "quando": {
+        "fala_do_dono": true,
+        "tocando": true,
+        "duracao_fala_ms_max": 200
+      },
+      "entao": "ceder",
+      "porque": "Sobreposição curta (até 200 ms) enquanto falamos: pode ser o dono dando um 'uhum', não tomando o turno. CEDER para a fala dele sem jogar o plano fora — o epoch já subiu lá atrás pela regra 1 da §3.3, que não espera o S1; o que o S1 escolhe aqui é o que fazer com a resposta em voo. Os 200 ms são valor inicial declarado, a calibrar com voz real no F1-16."
+    },
+    {
+      "id": "L04",
+      "quando": {
+        "fala_do_dono": true,
+        "tocando": true
+      },
+      "entao": "cancelar",
+      "porque": "Barge-in: o dono falou em cima da nossa fala. P3 da SPEC — interromper vence tudo."
+    },
+    {
+      "id": "L05",
+      "quando": {
+        "fala_do_dono": true,
+        "tocando": false,
+        "decisao_de_turno": "yield"
+      },
+      "entao": "ouvir",
+      "porque": "O detector diz que o turno acabou, mas o dono ainda está falando NESTE quadro. Ouvir é o lado seguro: o yield vale quando a fala para."
+    },
+    {
+      "id": "L06",
+      "quando": {
+        "fala_do_dono": true,
+        "tocando": false,
+        "duracao_fala_ms_min": 4000,
+        "p_eot_max": 0.3
+      },
+      "entao": "backchannel",
+      "porque": "Fala longa com fim de turno improvável: um sinal curto de que estamos ouvindo, sem tomar o turno. É a única linha que produz som sem ser nossa vez."
+    },
+    {
+      "id": "L07",
+      "quando": {
+        "fala_do_dono": true,
+        "tocando": false
+      },
+      "entao": "ouvir",
+      "porque": "O dono está falando e não estamos tocando nada: o padrão é ouvir."
+    },
+    {
+      "id": "L08",
+      "quando": {
+        "fala_do_dono": false,
+        "tocando": false,
+        "decisao_de_turno": "yield"
+      },
+      "entao": "falar",
+      "porque": "Silêncio do dono, nada tocando e o detector cedeu o turno: é a nossa vez. Esta é a ÚNICA linha que leva a falar."
+    },
+    {
+      "id": "L09",
+      "quando": {
+        "fala_do_dono": false,
+        "tocando": true,
+        "decisao_de_turno": "yield"
+      },
+      "entao": "ouvir",
+      "porque": "Já estamos falando e o dono está calado: não há decisão a tomar, o playback segue."
+    },
+    {
+      "id": "L10",
+      "quando": {
+        "fala_do_dono": false,
+        "decisao_de_turno": "unknown"
+      },
+      "entao": "ouvir",
+      "porque": "unknown nunca vira fala (mesma regra do F1-07): sem confiança, não interrompe e não toma o turno."
+    },
+    {
+      "id": "L11",
+      "quando": {
+        "fala_do_dono": false,
+        "decisao_de_turno": "hold"
+      },
+      "entao": "ouvir",
+      "porque": "O detector diz que o dono não acabou: esperar, mesmo em silêncio (é pausa, não fim)."
+    },
+    {
+      "id": "L12",
+      "quando": {},
+      "entao": "ouvir",
+      "porque": "Linha final, sem condição: qualquer estado não previsto cai em ouvir. Tabela sem saída padrão seria tabela que deixa o sistema sem decisão."
+    }
+  ]
+}

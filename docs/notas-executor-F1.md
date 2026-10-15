@@ -639,3 +639,63 @@ corpus pt-BR da F1**. A recalibração é do F1-15/F1-16, e o F1-15 tem de grava
 
 3,2 µs p50 por decisão (o nosso código). O SLO-4 mede tempo de **áudio** — quanto o dono espera
 —, não CPU. Confundir os dois faria o relatório parecer ótimo e o assistente parecer lento.
+
+---
+
+## F1-08 — S1: a decisão de 20–100 ms como tabela auditável
+
+### A tabela é dado, e dado inválido é recusado na carga
+
+`tabelas/s1.v1.json`: 13 linhas, avaliadas de cima para baixo, cada uma com `quando`, `entao` e
+**`porque`**. A carga recusa, com erro nomeado: condição que não está em `condicoes_aceitas`
+(vocabulário fechado, como no barramento e no rótulo do corpus), ação fora das cinco da §2,
+linha sem `porque` — porque linha sem porquê não é auditável — e **tabela sem saída padrão**: a
+última linha não pode ter condição, senão um estado não previsto deixaria o S1 sem decisão.
+
+Cada linha tem um teste, e há um teste que **compara o conjunto de ids da tabela com o conjunto
+de testes**: linha nova sem teste quebra a suíte, em vez de passar sem ninguém notar.
+
+### As cinco ações, e onde ficou o `ceder`
+
+A §2 lista `ouvir | backchannel | ceder | falar | cancelar`. Quatro apareceram naturalmente; o
+`ceder` exigiu uma decisão. Ficou assim, declarado na própria tabela: sobreposição **curta** (até
+200 ms) enquanto falamos é `ceder` — pode ser o dono dando um "uhum", não tomando o turno, e a
+resposta em voo não precisa ser jogada fora; sobreposição **sustentada** é `cancelar`. O epoch
+já subiu antes disso pela regra 1 da §3.3, que não espera o S1 — o que o S1 escolhe aqui é o que
+fazer com a resposta em voo. Os 200 ms são valor inicial declarado, a calibrar com voz real.
+
+Só **uma** linha leva a `falar` (e um teste garante que continua sendo uma), e só uma produz som
+sem ser nossa vez (`backchannel`, com fala longa e `p_eot` baixo).
+
+### As três guardas duras, cada uma numa linha
+
+- **L01, orçamento**: estourou o teto de 100 ms → `ouvir`, nunca `falar`. Teste injeta o atraso
+  e confere que a mesma situação que levava a `falar` passa a levar a `ouvir`.
+- **L02, epoch morto**: evento de epoch menor que o atual não produz som. O teste varre **todos**
+  os estados da tabela com epoch morto e exige que nenhum produza som.
+- **L10, sem confiança**: `unknown` nunca vira `falar` — a mesma regra do F1-07.
+
+### Números medidos (`docs/medicoes/f1-08-s1.md`), n = 10 000 por cenário
+
+| cenário | linha | ação | p50 | p95 |
+|---|---|---|---:|---:|
+| orçamento estourado | L01 | `ouvir` | 0,94 µs | 0,99 µs |
+| barge-in | L04 | `cancelar` | 2,56 µs | 2,63 µs |
+| nossa vez | L08 | `falar` | 3,25 µs | 3,33 µs |
+| esperando | L11 | `ouvir` | 4,39 µs | 4,49 µs |
+
+90 000 decisões no total; pior p95 = **4,49 µs**, que é 0,0045% do teto de 100 ms. O custo
+cresce com a posição da linha (a tabela é varrida de cima para baixo), e as guardas estão no
+topo — o que é a ordem certa: o caso em que já não há tempo é o mais barato de decidir.
+
+**O orçamento do S1 não é gasto pela tabela.** Ele é gasto pelo que vem antes dela — captura,
+AEC, VAD, ASR, detector de turno —, e é por isso que a guarda de orçamento existe: quando o
+tempo acabou, a decisão certa é `ouvir`, não `falar` com informação velha.
+
+### Não verificado: nada
+
+Este é o único cartão da F1 que fecha sem ressalva de hardware. A tabela é dado, o estado é
+dado, o replay é determinístico sobre a trilha do F1-01 — e o relatório pode afirmar isso sem
+nenhuma lacuna de microfone. O que **não** está aqui, por não ser deste cartão: o custo do que
+chega ao S1 (está nos relatórios do F1-03 ao F1-07) e a escolha do **que** dizer, que é do `s2`
+(F2). Windows: só biblioteca padrão, mas a medição rodou em Linux.
