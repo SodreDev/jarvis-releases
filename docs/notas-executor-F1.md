@@ -528,6 +528,24 @@ quem o recalibra é o dono, com voz real.
   real) é de outro cartão.
 - Windows: a medição rodou só em Linux.
 
+### Decisão a medir no F1-16: passo de 100 ms + ASR *streaming* (registrada a pedido do dono)
+
+O SLO-3 não foi atingido neste cartão, e a medição separou a causa em duas partes que pedem
+decisões diferentes. Fica aqui como **decisão a medir no F1-16**, não como escolha já tomada:
+
+| o que medir no F1-16 | número que motivou | o que esperar |
+|---|---|---|
+| **passo de 100 ms** no transcritor incremental (hoje 200 ms) | piso do encanamento: 100 ms → p50 162 ms e p95 257 ms (**cabe** no alvo de 250/450); 200 ms → 345/457; 400 ms → 1007/1439 | o acordo de prefixo precisa de **dois** passos, então o piso do SLO-3 é ~2× o passo. Reduzir o passo é a única mudança que move o piso, e não depende de modelo |
+| **ASR *streaming*** (transducer) em vez de janela crescente | `whisper-small` em janela crescente: RTF de **parede 6,02×** (CPU 25,48×) — não roda ao vivo nesta máquina | a janela crescente re-transcreve o turno a cada passo e o custo cresce com o quadrado da duração. Um transducer (`parakeet-tdt-0.6b-v3`, CC-BY-4.0, pt verificado na origem) decodifica por quadro e não refaz o passado |
+
+Duas ressalvas que viajam com a recomendação: o passo menor **aumenta** o número de inferências
+por turno (com modelo de janela crescente isso piora o RTF, e é por isso que as duas mudanças
+andam juntas); e o `parakeet` exige **atribuição no produto**, que já está em portão desde o
+F1-06 — trocar de modelo não é só trocar o peso.
+
+O alvo do SLO-3 **não foi mexido**: a SPEC §7 o marca como hipótese, e quem recalibra é o dono
+com voz real.
+
 ---
 
 ## F1-07 — detector de turno: semântico vs silêncio fixo
