@@ -32,13 +32,29 @@ CHAVES_OBRIGATORIAS: Final[frozenset[str]] = frozenset(
 )
 CHAVES_OPCIONAIS: Final[frozenset[str]] = frozenset({"contexto"})
 CHAVES_SO_SINTETICAS: Final[frozenset[str]] = frozenset(
-    {"sintetico", "semente", "gerador", "voz", "licenca_voz", "texto_antes", "texto_depois"}
+    {
+        "sintetico",
+        "semente",
+        "gerador",
+        "voz",
+        "licenca_voz",
+        "texto_antes",
+        "texto_depois",
+        "inicio_fala_ms",
+        "inicio_pausa_ms",
+    }
 )
-"""`texto_antes` e `texto_depois` são o que o item diz **antes** e **depois** da pausa.
+"""`texto_antes`/`texto_depois` são o que o item diz antes e depois da pausa; `inicio_fala_ms`
+e `inicio_pausa_ms` são os **marcos de tempo** do arquivo.
 
 Sem eles a pausa não teria posição no texto, e regenerar o áudio a partir do rótulo (o
 `--verificar` do gerador) seria adivinhação. A invariante é dura e está em teste: pausa de
-fim de turno **não tem** continuação; pausa no meio da frase **tem**."""
+fim de turno **não tem** continuação; pausa no meio da frase **tem**.
+
+Os marcos existem porque medir detector contra palpite não é medir: o aceite (a) do cartão
+F1-05 (recall e precisão de início de fala) e o SLO-4 do F1-07 (pausa → decisão) precisam do
+instante **verdadeiro** em que a fala começa e em que a pausa começa. Eles saem do gerador, que
+sabe quanto silêncio colocou e quanto durou a síntese do prefixo."""
 CHAVES_SO_REAIS: Final[frozenset[str]] = frozenset({"termo"})
 CHAVES_CONHECIDAS: Final[frozenset[str]] = (
     CHAVES_OBRIGATORIAS | CHAVES_OPCIONAIS | CHAVES_SO_SINTETICAS | CHAVES_SO_REAIS
@@ -69,6 +85,8 @@ class Rotulo:
     licenca_voz: str = ""
     texto_antes: str = ""
     texto_depois: str = ""
+    inicio_fala_ms: int = 0
+    inicio_pausa_ms: int = 0
     termo: str = ""
 
     def para_dict(self) -> dict[str, Any]:
@@ -93,6 +111,8 @@ class Rotulo:
             bruto["texto_antes"] = self.texto_antes
             if self.texto_depois:
                 bruto["texto_depois"] = self.texto_depois
+            bruto["inicio_fala_ms"] = self.inicio_fala_ms
+            bruto["inicio_pausa_ms"] = self.inicio_pausa_ms
         if self.termo:
             bruto["termo"] = self.termo
         return bruto
@@ -142,6 +162,8 @@ def validar_rotulo(bruto: Mapping[str, Any], *, onde: str = "") -> Rotulo:
             "voz",
             "licenca_voz",
             "texto_antes",
+            "inicio_fala_ms",
+            "inicio_pausa_ms",
         } - set(bruto)
         if faltando_sintetico:
             raise ErroDeRotulo(
@@ -170,6 +192,16 @@ def validar_rotulo(bruto: Mapping[str, Any], *, onde: str = "") -> Rotulo:
             raise ErroDeRotulo(
                 f"{lugar}: pausa no meio da frase sem 'texto_depois' — é a continuação que "
                 "faz dela um falso corte em potencial"
+            )
+        inicio_fala = bruto["inicio_fala_ms"]
+        inicio_pausa = bruto["inicio_pausa_ms"]
+        for nome, valor in (("inicio_fala_ms", inicio_fala), ("inicio_pausa_ms", inicio_pausa)):
+            if not isinstance(valor, int) or isinstance(valor, bool) or valor < 0:
+                raise ErroDeRotulo(f"{lugar}: {nome} tem de ser inteiro não negativo")
+        if int(inicio_pausa) <= int(inicio_fala):
+            raise ErroDeRotulo(
+                f"{lugar}: a pausa começa em {inicio_pausa} ms e a fala em {inicio_fala} ms — "
+                "a pausa vem depois da fala, não antes"
             )
         esperado_texto = f"{antes} {depois}".strip()
         if str(bruto["texto"]).strip() != esperado_texto:
@@ -200,6 +232,8 @@ def validar_rotulo(bruto: Mapping[str, Any], *, onde: str = "") -> Rotulo:
         licenca_voz=str(bruto.get("licenca_voz", "")),
         texto_antes=str(bruto.get("texto_antes", "")),
         texto_depois=str(bruto.get("texto_depois", "")),
+        inicio_fala_ms=int(bruto.get("inicio_fala_ms", 0)),
+        inicio_pausa_ms=int(bruto.get("inicio_pausa_ms", 0)),
         termo=str(bruto.get("termo", "")),
     )
 

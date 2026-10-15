@@ -37,6 +37,8 @@ SINTETICO: dict[str, Any] = {
     "gerador": "parametrico@1",
     "voz": "parametrico",
     "licenca_voz": "Apache-2.0",
+    "inicio_fala_ms": 180,
+    "inicio_pausa_ms": 1200,
 }
 REAL: dict[str, Any] = {
     "id": "t-0001",
@@ -201,3 +203,24 @@ def test_o_corpus_comitado_cumpre_o_cartao() -> None:
     assert numeros["split/calibracao"] == round(0.7 * len(rotulos))
     assert all(not r.termo for r in rotulos)
     assert all(r.voz and r.licenca_voz and r.gerador for r in rotulos)
+
+
+def test_os_marcos_de_tempo_sao_obrigatorios_no_sintetico() -> None:
+    """Sem eles, recall de início de fala (F1-05) e SLO-4 (F1-07) seriam medidos contra palpite."""
+    with pytest.raises(ErroDeRotulo, match="inicio_fala_ms"):
+        validar_rotulo(sem(SINTETICO, "inicio_fala_ms"))
+    with pytest.raises(ErroDeRotulo, match="inicio_pausa_ms"):
+        validar_rotulo(sem(SINTETICO, "inicio_pausa_ms"))
+
+
+def test_a_pausa_nao_pode_comecar_antes_da_fala() -> None:
+    with pytest.raises(ErroDeRotulo, match="a pausa vem depois da fala"):
+        validar_rotulo({**SINTETICO, "inicio_pausa_ms": 100, "inicio_fala_ms": 180})
+
+
+def test_o_corpus_comitado_tem_marcos_coerentes() -> None:
+    rotulos, _ = validar_arquivo(ROTULOS_DO_REPOSITORIO)
+
+    assert all(0 < r.inicio_fala_ms < r.inicio_pausa_ms for r in rotulos)
+    # A fala começa no silêncio inicial sorteado pelo gerador (120 a 280 ms, declarado).
+    assert all(120 <= r.inicio_fala_ms <= 280 for r in rotulos)

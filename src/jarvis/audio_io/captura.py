@@ -22,6 +22,7 @@ from jarvis.audio_io.energia import DetectorDeEnergia
 from jarvis.audio_io.fontes import FonteDeAudio
 from jarvis.audio_io.quadro import MS_POR_QUADRO, PISO_DB, Quadro
 from jarvis.audio_io.replay import atividade
+from jarvis.audio_io.vad import Vad
 from jarvis.barramento.envelope import Envelope
 from jarvis.relogio import Relogio
 
@@ -35,7 +36,9 @@ class Captura:
     fonte: FonteDeAudio
     relogio: Relogio
     session_id: str
-    detector: DetectorDeEnergia = field(default_factory=DetectorDeEnergia)
+    detector: Vad = field(default_factory=DetectorDeEnergia)
+    """Qualquer `Vad` (F1-05). O padrão é o limiar do F1-01, que não precisa de modelo; o
+    processo usa `vad_do_ambiente()`, que prefere o `silero-vad` quando o peso existe."""
     epoch: int = 0
     privacidade: bool = False
     cadeia: CadeiaDeAec | None = None

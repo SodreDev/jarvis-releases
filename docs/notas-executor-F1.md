@@ -353,3 +353,73 @@ curto para o assistente se interromper sozinho.
   `Percepcao` do `agentd`, pausa da fila); forçar a troca de dispositivo dentro do processo
   exigiria uma opção de linha de comando só para teste, e isso não entra no produto.
 - Windows: `numpy` tem roda para os dois sistemas, mas tudo rodou só em Linux.
+
+---
+
+## F1-05 — VAD barato, `speech_started` e a regra 1 do epoch
+
+### O silero v5 precisa de 64 amostras de contexto, e isso não está no formato
+
+A entrada do ONNX é dinâmica (`[None, None]`), então nada no arquivo diz o tamanho certo. O
+wrapper oficial do `silero-vad` prepende **64 amostras do bloco anterior** à janela de 512 (a
+entrada real tem 576) e guarda a cauda como contexto do bloco seguinte. Sem isso o modelo
+responde `0,001` para fala de verdade — ou seja, **o VAD nunca dispara** — e a primeira
+medição deste cartão saiu com o VAD mudo em áudio de voz.
+
+Dois efeitos práticos ficam registrados: o quadro de 20 ms **não** alinha com a janela de
+32 ms, então uma decisão pode atrasar até uma janela; e o atraso medido do silero (p50 61 ms,
+p95 80 ms sobre o início verdadeiro) já contém esse desalinhamento.
+
+### A verdade de referência tem de vir do gerador, não do áudio
+
+Medir "recall de início de fala" exige saber **quando** a fala começa. Estimar isso do próprio
+áudio por energia seria medir um detector contra outro detector. Então o rótulo do corpus
+ganhou dois marcos — `inicio_fala_ms` e `inicio_pausa_ms` —, que o gerador conhece porque foi
+ele que colocou o silêncio e sintetizou o prefixo. O corpus foi **regenerado** (mesma semente,
+mesmos 500 itens) e o validador passou a exigir os marcos, com a invariante de que a pausa vem
+depois da fala. É o mesmo dado que o SLO-4 do F1-07 vai usar.
+
+### Histerese assimétrica, e por quê
+
+Ligar custa **1 quadro** (20 ms): atrasar `speech_started` é atrasar o barge-in, que é o SLO-2.
+Desligar custa 10 quadros **mais** 200 ms de *hangover*: pausa entre palavras não é fim de
+fala. A política está em `Histerese` (dado), não espalhada em `if`.
+
+### Números medidos (`docs/medicoes/f1-05-vad.md`), 100 itens do corpus, 3 execuções
+
+| | recall início | precisão início | atraso p50 | atraso p95 | recall/quadro | precisão/quadro |
+|---|---:|---:|---:|---:|---:|---:|
+| `silero-vad@v5` | 1,000 | 1,000 | 61 ms | 80 ms | 0,966 | **1,000** |
+| `energia@1` | 1,000 | 1,000 | 31 ms | 51 ms | 0,985 | 0,999 |
+
+Piso de SLO-1 com a cadeia **real** (AEC → NR → AGC → VAD → envelope validado):
+
+| caminho | p50 | p95 |
+|---|---:|---:|
+| cadeia + silero, **com** evento | 0,7652 ms | 0,8508 ms |
+| cadeia + silero, sem evento | 0,3091 ms | 0,3721 ms |
+| cadeia + energia, com evento | 0,5327 ms | 0,6208 ms |
+
+**Gatilho da ADR-0014 (aceite (e)): não abre.** Pior p95 = 0,85 ms contra 80 ms de orçamento
+(1,1%). A F0-04 havia medido VAD 0,1129 ms + evento 0,3842 ms em braços separados; a cadeia
+junta dá 0,85 ms p95, e a diferença é a AEC/NR/AGC que a F0-04 não tinha — **reconfirmado, com
+o custo novo nomeado** (aceite (d)).
+
+### Achado que o F1-07 vai precisar: o hangover do silero é maior que a pausa de fim de turno
+
+O `silero-vad` só declara silêncio **575 ms** (p50) depois do início da pausa, e em 51 dos 100
+itens o arquivo acabou antes de ele desligar. A pausa de fim de turno do corpus está entre 300
+e 900 ms. Conclusão que vale escrever antes de o F1-07 começar: **detector de turno não pode
+esperar o "fala terminou" do VAD** — quando esse evento chega, a janela de decisão já passou.
+O detector tem de olhar a pausa em curso, não o desligamento do VAD.
+
+### Não verificado
+
+- **SLO-1 com microfone**: é o aceite (a) da F1 e sai no F1-16. Jitter, período do driver e
+  ruído de entrada são do hardware; aqui tudo veio de arquivo.
+- **VAD em ruído real da casa do dono**: o corpus tem ruído rosa sintético em ~30% dos itens.
+  Televisão, conversa ao fundo e sala são outra coisa.
+- **Fim de turno**: o VAD não decide turno (§2). O hangover desta tabela é política de fala.
+- O peso do silero **não** é versionado: sem ele, `vad_do_ambiente()` cai no VAD de energia (com
+  o nome dele no relatório) e os testes do silero são pulados. O CI pula, e isso está dito.
+- Windows: o código é portável, a medição foi só em Linux.

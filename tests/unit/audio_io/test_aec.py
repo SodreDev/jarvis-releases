@@ -213,7 +213,7 @@ def test_deriva_de_relogio_nao_trava_nem_estoura_a_cadeia(ppm: float) -> None:
 
 def test_agentd_transforma_aec_ok_falso_em_cancel_aec_fail(sessao: str) -> None:
     """Aceite (c), terceira parte: quem emite Cancel é o agentd (§3.2), não o audio-io."""
-    from jarvis.agentd.__main__ import Percepcao
+    from jarvis.agentd.percepcao import Percepcao
     from jarvis.barramento.epoch import DonoDoEpoch
     from tests.fabricas import evento
 

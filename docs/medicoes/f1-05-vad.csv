@@ -1,0 +1,13 @@
+braco,execucao,n,p50_ms,p95_ms,p99_ms,max_ms
+cadeia AEC+silero-vad@v5 (com evento),1,154,0.803056,1.098513,1.324300,2.244626
+cadeia AEC+silero-vad@v5 (sem evento),1,11407,0.306067,0.382091,0.768420,29.631969
+cadeia AEC+energia@1 (com evento),1,172,0.532745,0.619589,0.694390,0.739256
+cadeia AEC+energia@1 (sem evento),1,11389,0.179629,0.217660,0.241305,0.345722
+cadeia AEC+silero-vad@v5 (com evento),2,154,0.760295,0.799939,0.808335,0.838903
+cadeia AEC+silero-vad@v5 (sem evento),2,11407,0.304986,0.375749,0.784821,26.378179
+cadeia AEC+energia@1 (com evento),2,172,0.525302,0.620812,0.655808,0.660967
+cadeia AEC+energia@1 (sem evento),2,11389,0.180541,0.222440,0.252807,0.332508
+cadeia AEC+silero-vad@v5 (com evento),3,154,0.773680,0.816902,0.852288,1.236243
+cadeia AEC+silero-vad@v5 (sem evento),3,11407,0.306368,0.384335,0.790241,32.994945
+cadeia AEC+energia@1 (com evento),3,172,0.545690,0.662611,0.794469,1.047877
+cadeia AEC+energia@1 (sem evento),3,11389,0.179579,0.218081,0.244201,0.341194

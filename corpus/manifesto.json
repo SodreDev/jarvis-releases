@@ -21,8 +21,8 @@
       "sha256": "7f9e1d84310e24056a6537f7aa1aa077d5d6a1dd05abae2c0a9e389a1040abca"
     },
     "turnos/rotulos.jsonl": {
-      "bytes": 301103,
-      "sha256": "dca29d51eafdd60001881aa5c4c377b58c60511aebfb2ace4ec4f6d155b9d327"
+      "bytes": 325103,
+      "sha256": "ab57be569e83f88e44a02f78082bde7509a3cacf7bf2fb7f57430e1be156667b"
     }
   },
   "descricao": "sha256 de cada arquivo do corpus (cartão F0-08). Gerado; não editar.",

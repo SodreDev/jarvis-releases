@@ -227,13 +227,29 @@ def planejar(
     return itens
 
 
-def montar_audio(item: Item, voz: Voz, *, semente: int) -> bytes:
-    """Áudio do item: silêncio, fala, a pausa medida e (se houver) a continuação."""
+@dataclass(frozen=True, slots=True)
+class Marcos:
+    """Os instantes que o gerador conhece e o medidor precisa (cartões F1-05 e F1-07)."""
+
+    inicio_fala_ms: int
+    inicio_pausa_ms: int
+
+    def fim_da_pausa_ms(self, pausa_ms: int) -> int:
+        return self.inicio_pausa_ms + pausa_ms
+
+
+def montar_audio(item: Item, voz: Voz, *, semente: int) -> tuple[bytes, Marcos]:
+    """Áudio do item e seus marcos: silêncio, fala, a pausa medida e (se houver) a continuação."""
     propria = Random(semente_do_item(semente, item.identificador) ^ 0x5F5F)  # noqa: S311
     inicio = propria.randint(*FAIXA_SILENCIO_INICIAL_MS)
+    prefixo = voz.falar(item.texto_antes, semente=semente_do_item(semente, item.identificador))
+    marcos = Marcos(
+        inicio_fala_ms=inicio,
+        inicio_pausa_ms=inicio + round(1000 * len(prefixo) / 2 / TAXA_PADRAO),
+    )
     partes = [
         silencio(inicio, taxa=TAXA_PADRAO),
-        voz.falar(item.texto_antes, semente=semente_do_item(semente, item.identificador)),
+        prefixo,
         silencio(item.pausa_ms, taxa=TAXA_PADRAO),
     ]
     if item.texto_depois:
@@ -259,7 +275,7 @@ def montar_audio(item: Item, voz: Voz, *, semente: int) -> bytes:
             : len(sinal)
         ]
         sinal = misturar(sinal, atrasado)
-    return sinal
+    return sinal, marcos
 
 
 def escrever_audio(caminho: Path, amostras: bytes) -> str:
@@ -289,7 +305,7 @@ def gerar_corpus(
 
     rotulos: list[Rotulo] = []
     for item in itens:
-        amostras = montar_audio(item, voz, semente=semente)
+        amostras, marcos = montar_audio(item, voz, semente=semente)
         relativo = f"audio/{item.identificador}.wav"
         digest = escrever_audio(pasta / relativo, amostras)
         rotulos.append(
@@ -310,6 +326,8 @@ def gerar_corpus(
                 licenca_voz=voz.licenca,
                 texto_antes=item.texto_antes,
                 texto_depois=item.texto_depois,
+                inicio_fala_ms=marcos.inicio_fala_ms,
+                inicio_pausa_ms=marcos.inicio_pausa_ms,
             )
         )
     escrever_rotulos(pasta / "rotulos.jsonl", rotulos)
@@ -346,7 +364,7 @@ def regenerar_e_comparar(pasta: Path, *, voz: Voz, amostra: int | None = None) -
                 com_ruido=f"{GANHO_RUIDO_DB:.0f} dB" in rotulo.contexto,
                 com_eco="eco do nosso TTS" in rotulo.contexto,
             )
-            amostras = montar_audio(item, voz, semente=rotulo.semente)
+            amostras, _ = montar_audio(item, voz, semente=rotulo.semente)
             digest = escrever_audio(Path(temporario) / f"{rotulo.id}.wav", amostras)
             if digest != rotulo.sha256:
                 problemas.append(

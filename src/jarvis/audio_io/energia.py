@@ -20,14 +20,23 @@ LIMIAR_PADRAO_DB: Final = -45.0
 
 @dataclass(slots=True)
 class DetectorDeEnergia:
-    """Diz quando o estado muda. `None` no primeiro quadro significa "ainda não sei"."""
+    """Diz quando o estado muda. `None` no primeiro quadro significa "ainda não sei".
+
+    Cumpre o protocolo `Vad` do cartão F1-05 (tem `nome`, `falando`, `ver` e
+    `ultima_probabilidade`), mas **sem histerese**: é o limiar cru do F1-01, que a trilha de
+    replay usa justamente porque não suaviza nada. O VAD de energia com histerese é
+    `jarvis.audio_io.vad.VadDeEnergia`, e o do produto é o `silero-vad`.
+    """
 
     limiar_db: float = LIMIAR_PADRAO_DB
     falando: bool | None = None
+    nome: str = "limiar-de-energia@1"
+    ultima_probabilidade: float = 0.0
 
     def ver(self, quadro: Quadro) -> bool | None:
         """Devolve o novo estado quando ele muda; `None` quando nada mudou."""
         agora = quadro.energia_db >= self.limiar_db
+        self.ultima_probabilidade = 1.0 if agora else 0.0
         if agora == self.falando:
             return None
         self.falando = agora
