@@ -1,0 +1,143 @@
+# Registro de modelos: licença, origem e data de acesso (ADR-0011, cartão F0-09).
+#
+# A porta de licença (`tools/license_gate.py`) lê este arquivo e falha em qualquer item
+# não comercial ou "research only" que não esteja marcado como `barrado`.
+#
+# Regra de preenchimento: a licença vem do **model card oficial** do repositório do modelo
+# (API do Hugging Face ou arquivo LICENSE do repositório de origem), nunca de agregador ou
+# diretório de terceiro. `revisao` é o commit do repositório do modelo no momento da
+# consulta — é o que torna a verificação repetível.
+#
+# Estados: `candidato` (pode ser medido), `em_uso` (está no caminho do produto),
+# `barrado` (verificado e recusado; fica registrado para ninguém tentar de novo).
+
+data_da_verificacao = "2026-10-15"
+verificado_por = "executor"
+
+# --- Reranker (candidatos da ADR-0011, medição em F3) --------------------------------
+
+[[modelo]]
+id = "BAAI/bge-reranker-v2-m3"
+papel = "reranker"
+licenca = "Apache-2.0"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/BAAI/bge-reranker-v2-m3"
+revisao = "953dc6f6f85a"
+data_de_acesso = "2026-10-15"
+nota = "A ADR-0011 registrou que um agregador dizia MIT; o model card oficial diz apache-2.0."
+
+[[modelo]]
+id = "Qwen/Qwen3-Reranker-0.6B"
+papel = "reranker"
+licenca = "Apache-2.0"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/Qwen/Qwen3-Reranker-0.6B"
+revisao = "e61197ed4502"
+data_de_acesso = "2026-10-15"
+
+[[modelo]]
+id = "mixedbread-ai/mxbai-rerank-large-v2"
+papel = "reranker"
+licenca = "Apache-2.0"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/mixedbread-ai/mxbai-rerank-large-v2"
+revisao = "ca7e1ee484c3"
+data_de_acesso = "2026-10-15"
+
+[[modelo]]
+id = "jinaai/jina-reranker-v2-base-multilingual"
+papel = "reranker"
+licenca = "CC-BY-NC-4.0"
+estado = "barrado"
+fonte = "https://huggingface.co/api/models/jinaai/jina-reranker-v2-base-multilingual"
+data_de_acesso = "2026-10-15"
+nota = "Não comercial. Barrado pela ADR-0011 desde o primeiro commit; é a referência da pesquisa, não uma opção."
+
+# --- Embeddings (mesma régua, ADR-0011) ----------------------------------------------
+
+[[modelo]]
+id = "intfloat/multilingual-e5-base"
+papel = "embedding"
+licenca = "MIT"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/intfloat/multilingual-e5-base"
+revisao = "d12875059715"
+data_de_acesso = "2026-10-15"
+nota = "Baseline de CPU."
+
+[[modelo]]
+id = "BAAI/bge-m3"
+papel = "embedding"
+licenca = "MIT"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/BAAI/bge-m3"
+revisao = "5617a9f61b02"
+data_de_acesso = "2026-10-15"
+
+[[modelo]]
+id = "Qwen/Qwen3-Embedding-0.6B"
+papel = "embedding"
+licenca = "Apache-2.0"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/Qwen/Qwen3-Embedding-0.6B"
+revisao = "97b0c614be4d"
+data_de_acesso = "2026-10-15"
+
+# --- VAD, ASR e TTS (candidatos; escolha é F1) ---------------------------------------
+
+[[modelo]]
+id = "snakers4/silero-vad"
+papel = "vad"
+licenca = "MIT"
+estado = "candidato"
+fonte = "https://api.github.com/repos/snakers4/silero-vad/license"
+data_de_acesso = "2026-10-15"
+nota = "Pesos distribuídos no GitHub; espelho ONNX em onnx-community/silero-vad, também MIT."
+
+[[modelo]]
+id = "openai/whisper-large-v3"
+papel = "asr"
+licenca = "Apache-2.0"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/openai/whisper-large-v3"
+revisao = "06f233fe06e7"
+data_de_acesso = "2026-10-15"
+
+[[modelo]]
+id = "nvidia/parakeet-tdt-0.6b-v2"
+papel = "asr"
+licenca = "CC-BY-4.0"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/nvidia/parakeet-tdt-0.6b-v2"
+revisao = "ae9ad07059c7"
+data_de_acesso = "2026-10-15"
+nota = "Uso comercial permitido com atribuição; a atribuição tem de aparecer no produto."
+
+[[modelo]]
+id = "hexgrad/Kokoro-82M"
+papel = "tts"
+licenca = "Apache-2.0"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/hexgrad/Kokoro-82M"
+revisao = "f3ff3571791e"
+data_de_acesso = "2026-10-15"
+
+[[modelo]]
+id = "rhasspy/piper-voices"
+papel = "tts"
+licenca = "MIT"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/rhasspy/piper-voices"
+revisao = "c10ece1aade4"
+data_de_acesso = "2026-10-15"
+nota = "Vozes individuais podem ter licença própria (CC-BY-SA em algumas): verificar a voz escolhida em F1."
+
+[[modelo]]
+id = "coqui/XTTS-v2"
+papel = "tts"
+licenca = "coqui-public-model-license"
+estado = "barrado"
+fonte = "https://huggingface.co/api/models/coqui/XTTS-v2"
+revisao = "6c2b0d75eae4"
+data_de_acesso = "2026-10-15"
+nota = "CPML (https://coqui.ai/cpml): uso não comercial. Barrado pela ADR-0011."

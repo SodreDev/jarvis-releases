@@ -20,7 +20,8 @@ uv run --frozen python tools/verificar.py
 uv run --frozen python tools/verificar.py
 ```
 
-`tools/verificar.py` roda, na ordem, o que o CI roda: formatador, linter, tipos e testes. É o mesmo comando em qualquer sistema — é isso que o P11 exige.
+`tools/verificar.py` roda, na ordem, o que o CI roda: formatador, linter, tipos, testes e a
+porta de licença. É o mesmo comando em qualquer sistema — é isso que o P11 exige.
 
 Para rodar um pedaço só:
 
@@ -29,6 +30,7 @@ uv run ruff format --check .   # formatação
 uv run ruff check .            # linter (barra shell irrestrito, SPEC §4)
 uv run mypy                    # tipos (strict)
 uv run pytest                  # testes
+uv run python tools/license_gate.py --tabela   # porta de licença (ADR-0011)
 ```
 
 ## Estado
@@ -40,7 +42,7 @@ código de produto de voz: cada cartão entrega esqueleto, teste e número.
 |---|---|
 | F0-01 repositório, licença, linter, CI nos dois SOs | feito |
 | F0-02 barramento tipado com log encadeado por hash | feito |
-| F0-09 porta de licença no CI | aberto |
+| F0-09 porta de licença no CI | feito |
 | F0-03 a F0-08, F0-10 | abertos |
 
 ## Linguagem do núcleo

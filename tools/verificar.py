@@ -18,6 +18,7 @@ ETAPAS: tuple[tuple[str, list[str]], ...] = (
     ("linter", ["ruff", "check", "."]),
     ("tipos", ["mypy"]),
     ("testes", ["pytest"]),
+    ("porta de licença", ["python", "tools/license_gate.py", "--verificar-tabela"]),
 )
 
 

@@ -94,3 +94,69 @@ processo que não é a origem canônica; `ToolCallRequested` de efeito sem `idem
 - **Não verificado aqui:** o CI em `windows-latest` (sem máquina Windows e sem remoto). O
   barramento não usa nada específico de sistema — `pathlib`, `sqlite3` e `hashlib` da stdlib —
   mas "roda nos dois SOs" segue **não comprovado por execução**.
+
+---
+
+## F0-09 — porta de licença no CI
+
+### O que a porta faz
+
+`tools/license_gate.py` inventaria duas coisas e falha se achar cláusula não comercial:
+
+1. **dependências instaladas**, lidas dos metadados reais do ambiente
+   (`importlib.metadata`: `License-Expression`, classificadores `License ::` e, por último, o
+   campo livre `License`) — não de uma lista escrita à mão que envelhece;
+2. **modelos** (embedding, reranker, VAD, ASR, TTS) do registro `licenses/modelos.toml`, com
+   licença, fonte, revisão do repositório do modelo e data de acesso.
+
+Categorias: `permissiva`, `atribuicao` (uso comercial com atribuição obrigatória, como CC-BY),
+`copyleft_forte` (GPL/AGPL/SSPL), `nao_comercial` e `desconhecida`.
+
+**Bloqueia** (sai 1): qualquer item `nao_comercial`, e item `desconhecida` que esteja em uso.
+**Avisa** (sai 0): `copyleft_forte` — permite uso comercial, mas obriga abrir o derivado; vira
+bloqueio com `--estrito-copyleft`. **Também avisa** em `atribuicao`, porque a obrigação é
+visível no produto e alguém tem de colocá-la lá.
+**Não bloqueia**: modelo marcado `estado = "barrado"` — é um NC registrado justamente para
+ficar fora, e o registro serve para ninguém tentar de novo.
+
+### Verificação dos model cards (aceite b)
+
+Os treze modelos do registro foram conferidos **na origem** em 2026-10-15, com
+`--online`, que lê a API do model card do Hugging Face (ou a API de licença do GitHub) e
+compara com o registrado. Resultado dos seis nomeados no cartão:
+
+| modelo | licença oficial |
+|---|---|
+| `BAAI/bge-reranker-v2-m3` | apache-2.0 |
+| `Qwen/Qwen3-Reranker-0.6B` | apache-2.0 |
+| `mixedbread-ai/mxbai-rerank-large-v2` | apache-2.0 |
+| `intfloat/multilingual-e5-base` | mit |
+| `BAAI/bge-m3` | mit |
+| `Qwen/Qwen3-Embedding-0.6B` | apache-2.0 |
+
+**A dúvida da ADR-0011 está resolvida:** o agregador que dizia MIT para o
+`bge-reranker-v2-m3` estava errado — o model card oficial diz `apache-2.0`. O MIT que a ADR
+viu provavelmente era do `bge-m3` (embedding), que é MIT mesmo. Nenhum dos seis é NC, então a
+ordem de preferência da ADR-0011 continua válida sem emenda.
+
+**Dois NC verificados e barrados:** `jinaai/jina-reranker-v2-base-multilingual` (cc-by-nc-4.0,
+já previsto) e — achado novo — `coqui/XTTS-v2`, que o Hugging Face mostra como `other` e cujo
+nome de licença é a *Coqui Public Model License* (uso não comercial). Como TTS é escolha da
+F1, fica registrado agora para não entrar por engano. O classificador reconhece CPML,
+PolyForm Noncommercial, CC-BY-NC e "research only".
+
+**Uma atribuição obrigatória:** `nvidia/parakeet-tdt-0.6b-v2` é CC-BY-4.0 — comercial sim, mas
+a atribuição tem de aparecer no produto. A porta avisa em todo commit para isso não sumir.
+
+A tabela comitada é `docs/licencas.md`, **gerada** por `--escrever-tabela` e **verificada** por
+`--verificar-tabela` no CI: se alguém editar o registro e esquecer a tabela, o CI cai.
+
+### Não verificado
+
+- O CI em `windows-latest` (sem máquina Windows e sem remoto): a etapa está no workflow e roda
+  offline, mas nunca foi executada. O script só usa stdlib (`importlib.metadata`, `tomllib`,
+  `pathlib`), sem chamada de sistema nem caminho fixo.
+- `--online` não roda no CI de propósito: porta de qualidade que depende de rede falha por
+  motivo errado. A verificação na origem é manual e datada.
+- Vozes individuais do `rhasspy/piper-voices` podem ter licença própria (algumas CC-BY-SA);
+  a voz escolhida tem de ser verificada em F1.

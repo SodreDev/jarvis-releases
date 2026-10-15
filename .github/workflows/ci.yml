@@ -44,3 +44,7 @@ jobs:
 
       - name: testes
         run: uv run --frozen pytest
+
+      # ADR-0011: nada não comercial entra. Roda offline, com a tabela comitada.
+      - name: porta de licença
+        run: uv run --frozen python tools/license_gate.py --verificar-tabela --tabela
