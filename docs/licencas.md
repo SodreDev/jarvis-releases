@@ -22,6 +22,17 @@ Refazer a verificação na origem: `tools/license_gate.py --online`.
 | tts | `coqui/XTTS-v2` | coqui-public-model-license | nao_comercial | barrado | <https://huggingface.co/api/models/coqui/XTTS-v2> | 2026-10-15 |
 | tts | `hexgrad/Kokoro-82M` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/hexgrad/Kokoro-82M> | 2026-10-15 |
 | tts | `rhasspy/piper-voices` | MIT | permissiva | candidato | <https://huggingface.co/api/models/rhasspy/piper-voices> | 2026-10-15 |
+| tts | `rhasspy/piper-voices:pt_BR-faber-medium` | MIT | permissiva | em_uso | <https://huggingface.co/api/models/rhasspy/piper-voices> | 2026-10-15 |
 | vad | `snakers4/silero-vad` | MIT | permissiva | candidato | <https://api.github.com/repos/snakers4/silero-vad/license> | 2026-10-15 |
 
 **Barrados** (verificados e recusados pela ADR-0011): `jinaai/jina-reranker-v2-base-multilingual` (CC-BY-NC-4.0), `coqui/XTTS-v2` (coqui-public-model-license).
+
+## Ferramentas externas
+
+Programas do sistema usados pelo repositório, de `licenses/ferramentas-externas.toml`. Estado
+`fora_do_produto` significa que a ferramenta roda só na geração de dado, em processo separado;
+copyleft forte com estado `em_uso` **bloqueia** a porta.
+
+| ferramenta | licença | categoria | estado | fonte | acesso |
+|---|---|---|---|---|---|
+| `espeak-ng 1.52.0` | GPL-3.0 | copyleft_forte | fora_do_produto | <https://api.github.com/repos/espeak-ng/espeak-ng/license> | 2026-10-15 |

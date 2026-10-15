@@ -1,0 +1,31 @@
+# Ferramentas externas: programas do sistema usados pelo repositório, com licença verificada
+# na origem (ADR-0012, cartão F1-02).
+#
+# Por que existe um registro separado dos modelos: um binário de sistema não aparece no
+# inventário de pacotes Python e, mesmo assim, pode contaminar o produto. Aqui ficam a licença,
+# a origem e — o que mais importa — se a ferramenta está `fora_do_produto` (roda só na geração
+# de dado, em processo separado) ou `em_uso` (no caminho do produto).
+#
+# Regra que a porta de licença impõe (`tools/license_gate.py`):
+#   - não comercial: bloqueia sempre, em qualquer estado;
+#   - copyleft forte (GPL/AGPL/SSPL) com estado `em_uso`: **bloqueia** — abrir o produto não é
+#     uma decisão que uma dependência toma por nós;
+#   - copyleft forte `fora_do_produto`: aviso, com a justificativa abaixo.
+
+data_da_verificacao = "2026-10-15"
+verificado_por = "executor"
+
+[[ferramenta]]
+id = "espeak-ng"
+papel = "fonemizador do gerador de corpus (texto pt-BR → IPA)"
+licenca = "GPL-3.0"
+estado = "fora_do_produto"
+versao = "1.52.0"
+fonte = "https://api.github.com/repos/espeak-ng/espeak-ng/license"
+data_de_acesso = "2026-10-15"
+nota = """Roda só em tools/corpus_sintetico.py, em processo separado, para gerar o corpus \
+sintético: o áudio produzido é dado, não obra derivada do programa. O produto não liga, não \
+distribui e não depende de espeak-ng — o caminho de TTS do v1 (cartão F1-09) escolhe voz com \
+licença permissiva e fonemização própria ou embutida no modelo. É também por isso que o pacote \
+`piper-tts` do PyPI (GPL-3.0-or-later, por ligar o espeak-ng) NÃO entrou: a voz é lida direto \
+do .onnx com onnxruntime (MIT)."""

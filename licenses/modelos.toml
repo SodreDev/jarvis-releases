@@ -133,6 +133,21 @@ data_de_acesso = "2026-10-15"
 nota = "Vozes individuais podem ter licença própria (CC-BY-SA em algumas): verificar a voz escolhida em F1."
 
 [[modelo]]
+id = "rhasspy/piper-voices:pt_BR-faber-medium"
+papel = "tts"
+licenca = "MIT"
+estado = "em_uso"
+fonte = "https://huggingface.co/api/models/rhasspy/piper-voices"
+revisao = "c10ece1aade4"
+data_de_acesso = "2026-10-15"
+nota = """Voz do corpus sintético (cartão F1-02), verificada VOZ POR VOZ no MODEL_CARD: \
+pt/pt_BR/faber/medium tem dataset CC0 (github.com/OHF-Voice/voice-datasets) sob repositório \
+MIT, então não carrega obrigação de atribuição. As outras pt-BR foram verificadas também: \
+cadu e jeff são CC0; edresson é CC BY 4.0 (atribuição) e por isso não foi escolhida. A \
+inferência é onnxruntime (MIT) lendo o .onnx; o pacote piper-tts do PyPI é GPL-3.0-or-later e \
+ficou fora (ver licenses/ferramentas-externas.toml)."""
+
+[[modelo]]
 id = "coqui/XTTS-v2"
 papel = "tts"
 licenca = "coqui-public-model-license"

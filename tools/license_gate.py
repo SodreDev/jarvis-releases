@@ -33,6 +33,8 @@ from typing import Any, Final
 RAIZ: Final = Path(__file__).resolve().parent.parent
 ARQUIVO_MODELOS: Final = RAIZ / "licenses" / "modelos.toml"
 ARQUIVO_EXCECOES: Final = RAIZ / "licenses" / "dependencias-sem-metadados.toml"
+ARQUIVO_FERRAMENTAS: Final = RAIZ / "licenses" / "ferramentas-externas.toml"
+TIPO_FERRAMENTA: Final = "ferramenta externa"
 ARQUIVO_TABELA: Final = RAIZ / "docs" / "licencas.md"
 
 
@@ -151,10 +153,22 @@ class Item:
 
     @property
     def bloqueia(self) -> bool:
-        """Falha a porta? Não comercial sempre; desconhecida só no que está em uso."""
+        """Falha a porta? Não comercial sempre; copyleft forte quando entra no produto.
+
+        Ferramenta externa (binário do sistema) com GPL/AGPL/SSPL e estado `em_uso` **bloqueia**:
+        abrir o derivado é decisão do dono, não de uma dependência que entrou de lado. A mesma
+        ferramenta com estado `fora_do_produto` (geração de dado, em processo separado) só gera
+        aviso — é o caso do espeak-ng no cartão F1-02.
+        """
         if self.estado == "barrado":
             return False  # registrado justamente para ficar fora
         if self.categoria is Categoria.NAO_COMERCIAL:
+            return True
+        if (
+            self.tipo == TIPO_FERRAMENTA
+            and self.categoria is Categoria.COPYLEFT_FORTE
+            and self.estado == "em_uso"
+        ):
             return True
         return self.categoria is Categoria.DESCONHECIDA and self.estado == "em_uso"
 
@@ -230,13 +244,35 @@ def inventariar_modelos(arquivo: Path = ARQUIVO_MODELOS) -> list[Item]:
     return sorted(itens, key=lambda i: (i.tipo, i.nome.lower()))
 
 
-def conferir_online(modelos: Iterable[Item], arquivo: Path = ARQUIVO_MODELOS) -> list[str]:
+def inventariar_ferramentas(arquivo: Path = ARQUIVO_FERRAMENTAS) -> list[Item]:
+    """Programas do sistema que o repositório usa (não aparecem no inventário de pacotes)."""
+    if not arquivo.exists():
+        return []
+    dados = tomllib.loads(arquivo.read_text(encoding="utf-8"))
+    itens = [
+        Item(
+            tipo=TIPO_FERRAMENTA,
+            nome=f"{ferramenta['id']} {ferramenta.get('versao', '')}".strip(),
+            licenca=str(ferramenta["licenca"]),
+            origem=str(ferramenta["fonte"]),
+            estado=str(ferramenta.get("estado", "em_uso")),
+            data_de_acesso=str(ferramenta.get("data_de_acesso", "")),
+            nota=str(ferramenta.get("nota", "")),
+        )
+        for ferramenta in dados.get("ferramenta", [])
+    ]
+    return sorted(itens, key=lambda i: i.nome.lower())
+
+
+def conferir_online(
+    modelos: Iterable[Item], arquivo: Path = ARQUIVO_MODELOS, *, chave: str = "modelo"
+) -> list[str]:
     """Compara a licença registrada com o model card oficial. Devolve as divergências."""
     dados = tomllib.loads(arquivo.read_text(encoding="utf-8"))
-    por_id = {str(m["id"]): m for m in dados.get("modelo", [])}
+    por_id = {str(m["id"]): m for m in dados.get(chave, [])}
     divergencias: list[str] = []
     for item in modelos:
-        registro = por_id[item.nome]
+        registro = por_id.get(item.nome) or por_id[item.nome.rsplit(" ", 1)[0]]
         fonte = str(registro["fonte"])
         if not fonte.startswith("https://"):
             divergencias.append(f"{item.nome}: fonte não é https ({fonte})")
@@ -284,8 +320,19 @@ Refazer a verificação na origem: `tools/license_gate.py --online`.
 |---|---|---|---|---|---|---|
 """
 
+SECAO_FERRAMENTAS: Final = """
+## Ferramentas externas
 
-def tabela_de_modelos(modelos: Sequence[Item]) -> str:
+Programas do sistema usados pelo repositório, de `licenses/ferramentas-externas.toml`. Estado
+`fora_do_produto` significa que a ferramenta roda só na geração de dado, em processo separado;
+copyleft forte com estado `em_uso` **bloqueia** a porta.
+
+| ferramenta | licença | categoria | estado | fonte | acesso |
+|---|---|---|---|---|---|
+"""
+
+
+def tabela_de_modelos(modelos: Sequence[Item], ferramentas: Sequence[Item] = ()) -> str:
     """Tabela markdown dos modelos — é o que fica comitado em `docs/licencas.md`."""
     linhas = [
         f"| {item.tipo.removeprefix('modelo/')} | `{item.nome}` | {item.licenca} "
@@ -297,7 +344,18 @@ def tabela_de_modelos(modelos: Sequence[Item]) -> str:
         + ", ".join(f"`{i.nome}` ({i.licenca})" for i in modelos if i.estado == "barrado")
         + ".\n"
     )
-    return CABECALHO_TABELA + "\n".join(linhas) + "\n" + rodape
+    tabela = CABECALHO_TABELA + "\n".join(linhas) + "\n" + rodape
+    if ferramentas:
+        tabela += (
+            SECAO_FERRAMENTAS
+            + "\n".join(
+                f"| `{item.nome}` | {item.licenca} | {item.categoria} | {item.estado} "
+                f"| <{item.origem}> | {item.data_de_acesso} |"
+                for item in ferramentas
+            )
+            + "\n"
+        )
+    return tabela
 
 
 def imprimir_tabela(itens: Sequence[Item]) -> None:
@@ -318,6 +376,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     analisador.add_argument(
         "--modelos", type=Path, default=ARQUIVO_MODELOS, help="outro registro de modelos"
+    )
+    analisador.add_argument(
+        "--ferramentas",
+        type=Path,
+        default=ARQUIVO_FERRAMENTAS,
+        help="outro registro de ferramentas externas",
     )
     analisador.add_argument(
         "--pasta-pacotes",
@@ -344,17 +408,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     modelos = inventariar_modelos(args.modelos)
     dependencias = inventariar_dependencias(args.pasta_pacotes)
-    itens = [*modelos, *dependencias]
+    ferramentas = inventariar_ferramentas(args.ferramentas)
+    itens = [*modelos, *dependencias, *ferramentas]
 
     if args.tabela:
         imprimir_tabela(itens)
 
     if args.escrever_tabela:
-        ARQUIVO_TABELA.write_text(tabela_de_modelos(modelos), encoding="utf-8")
+        ARQUIVO_TABELA.write_text(tabela_de_modelos(modelos, ferramentas), encoding="utf-8")
         print(f"tabela escrita em {ARQUIVO_TABELA.relative_to(RAIZ)}")
 
     if args.verificar_tabela:
-        esperada = tabela_de_modelos(modelos)
+        esperada = tabela_de_modelos(modelos, ferramentas)
         atual = ARQUIVO_TABELA.read_text(encoding="utf-8") if ARQUIVO_TABELA.exists() else ""
         if atual != esperada:
             print(
@@ -366,6 +431,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.online:
         print("\nconferindo os model cards na origem:")
         divergencias = conferir_online(modelos, args.modelos)
+        divergencias += conferir_online(ferramentas, args.ferramentas, chave="ferramenta")
         for divergencia in divergencias:
             print(f"DIVERGÊNCIA: {divergencia}")
         if divergencias:
@@ -378,7 +444,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(
         f"\nporta de licença: {len(modelos)} modelos, {len(dependencias)} dependências, "
-        f"{len(barrados)} barrados por registro"
+        f"{len(ferramentas)} ferramenta(s) externa(s), {len(barrados)} barrados por registro"
     )
     for item in atribuicoes:
         print(f"ATRIBUIÇÃO OBRIGATÓRIA: {item.nome} ({item.licenca}) — tem de aparecer no produto")

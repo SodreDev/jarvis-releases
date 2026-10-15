@@ -17,8 +17,12 @@
       "sha256": "b140297b546745e4b5df8522f9c90a714a49d825493bc9a0370e631dc63af71d"
     },
     "turnos/README.md": {
-      "bytes": 799,
-      "sha256": "74c1bae2a1755cb5381d0823ad89bf45574306ff3ac649a1649bf4cd429931a5"
+      "bytes": 5363,
+      "sha256": "7f9e1d84310e24056a6537f7aa1aa077d5d6a1dd05abae2c0a9e389a1040abca"
+    },
+    "turnos/rotulos.jsonl": {
+      "bytes": 301103,
+      "sha256": "dca29d51eafdd60001881aa5c4c377b58c60511aebfb2ace4ec4f6d155b9d327"
     }
   },
   "descricao": "sha256 de cada arquivo do corpus (cartão F0-08). Gerado; não editar.",

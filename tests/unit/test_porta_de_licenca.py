@@ -16,6 +16,7 @@ from tools.license_gate import (
     Categoria,
     classificar,
     inventariar_dependencias,
+    inventariar_ferramentas,
     inventariar_modelos,
     main,
 )
@@ -163,3 +164,67 @@ def test_porta_roda_como_processo_do_zero() -> None:
     assert concluido.returncode == 0, concluido.stdout + concluido.stderr
     assert "OK: nenhuma licença não comercial" in concluido.stdout
     assert ARQUIVO_MODELOS.exists()
+
+
+FERRAMENTA_FORA = """
+data_da_verificacao = "2026-10-15"
+verificado_por = "teste"
+
+[[ferramenta]]
+id = "espeak-ng"
+papel = "fonemizador do gerador de corpus"
+licenca = "GPL-3.0"
+estado = "fora_do_produto"
+fonte = "https://api.github.com/repos/espeak-ng/espeak-ng/license"
+data_de_acesso = "2026-10-15"
+"""
+FERRAMENTA_NO_PRODUTO = FERRAMENTA_FORA.replace("fora_do_produto", "em_uso")
+FERRAMENTA_NAO_COMERCIAL = FERRAMENTA_FORA.replace("GPL-3.0", "CC-BY-NC-4.0")
+
+
+def test_copyleft_forte_fora_do_produto_avisa_mas_nao_bloqueia(tmp_path: Path) -> None:
+    """Cartão F1-02: o espeak-ng gera o corpus em processo separado e não entra no produto."""
+    arquivo = tmp_path / "ferramentas.toml"
+    arquivo.write_text(FERRAMENTA_FORA, encoding="utf-8")
+
+    assert main(["--ferramentas", str(arquivo)]) == 0
+
+    itens = inventariar_ferramentas(arquivo)
+    assert [i.categoria for i in itens] == [Categoria.COPYLEFT_FORTE]
+    assert not any(i.bloqueia for i in itens)
+
+
+def test_a_mesma_ferramenta_no_caminho_do_produto_bloqueia(tmp_path: Path) -> None:
+    """Abrir o derivado é decisão do dono, não de uma dependência que entrou de lado."""
+    arquivo = tmp_path / "ferramentas.toml"
+    arquivo.write_text(FERRAMENTA_NO_PRODUTO, encoding="utf-8")
+
+    assert main(["--ferramentas", str(arquivo)]) == 1
+    assert all(i.bloqueia for i in inventariar_ferramentas(arquivo))
+
+
+def test_ferramenta_nao_comercial_bloqueia_mesmo_fora_do_produto(tmp_path: Path) -> None:
+    """Dado gerado por ferramenta não comercial é dado contaminado (ADR-0011)."""
+    arquivo = tmp_path / "ferramentas.toml"
+    arquivo.write_text(FERRAMENTA_NAO_COMERCIAL, encoding="utf-8")
+
+    assert main(["--ferramentas", str(arquivo)]) == 1
+
+
+def test_o_registro_do_repositorio_tem_o_espeak_fora_do_produto() -> None:
+    registro = {i.nome.split()[0]: i for i in inventariar_ferramentas()}
+
+    assert registro["espeak-ng"].estado == "fora_do_produto"
+    assert registro["espeak-ng"].categoria is Categoria.COPYLEFT_FORTE
+    assert "piper-tts" in registro["espeak-ng"].nota
+
+
+def test_a_voz_do_corpus_esta_verificada_voz_por_voz() -> None:
+    """Cartão F1-02: a voz escolhida tem licença permissiva e dataset CC0, com fonte oficial."""
+    registro = {m.nome: m for m in inventariar_modelos()}
+    voz = registro["rhasspy/piper-voices:pt_BR-faber-medium"]
+
+    assert voz.categoria is Categoria.PERMISSIVA
+    assert voz.estado == "em_uso"
+    assert voz.origem.startswith("https://huggingface.co/api/models/")
+    assert "CC0" in voz.nota and "edresson" in voz.nota
