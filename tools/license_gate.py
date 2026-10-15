@@ -36,6 +36,11 @@ ARQUIVO_EXCECOES: Final = RAIZ / "licenses" / "dependencias-sem-metadados.toml"
 ARQUIVO_FERRAMENTAS: Final = RAIZ / "licenses" / "ferramentas-externas.toml"
 TIPO_FERRAMENTA: Final = "ferramenta externa"
 ARQUIVO_TABELA: Final = RAIZ / "docs" / "licencas.md"
+ARQUIVOS_DE_ATRIBUICAO: Final[tuple[Path, ...]] = (
+    RAIZ / "NOTICE",
+    RAIZ / "README.md",
+)
+"""Onde a atribuição obrigatória (CC-BY) tem de aparecer, além da tela "sobre" da `ui`."""
 
 
 class Categoria(StrEnum):
@@ -306,6 +311,43 @@ def _licenca_do_card(card: dict[str, Any]) -> str:
     return nome if declarada == "other" and nome else declarada
 
 
+def conferir_atribuicao(
+    modelos: Sequence[Item], *, arquivos: Sequence[Path] = ARQUIVOS_DE_ATRIBUICAO
+) -> list[str]:
+    """Aceite (d) do cartão F1-06: atribuição obrigatória que não está no produto é falha.
+
+    Vale para modelo `em_uso` **e** `candidato`: a CC-BY pede atribuição em qualquer uso ou
+    distribuição de material derivado, e as tabelas de medição que publicamos são material
+    derivado. Modelo `barrado` não precisa — ele existe no registro justamente para ficar fora.
+    """
+    from jarvis.ui.sobre import texto_sobre
+
+    obrigados = [
+        item
+        for item in modelos
+        if item.categoria is Categoria.ATRIBUICAO and item.estado != "barrado"
+    ]
+    faltando: list[str] = []
+    for item in obrigados:
+        for arquivo in arquivos:
+            if not arquivo.exists():
+                faltando.append(f"{arquivo.name} não existe e a atribuição tem de estar lá")
+                continue
+            if item.nome not in arquivo.read_text(encoding="utf-8"):
+                faltando.append(f"{item.nome} ({item.licenca}) não aparece em {arquivo.name}")
+    try:
+        sobre = texto_sobre()
+    except OSError as erro:  # pragma: no cover
+        faltando.append(f"tela 'sobre' não pôde ser lida: {erro}")
+    else:
+        faltando += [
+            f"{item.nome} ({item.licenca}) não aparece na tela 'sobre' da ui"
+            for item in obrigados
+            if item.nome not in sobre
+        ]
+    return faltando
+
+
 CABECALHO_TABELA: Final = """# Licenças dos modelos — tabela licença × modelo × fonte
 
 Gerado por `tools/license_gate.py --escrever-tabela` a partir de `licenses/modelos.toml`.
@@ -400,6 +442,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="falha se a tabela comitada estiver desatualizada (é o que o CI roda)",
     )
     analisador.add_argument(
+        "--verificar-atribuicao",
+        action="store_true",
+        help="falha se a atribuição de um modelo CC-BY não estiver no NOTICE, README e ui",
+    )
+    analisador.add_argument(
         "--estrito-copyleft",
         action="store_true",
         help="trata copyleft forte (GPL/AGPL/SSPL) como bloqueio, não como aviso",
@@ -427,6 +474,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{args.modelos.name}; rode --escrever-tabela"
             )
             return 3
+
+    if args.verificar_atribuicao:
+        faltando = conferir_atribuicao(modelos)
+        for falta in faltando:
+            print(f"ATRIBUIÇÃO FALTANDO: {falta}")
+        if faltando:
+            print(
+                f"\nFALHOU: {len(faltando)} atribuição(ões) obrigatória(s) fora do produto "
+                "(CC-BY exige atribuição; ver NOTICE)"
+            )
+            return 4
 
     if args.online:
         print("\nconferindo os model cards na origem:")

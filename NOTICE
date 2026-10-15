@@ -1,0 +1,29 @@
+# NOTICE — atribuições obrigatórias
+
+Este arquivo cumpre obrigação de licença, não cortesia. Ele é **verificado por máquina**:
+`tools/license_gate.py --verificar-atribuicao` falha se um modelo de licença com atribuição
+obrigatória (CC-BY e família) estiver registrado em `licenses/modelos.toml` e **não** aparecer
+aqui, no `README.md` e na tela "sobre" da interface. Apagar uma linha deste arquivo quebra o CI
+(cartão F1-06, aceite (d)).
+
+J.A.R.V.I.S © SodreDev. Licença do projeto: Apache-2.0 (ver LICENSE).
+
+## Modelos com atribuição obrigatória
+
+- **nvidia/parakeet-tdt-0.6b-v2** — © NVIDIA Corporation, licenciado sob
+  [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Modelo de **inglês**; registrado e
+  não usado em pt-BR.
+- **nvidia/parakeet-tdt-0.6b-v3** — © NVIDIA Corporation, licenciado sob
+  [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Reconhecimento de fala multilíngue
+  (25 idiomas, português incluído).
+
+## Outros componentes de terceiros (sem obrigação de atribuição, registrados por clareza)
+
+- `openai/whisper-small` e `openai/whisper-large-v3` — Apache-2.0.
+- `rhasspy/piper-voices`, voz `pt_BR-faber-medium` — repositório MIT, *dataset* CC0.
+- `snakers4/silero-vad` — MIT.
+- `espeak-ng` — GPL-3.0, usado **fora do produto**, só na geração do corpus sintético
+  (`licenses/ferramentas-externas.toml`).
+
+A tabela completa, com licença, categoria, estado e fonte oficial de cada item, está em
+`docs/licencas.md`, gerada por `tools/license_gate.py` — nunca editada à mão.

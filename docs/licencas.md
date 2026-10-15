@@ -11,7 +11,9 @@ Refazer a verificação na origem: `tools/license_gate.py --online`.
 | papel | modelo | licença | categoria | estado | fonte | acesso |
 |---|---|---|---|---|---|---|
 | asr | `nvidia/parakeet-tdt-0.6b-v2` | CC-BY-4.0 | atribuicao | candidato | <https://huggingface.co/api/models/nvidia/parakeet-tdt-0.6b-v2> | 2026-10-15 |
+| asr | `nvidia/parakeet-tdt-0.6b-v3` | CC-BY-4.0 | atribuicao | candidato | <https://huggingface.co/api/models/nvidia/parakeet-tdt-0.6b-v3> | 2026-10-15 |
 | asr | `openai/whisper-large-v3` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/openai/whisper-large-v3> | 2026-10-15 |
+| asr | `openai/whisper-small` | Apache-2.0 | permissiva | em_uso | <https://huggingface.co/api/models/openai/whisper-small> | 2026-10-15 |
 | embedding | `BAAI/bge-m3` | MIT | permissiva | candidato | <https://huggingface.co/api/models/BAAI/bge-m3> | 2026-10-15 |
 | embedding | `intfloat/multilingual-e5-base` | MIT | permissiva | candidato | <https://huggingface.co/api/models/intfloat/multilingual-e5-base> | 2026-10-15 |
 | embedding | `Qwen/Qwen3-Embedding-0.6B` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/Qwen/Qwen3-Embedding-0.6B> | 2026-10-15 |

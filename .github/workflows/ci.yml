@@ -62,4 +62,6 @@ jobs:
 
       # ADR-0011: nada não comercial entra. Roda offline, com a tabela comitada.
       - name: porta de licença
-        run: uv run --frozen python tools/license_gate.py --verificar-tabela --tabela
+        run: |
+          uv run --frozen python tools/license_gate.py --verificar-tabela --tabela
+          uv run --frozen python tools/license_gate.py --verificar-atribuicao

@@ -33,6 +33,12 @@ medicao = [
 corpus = [
   "onnxruntime>=1.20,<2",
 ]
+# Só para medir o ASR (cartão F1-06): runtime do whisper em CTranslate2. NÃO entra no CI nem
+# no produto — a escolha do ASR do v1 é do F1-16, depois do WER em voz real.
+# faster-whisper MIT, ctranslate2 MIT, tokenizers Apache-2.0, av BSD-3 (FFmpeg LGPL).
+asr = [
+  "faster-whisper>=1.1,<2",
+]
 dev = [
   "mypy>=1.14,<2",
   "pytest>=8.3,<9",
@@ -97,7 +103,7 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 # o CI não instala. numpy virou dependência do produto na F1-04 e traz os próprios tipos, por
 # isso saiu desta lista.
 [[tool.mypy.overrides]]
-module = ["onnxruntime", "onnxruntime.*"]
+module = ["onnxruntime", "onnxruntime.*", "faster_whisper", "faster_whisper.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -423,3 +423,107 @@ O detector tem de olhar a pausa em curso, não o desligamento do VAD.
 - O peso do silero **não** é versionado: sem ele, `vad_do_ambiente()` cai no VAD de energia (com
   o nome dele no relatório) e os testes do silero são pulados. O CI pula, e isso está dito.
 - Windows: o código é portável, a medição foi só em Linux.
+
+---
+
+## F1-06 — ASR incremental, com a atribuição CC-BY como teste
+
+### O alerta de fato do cartão: resolvido na origem
+
+O cartão mandava resolver, dentro dele, se o `parakeet` serve para pt-BR. Verificado na origem
+(API do Hugging Face, `tools/license_gate.py --online` confere o mesmo campo):
+
+| modelo | licença | idiomas | veredito |
+|---|---|---|---|
+| `nvidia/parakeet-tdt-0.6b-v2` | CC-BY-4.0 | **1** (`en`) | **não serve** para pt-BR; fica registrado para ninguém escolher por engano |
+| `nvidia/parakeet-tdt-0.6b-v3` | CC-BY-4.0 | **25**, com `pt` | a `[SUPOSIÇÃO]` do arquiteto **se sustenta**; é o candidato de pt-BR |
+| `openai/whisper-large-v3` | Apache-2.0 | 99, com `pt` | controle, sem obrigação de atribuição |
+| `openai/whisper-small` | Apache-2.0 | 99, com `pt` | **o que rodou** nesta medição |
+
+O `parakeet-tdt-0.6b-v3` **não foi executado**: o runtime é o NeMo, pesado e orientado a GPU.
+Isso está declarado na tabela de licenças, no relatório e aqui — e a escolha entre ele e o
+whisper é do F1-16, com voz real.
+
+### A atribuição virou portão, em três lugares
+
+CC-BY exige atribuição **no produto**. Então ela está em `NOTICE`, no `README.md` e na tela
+"sobre" da `ui` (`jarvis.ui.sobre`, que monta o texto a partir de `licenses/modelos.toml` — a
+mesma fonte da porta, para a lista não envelhecer à mão). E
+`tools/license_gate.py --verificar-atribuicao` **falha** se algum modelo com atribuição
+obrigatória não aparecer nos três. Está no `verificar.py` e no CI.
+
+Vale para `em_uso` **e** `candidato`, de propósito: a CC-BY pede atribuição em qualquer uso ou
+distribuição de material derivado, e as tabelas de medição que publicamos são material
+derivado. Só `barrado` fica de fora — ele existe no registro para ficar fora.
+
+O aceite (d) é um teste que roda o portão como processo, apaga a linha do `NOTICE`, exige
+código de saída 4 e restaura o arquivo. Apagar a linha quebra o CI de verdade, não por
+convenção.
+
+### Incremental sem modelo streaming: janela crescente + acordo de prefixo
+
+O `whisper` transcreve bloco, não fluxo. A cada 200 ms o transcritor refaz a transcrição do
+turno **inteiro até agora** e compara com a hipótese anterior; o prefixo em que as duas
+concordam é o que já dá para usar, e `stability` é essa fração. "Utilizável" é
+`stability >= 0,6`, **escrito antes de medir** (aceite (b)) — mexer no limiar depois de ver o
+resultado seria escolher o número.
+
+O coalescing não é esperteza do transcritor: `PartialTranscript` está em `TIPOS_COALESCIVEIS`
+desde a F0-02, o barramento derruba dez hipóteses do mesmo instante a uma, e o `s2` ganhou a
+reação que faltava (`PartialTranscript → StateRevision`). O teste publica dez parciais em
+200 ms na fila e afirma: **uma** sobrevivente, **uma** revisão de estado.
+
+### Lacuna de contrato encontrada (para o dono decidir)
+
+O diagrama da §2 manda "frames + PlaybackProgress" do `audio-io` para o `agentd`, mas **nenhum
+dos onze tipos da §3.2 carrega PCM**. Então hoje o ASR é exercitado sobre arquivo (que é o que
+o cartão pede) e **não existe caminho de áudio entre os dois processos**. Isso é decisão de
+contrato — emenda à SPEC com um canal fora do barramento (memória compartilhada ou socket
+dedicado, com o `epoch` no cabeçalho) — e não cabe em um cartão de ASR. Fica registrado para o
+F1-10/F1-16 ou para uma ADR própria.
+
+### Números medidos (`docs/medicoes/f1-06-asr.md`), 24 itens do split `calibracao`
+
+| motor | modelo | WER médio | WER p50 | CER | SLO-3 p50 | SLO-3 p95 | atinge SLO-3? | RTF de parede |
+|---|---|---:|---:|---:|---:|---:|:--|---:|
+| `incremental+faster-whisper@small` | `openai/whisper-small` | 0,089 | 0,000 | 0,027 | 1007 ms | 1362 ms | **não** | 6,02× |
+| `incremental+oráculo-do-rótulo@1` | (nenhum) | 0,000 | 0,000 | 0,000 | 345 ms | 457 ms | **não** | 0,00× |
+
+O alvo da SPEC §7 é p50 ≤ 250 ms e p95 ≤ 450 ms (marcado lá como **hipótese, não
+compromisso**). Dois problemas diferentes aparecem no mesmo número:
+
+1. **O modelo não cabe no tempo real desta máquina.** RTF de parede 6,02× (p95 8,17×) e de CPU
+   25,48×: a janela crescente re-transcreve o turno inteiro a cada passo, então o custo cresce
+   com o quadrado da duração. Com `whisper-small` em CPU, **não dá** para rodar ao vivo.
+2. **O passo domina o SLO-3, e isso é independente do modelo.** O estudo em
+   `docs/medicoes/f1-06-asr-passo.md` roda só o oráculo (custo zero) variando o passo:
+
+| passo | SLO-3 p50 | SLO-3 p95 | atinge o alvo? |
+|---:|---:|---:|:--|
+| 100 ms | **162 ms** | **257 ms** | **sim** |
+| 200 ms | 345 ms | 457 ms | não |
+| 400 ms | 1007 ms | 1439 ms | não |
+
+Ou seja: o acordo de prefixo precisa de **dois passos** para existir, então o piso do SLO-3 é
+~2× o passo. Com passo de 100 ms o encanamento cabe no alvo; o que sobra como problema é
+exclusivamente o custo do modelo.
+
+**Recomendação com número, para o F1-16:** passo de 100 ms **e** ASR *streaming*. Um transducer
+como o `parakeet-tdt` decodifica por quadro e não refaz o passado — é a diferença entre RTF 6×
+e RTF < 1 —, e o `parakeet-tdt-0.6b-v3` já está verificado na origem para pt-BR (CC-BY-4.0, com
+a atribuição já em portão). Não mexi no alvo do SLO-3: ele está marcado como hipótese na SPEC e
+quem o recalibra é o dono, com voz real.
+
+### Não verificado
+
+- **WER na voz do dono**, com o microfone e o ruído dele, sotaque, nome próprio e termo do
+  domínio: F1-15 (corpus real) e F1-16 (aceite). O WER de 0,089 é sobre **TTS sintético**, que
+  é material fácil — piso otimista, e a ressalva está no relatório.
+- **SLO-3 ao vivo**: aqui é tempo de **áudio** sobre arquivo. Ao vivo entram captura, AEC, VAD
+  e a fila do driver.
+- **`parakeet-tdt-0.6b-v3` não foi executado** (runtime NeMo, orientado a GPU) e
+  **`whisper-large-v3` também não** (3 GB). Rodou o `whisper-small`, mesma família e licença.
+- **n = 24**: amostra equilibrada entre fim de turno e hesitação, declarada na tabela. Medir os
+  350 itens do split com esta estratégia custaria ~2 h de CPU, e o número que importa (voz
+  real) é de outro cartão.
+- Windows: a medição rodou só em Linux.

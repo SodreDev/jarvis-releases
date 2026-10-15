@@ -21,11 +21,39 @@ def reagir(processo: Processo, envelope: Envelope, veredito: str) -> list[Envelo
     if envelope.type is Tipo.CANCEL:
         processo.epoch = envelope.epoch
         return []
+    if envelope.type is Tipo.PARTIAL_TRANSCRIPT:
+        # Cartão F1-06, §3.4: o parcial é **hipótese**. Dez parciais em 200 ms não viram dez
+        # raciocínios: o barramento coalesce (PartialTranscript está em TIPOS_COALESCIVEIS) e o
+        # que chega aqui é a hipótese mais nova — uma revisão de estado, não dez.
+        return [_revisao_de_hipotese(processo, envelope)]
     if envelope.type is Tipo.FINAL_TRANSCRIPT:
         return [_pedido_de_tool(processo, envelope)]
     if envelope.type is Tipo.TOOL_RESULT and veredito != "aceitar_stale":
         return [_revisao_de_estado(processo, envelope)]
     return []
+
+
+def _revisao_de_hipotese(processo: Processo, origem: Envelope) -> Envelope:
+    """Revisão de estado a partir de um parcial: o que o dono parece estar pedindo, por ora."""
+    return Envelope(
+        session_id=processo.session_id,
+        epoch=origem.epoch,
+        source="s2",
+        trust=Trust.SYSTEM,
+        priority=Prioridade.P2,
+        type=Tipo.STATE_REVISION,
+        payload={
+            "task_id": f"hipotese-{origem.epoch}",
+            "epoch": origem.epoch,
+            "objetivo": "entender o pedido em curso",
+            "evidencia": [],
+            "incertezas": ["transcrição parcial, pode mudar"],
+            "tarefas": [{"id": f"hipotese-{origem.epoch}", "estado": "Draft"}],
+            "fala_ouvida": str(origem.payload["text"]),
+            "audio_tocado_ms": 0,
+            "cenario": {"nome": "trabalho", "p": 0.5, "ttl_s": 300},
+        },
+    )
 
 
 def _pedido_de_tool(processo: Processo, origem: Envelope) -> Envelope:

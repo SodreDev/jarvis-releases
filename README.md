@@ -84,3 +84,16 @@ captura→evento, D1 reabre e esses dois processos voltam a ser candidatos a Rus
 Apache-2.0 (uso comercial permitido, concessão de patente explícita) — ver [`LICENSE`](LICENSE) e
 [ADR-0011](docs/adr/0011-reranker-licenca-comercial.md). Nenhuma dependência ou modelo com
 cláusula não comercial entra no repositório; o CI verifica isso em todo commit.
+
+## Atribuições
+
+Componentes de terceiros com **atribuição obrigatória** (CC-BY), que aparecem também na tela
+"sobre" da interface e em `NOTICE`:
+
+- **nvidia/parakeet-tdt-0.6b-v2** — © NVIDIA Corporation, CC-BY-4.0.
+- **nvidia/parakeet-tdt-0.6b-v3** — © NVIDIA Corporation, CC-BY-4.0.
+
+A lista completa de licenças (modelos, dependências e ferramentas externas) está em
+`docs/licencas.md`, gerada por `tools/license_gate.py`. A verificação é parte do CI:
+`tools/license_gate.py --verificar-atribuicao` falha se a atribuição sair de qualquer um dos
+três lugares.
