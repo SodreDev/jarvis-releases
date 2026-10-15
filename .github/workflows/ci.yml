@@ -45,6 +45,13 @@ jobs:
       - name: testes
         run: uv run --frozen pytest
 
+      # SPEC §4: manifesto é verificado por máquina, e stub velho não entra.
+      - name: manifestos e catálogo
+        run: |
+          uv run --frozen python tools/manifesto.py validar
+          uv run --frozen python tools/manifesto.py lint
+          uv run --frozen python tools/manifesto.py conferir
+
       # ADR-0011: nada não comercial entra. Roda offline, com a tabela comitada.
       - name: porta de licença
         run: uv run --frozen python tools/license_gate.py --verificar-tabela --tabela

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jarvis.invalid/schemas/manifesto.v1.json",
+  "title": "Manifesto de capacidade (SPEC §4), versão 1",
+  "description": "Contrato versionado em repositório. Campos de política (risk_class, confirmation, data_egress, access_level_min, roots, requires_elevation) são NOSSOS: não vêm do LLM nem de servidor remoto (§4, ADR-0010 item 5).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "title", "description", "input_schema", "output_schema", "preconditions",
+    "postcondition", "capability", "risk_class", "side_effect", "reversible", "idempotent",
+    "idempotency", "data_egress", "pii_touch", "confirmation", "access_level_min", "roots",
+    "requires_elevation", "timeout_ms", "cancellable", "platforms", "executor", "trust_input",
+    "tests", "version"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "domínio.objeto.verbo",
+      "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$",
+      "maxLength": 64
+    },
+    "title": { "type": "string", "minLength": 3, "maxLength": 80 },
+    "description": {
+      "type": "string",
+      "minLength": 40,
+      "description": "Passa no teste do estagiário: diz quando usar e o que NÃO faz (§4)."
+    },
+    "input_schema": { "$ref": "#/$defs/schema_fechado" },
+    "output_schema": { "type": "object", "required": ["type"] },
+    "preconditions": { "type": "array", "items": { "type": "string" } },
+    "postcondition": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Verificada pelo executor depois do efeito (§2)."
+    },
+    "capability": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" },
+    "risk_class": {
+      "enum": [
+        "leitura", "escrita_recuperavel", "apagar_permanente", "sobrescrita_sem_desfazer",
+        "lote_acima_do_teto", "renomear_em_massa", "egress", "representacao_do_dono",
+        "instalar_ou_executar_baixado", "mudanca_de_sistema", "elevacao",
+        "fora_do_diretorio_do_dono"
+      ]
+    },
+    "side_effect": { "enum": ["none", "ephemeral", "persistent"] },
+    "reversible": { "type": "boolean" },
+    "undo": { "type": "string", "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$" },
+    "idempotent": { "type": "boolean" },
+    "idempotency": { "enum": ["not_required", "required"] },
+    "data_egress": {
+      "type": "string",
+      "pattern": "^(none|local|network:[a-z0-9][a-z0-9_.:-]*)$",
+      "description": "none | local | network:<destino> (§4)."
+    },
+    "pii_touch": { "enum": ["none", "path_only", "metadata", "content", "sensitive"] },
+    "confirmation": { "enum": ["never", "once_per_batch", "per_action", "handoff"] },
+    "access_level_min": { "enum": ["jarvis", "padrao", "concedido", "total"] },
+    "roots": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "jarvis_root", "workspace_root", "Documentos", "Downloads", "Imagens", "Música",
+          "Vídeos", "Área de Trabalho", "concedida", "arvore_do_dono", "sistema"
+        ]
+      }
+    },
+    "requires_elevation": { "type": "boolean" },
+    "timeout_ms": { "type": "integer", "minimum": 50, "maximum": 600000 },
+    "cancellable": { "type": "boolean" },
+    "platforms": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "enum": ["linux-wayland", "linux-x11", "windows"] }
+    },
+    "executor": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "trust_input": { "const": "untrusted" },
+    "tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["contract", "postcondition", "denial", "linux-wayland", "linux-x11", "windows"]
+      }
+    },
+    "version": { "type": "integer", "minimum": 1 },
+    "mcp_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Preenchido só quando a capacidade foi PROMOVIDA de uma tool de servidor MCP (ADR-0010 item 5). A anotação do servidor entra como comentário, nunca como política.",
+      "required": ["server_id", "remote_tool", "server_hash", "tool_list_hash", "promovido_por"],
+      "properties": {
+        "server_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$" },
+        "remote_tool": { "type": "string", "minLength": 1 },
+        "server_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "tool_list_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "promovido_por": { "enum": ["dono", "arquiteto"] },
+        "anotacao_do_servidor": { "type": "object" }
+      }
+    }
+  },
+  "$defs": {
+    "schema_fechado": {
+      "type": "object",
+      "required": ["type", "additionalProperties"],
+      "properties": {
+        "type": { "const": "object" },
+        "additionalProperties": { "const": false },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "properties": { "type": "object" }
+      }
+    }
+  },
+  "x-ids-proibidos": {
+    "descricao": "Canivete suíço: rejeitado em revisão (§4) e pelo lint, inclusive se vier por promoção de MCP (ADR-0010 item 8).",
+    "padroes": [
+      "\\.run_command$", "\\.do_anything$", "\\.exec$", "\\.eval$", "\\.shell$", "^shell\\.",
+      "\\.spawn$", "\\.system$", "\\.any$", "\\.generic$", "\\.sudo$", "_rf$"
+    ]
+  },
+  "x-tools-proibidas-de-promover": {
+    "descricao": "ADR-0010 item 8: a proibição de canivete suíço não se contorna chamando por MCP.",
+    "nomes": ["shell_exec", "ssh_exec", "cli_send", "cli_start", "cli_key", "ui_exec", "run", "bash"]
+  },
+  "x-nucleo-de-conversa": {
+    "descricao": "Sempre visível, 4–8 tools de leitura/controle (§4).",
+    "ids": ["core.status", "core.ask_user", "core.search_catalog", "core.read_notification", "core.cancel"]
+  },
+  "x-tetos-de-catalogo": {
+    "descricao": "Guias de catálogo da §4.",
+    "por_namespace": 10,
+    "por_turno": 12
+  }
+}

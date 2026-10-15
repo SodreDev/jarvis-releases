@@ -450,3 +450,63 @@ orçamento, e o ecossistema de ASR/TTS/ONNX está em Python.
 AEC/NR de verdade, ASR incremental, TTS streaming nem captura de dispositivo real. Se a F1
 medir estouro do SLO-1 ou do SLO-2 com esses componentes, a troca é local (dois processos) e a
 decisão volta — é exatamente para isso que o contrato está em `schemas/` e não em código.
+
+---
+
+## F0-07 — ferramental de manifesto de capacidade
+
+### O contrato do manifesto também é dado
+
+`schemas/manifesto.v1.json` guarda o esquema da §4 com **todos** os enums fechados, e mais
+três listas que o ferramental lê em vez de ter hard-coded: `x-ids-proibidos` (padrões de
+canivete suíço), `x-tools-proibidas-de-promover` (ADR-0010 item 8) e `x-tetos-de-catalogo`.
+
+### O que o validador cobra além do schema
+
+Coerência entre campos, que é onde manifesto errado passa despercebido:
+
+- efeito (`side_effect != none`) exige `idempotency: required` (§3.3 r3) e `confirmation`
+  diferente de `never`;
+- `risk_class: leitura` com efeito é contradição;
+- `requires_elevation: true` exige `confirmation: per_action`;
+- `data_egress: network:*` exige classe de risco de egress — não se manda dado para fora como
+  "leitura";
+- efeito reversível tem de apontar `undo` (leitura não precisa: não muda nada);
+- `access_level_min: jarvis` não pode pedir raiz fora da pasta do Jarvis;
+- `platforms` tem de cobrir Linux **e** Windows (P11), e `tests` tem de incluir `contract`,
+  `postcondition` e `denial`;
+- `id` com 2 a 4 níveis (a §4 pede `domínio.objeto.verbo`);
+- nome do arquivo tem de ser `<id>.yaml`, e id repetido no catálogo é erro.
+
+### Lint de catálogo (§4 e ADR-0010)
+
+Recusa id de canivete suíço, descrição que promete shell ou "qualquer comando", descrição que
+não passa no teste do estagiário (precisa dizer quando usar **e** o que a tool não faz),
+namespace acima do teto, capacidade que mexe em nível de acesso ou elevação (P12, segunda
+barreira além do teste do PDP), e nas promoções de MCP: tool da lista proibida
+(`shell_exec`, `ssh_exec`, `cli_send`…), política vinda da anotação do servidor, `trust_input`
+diferente de `untrusted` e egress de rede classificado como leitura.
+
+### Codegen: o stub vem do contrato
+
+`tools/manifesto.py codegen` gera `src/jarvis/capacidades/<id>.py` com as constantes de
+política, as dataclasses de entrada e saída, `validar_entrada` (recusa argumento fora do
+contrato e argumento obrigatório ausente) e `executar` que levanta `NotImplementedError` —
+porque implementar é das fases seguintes, mas o contrato já é verificável agora.
+
+**Detalhe que custou uma iteração:** o código gerado tem de sair **exatamente** como o
+formatador do projeto o escreveria, senão `conferir` (que compara byte a byte) acusa stub
+velho em todo commit. Por isso o codegen monta tupla de um elemento como `("x",)` e cuida das
+linhas em branco entre blocos.
+
+### No CI
+
+`tools/verificar.py` e o workflow passaram a rodar `validar`, `lint` e `conferir`. Mudar um
+manifesto e esquecer de regenerar o stub derruba o CI — era o ponto do cartão.
+
+### Não verificado
+
+- O codegen gera stub **Python**. Se a decisão D1 (cartão F0-04) trocar a linguagem de algum
+  processo, o gerador ganha um alvo novo; o manifesto não muda, que é o motivo de ele ser dado.
+- `tests` do manifesto declara quais suítes a capacidade exige, mas **nada ainda confere que
+  essas suítes existem** — isso só faz sentido quando houver capacidade implementada (F2/F4).
