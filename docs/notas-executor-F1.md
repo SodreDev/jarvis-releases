@@ -255,3 +255,80 @@ o `clear()` da fila.
   F1-16 aceite).
 - **Jitter de captura, xruns, período do driver**: nenhum dispositivo foi aberto.
 - Windows: o código é só biblioteca padrão, mas rodou só em Linux.
+
+---
+
+## F1-04 — AEC / NR / AGC com referência de loopback
+
+### A biblioteca do cartão não existe (verificado, não suposto)
+
+O cartão sugeria `webrtc-audio-processing` (BSD-3) ou `speexdsp` (BSD). Os dois foram
+verificados no PyPI e **nenhum passa**:
+
+| candidato | o que tem no PyPI | por que não serve |
+|---|---|---|
+| `webrtc-audio-processing` | 0.1.3 (2018): `sdist` + rodas cp27/cp36 armv7 | sem roda para CPython 3.12 e sem Windows → P11 |
+| `speexdsp` | 0.1.1, só `sdist` (precisa de Cython e dos cabeçalhos) | não compila sem dependência de sistema; e é NR, não AEC |
+| `speexdsp-ns` | rodas cp312, **só** manylinux | sem Windows → P11; e faz NR, não AEC |
+
+Então a cadeia é **nossa**, em `numpy` (BSD-3, com roda para Linux e Windows em CPython 3.12),
+e `numpy` virou dependência do produto. O custo está declarado: é um AEC honesto de filtro
+adaptativo por blocos no domínio da frequência (PBFDAF), não o WebRTC — sem processamento não
+linear, sem detector de duplo-falar de nível de produto, sem *comfort noise*.
+
+### Dois bugs que a medição pegou, não a leitura do código
+
+1. **Congelamento eterno do filtro.** A proteção de duplo-falar comparava a energia do resíduo
+   com a do **eco estimado**. No primeiro bloco o eco estimado é zero (pesos zerados), então a
+   comparação dizia "duplo-falar" para sempre e o filtro nunca adaptava: **ERLE 0,0 dB nas nove
+   condições**. A comparação certa é com a **referência** (o eco não pode ter mais energia do
+   que o que saiu no alto-falante).
+2. **Normalização escalar.** O NLMS normalizava pela potência **total** da referência vezes o
+   número de partições, e o passo efetivo ficava centenas de vezes menor do que precisa. A
+   normalização é **por bin**.
+
+### O AGC desfazia o trabalho da AEC
+
+Com AEC ligada, o resíduo fica em -67 dBFS. O AGC, com limiar de silêncio de -60 dBFS,
+**perseguia o alvo em cima do resíduo**: empurrava para -49 dBFS e o detector disparava em 20 a
+30 quadros de 250 na condição de eco mais forte. Ou seja: a AEC cancelava e o AGC trazia de
+volta. O limiar de silêncio do AGC passou a ser **o mesmo do detector** (-45 dBFS), com teste
+que prova que os dois números são um só. Depois disso: **zero disparos nas nove condições**.
+
+### Números publicados (`docs/medicoes/f1-04-aec.md`)
+
+8 s de áudio por condição (400 quadros), 3 execuções, nove condições:
+
+| | ERLE total | ERLE convergido | converge em | fala SEM AEC | fala COM AEC |
+|---|---:|---:|---:|---:|---:|
+| melhor caso (240 ms, -20 dB) | 27,5 dB | 38,9 dB | 340 ms | 178/250 | **0/250** |
+| pior caso (60 ms, -6 dB) | 23,5 dB | 33,9 dB | 200 ms | 250/250 | **0/250** |
+
+Deriva de ±100 ppm (aceite (d)): saída finita, amplitude limitada, ERLE ainda 21,8 e 22,7 dB —
+degrada, não trava nem estoura.
+
+### `aec_ok` é fato; `Cancel` é decisão, e é do `agentd`
+
+A §3.2 fixa a origem canônica: `Cancel` é do `agentd`. Então o `audio-io` **relata**
+`aec_ok=false` com motivo (`dispositivo_trocado`, `taxa_diferente`, `referencia_ausente`,
+`referencia_atrasada`) e o `agentd` transforma isso em `Cancel(reason: aec_fail)` — uma vez, não
+a cada quadro. Não foi preciso emenda à SPEC.
+
+Duas consequências implementadas: a captura publica `AudioActivity` **quando `aec_ok` muda**,
+mesmo sem transição de fala (senão o `agentd` nunca saberia); e o `audio-io` **pausa** o playback
+enquanto `aec_ok` é falso, sem descartar a fila — continuar falando sem referência é o caminho
+curto para o assistente se interromper sozinho.
+
+### Não verificado (exige o ambiente do dono)
+
+- **Eco real de alto-falante aberto, no volume de uso.** O eco sintético é **linear**: é limite
+  **inferior** de dificuldade. Alto-falante barato em volume alto distorce, e distorção não
+  linear nenhum filtro linear cancela.
+- **Duplo-falar real** (os dois falando junto, com voz humana). O que foi medido é fala
+  sintética somada ao eco, e o congelamento do passo é proteção simples, não o detector do
+  WebRTC.
+- **Headset vs alto-falante, e cauda longa da sala.**
+- **O caminho de `aec_fail` com processos de verdade** foi provado em peças (cadeia, captura,
+  `Percepcao` do `agentd`, pausa da fila); forçar a troca de dispositivo dentro do processo
+  exigiria uma opção de linha de comando só para teste, e isso não entra no produto.
+- Windows: `numpy` tem roda para os dois sistemas, mas tudo rodou só em Linux.

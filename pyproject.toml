@@ -12,6 +12,11 @@ dependencies = [
   "jsonschema>=4.23,<5",
   # Manifesto de capacidade em YAML (§4). MIT.
   "pyyaml>=6.0,<7",
+  # AEC/NR/AGC do `audio-io` (cartão F1-04). BSD-3, com roda para Linux e Windows em
+  # CPython 3.12 — o que os candidatos do cartão NÃO tinham: `webrtc-audio-processing` no
+  # PyPI parou em 2018 (sem roda para 3.12, nem Windows) e `speexdsp` só tem sdist e faz
+  # supressão de ruído, não AEC. Por isso a cadeia é nossa, em numpy.
+  "numpy>=2.1,<3",
 ]
 
 [dependency-groups]
@@ -19,7 +24,6 @@ dependencies = [
 # instalar com `uv sync --group medicao`. A decisão D1 (linguagem do núcleo) é o que define
 # o que vira dependência de verdade.
 medicao = [
-  "numpy>=2.1,<3",
   "onnxruntime>=1.20,<2",
 ]
 # Só para gerar o corpus sintético (cartão F1-02): a voz piper é um .onnx lido pelo
@@ -27,7 +31,6 @@ medicao = [
 # no produto: `uv sync --group corpus`. O fonemizador (espeak-ng, GPL-3.0) é binário do
 # sistema e está registrado em licenses/ferramentas-externas.toml como fora do produto.
 corpus = [
-  "numpy>=2.1,<3",
   "onnxruntime>=1.20,<2",
 ]
 dev = [
@@ -90,11 +93,11 @@ files = ["src", "tools", "tests"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 
-# onnxruntime não publica stubs; numpy e onnxruntime só existem nos grupos opcionais
-# (`medicao`, `corpus`), e o CI instala só `dev` — sem estes overrides, `mypy` falharia no CI
-# por falta de uma biblioteca que o produto não usa.
+# onnxruntime não publica stubs e só existe nos grupos opcionais (`medicao`, `corpus`), que
+# o CI não instala. numpy virou dependência do produto na F1-04 e traz os próprios tipos, por
+# isso saiu desta lista.
 [[tool.mypy.overrides]]
-module = ["onnxruntime", "onnxruntime.*", "numpy", "numpy.*"]
+module = ["onnxruntime", "onnxruntime.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

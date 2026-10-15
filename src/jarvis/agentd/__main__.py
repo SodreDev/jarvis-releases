@@ -26,9 +26,20 @@ class Percepcao:
     def __init__(self, dono: DonoDoEpoch) -> None:
         self.dono = dono
         self.turnos = 0
+        self.aec_ok = True
 
     def __call__(self, envelope: Envelope, _seq: int) -> list[Envelope]:
-        if envelope.type is not Tipo.AUDIO_ACTIVITY or not bool(envelope.payload["speech"]):
+        if envelope.type is not Tipo.AUDIO_ACTIVITY:
+            return []
+        # Cartão F1-04: quem emite `Cancel` é o agentd (§3.2), inclusive o `aec_fail`. O
+        # `audio-io` só relata o fato (`aec_ok`); a decisão de cancelar é daqui, e sem ela o
+        # assistente continuaria falando sem referência e se interromperia sozinho.
+        aec_ok = bool(envelope.payload["aec_ok"])
+        if not aec_ok and self.aec_ok:
+            self.aec_ok = False
+            return [self.dono.fala_comecou(motivo="aec_fail")]
+        self.aec_ok = aec_ok
+        if not bool(envelope.payload["speech"]):
             return []
         if self.turnos > 0:
             return []  # o esqueleto fecha um turno só; F1 cuida de conversa de verdade

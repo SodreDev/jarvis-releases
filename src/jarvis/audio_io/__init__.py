@@ -13,6 +13,7 @@ dispositivo real, a escolha vem de `JARVIS_AUDIO_BACKEND`, e o tempo vem de um
 
 from __future__ import annotations
 
+from jarvis.audio_io.aec import CadeiaDeAec, MotivoDeFalha, Processado, quadros_de
 from jarvis.audio_io.ambiente import (
     VARIAVEL_BACKEND,
     VARIAVEL_CI,
@@ -23,6 +24,14 @@ from jarvis.audio_io.ambiente import (
 )
 from jarvis.audio_io.backend import fonte_do_ambiente, sumidouro_do_ambiente
 from jarvis.audio_io.captura import Captura
+from jarvis.audio_io.dsp import (
+    CanceladorDeEco,
+    ControleDeGanho,
+    SupressorDeRuido,
+    erle_db,
+    para_bytes,
+    para_float,
+)
 from jarvis.audio_io.energia import LIMIAR_PADRAO_DB, DetectorDeEnergia
 from jarvis.audio_io.erros import (
     DispositivoIndisponivel,
@@ -89,8 +98,11 @@ __all__ = [
     "VARIAVEL_BACKEND",
     "VARIAVEL_CI",
     "Backend",
+    "CadeiaDeAec",
+    "CanceladorDeEco",
     "Cancelamento",
     "Captura",
+    "ControleDeGanho",
     "DetectorDeEnergia",
     "DispositivoIndisponivel",
     "DispositivoProibidoEmCI",
@@ -103,13 +115,16 @@ __all__ = [
     "FonteDeDispositivo",
     "FonteSintetica",
     "FormatoNaoSuportado",
+    "MotivoDeFalha",
     "Pedaco",
+    "Processado",
     "Quadro",
     "Reproducao",
     "SumidouroDeArquivo",
     "SumidouroDeAudio",
     "SumidouroDeDispositivo",
     "SumidouroEmMemoria",
+    "SupressorDeRuido",
     "TipoDeTrecho",
     "Trecho",
     "aplicar_ganho_db",
@@ -123,11 +138,15 @@ __all__ = [
     "em_pedacos",
     "em_quadros",
     "energia_db",
+    "erle_db",
     "fala_simulada",
     "fonte_do_ambiente",
     "gerar",
     "misturar",
+    "para_bytes",
+    "para_float",
     "proibir_dispositivo_em_ci",
+    "quadros_de",
     "reproduzir",
     "ruido_rosa",
     "silencio",

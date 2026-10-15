@@ -14,9 +14,10 @@ total de eventos.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
+from jarvis.audio_io.aec import CadeiaDeAec
 from jarvis.audio_io.energia import DetectorDeEnergia
 from jarvis.audio_io.fontes import FonteDeAudio
 from jarvis.audio_io.quadro import MS_POR_QUADRO, PISO_DB, Quadro
@@ -37,8 +38,13 @@ class Captura:
     detector: DetectorDeEnergia = field(default_factory=DetectorDeEnergia)
     epoch: int = 0
     privacidade: bool = False
+    cadeia: CadeiaDeAec | None = None
+    """A cadeia AEC → NR → AGC (cartão F1-04). Sem ela, `aec_ok` é verdadeiro por omissão."""
+    tocando: Callable[[], bool] | None = None
+    """Diz se há playback em curso — é quando a referência de loopback é obrigatória."""
+
     aec_ok: bool = True
-    """Vem da cadeia de AEC (cartão F1-04). Aqui é sempre verdadeiro e vai no evento como tal."""
+    ultimo_erle_db: float = 0.0
 
     amostras_capturadas: int = 0
     quadros: int = 0
@@ -85,11 +91,27 @@ class Captura:
             return []
         self.quadros += 1
         self.amostras_capturadas += quadro.n_amostras
+
+        aec_antes = self.aec_ok
+        if self.cadeia is not None:
+            # O detector vê o áudio **depois** da cadeia: é o resíduo que importa, não o eco.
+            processado = self.cadeia.processar(
+                quadro, tocando=self.tocando() if self.tocando is not None else False
+            )
+            quadro = processado.quadro
+            self.aec_ok = processado.aec_ok
+            self.ultimo_erle_db = processado.erle_db
+
         mudou = self.detector.ver(quadro)
-        if mudou is None:
+        if mudou is None and self.aec_ok == aec_antes:
             return []
+        # `aec_ok` mudando é fato que o `agentd` precisa ver (é ele que emite Cancel(aec_fail)),
+        # mesmo sem transição de fala.
+        fala = self.detector.falando if mudou is None else mudou
         return [
-            self._evento(fala=mudou, energia_db=quadro.energia_db, ts_mono_ns=quadro.ts_mono_ns)
+            self._evento(
+                fala=bool(fala), energia_db=quadro.energia_db, ts_mono_ns=quadro.ts_mono_ns
+            )
         ]
 
     def _evento(self, *, fala: bool, energia_db: float, ts_mono_ns: int) -> Envelope:

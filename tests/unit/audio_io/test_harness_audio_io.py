@@ -78,3 +78,33 @@ def test_resumo_usa_mediana_entre_execucoes() -> None:
 
     assert resumo_por_braco(medicao)["x"]["p50"] == 3.0
     assert resumo_por_braco(medicao)["x"]["max"] == 5.0
+
+
+def test_harness_de_aec_publica_as_nove_condicoes_e_a_etiqueta(tmp_path: Path) -> None:
+    """Cartão F1-04, aceite (a): ERLE por condição, com n, execuções e o A/B do detector."""
+    from tools.harness_aec import main as main_aec
+
+    assert main_aec(["--segundos", "4", "--execucoes", "1", "--saida", str(tmp_path)]) == 0
+
+    md = (tmp_path / "f1-04-aec.md").read_text(encoding="utf-8")
+    with (tmp_path / "f1-04-aec.csv").open(encoding="utf-8") as arquivo:
+        linhas = [linha for linha in csv.DictReader(arquivo) if linha.get("atraso_ms")]
+
+    assert len(linhas) == 9
+    assert {linha["atraso_ms"] for linha in linhas} == {"60", "120", "240"}
+    assert {linha["ganho_db"] for linha in linhas} == {"-6", "-12", "-20"}
+    assert "limite inferior de dificuldade" in md
+    assert "duplo-falar real" in md, "o que não foi medido tem de estar escrito"
+    assert all(int(linha["fala_com_aec"]) == 0 for linha in linhas)
+    assert all(int(linha["fala_sem_aec"]) > 0 for linha in linhas)
+
+
+def test_harness_de_aec_nao_escreve_na_medicao_publicada(tmp_path: Path) -> None:
+    from tools.harness_aec import main as main_aec
+
+    publicada = RAIZ / "docs" / "medicoes" / "f1-04-aec.md"
+    antes = publicada.read_bytes() if publicada.exists() else None
+
+    main_aec(["--segundos", "4", "--execucoes", "1", "--saida", str(tmp_path)])
+
+    assert (publicada.read_bytes() if publicada.exists() else None) == antes

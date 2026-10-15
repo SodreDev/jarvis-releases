@@ -95,8 +95,9 @@ class VozPiper:
         return self.pasta / f"{self.voz}.onnx"
 
     def abrir(self) -> None:
-        import onnxruntime as ort
-
+        # A checagem dos arquivos vem **antes** do import: é a barata, e é a que o usuário
+        # erra primeiro. Importar antes faria um ambiente sem o grupo `corpus` reclamar de
+        # biblioteca quando o problema era a voz.
         modelo = self.caminho_modelo
         config = modelo.with_suffix(".onnx.json")
         if not modelo.exists() or not config.exists():
@@ -105,6 +106,14 @@ class VozPiper:
                 f"(63 MB): baixe os dois arquivos de {URL_VOZ}{self.voz}.onnx "
                 f"e {URL_VOZ}{self.voz}.onnx.json para essa pasta."
             )
+        try:
+            import onnxruntime as ort
+        except ImportError as erro:  # pragma: no cover — ambiente sem o grupo `corpus`
+            raise VozIndisponivel(
+                "onnxruntime não está instalado: ele é do grupo opcional `corpus` (não entra "
+                "no CI nem no produto). Rode `uv sync --group corpus` antes de gerar com a "
+                "voz piper."
+            ) from erro
         self._config = json.loads(config.read_text(encoding="utf-8"))
         self._sessao = ort.InferenceSession(str(modelo), providers=["CPUExecutionProvider"])
         versao = str(self._config.get("piper_version", "?"))

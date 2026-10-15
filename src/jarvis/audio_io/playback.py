@@ -22,6 +22,7 @@ fatos por segundo no barramento seria ruído, não informação.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -78,6 +79,11 @@ class FilaDePlayback:
     epoch_atual: int = 0
     intervalo_de_progresso_ms: float = 0.0
     taxa: int = TAXA_PADRAO
+    escuta: Callable[[bytes], None] | None = None
+    """Loopback de referência: recebe cada fatia que **saiu** para o sumidouro (F1-04)."""
+    pausado: bool = False
+    """Pausa sem descartar. É o que o `audio-io` faz enquanto `aec_ok` é falso: continuar
+    falando sem AEC é o caminho curto para o assistente se interromper sozinho."""
 
     descartados_por_epoch: int = 0
     _fila: deque[Pedaco] = field(default_factory=deque, repr=False)
@@ -125,6 +131,8 @@ class FilaDePlayback:
 
     def tick(self) -> list[Envelope]:
         """Consome um quadro de 20 ms do pedaço em curso e devolve os eventos que isso gerou."""
+        if self.pausado:
+            return []
         if self._tocando is None and not self._iniciar_proximo():
             return []
         assert self._tocando is not None
@@ -136,6 +144,9 @@ class FilaDePlayback:
         # verdade e inflaria `played_ms` (§3.3 regra 4).
         consumidas = self.sumidouro.escrever(fatia)
         self._consumido_do_pedaco += consumidas * BYTES_POR_AMOSTRA
+        if self.escuta is not None and consumidas:
+            # A referência da AEC é o que saiu, não o que foi oferecido.
+            self.escuta(fatia[: consumidas * BYTES_POR_AMOSTRA])
 
         eventos: list[Envelope] = []
         terminou = self._consumido_do_pedaco >= len(self._tocando.amostras)

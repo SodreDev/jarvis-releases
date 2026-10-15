@@ -6,6 +6,9 @@ O que este processo faz, e o que ele **não** faz:
   `AudioActivity` com `device_id` e `energy_db`;
 - toca pedaços de TTS com `epoch` e, ao receber `Cancel`, **esvazia a fila no mesmo tick**
   (§3.3 regra 2), publicando o `PlaybackProgress` com o `played_ms` que saiu de verdade;
+- passa a captura pela cadeia AEC → NR → AGC (cartão F1-04), alimentada pelo **loopback do
+  nosso próprio playback**, e relata `aec_ok`. Enquanto `aec_ok` é falso o playback fica
+  **pausado**: falar sem referência é se interromper sozinho;
 - não decide turno, não fala com LLM e **não emite `Cancel`** — quem emite é o `agentd`
   (§3.2, origem canônica). Este processo reage.
 
@@ -18,6 +21,7 @@ from __future__ import annotations
 import sys
 import time
 
+from jarvis.audio_io.aec import CadeiaDeAec
 from jarvis.audio_io.backend import fonte_do_ambiente
 from jarvis.audio_io.captura import SEGUNDOS_POR_QUADRO, Captura
 from jarvis.audio_io.playback import FilaDePlayback, em_pedacos
@@ -83,6 +87,8 @@ def laco_de_20_ms(
         quadros_antes = captura.quadros
         for envelope in captura.tick():
             processo.publicar(envelope)
+        # Playback pausado enquanto a referência não vale (cartão F1-04).
+        fila.pausado = not captura.aec_ok
         for envelope in fila.tick():
             processo.publicar(envelope)
         for envelope, veredito in processo.recebidos(timeout=0.0):
@@ -110,6 +116,11 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     analisa.add_argument(
+        "--sem-aec",
+        action="store_true",
+        help="desliga a cadeia AEC/NR/AGC (serve para o A/B do cartão F1-04)",
+    )
+    analisa.add_argument(
         "--enfileirar-ms",
         type=float,
         default=0.0,
@@ -128,12 +139,17 @@ def main(argv: list[str] | None = None) -> int:
     processo.abrir()
     fila.session_id = processo.session_id
     fila.epoch_atual = processo.epoch
+    cadeia = None if args.sem_aec else CadeiaDeAec()
     captura = Captura(
         fonte=fonte_do_ambiente(relogio=relogio),
         relogio=relogio,
         session_id=processo.session_id,
         epoch=processo.epoch,
+        cadeia=cadeia,
+        tocando=lambda: fila.tocando is not None,
     )
+    if cadeia is not None:
+        fila.escuta = cadeia.referencia
     try:
         if args.enfileirar_ms > 0:
             audio = gerar(semente=0)

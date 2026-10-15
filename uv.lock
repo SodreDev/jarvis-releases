@@ -47,12 +47,12 @@ version = "0.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
+    { name = "numpy" },
     { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
 corpus = [
-    { name = "numpy" },
     { name = "onnxruntime" },
 ]
 dev = [
@@ -63,21 +63,18 @@ dev = [
     { name = "types-pyyaml" },
 ]
 medicao = [
-    { name = "numpy" },
     { name = "onnxruntime" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "jsonschema", specifier = ">=4.23,<5" },
+    { name = "numpy", specifier = ">=2.1,<3" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
 ]
 
 [package.metadata.requires-dev]
-corpus = [
-    { name = "numpy", specifier = ">=2.1,<3" },
-    { name = "onnxruntime", specifier = ">=1.20,<2" },
-]
+corpus = [{ name = "onnxruntime", specifier = ">=1.20,<2" }]
 dev = [
     { name = "mypy", specifier = ">=1.14,<2" },
     { name = "pytest", specifier = ">=8.3,<9" },
@@ -85,10 +82,7 @@ dev = [
     { name = "types-jsonschema", specifier = ">=4.23,<5" },
     { name = "types-pyyaml", specifier = ">=6.0,<7" },
 ]
-medicao = [
-    { name = "numpy", specifier = ">=2.1,<3" },
-    { name = "onnxruntime", specifier = ">=1.20,<2" },
-]
+medicao = [{ name = "onnxruntime", specifier = ">=1.20,<2" }]
 
 [[package]]
 name = "jsonschema"
