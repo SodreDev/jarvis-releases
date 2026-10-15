@@ -942,3 +942,37 @@ tocado.
 Nada depende de hardware aqui. O que fica de fora, por não ser deste cartão: resumo e
 consolidação de histórico (F3), e o áudio já entregue ao **driver** — o histórico conta o que
 saiu do **nosso** sumidouro, e a fila do dispositivo é do F1-16.
+
+## ADR-0015 — canal de áudio entre `audio-io` e `agentd` (achado do F1-10)
+
+### O que foi medido, e por que o número não decidiu sozinho
+
+Três canais, produtor em **outro processo**, ritmo real de 20 ms, `n` = 1500 quadros por
+execução, 3 execuções (`docs/medicoes/f1-canal.md`, commit `7272d0c`): anel 47,1 µs p95, socket
+50,2 µs, `multiprocessing.Connection` 59,3 µs. Os três ficam ~340× abaixo do período de um
+quadro, e os 12 µs entre o melhor e o pior são **0,01% do orçamento de 80 ms do SLO-1**.
+Escolher por esse delta seria inventar precisão; quem decidiu foi o **P11**: `AF_UNIX` em
+datagrama não existe no Python para Windows, o anel precisa de concorrência escrita à mão nos
+dois sistemas, e a `Connection` já é o transporte do barramento (endereço, família e `authkey`
+vêm de `jarvis.barramento.ipc`). O anel fica medido e testado no repositório para o dia do
+`audio-io` em Rust.
+
+### O erro que repeti e como ele aparece
+
+O primeiro `test_barge_in_com_os_dois_processos_de_verdade` subia o `agentd` com
+`--parar-em PlaybackProgress` e o log saía sem `Cancel` nenhum: o **primeiro**
+`PlaybackProgress` é de pedaço que terminou (~200 ms), e a fala do dono no áudio sintético
+começa aos 220 ms — o `agentd` morria antes do barge-in. É o mesmo erro do F1-03. A condição de
+parada tem de ser o **evento que prova o que se quer medir** (`Cancel`), e o `PlaybackProgress`
+do corte é o que vem **depois** dele no log.
+
+### Não verificado
+
+- **Windows**: a escolha é portátil por construção (é o transporte do barramento, que o CI roda
+  nos dois sistemas), mas os microssegundos publicados são de Linux. E o `ts_mono_ns` só é
+  comparável entre processos porque o Linux compartilha o `CLOCK_MONOTONIC`.
+- **Máquina sob carga**: a medição rodou com a máquina ociosa; com ASR consumindo CPU o jitter
+  piora — é por isso que o canal descarta em vez de bloquear.
+- **SLO-2 entre processos como número publicado**: o teste de integração exige que caiba nos
+  150 ms, mas é uma execução por rodada de CI, não p50/p95 com três execuções. O número com a
+  fila do driver é o F1-16, na máquina do dono.

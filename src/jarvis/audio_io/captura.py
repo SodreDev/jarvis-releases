@@ -51,6 +51,10 @@ class Captura:
 
     amostras_capturadas: int = 0
     quadros: int = 0
+    ultimo_quadro: Quadro | None = None
+    """O último quadro capturado (já pela cadeia, quando há AEC): é o que vai para o canal de
+    áudio da ADR-0015. Guardar em vez de devolver mantém `tick` com uma responsabilidade só —
+    publicar evento — e deixa quem quer áudio pegar o áudio."""
     ticks_em_privacidade: int = 0
     _quadros: Iterator[Quadro] | None = field(default=None, repr=False)
     _privacidade_anunciada: bool = field(default=True, repr=False)
@@ -105,6 +109,7 @@ class Captura:
             self.aec_ok = processado.aec_ok
             self.ultimo_erle_db = processado.erle_db
 
+        self.ultimo_quadro = quadro
         mudou = self.detector.ver(quadro)
         if mudou is None and self.aec_ok == aec_antes:
             return []

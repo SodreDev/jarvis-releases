@@ -28,6 +28,7 @@ from jarvis.audio_io.playback import FilaDePlayback, em_pedacos
 from jarvis.audio_io.quadro import TAXA_PADRAO
 from jarvis.audio_io.sintese import gerar
 from jarvis.audio_io.sumidouros import SumidouroEmMemoria
+from jarvis.barramento.canal_de_audio import CanalDeConexao
 from jarvis.barramento.envelope import Envelope, Prioridade, Tipo, Trust
 from jarvis.processo import Processo, Reacao, analisador
 from jarvis.relogio import RelogioDoSistema
@@ -74,6 +75,7 @@ def laco_de_20_ms(
     relogio: RelogioDoSistema,
     *,
     timeout: float | None,
+    canal: CanalDeConexao | None = None,
 ) -> None:
     """O laço do processo que fica perto do dispositivo: captura, playback e barramento.
 
@@ -87,6 +89,10 @@ def laco_de_20_ms(
         quadros_antes = captura.quadros
         for envelope in captura.tick():
             processo.publicar(envelope)
+        if canal is not None and captura.quadros > quadros_antes and captura.ultimo_quadro:
+            # O quadro vai para o `agentd` pelo canal da ADR-0015, com o epoch no cabeçalho:
+            # o barramento carrega decisão, o canal carrega áudio.
+            canal.enviar(captura.ultimo_quadro, epoch=captura.epoch)
         # Playback pausado enquanto a referência não vale (cartão F1-04).
         fila.pausado = not captura.aec_ok
         for envelope in fila.tick():
@@ -116,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     analisa.add_argument(
+        "--canal-de-audio",
+        action="store_true",
+        help="envia os quadros capturados para o agentd pelo canal da ADR-0015",
+    )
+    analisa.add_argument(
         "--sem-aec",
         action="store_true",
         help="desliga a cadeia AEC/NR/AGC (serve para o A/B do cartão F1-04)",
@@ -139,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     processo.abrir()
     fila.session_id = processo.session_id
     fila.epoch_atual = processo.epoch
+    canal = CanalDeConexao.conectar(args.raiz) if args.canal_de_audio else None
     cadeia = None if args.sem_aec else CadeiaDeAec()
     captura = Captura(
         fonte=fonte_do_ambiente(relogio=relogio),
@@ -162,10 +174,12 @@ def main(argv: list[str] | None = None) -> int:
             processo.publicar(atividade(processo, fala=True))
         if args.capturar or args.enfileirar_ms > 0:
             captura.abrir()
-            laco_de_20_ms(processo, captura, fila, relogio, timeout=args.timeout)
+            laco_de_20_ms(processo, captura, fila, relogio, timeout=args.timeout, canal=canal)
         else:
             processo.rodar(timeout=args.timeout)
     finally:
+        if canal is not None:
+            canal.fechar()
         captura.fechar()
         processo.fechar()
     return 0

@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from jarvis.agentd.percepcao import Percepcao
+from jarvis.barramento.canal_de_audio import CanalDeConexao
 from jarvis.barramento.corretor import Corretor
 from jarvis.barramento.envelope import uuid7
 from jarvis.barramento.epoch import DonoDoEpoch
@@ -29,6 +30,14 @@ def main(argv: list[str] | None = None) -> int:
         help="encerra depois de registrar um evento deste tipo (usado pelo esqueleto)",
     )
     analisa.add_argument("--timeout", type=float, default=30.0, help="limite total em segundos")
+    analisa.add_argument(
+        "--canal-de-audio",
+        action="store_true",
+        help=(
+            "escuta o canal de áudio do audio-io (ADR-0015). Sem ele, o agentd só recebe "
+            "decisões pelo barramento, que é o esqueleto do F0-03"
+        ),
+    )
     args = analisa.parse_args(argv)
 
     args.raiz.mkdir(parents=True, exist_ok=True)
@@ -44,25 +53,66 @@ def main(argv: list[str] | None = None) -> int:
         )
         corretor.abrir()
         (args.raiz / "sessao").write_text(session_id, encoding="utf-8")
+        canal = CanalDeConexao.escutar(args.raiz) if args.canal_de_audio else None
         try:
-            _laco(corretor, log, parar_em=args.parar_em, limite=args.timeout)
+            _laco(
+                corretor,
+                log,
+                parar_em=args.parar_em,
+                limite=args.timeout,
+                canal=canal,
+                dono=dono,
+                raiz=args.raiz,
+            )
         finally:
+            if canal is not None:
+                canal.fechar()
             corretor.fechar()
     return 0
 
 
-def _laco(corretor: Corretor, log: LogDeEventos, *, parar_em: str, limite: float) -> None:
+def _laco(
+    corretor: Corretor,
+    log: LogDeEventos,
+    *,
+    parar_em: str,
+    limite: float,
+    canal: CanalDeConexao | None = None,
+    dono: DonoDoEpoch | None = None,
+    raiz: Path | None = None,
+) -> None:
     import time
 
     fim = time.monotonic() + limite
     while time.monotonic() < fim:
         corretor.passo(timeout=0.05)
+        if canal is not None:
+            _consumir_audio(canal, dono=dono, raiz=raiz)
         if parar_em and any(
             str(registro.envelope.type) == parar_em
             for registro in log.ler(session_id=corretor.session_id)
         ):
             corretor.passo(timeout=0.2)  # deixa a última entrega sair
             return
+
+
+def _consumir_audio(canal: CanalDeConexao, *, dono: DonoDoEpoch | None, raiz: Path | None) -> int:
+    """Drena os quadros que chegaram pelo canal, descartando os de epoch morto.
+
+    O `agentd` consome quadro para a percepção que **precisa de áudio** (ASR incremental do
+    F1-06, detector de turno do F1-07). Aqui ele conta e descarta o que não serve: o número
+    fica num arquivo da pasta de sessão, do mesmo jeito que `pronto` e `sessao`, porque é assim
+    que o supervisor e os testes observam o processo sem inventar evento no barramento.
+    """
+    epoch_minimo = dono.epoch_atual if dono is not None else 0
+    consumidos = 0
+    while canal.receber(epoch_minimo=epoch_minimo) is not None:
+        consumidos += 1
+    if consumidos and raiz is not None:
+        (raiz / "quadros-de-audio").write_text(
+            f"{canal.recebidos} {canal.descartados}", encoding="utf-8"
+        )
+    return consumidos
 
 
 if __name__ == "__main__":
