@@ -147,10 +147,13 @@ pt-BR medido aqui saiu do whisper. A escolha é do F1-16, com voz real."""
 id = "hexgrad/Kokoro-82M"
 papel = "tts"
 licenca = "Apache-2.0"
-estado = "candidato"
+estado = "barrado"
 fonte = "https://huggingface.co/api/models/hexgrad/Kokoro-82M"
 revisao = "f3ff3571791e"
 data_de_acesso = "2026-10-15"
+nota = """Barrado por IDIOMA, não por licença (Apache-2.0 é permissiva): o model card declara \
+UM idioma, `en`. Verificado na origem na ADR-0016, corrigindo a suposição das notas do F1-09 \
+de que ele seria candidato de pt-BR. Fica registrado para ninguém tentar de novo."""
 
 [[modelo]]
 id = "rhasspy/piper-voices"
@@ -176,6 +179,42 @@ MIT, então não carrega obrigação de atribuição. As outras pt-BR foram veri
 cadu e jeff são CC0; edresson é CC BY 4.0 (atribuição) e por isso não foi escolhida. A \
 inferência é onnxruntime (MIT) lendo o .onnx; o pacote piper-tts do PyPI é GPL-3.0-or-later e \
 ficou fora (ver licenses/ferramentas-externas.toml)."""
+
+[[modelo]]
+id = "parler-tts/parler-tts-mini-multilingual-v1.1"
+papel = "tts"
+licenca = "Apache-2.0"
+estado = "candidato"
+fonte = "https://huggingface.co/api/models/parler-tts/parler-tts-mini-multilingual-v1.1"
+revisao = "11b27d57855d"
+data_de_acesso = "2026-10-15"
+nota = """Candidato da ADR-0016: Apache-2.0 e o model card declara pt entre os 8 idiomas. \
+Vantagem decisiva de licença: Parler-TTS passa TEXTO CRU ao tokenizador (nenhum fonemizador \
+no caminho), então não arrasta o espeak-ng GPL. Custo: 880M parâmetros autoregressivos contra \
+um VITS feed-forward de 63 MB — não executado; medir em CPU é o que decide (F1-16)."""
+
+[[modelo]]
+id = "facebook/mms-tts-por"
+papel = "tts"
+licenca = "CC-BY-NC-4.0"
+estado = "barrado"
+fonte = "https://huggingface.co/api/models/facebook/mms-tts-por"
+revisao = "7908d3953d28"
+data_de_acesso = "2026-10-15"
+nota = """Barrado pela ADR-0011: CC-BY-NC é não comercial. Verificado na origem no cartão \
+F1-09/ADR-0016 porque ele é o TTS pt-BR sem fonemizador mais citado — fica registrado para \
+ninguém tentar de novo."""
+
+[[modelo]]
+id = "OuteAI/OuteTTS-0.3-500M"
+papel = "tts"
+licenca = "CC-BY-SA-4.0"
+estado = "barrado"
+fonte = "https://huggingface.co/api/models/OuteAI/OuteTTS-0.3-500M"
+revisao = "7e7c98867a07"
+data_de_acesso = "2026-10-15"
+nota = """Barrado na ADR-0016: ShareAlike numa voz contamina o áudio que o produto distribui, \
+e o carregador de voz do F1-09 recusa licença não permissiva em tempo de execução."""
 
 [[modelo]]
 id = "coqui/XTTS-v2"

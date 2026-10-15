@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _pytest.capture import CaptureFixture
 from tools.license_gate import (
     ARQUIVO_MODELOS,
     inventariar_dependencias,
@@ -19,7 +20,7 @@ from tools.license_gate import (
     main,
 )
 
-from jarvis.licencas import Categoria, classificar
+from jarvis.licencas import Categoria, classificar, compartilha_igual
 
 RAIZ = Path(__file__).resolve().parents[2]
 
@@ -118,15 +119,51 @@ def test_porta_falha_em_dependencia_sem_licenca_declarada(tmp_path: Path) -> Non
 
 
 def test_modelo_barrado_nao_derruba_a_porta_mas_fica_registrado() -> None:
-    """Registrar um NC como `barrado` é documentação, não uso: a porta continua verde."""
-    barrados = [m for m in inventariar_modelos() if m.estado == "barrado"]
+    """Registrar o que ficou de fora é documentação, não uso: a porta continua verde.
 
-    assert {m.nome for m in barrados} == {
+    São três motivos diferentes de barrar, e o registro diz qual é cada um (ADR-0016):
+    licença não comercial, ShareAlike e — o único que não é licença — **idioma**.
+    """
+    barrados = {m.nome: m for m in inventariar_modelos() if m.estado == "barrado"}
+
+    assert set(barrados) == {
         "jinaai/jina-reranker-v2-base-multilingual",
         "coqui/XTTS-v2",
+        "facebook/mms-tts-por",
+        "OuteAI/OuteTTS-0.3-500M",
+        "hexgrad/Kokoro-82M",
     }
-    assert all(m.categoria is Categoria.NAO_COMERCIAL for m in barrados)
-    assert not any(m.bloqueia for m in barrados)
+    nao_comerciais = {n for n, m in barrados.items() if m.categoria is Categoria.NAO_COMERCIAL}
+    assert nao_comerciais == {
+        "jinaai/jina-reranker-v2-base-multilingual",
+        "coqui/XTTS-v2",
+        "facebook/mms-tts-por",
+    }
+    assert compartilha_igual(barrados["OuteAI/OuteTTS-0.3-500M"].licenca)
+    assert barrados["hexgrad/Kokoro-82M"].categoria is Categoria.PERMISSIVA, (
+        "Kokoro é Apache-2.0: ficou fora por declarar só `en`, e a nota do registro diz isso"
+    )
+    assert "idioma" in str(barrados["hexgrad/Kokoro-82M"].nota).lower()
+    assert not any(m.bloqueia for m in barrados.values())
+
+
+def test_barrado_nao_cobra_atribuicao_e_sharealike_avisa_diferente(
+    capsys: CaptureFixture[str],
+) -> None:
+    """Modelo barrado está no registro para ficar **fora**: não impõe aviso no produto.
+
+    E ShareAlike não pode sair como se fosse CC-BY: atribuir não basta quando o derivado
+    herda a licença — numa voz, o derivado é o áudio que o produto distribui.
+    """
+    assert main(["--verificar-tabela"]) == 0
+    saida = capsys.readouterr().out
+
+    assert "OuteTTS" not in saida, "barrado não cobra atribuição nem ShareAlike"
+    assert "mms-tts-por" not in saida
+    assert compartilha_igual("CC-BY-SA-4.0") and not compartilha_igual("CC-BY-4.0")
+    assert classificar("CC-BY-SA-4.0") is Categoria.ATRIBUICAO, (
+        "a categoria continua permitindo uso comercial; o que muda é o aviso"
+    )
 
 
 @pytest.mark.parametrize("modelo", MODELOS_NOMEADOS_NO_CARTAO)

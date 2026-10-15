@@ -31,6 +31,7 @@ from typing import Any, Final
 from jarvis.licencas import (
     Categoria,
     classificar,
+    compartilha_igual,
 )
 
 RAIZ: Final = Path(__file__).resolve().parent.parent
@@ -403,7 +404,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     bloqueios = [i for i in itens if i.bloqueia]
     avisos = [i for i in itens if i.categoria is Categoria.COPYLEFT_FORTE]
-    atribuicoes = [i for i in itens if i.categoria is Categoria.ATRIBUICAO]
+    # Modelo barrado não impõe atribuição: ele está no registro justamente para ficar fora.
+    atribuicoes = [
+        i for i in itens if i.categoria is Categoria.ATRIBUICAO and i.estado != "barrado"
+    ]
     barrados = [i for i in modelos if i.estado == "barrado"]
 
     print(
@@ -411,6 +415,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{len(ferramentas)} ferramenta(s) externa(s), {len(barrados)} barrados por registro"
     )
     for item in atribuicoes:
+        if compartilha_igual(item.licenca):
+            # ShareAlike não é CC-BY: atribuir não basta, o derivado sai na mesma licença —
+            # e numa voz o derivado é o áudio que o produto distribui (ADR-0016).
+            print(
+                f"AVISO ShareAlike: {item.nome} ({item.licenca}) — o derivado herda a licença, "
+                "atribuir não basta"
+            )
+            continue
         print(f"ATRIBUIÇÃO OBRIGATÓRIA: {item.nome} ({item.licenca}) — tem de aparecer no produto")
     for item in avisos:
         print(f"AVISO copyleft forte: {item.nome} ({item.licenca}) — {item.origem}")

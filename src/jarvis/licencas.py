@@ -66,6 +66,11 @@ ATRIBUICAO_OBRIGATORIA: Final[frozenset[str]] = frozenset(
 COPYLEFT_FORTE: Final[frozenset[str]] = frozenset(
     {"gpl-2.0", "gpl-3.0", "gpl-3.0-only", "gpl-3.0-or-later", "agpl-3.0", "sspl-1.0"}
 )
+COMPARTILHA_IGUAL: Final[frozenset[str]] = frozenset({"cc-by-sa-4.0", "cc-by-sa-3.0"})
+"""ShareAlike. Classifica como `ATRIBUICAO` (uso comercial é permitido), mas **atribuir não
+basta**: o derivado tem de sair na mesma licença. Numa voz de TTS o "derivado" é o áudio que o
+produto distribui, então o aviso é diferente do de CC-BY — e a ADR-0016 registrou o primeiro
+caso (`OuteAI/OuteTTS-0.3-500M`, barrado). Lista à parte porque a categoria não distingue."""
 PADROES_NAO_COMERCIAIS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"\bnon-?commercial\b"),
     re.compile(r"\bnc\b"),
@@ -113,6 +118,11 @@ def classificar(licenca: str | None) -> Categoria:
         if padrao.search(texto):
             return categoria
     return Categoria.DESCONHECIDA
+
+
+def compartilha_igual(licenca: str | None) -> bool:
+    """A licença é ShareAlike? É `ATRIBUICAO` na categoria, e obriga mais do que atribuir."""
+    return licenca is not None and licenca.strip().lower() in COMPARTILHA_IGUAL
 
 
 def licenca_registrada(identificador: str, *, arquivo: Path = ARQUIVO_MODELOS) -> str | None:

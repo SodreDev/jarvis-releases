@@ -22,12 +22,15 @@ Refazer a verificação na origem: `tools/license_gate.py --online`.
 | reranker | `mixedbread-ai/mxbai-rerank-large-v2` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/mixedbread-ai/mxbai-rerank-large-v2> | 2026-10-15 |
 | reranker | `Qwen/Qwen3-Reranker-0.6B` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/Qwen/Qwen3-Reranker-0.6B> | 2026-10-15 |
 | tts | `coqui/XTTS-v2` | coqui-public-model-license | nao_comercial | barrado | <https://huggingface.co/api/models/coqui/XTTS-v2> | 2026-10-15 |
-| tts | `hexgrad/Kokoro-82M` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/hexgrad/Kokoro-82M> | 2026-10-15 |
+| tts | `facebook/mms-tts-por` | CC-BY-NC-4.0 | nao_comercial | barrado | <https://huggingface.co/api/models/facebook/mms-tts-por> | 2026-10-15 |
+| tts | `hexgrad/Kokoro-82M` | Apache-2.0 | permissiva | barrado | <https://huggingface.co/api/models/hexgrad/Kokoro-82M> | 2026-10-15 |
+| tts | `OuteAI/OuteTTS-0.3-500M` | CC-BY-SA-4.0 | atribuicao | barrado | <https://huggingface.co/api/models/OuteAI/OuteTTS-0.3-500M> | 2026-10-15 |
+| tts | `parler-tts/parler-tts-mini-multilingual-v1.1` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/parler-tts/parler-tts-mini-multilingual-v1.1> | 2026-10-15 |
 | tts | `rhasspy/piper-voices` | MIT | permissiva | candidato | <https://huggingface.co/api/models/rhasspy/piper-voices> | 2026-10-15 |
 | tts | `rhasspy/piper-voices:pt_BR-faber-medium` | MIT | permissiva | em_uso | <https://huggingface.co/api/models/rhasspy/piper-voices> | 2026-10-15 |
 | vad | `snakers4/silero-vad` | MIT | permissiva | candidato | <https://api.github.com/repos/snakers4/silero-vad/license> | 2026-10-15 |
 
-**Barrados** (verificados e recusados pela ADR-0011): `jinaai/jina-reranker-v2-base-multilingual` (CC-BY-NC-4.0), `coqui/XTTS-v2` (coqui-public-model-license).
+**Barrados** (verificados e recusados pela ADR-0011): `jinaai/jina-reranker-v2-base-multilingual` (CC-BY-NC-4.0), `coqui/XTTS-v2` (coqui-public-model-license), `facebook/mms-tts-por` (CC-BY-NC-4.0), `hexgrad/Kokoro-82M` (Apache-2.0), `OuteAI/OuteTTS-0.3-500M` (CC-BY-SA-4.0).
 
 ## Ferramentas externas
 
