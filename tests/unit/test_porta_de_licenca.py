@@ -13,13 +13,13 @@ from pathlib import Path
 import pytest
 from tools.license_gate import (
     ARQUIVO_MODELOS,
-    Categoria,
-    classificar,
     inventariar_dependencias,
     inventariar_ferramentas,
     inventariar_modelos,
     main,
 )
+
+from jarvis.licencas import Categoria, classificar
 
 RAIZ = Path(__file__).resolve().parents[2]
 

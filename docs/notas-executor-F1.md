@@ -717,3 +717,75 @@ dado, o replay é determinístico sobre a trilha do F1-01 — e o relatório pod
 nenhuma lacuna de microfone. O que **não** está aqui, por não ser deste cartão: o custo do que
 chega ao S1 (está nos relatórios do F1-03 ao F1-07) e a escolha do **que** dizer, que é do `s2`
 (F2). Windows: só biblioteca padrão, mas a medição rodou em Linux.
+
+---
+
+## F1-09 — TTS em streaming cancelável, com licença no carregamento
+
+### A política de licença saiu do CI e entrou no produto
+
+O cartão pede que voz com licença fora da permissiva **não carregue**. Isso é verificação em
+tempo de execução, então a classificação de licença saiu de `tools/license_gate.py` e virou
+`src/jarvis/licencas.py` — uma lista só, usada pelo CI **e** pelo produto, para os dois nunca
+discordarem sobre o que é permissivo. `carregar_voz` recusa em três casos, cada um com teste:
+
+- voz **não registrada** em `licenses/modelos.toml` ("licença que ninguém verificou não entra");
+- voz **barrada** no registro (é o caso do `coqui/XTTS-v2`: existe lá para ninguém tentar);
+- licença **não permissiva** — e aí está o caso do cartão: **CC-BY-SA não carrega**, porque
+  *ShareAlike* numa voz contamina o áudio que o produto distribui.
+
+### Interromper no meio da síntese: o pedaço em voo é descartado
+
+O sintetizador consulta o cancelamento **duas vezes** por pedaço: antes de sintetizar e **antes
+de escrever**. Quando o `Cancel` chega durante a síntese, o pedaço que acabou de sair do modelo
+é **jogado fora** em vez de enfileirado — é isso que faz valer "zero amostra nova no sumidouro
+depois do tick". A síntese de um pedaço é atômica (o modelo não é interrompível por dentro), e é
+por isso que o **primeiro** pedaço é o mais curto que a prosódia aceita: ele é o pior caso de
+trabalho desperdiçado, e também o que atrasa o SLO-5.
+
+### O mapa texto ↔ amostras corta no texto original, não na junção dos pedaços
+
+Primeira versão juntava os textos dos pedaços e devolvia o prefixo — e perdia o espaço entre
+eles ("Achei três arquivos,o ma"). Como o aceite (a) do F1-12 compara **caractere a caractere**,
+isso teria virado falha lá. O corte agora é uma **posição no texto original**, e há teste de que
+todo prefixo devolvido é prefixo do texto e que o fim devolve o texto inteiro.
+
+### Números medidos (`docs/medicoes/f1-09-tts.md`), 40 turnos do corpus
+
+| motor | licença | 1º pedaço p50 | 1º pedaço p95 | piso SLO-5 p50 | RTF |
+|---|---|---:|---:|---:|---:|
+| `piper-onnx@1.0.0+pt_BR-faber-medium` | MIT | **116,3 ms** | 145,3 ms | 116,3 ms | 0,113× |
+| `parametrico@1` (sem modelo, CI) | Apache-2.0 | 17,3 ms | 24,9 ms | 17,3 ms | 0,026× |
+
+O alvo do SLO-5 é p50 ≤ 600 ms e p95 ≤ 900 ms: o **piso de software** cabe com folga de 5×, e o
+RTF de 0,113× mostra que a voz acompanha a própria fala sem engasgar. Diferente do ASR do F1-06,
+aqui o modelo **não** é o gargalo.
+
+### Pendência de licença do caminho de produto (achado, para o dono decidir)
+
+Verifiquei **voz por voz** as quatro vozes pt-BR do `rhasspy/piper-voices`: todas usam fonemas
+do **espeak-ng** (GPL-3.0). Inclusive a `edresson`, que não declara `phoneme_type` e usa o mesmo
+inventário IPA (confirmei no `phoneme_id_map`). O `Kokoro-82M` (Apache-2.0) também depende de
+fonemizador externo para pt-BR.
+
+No F1-02 isso não era problema: o espeak rodava **fora** do produto, gerando corpus. Aqui é,
+porque o TTS roda **no** produto. A arquitetura deixa a fronteira visível em vez de esconder: o
+`MotorPiperOnnx` recebe o fonemizador por **injeção**, então a peça GPL aparece na assinatura e
+mora em `tools/`. As opções, para o F1-16:
+
+1. **G2P próprio de pt-BR**, treinável no corpus do projeto (pt-BR é regular; o custo é nosso e
+   a licença fica limpa);
+2. **voz que aceite grafema** (`phoneme_type: text`): nenhuma pt-BR registrada hoje é assim;
+3. **outra família de TTS** com fonemização embutida e licença permissiva — a procurar.
+
+Não escolhi: é decisão de licença do produto, e licença é do dono.
+
+### Não verificado (exige hardware real)
+
+- **SLO-5 de verdade**: a fila do dispositivo entra na conta, e é ela que atrasa o primeiro
+  áudio audível. O que está medido é piso de software sobre sumidouro de memória.
+- **Qualidade e naturalidade da voz pt-BR**: é julgamento do dono, não teste. Ele escolhe a voz
+  no F1-16, ouvindo os candidatos.
+- **Kokoro-82M não foi executado** (registrado, Apache-2.0): não resolveria a pendência de
+  fonemização, que é o que importa decidir.
+- Windows: a medição rodou só em Linux.

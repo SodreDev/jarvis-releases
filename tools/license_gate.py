@@ -18,17 +18,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import tomllib
 import urllib.error
 import urllib.request
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from enum import StrEnum, auto
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Final
+
+from jarvis.licencas import (
+    Categoria,
+    classificar,
+)
 
 RAIZ: Final = Path(__file__).resolve().parent.parent
 ARQUIVO_MODELOS: Final = RAIZ / "licenses" / "modelos.toml"
@@ -41,103 +44,6 @@ ARQUIVOS_DE_ATRIBUICAO: Final[tuple[Path, ...]] = (
     RAIZ / "README.md",
 )
 """Onde a atribuição obrigatória (CC-BY) tem de aparecer, além da tela "sobre" da `ui`."""
-
-
-class Categoria(StrEnum):
-    PERMISSIVA = auto()
-    ATRIBUICAO = auto()
-    """Uso comercial permitido, com atribuição obrigatória no produto (CC-BY, BSD-4)."""
-
-    COPYLEFT_FORTE = auto()
-    """Comercial é permitido, mas obriga abrir o derivado: aviso, não bloqueio."""
-
-    NAO_COMERCIAL = auto()
-    """Bloqueio: é o que a ADR-0011 proíbe."""
-
-    DESCONHECIDA = auto()
-
-
-PERMISSIVAS: Final[frozenset[str]] = frozenset(
-    {
-        "apache-2.0",
-        "apache 2.0",
-        "apache software license",
-        "mit",
-        "mit license",
-        "mit-0",
-        "bsd",
-        "bsd-2-clause",
-        "bsd-3-clause",
-        "bsd license",
-        "isc",
-        "0bsd",
-        "unlicense",
-        "cc0-1.0",
-        "psf-2.0",
-        "python-2.0",
-        "python software foundation license",
-        "zlib",
-        "mpl-2.0",
-        "apache-2.0 or mit",
-        "mit or apache-2.0",
-        "bsl-1.0",
-        "lgpl-2.1-or-later",
-        "lgpl-3.0-or-later",
-    }
-)
-ATRIBUICAO_OBRIGATORIA: Final[frozenset[str]] = frozenset(
-    {"cc-by-4.0", "cc-by-3.0", "cc-by-sa-4.0", "bsd-4-clause", "openrail", "cdla-permissive-2.0"}
-)
-COPYLEFT_FORTE: Final[frozenset[str]] = frozenset(
-    {"gpl-2.0", "gpl-3.0", "gpl-3.0-only", "gpl-3.0-or-later", "agpl-3.0", "sspl-1.0"}
-)
-PADROES_NAO_COMERCIAIS: Final[tuple[re.Pattern[str], ...]] = (
-    re.compile(r"\bnon-?commercial\b"),
-    re.compile(r"\bnc\b"),
-    re.compile(r"cc-by-nc"),
-    re.compile(r"\bresearch[\s-]*(only|purposes)\b"),
-    re.compile(r"polyform[\s-]*(noncommercial|non-commercial)"),
-    re.compile(r"coqui[\s-]*public[\s-]*model[\s-]*license|\bcpml\b"),
-    re.compile(r"creativeml[\s-]*openrail[\s-]*m-nc"),
-)
-
-
-PADROES_POR_NOME: Final[tuple[tuple[re.Pattern[str], Categoria], ...]] = (
-    # Nome livre em vez de SPDX: muito pacote ainda escreve a licença em prosa.
-    # A ordem importa: "lesser general public" tem de ser vista antes de "gpl".
-    (re.compile(r"lesser general public|\blgpl\b"), Categoria.PERMISSIVA),
-    (re.compile(r"mozilla public license|\bmpl[\s-]*2"), Categoria.PERMISSIVA),
-    (re.compile(r"\bapache\b"), Categoria.PERMISSIVA),
-    (re.compile(r"\bmit\b"), Categoria.PERMISSIVA),
-    (re.compile(r"\bbsd\b"), Categoria.PERMISSIVA),
-    (re.compile(r"\bisc\b"), Categoria.PERMISSIVA),
-    (re.compile(r"python software foundation|\bpsf\b"), Categoria.PERMISSIVA),
-    (re.compile(r"\bzlib\b|\bunlicense\b|public domain|\bcc0\b"), Categoria.PERMISSIVA),
-    (re.compile(r"\bboost software license\b"), Categoria.PERMISSIVA),
-    (re.compile(r"creative commons attribution(?!.*non)|\bcc[\s-]*by\b"), Categoria.ATRIBUICAO),
-    (re.compile(r"affero|\bagpl\b|\bsspl\b|gnu general public|\bgpl\b"), Categoria.COPYLEFT_FORTE),
-)
-
-
-def classificar(licenca: str | None) -> Categoria:
-    """Categoria de uma licença a partir do texto declarado (SPDX ou nome)."""
-    if licenca is None:
-        return Categoria.DESCONHECIDA
-    texto = licenca.strip().lower()
-    if not texto or texto in {"unknown", "other", "none", "proprietary"}:
-        return Categoria.DESCONHECIDA
-    if any(padrao.search(texto) for padrao in PADROES_NAO_COMERCIAIS):
-        return Categoria.NAO_COMERCIAL
-    if texto in PERMISSIVAS:
-        return Categoria.PERMISSIVA
-    if texto in ATRIBUICAO_OBRIGATORIA:
-        return Categoria.ATRIBUICAO
-    if texto in COPYLEFT_FORTE:
-        return Categoria.COPYLEFT_FORTE
-    for padrao, categoria in PADROES_POR_NOME:
-        if padrao.search(texto):
-            return categoria
-    return Categoria.DESCONHECIDA
 
 
 @dataclass(frozen=True, slots=True)
