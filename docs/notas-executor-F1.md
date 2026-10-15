@@ -789,3 +789,57 @@ Não escolhi: é decisão de licença do produto, e licença é do dono.
 - **Kokoro-82M não foi executado** (registrado, Apache-2.0): não resolveria a pendência de
   fonemização, que é o que importa decidir.
 - Windows: a medição rodou só em Linux.
+
+---
+
+## F1-10 — barge-in ponta a ponta (SLO-2)
+
+### De onde se conta: do início real da fala, não de quando percebemos
+
+O SLO-2 é do ponto de vista de quem fala. Se o VAD leva 80 ms para ter certeza, esses 80 ms são
+do dono — contar do instante em que o nosso VAD percebeu seria medir o nosso código e chamar o
+resultado de experiência do dono. O rótulo do corpus sabe onde a fala começa (`inicio_fala_ms`,
+criado no F1-05 justamente para isto), e é de lá que a conta sai.
+
+### Dois relógios, e o veredito usa o conservador
+
+O atraso de **áudio** (quadros de 20 ms) é o que o dono sente; o **custo de CPU** dos saltos é o
+que gastamos para reagir. Em tempo de áudio, os cinco saltos depois da detecção caem todos no
+mesmo tique e apareciam como **0 ms** — o que é verdade e engana. O número do veredito é a soma:
+tempo de áudio **mais** custo de CPU.
+
+### Números medidos (`docs/medicoes/f1-10-barge-in.md`), 600 interrupções por VAD
+
+| VAD | n | SLO-2 p50 | SLO-2 p95 | atraso do VAD p50 | custo de código p95 | p50 ≤ 80? | p95 ≤ 150? |
+|---|---:|---:|---:|---:|---:|:--|:--|
+| `energia` | 600 | 52,6 ms | 73,8 ms | 51,0 ms | 4,0 ms | sim | sim |
+| `silero-vad` | 600 | **81,6 ms** | **105,7 ms** | 81,0 ms | 1,0 ms | **não** (1,6 ms acima) | sim |
+
+**O gatilho da ADR-0014 não abre:** ele é definido sobre o **p95 ≤ 150 ms**, e o pior p95 medido
+é 105,7 ms. O que não se cumpre é a **meta** de p50 ≤ 80 ms com o `silero`, por 1,6 ms. Separei
+os dois vereditos na tabela de propósito: "passou de 80 ms" e "estourou o SLO" são coisas
+diferentes, e misturá-las transformaria uma meta em alarme.
+
+**Quem gasta o SLO-2 é o VAD, não o caminho de cancelamento.** Os cinco saltos depois da
+detecção custam de 1 a 4 ms somados. O resto é o tempo que o VAD leva para ter certeza — e aí
+está uma troca real para o dono decidir no F1-16: o limiar de energia cala **29 ms mais rápido**
+(52,6 contra 81,6 ms p50) e o `silero` não produz falso positivo por quadro (F1-05: precisão
+1,000 contra 0,999). É escolher entre calar mais rápido e calar por engano.
+
+### Nenhum salto espera o ASR (aceite (b))
+
+Com um transcritor que avança o relógio **2 segundos** dentro da percepção, o SLO-2 medido é
+35,7 ms — o mesmo 35,7 ms de antes. Quem garante isso não é a velocidade de ninguém: é a
+**ordem** da regra 1, que devolve o `Cancel` como primeiro envelope e só então chama o
+transcritor (F1-05).
+
+### Não verificado (exige hardware real)
+
+- **SLO-2 com microfone e alto-falante reais**: é o aceite (a) da F1 e sai no F1-16. O piso de
+  software ignora a **fila do driver**, que é exatamente onde o áudio velho sobrevive: o nosso
+  `Cancel` esvazia a nossa fila, não a do dispositivo.
+- **Cancelar tool de efeito já executada**: não existe no v1 por especulação (§3.3 regra 3),
+  então não há o que medir.
+- **Voz de verdade no playback**: aqui o TTS é o paramétrico — o que se mede é o caminho de
+  cancelamento, e a voz está medida no F1-09.
+- Windows: a medição rodou só em Linux.
