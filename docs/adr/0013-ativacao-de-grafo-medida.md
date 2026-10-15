@@ -1,6 +1,8 @@
 # ADR-0013 — Ativação de grafo cabe no orçamento de voz, e o teto vai dentro da varredura
 
 **Data:** 2026-10-15 · **Estado:** aceita · **Decide:** executor (medição), emenda a ADR-0008
+**Commits das medições:** `f14379c` (grafo sintético, cartão F0-05) e `e0f133c` (grafo real do
+corpus C1, cartão F0-08)
 **Emenda:** ADR-0008 (memória em grafo e ativação por propagação) — substitui a
 **[SUPOSIÇÃO]** da §6.8 pelos números do harness da F0-05.
 
@@ -65,6 +67,22 @@ fronteira.
   `graph_truncated: true` sem esperar, e que um hub de grau 10 000 não explode a travessia.
 - Continua **não medido**: qualidade de recuperação (recall, nDCG, abstinência), que é a
   medição da §8.1/§8.2 em F3; corpus real de C1 (cartão F0-08); e execução em Windows.
+
+## Confirmação no corpus real (commit `e0f133c`)
+
+A medição acima usa grafo sintético. O exportador do cartão F0-08 produziu o C1 de verdade —
+**`n` = 128 episódios, 331 entidades, 2 990 arestas (676 `active`), grau médio 10,2 e grau
+máximo 131** — e a mesma travessia, com 60 sementes de maior grau e 3 execuções, deu:
+
+| saltos | p50 | p95 | nós alcançados |
+|---|---:|---:|---:|
+| 1 | 0,114 ms | **0,216 ms** | 17,8 |
+| 2 | 1,867 ms | **3,291 ms** | 92,2 |
+
+Ou seja: SLO-11 com cerca de 12× de folga **no corpus do dono**, não em grafo inventado. A
+razão suposta no harness (3 entidades e 8 arestas por episódio) virou número medido: 2,6
+entidades, 23,4 arestas totais e 5,3 arestas `active` por episódio — e como a travessia só lê
+`status='active'`, a suposição era conservadora na direção certa.
 
 ## Como invalidar esta decisão
 

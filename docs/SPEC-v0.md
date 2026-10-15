@@ -80,7 +80,7 @@ Sete processos/áreas, cada um reiniciável e testável sozinho. A fronteira é 
 
 **Cliente MCP** também não é processo novo: é **adaptador do `executor`**, um filho isolado por servidor (§5.6). Tool de servidor MCP não vira capacidade sem promoção para manifesto nosso, e a saída é sempre `trust: third_party`. Nenhum atalho entra no barramento por fora do PDP.
 
-**[DECISÃO ABERTA D1 — linguagem/IPC]** `agentd` e `audio-io` têm orçamento de dezenas de ms e exigem controle de buffer; `s2`/`memoryd` ganham com ecossistema de ML. Critério para decidir em F0: medir p95 de captura→evento (SLO-1) em um esqueleto Rust e em um Python+ONNX na máquina do dono. Decide o número, não a preferência.
+**D1 — linguagem/IPC: medida, proposta ao dono (ADR-0014).** O critério era medir o p95 de captura→evento nos dois candidatos na máquina do dono, e o cartão F0-04 mediu: VAD em Rust `std` 0,0003 ms p95, em Python+ONNX 0,110 ms, e o evento no barramento (envelope, validação de borda, IPC e log encadeado) 0,384 ms — total nosso de 0,575 ms p95 em Python, **0,72% do orçamento de 80 ms do SLO-1**. A proposta é **Python 3.12 nos sete processos no v0**, com a fronteira pronta para trocar `audio-io`/`agentd` por Rust sem reescrever contrato, porque o contrato vive em `schemas/`. Lacuna explícita: AEC real, ASR incremental, TTS streaming e captura de dispositivo real **não** foram medidos — se a F1 estourar SLO-1 ou SLO-2, D1 volta à mesa.
 
 ---
 
@@ -421,7 +421,7 @@ Na hora da consulta o grafo é **SQL puro e limitado — zero chamada de LLM**. 
 | 3 | + **2 saltos** + reranker | 1–2 não sustentaram, pergunta multi-salto ou temporal, e há orçamento |
 | 4 | modo "fundo": PPR amplo, fora do caminho da voz | só na UI de exploração e na consolidação |
 
-Evidência de que grafo ajuda multi-salto: HippoRAG ranqueia passagens por Personalized PageRank sobre um grafo construído por LLM e relata ganho de ~3 e ~20 pontos em MuSiQue e 2WikiMultiHopQA, sendo 10–30× mais barato e 6–13× mais rápido que o IRCoT iterativo (arXiv 2405.14831, NeurIPS 2024; números do abstract, variam entre versões). Zep/Graphiti relata 94,8% vs 93,4% no DMR e até +18,5% de acurácia com −90% de latência no LongMemEval (arXiv 2501.13956) — **números do próprio fornecedor, em benchmark que o blog deles relativiza**: servem de motivação, não de meta. A ideia de ativação por propagação vem da literatura clássica de memória associativa (Collins & Loftus, 1975; ACT-R) — usamos o mecanismo, não números de lá. **[SUPOSIÇÃO: que a travessia limitada em SQLite cabe no orçamento de voz no corpus do dono. O harness da F0-05 confirma ou derruba antes de a F3 começar.]**
+Evidência de que grafo ajuda multi-salto: HippoRAG ranqueia passagens por Personalized PageRank sobre um grafo construído por LLM e relata ganho de ~3 e ~20 pontos em MuSiQue e 2WikiMultiHopQA, sendo 10–30× mais barato e 6–13× mais rápido que o IRCoT iterativo (arXiv 2405.14831, NeurIPS 2024; números do abstract, variam entre versões). Zep/Graphiti relata 94,8% vs 93,4% no DMR e até +18,5% de acurácia com −90% de latência no LongMemEval (arXiv 2501.13956) — **números do próprio fornecedor, em benchmark que o blog deles relativiza**: servem de motivação, não de meta. A ideia de ativação por propagação vem da literatura clássica de memória associativa (Collins & Loftus, 1975; ACT-R) — usamos o mecanismo, não números de lá. **Confirmado pela medição** (ADR-0013, cartões F0-05 e F0-08): a travessia limitada em SQLite cabe no orçamento de voz com uma a duas ordens de grandeza de folga, inclusive no corpus real do dono (128 episódios, 676 arestas `active`, grau máximo 131) e num grafo sintético 100× maior. Duas condições saíram da medição e passaram a valer como requisito: o teto de fan-out é aplicado **dentro** da varredura (uma consulta por nó, `ORDER BY ... LIMIT`), e `WITH RECURSIVE` sem teto está fora — ficou 100–200× mais lenta e estourou o orçamento.
 
 ## 7. SLOs
 
@@ -439,8 +439,8 @@ Medidos **do microfone ao alto-falante do usuário**, não no servidor. Metas de
 | SLO-8 | Recuperação + reranker top-20 | ≤ 250 ms | ≤ 600 ms | reranker é feature flag |
 | SLO-9 | Falso corte de turno (interromper o usuário) | — | ≤ 3% dos turnos | **[SUPOSIÇÃO: alvo inicial; recalibrar com o corpus pt-BR de F1]** |
 | SLO-10 | Efeitos externos iniciados sem confirmação exigida | 0 | 0 | absoluto |
-| SLO-11 | Ativação de grafo, 1 salto (dentro dos tetos da §6.8) | ≤ 15 ms | ≤ 40 ms | **[SUPOSIÇÃO: alvo inicial; o harness da F0-05 confirma ou corrige]** |
-| SLO-12 | **"Instantâneo"**: memória pronta para o S2 (grafo+vetor fundidos, sem reranker) | ≤ 120 ms | **≤ 250 ms** | com reranker: p95 ≤ 600 ms (SLO-8), que é feature flag |
+| SLO-11 | Ativação de grafo, 1 salto (dentro dos tetos da §6.8) | ≤ 15 ms | ≤ 40 ms | **Confirmado** pelo harness da F0-05 e pelo corpus real da F0-08: p95 de 0,22 ms com 1 salto e 3,29 ms com 2 saltos no C1 do dono (ADR-0013) |
+| SLO-12 | **"Instantâneo"**: memória pronta para o S2 (grafo+vetor fundidos, sem reranker) | ≤ 120 ms | **≤ 250 ms** | **Confirmado** pelo harness da F0-05: p95 de 62 ms na escala 100× (ADR-0013). Com reranker: p95 ≤ 600 ms (SLO-8), que é feature flag |
 | SLO-13 | Turnos em que a recuperação estourou o orçamento e voltou truncada | — | ≤ 2% | e **0** turnos em que a memória atrasou o primeiro áudio além de SLO-5 |
 
 **O que "instantâneo" significa neste projeto:** não é adjetivo, é SLO-12 medido na máquina do dono, no corpus do dono, com 2 saltos e os tetos da §6.8 — p50 ≤ 120 ms e p95 ≤ 250 ms sem reranker. Acima de tudo, **memória não atrasa a voz**: SLO-5 (≤ 900 ms p95 até o primeiro áudio) continua valendo *com* a memória no caminho; se não couber, a resposta sai com a evidência que já havia e o grafo chega depois, nunca o contrário.

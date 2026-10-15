@@ -45,6 +45,10 @@ jobs:
       - name: testes
         run: uv run --frozen pytest
 
+      # Cartão F0-10: decisão com número traz hardware, n, data e commit.
+      - name: procedência das ADRs
+        run: uv run --frozen python tools/adr.py conferir
+
       # Cartão F0-08: medição só continua comparável se o corpus for o mesmo.
       - name: corpus confere com o manifesto
         run: uv run --frozen python tools/corpus.py verificar

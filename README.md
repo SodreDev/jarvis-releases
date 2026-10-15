@@ -64,15 +64,19 @@ código de produto de voz: cada cartão entrega esqueleto, teste e número.
 | F0-04 latência de captura e a proposta de D1 | feito |
 | F0-07 ferramental de manifesto de capacidade | feito |
 | F0-08 estrutura do corpus e exportador de C1 | feito |
-| F0-10 | aberto |
+| F0-10 ADRs com os números medidos | feito |
 
 ## Linguagem do núcleo
 
-A linguagem definitiva dos processos de áudio é a **decisão D1**, que se fecha por medição no
-cartão F0-04 (p95 de captura→evento em Rust e em Python+ONNX). Até lá o esqueleto é Python 3.12
-e o contrato do barramento vive em arquivos de dados — `schemas/events.v1.json`
-e `schemas/event_log.sql` — para que trocar a linguagem de um processo não reescreva o
-contrato. Ver [`docs/notas-executor-F0.md`](docs/notas-executor-F0.md).
+**D1 foi medida** (cartão F0-04) e a proposta está na
+[ADR-0014](docs/adr/0014-d1-linguagem-e-ipc-do-nucleo.md), **aguardando o dono**: Python 3.12
+nos sete processos no v0, porque todo o nosso caminho de captura→evento soma 0,575 ms p95 —
+0,72% do orçamento de 80 ms do SLO-1 — e a diferença para Rust é 0,14% do orçamento.
+
+A fronteira continua trocável de propósito: o contrato do barramento vive em arquivos de dados
+(`schemas/events.v1.json`, `schemas/event_log.sql`, `schemas/manifesto.v1.json`), então trocar
+a linguagem de `audio-io` ou `agentd` não reescreve contrato. A lacuna que pode derrubar a
+proposta está escrita na própria ADR: AEC, ASR e TTS reais ainda não foram medidos.
 
 ## Licença
 

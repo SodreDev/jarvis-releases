@@ -2,6 +2,8 @@
 
 **Data:** 2026-10-15 · **Estado:** aceita · **Decide:** executor (verificação), confirma a ADR-0011 do dono
 **Emenda:** ADR-0011 (reranker de licença comercial), itens 1 e 2.
+**Commit da verificação:** `2658c29` · **`n` = 13 modelos** conferidos na origem · **hardware:**
+irrelevante para esta ADR (a verificação é de metadado de licença, não de desempenho).
 
 ## Contexto
 

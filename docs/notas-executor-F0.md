@@ -593,3 +593,50 @@ fixa de teste. Medir o C1 com ela devolvia só as sementes, porque as arestas im
   formato, com os dois cabeçalhos que o Orchestrator usa hoje).
 - **Extração de entidade é determinística** (autor, projeto, tema, caminho, commit). Extração
   por LLM, resolução de apelido por trigrama e consolidação ficam para F3 (§6.4, §6.7).
+
+---
+
+## F0-10 — ADRs com os números medidos
+
+### O que foi escrito
+
+| ADR | o que registra | commit da medição |
+|---|---|---|
+| **0012** | licenças verificadas na origem; a divergência da ADR-0011 era de identificação, e XTTS-v2 está barrado | `2658c29` |
+| **0013** | ativação de grafo cabe no orçamento (SLO-11/SLO-12 confirmados), 2 saltos como limite, teto de fan-out **dentro** da varredura | `f14379c`, `e0f133c` |
+| **0014** | **D1**: Python 3.12 nos sete processos no v0, com a tabela do F0-04 e a lacuna explícita | `85e23a4` |
+
+A 0013 ganhou a seção do **corpus real** (grafo do C1: 128 episódios, 676 arestas `active`,
+grau máximo 131 → 1 salto 0,216 ms p95, 2 saltos 3,291 ms p95), que é o que faltava para a
+medição não depender só de grafo sintético.
+
+### SPEC atualizada (aceite (c))
+
+- **§7**: SLO-11 e SLO-12 deixaram de ser `[SUPOSIÇÃO]` e passaram a citar o número medido e a
+  ADR-0013. Os **valores de meta não mudaram** — não havia motivo, a folga é de uma a duas
+  ordens de grandeza.
+- **§6.8**: a suposição "a travessia limitada em SQLite cabe no orçamento de voz" virou
+  "confirmado pela medição", com as duas condições que saíram dela e passaram a ser requisito
+  (teto dentro da varredura; `WITH RECURSIVE` sem teto está fora).
+- **§2**: a `[DECISÃO ABERTA D1]` virou "medida, proposta ao dono (ADR-0014)", com os números e
+  a lacuna.
+
+### Procedência verificada por máquina, não por boa vontade
+
+`tools/adr.py conferir` entrou no CI: toda ADR precisa de **Data**, **Estado** e **Decide**, e
+toda ADR que publica medição (se declara com `**Mede:**`/`**Commit…**` ou traz tabela com p50 e
+p95) precisa citar **hardware**, **`n`** e **commit**. `[SUPOSIÇÃO]` solta, sem dizer o que a
+confirma ou derruba, também é recusada. Dois testes plantam ADR sem commit e ADR com suposição
+solta para provar que o verificador acusa.
+
+Uma sutileza que apareceu: o verificador não pode marcar ADR antiga só porque ela **cita** um
+SLO (`≤ 80 ms p95`) — ela não está publicando número nosso. Por isso a regra olha se a ADR se
+declara de medição ou publica tabela de percentis.
+
+### Não verificado
+
+- **A decisão de D1 é do dono.** A ADR-0014 está como **proposta**; o cartão F0-04 pedia número
+  e a §2 pedia que o número decidisse, mas quem assina é ele. Enquanto estiver `proposta`, o
+  código segue em Python 3.12 e a fronteira segue trocável.
+- As ADRs **0001 a 0011** são do arquiteto e não foram alteradas, só verificadas: nenhuma delas
+  publica medição nossa, então o aceite (a) não as alcança.
