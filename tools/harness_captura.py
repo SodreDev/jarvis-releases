@@ -696,6 +696,15 @@ def main(argv: list[str] | None = None) -> int:
     analisa.add_argument(
         "--trabalho", type=Path, default=None, help="pasta para o áudio e o binário"
     )
+    analisa.add_argument(
+        "--saida",
+        type=Path,
+        default=PASTA_SAIDA,
+        help=(
+            "onde publicar o CSV e o relatório (padrão: docs/medicoes). O teste de fumaça "
+            "aponta para uma pasta temporária: suíte de teste não reescreve medição publicada"
+        ),
+    )
     args = analisa.parse_args(argv)
 
     trabalho = (
@@ -770,8 +779,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
 
-    escrever_csv(medicao, PASTA_SAIDA / "f0-04-captura.csv")
-    escrever_markdown(medicao, PASTA_SAIDA / "f0-04-captura.md")
+    saida: Path = args.saida
+    saida.mkdir(parents=True, exist_ok=True)
+    escrever_csv(medicao, saida / "f0-04-captura.csv")
+    escrever_markdown(medicao, saida / "f0-04-captura.md")
 
     print(f"\n{'braço':14} {'p50':>9} {'p95':>9} {'p99':>9} {'máx':>9}  GC")
     for braco, valores in resumo_por_braco(medicao).items():
@@ -783,7 +794,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"piso: {p.nome}: p50 {p.p50_ms:.3f} ms, p95 {p.p95_ms:.3f} ms (n={p.n})")
     for lacuna in medicao.lacunas:
         print(f"não medido: {lacuna.o_que} — {lacuna.por_que}")
-    print(f"\ncsv e relatório em {PASTA_SAIDA}")
+    print(f"\ncsv e relatório em {saida}")
     return 0
 
 

@@ -161,6 +161,11 @@ def test_harness_roda_de_ponta_a_ponta_em_amostra_pequena(tmp_path: Path) -> Non
             "0.5",
             "--trabalho",
             str(tmp_path),
+            # Medição publicada é dado comitado: o teste de fumaça escreve na pasta
+            # temporária, nunca em docs/medicoes (senão `pytest` substitui o n=10 000 da
+            # F0-04 por um n=200 de fumaça e ninguém percebe).
+            "--saida",
+            str(tmp_path / "medicoes"),
         ],
         capture_output=True,
         text=True,
@@ -170,4 +175,4 @@ def test_harness_roda_de_ponta_a_ponta_em_amostra_pequena(tmp_path: Path) -> Non
 
     assert concluido.returncode == 0, concluido.stdout + concluido.stderr
     assert "não medido: braço `python-onnx`" in concluido.stdout
-    assert (RAIZ / "docs" / "medicoes" / "f0-04-captura.csv").exists()
+    assert (tmp_path / "medicoes" / "f0-04-captura.csv").exists()

@@ -70,7 +70,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Os testes podem usar subprocess para provar os portões (lint, licença, epoch).
-"tests/*" = ["S603", "S404", "S607"]
+# S311: o áudio de teste do F1-01 sai de `random.Random(semente)` — determinismo, não
+# criptografia. A proibição que importa (shell, exec) continua valendo nos testes.
+"tests/*" = ["S603", "S404", "S607", "S311"]
 "tools/*" = ["S603", "S404"]
 
 [tool.mypy]
