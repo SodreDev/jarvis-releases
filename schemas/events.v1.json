@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jarvis.invalid/schemas/events.v1.json",
+  "title": "Contrato de evento do barramento do Jarvis — SPEC v0.1 §3, versão 1",
+  "description": "Fonte de verdade do envelope (§3.1) e dos onze tipos fechados (§3.2). Este arquivo é dado, não código: qualquer linguagem que implemente um processo (decisão D1, cartão F0-04) valida contra ele sem tradução.",
+  "allOf": [{ "$ref": "#/$defs/envelope" }],
+  "oneOf": [
+    { "properties": { "type": { "const": "AudioActivity" }, "payload": { "$ref": "#/$defs/payloads/AudioActivity" } } },
+    { "properties": { "type": { "const": "PartialTranscript" }, "payload": { "$ref": "#/$defs/payloads/PartialTranscript" } } },
+    { "properties": { "type": { "const": "FinalTranscript" }, "payload": { "$ref": "#/$defs/payloads/FinalTranscript" } } },
+    { "properties": { "type": { "const": "TurnPrediction" }, "payload": { "$ref": "#/$defs/payloads/TurnPrediction" } } },
+    { "properties": { "type": { "const": "DesktopObservation" }, "payload": { "$ref": "#/$defs/payloads/DesktopObservation" } } },
+    { "properties": { "type": { "const": "ToolCallRequested" }, "payload": { "$ref": "#/$defs/payloads/ToolCallRequested" } } },
+    { "properties": { "type": { "const": "PolicyDecision" }, "payload": { "$ref": "#/$defs/payloads/PolicyDecision" } } },
+    { "properties": { "type": { "const": "ToolResult" }, "payload": { "$ref": "#/$defs/payloads/ToolResult" } } },
+    { "properties": { "type": { "const": "PlaybackProgress" }, "payload": { "$ref": "#/$defs/payloads/PlaybackProgress" } } },
+    { "properties": { "type": { "const": "StateRevision" }, "payload": { "$ref": "#/$defs/payloads/StateRevision" } } },
+    { "properties": { "type": { "const": "Cancel" }, "payload": { "$ref": "#/$defs/payloads/Cancel" } } }
+  ],
+  "x-prioridade-canonica": {
+    "descricao": "Prioridade fixada pela §3.2. Emissor não escolhe: a borda do barramento recusa divergência. AudioActivity é P0 quando payload.speech é verdadeiro (speech_started), P1 caso contrário.",
+    "AudioActivity": "P1",
+    "AudioActivity_speech": "P0",
+    "PartialTranscript": "P1",
+    "FinalTranscript": "P1",
+    "TurnPrediction": "P1",
+    "DesktopObservation": "P3",
+    "ToolCallRequested": "P2",
+    "PolicyDecision": "P2",
+    "ToolResult": "P2",
+    "PlaybackProgress": "P1",
+    "StateRevision": "P2",
+    "Cancel": "P0"
+  },
+  "x-origem-canonica": {
+    "descricao": "Processo autorizado a emitir cada tipo (§3.2). A borda recusa tipo emitido por processo errado: `mcp:*` só aparece nos dois tipos que carregam dado de fora (§2, \"Cliente MCP\" é adaptador do executor), e um servidor MCP nunca emite Cancel, PolicyDecision ou transcrição.",
+    "AudioActivity": ["audio-io"],
+    "PartialTranscript": ["agentd"],
+    "FinalTranscript": ["agentd"],
+    "TurnPrediction": ["agentd"],
+    "DesktopObservation": ["executor", "ui", "mcp:*"],
+    "ToolCallRequested": ["s2"],
+    "PolicyDecision": ["policy"],
+    "ToolResult": ["executor", "mcp:*"],
+    "PlaybackProgress": ["audio-io"],
+    "StateRevision": ["s2"],
+    "Cancel": ["agentd"]
+  },
+  "$defs": {
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "event_id", "session_id", "epoch", "ts_mono_ns",
+        "ts_wall", "source", "trust", "priority", "type", "payload"
+      ],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "event_id": { "$ref": "#/$defs/uuid_v7" },
+        "session_id": { "$ref": "#/$defs/uuid_v7" },
+        "epoch": { "type": "integer", "minimum": 0 },
+        "ts_mono_ns": { "type": "integer", "minimum": 0 },
+        "ts_wall": { "type": "string", "format": "date-time" },
+        "source": { "$ref": "#/$defs/source" },
+        "trust": { "enum": ["system", "user_voice", "user_ui", "tool_result", "third_party"] },
+        "priority": { "enum": ["P0", "P1", "P2", "P3", "P4"] },
+        "type": {
+          "enum": [
+            "AudioActivity", "PartialTranscript", "FinalTranscript", "TurnPrediction",
+            "DesktopObservation", "ToolCallRequested", "PolicyDecision", "ToolResult",
+            "PlaybackProgress", "StateRevision", "Cancel"
+          ]
+        },
+        "payload": { "type": "object" }
+      }
+    },
+    "uuid_v7": {
+      "type": "string",
+      "description": "UUID v7: ordenável por tempo (§3.1).",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "source": {
+      "description": "Processo de origem (§2). `policy` consta porque PolicyDecision vem dele — ver emenda proposta em docs/notas-executor-F0.md.",
+      "type": "string",
+      "pattern": "^(audio-io|agentd|s2|policy|executor|memoryd|ui|mcp:[a-z0-9][a-z0-9_.-]{0,63})$"
+    },
+    "probabilidade": { "type": "number", "minimum": 0, "maximum": 1 },
+    "ms": { "type": "integer", "minimum": 0 },
+    "payloads": {
+      "AudioActivity": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["speech", "device_id", "energy_db", "aec_ok"],
+        "properties": {
+          "speech": { "type": "boolean" },
+          "device_id": { "type": "string", "minLength": 1 },
+          "energy_db": { "type": "number" },
+          "aec_ok": { "type": "boolean" }
+        }
+      },
+      "PartialTranscript": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "stability", "t_start_ms", "t_end_ms", "lang"],
+        "properties": {
+          "text": { "type": "string" },
+          "stability": { "$ref": "#/$defs/probabilidade" },
+          "t_start_ms": { "$ref": "#/$defs/ms" },
+          "t_end_ms": { "$ref": "#/$defs/ms" },
+          "lang": { "type": "string", "minLength": 2 }
+        }
+      },
+      "FinalTranscript": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "confidence", "t_start_ms", "t_end_ms"],
+        "properties": {
+          "text": { "type": "string" },
+          "confidence": { "$ref": "#/$defs/probabilidade" },
+          "t_start_ms": { "$ref": "#/$defs/ms" },
+          "t_end_ms": { "$ref": "#/$defs/ms" }
+        }
+      },
+      "TurnPrediction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_eot", "detector", "decision"],
+        "properties": {
+          "p_eot": { "$ref": "#/$defs/probabilidade" },
+          "detector": { "type": "string", "minLength": 1 },
+          "decision": { "enum": ["hold", "yield", "unknown"] }
+        }
+      },
+      "DesktopObservation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "app_id", "payload"],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1 },
+          "app_id": { "type": "string", "minLength": 1 },
+          "payload": { "type": "object" }
+        }
+      },
+      "ToolCallRequested": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["call_id", "tool_id", "args", "dry_run"],
+        "properties": {
+          "call_id": { "type": "string", "minLength": 1 },
+          "tool_id": { "type": "string", "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$" },
+          "args": { "type": "object" },
+          "dry_run": { "type": "boolean" },
+          "idempotency_key": { "type": "string", "minLength": 1 }
+        }
+      },
+      "PolicyDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["call_id", "verdict", "reason"],
+        "properties": {
+          "call_id": { "type": "string", "minLength": 1 },
+          "verdict": { "enum": ["allow", "confirm", "deny"] },
+          "reason": { "type": "string", "minLength": 1 },
+          "grant_id": { "type": "string", "minLength": 1 }
+        }
+      },
+      "ToolResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["call_id", "status", "payload_ref", "postcondition", "read_only"],
+        "properties": {
+          "call_id": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["ok", "error", "timeout", "cancelled", "denied"] },
+          "payload_ref": { "type": "string" },
+          "postcondition": { "enum": ["verified", "unverified", "failed"] },
+          "read_only": {
+            "type": "boolean",
+            "description": "Emenda proposta à §3.2: a regra 3 da §3.3 (resultado stale de leitura pode sobreviver) é indecidível sem saber se a tool era de leitura. O executor copia isso do manifesto (§4), não do modelo."
+          }
+        }
+      },
+      "PlaybackProgress": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chunk_id", "played_ms", "epoch"],
+        "properties": {
+          "chunk_id": { "type": "string", "minLength": 1 },
+          "played_ms": { "$ref": "#/$defs/ms" },
+          "epoch": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "StateRevision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id", "epoch", "objetivo", "evidencia", "incertezas", "tarefas",
+          "fala_ouvida", "audio_tocado_ms", "cenario"
+        ],
+        "properties": {
+          "task_id": { "type": "string", "minLength": 1 },
+          "epoch": { "type": "integer", "minimum": 0 },
+          "objetivo": { "type": "string" },
+          "evidencia": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ref", "resumo"],
+              "properties": {
+                "ref": { "type": "string", "minLength": 1 },
+                "resumo": { "type": "string" }
+              }
+            }
+          },
+          "incertezas": { "type": "array", "items": { "type": "string" } },
+          "tarefas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "estado"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "estado": {
+                  "enum": [
+                    "Draft", "Planned", "AwaitingApproval", "Running", "Observing",
+                    "Succeeded", "Failed", "Cancelled"
+                  ]
+                }
+              }
+            }
+          },
+          "fala_ouvida": { "type": "string" },
+          "audio_tocado_ms": { "$ref": "#/$defs/ms" },
+          "cenario": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["nome", "p", "ttl_s"],
+            "properties": {
+              "nome": { "type": "string", "minLength": 1 },
+              "p": { "$ref": "#/$defs/probabilidade" },
+              "ttl_s": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      },
+      "Cancel": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["epoch_invalidado", "reason"],
+        "properties": {
+          "epoch_invalidado": { "type": "integer", "minimum": 0 },
+          "reason": { "enum": ["barge_in", "stop_word", "privacy", "aec_fail", "timeout"] }
+        }
+      }
+    }
+  }
+}

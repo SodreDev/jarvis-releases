@@ -39,7 +39,7 @@ código de produto de voz: cada cartão entrega esqueleto, teste e número.
 | Cartão | Estado |
 |---|---|
 | F0-01 repositório, licença, linter, CI nos dois SOs | feito |
-| F0-02 barramento tipado com log encadeado por hash | aberto |
+| F0-02 barramento tipado com log encadeado por hash | feito |
 | F0-09 porta de licença no CI | aberto |
 | F0-03 a F0-08, F0-10 | abertos |
 
