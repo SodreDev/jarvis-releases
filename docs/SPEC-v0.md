@@ -540,6 +540,7 @@ Aceite: (a) um evento sintético atravessa `audio-io → agentd → s2 → polic
 **F0 não decide:** índice (Chroma vs LanceDB, §8.1), grafo no caminho crítico (§8.2) nem backend de calendário (D2) — isso precisa de corpus e vem em F3/F4.
 
 ### F1 — Conversa que sabe calar
+**Cartões delegáveis em `docs/F1-tarefas.md`** (F1-01 a F1-16), um commit cada, com aceite verificável, o que **não** se verifica sem hardware real e a separação do que só o dono pode validar na máquina dele. Doze dos dezesseis fecham sem microfone (áudio gravado/sintético e dispositivos falsos).
 Entrega: AEC/VAD/ASR incremental, detector de turno, S1, TTS streaming cancelável, PTT, indicador de microfone, corpus pt-BR de turno (≥500 pausas reais, consentidas).
 Aceite: (a) SLO-1, SLO-2, SLO-3, SLO-4 atingidos na máquina do dono; (b) suíte de cancelamento: interromper em 20 pontos distintos de uma resposta → 0 casos de áudio velho tocando, 0 de entrada no histórico, 0 de tool disparada depois; (c) histórico contém só `played_ms` real; (d) curva falso corte × atraso publicada, com A/B entre silêncio fixo e detector semântico; (e) sem rede, cai para PTT e diz isso.
 
@@ -606,4 +607,4 @@ Aceite: (a) comparação contra a cascata no **mesmo corpus** de F1, reportando 
 
 `docs/adr/0001` arquitetura C · `0002` epoch/cancelamento · `0003` capacidade e PDP · `0004` papel do Jev · `0005` memória e índice trocável (item 4 emendado pela 0008) · `0006` camadas de atuação no desktop · `0007` processos e barramento · **`0008` memória em grafo e ativação por propagação** · **`0009` níveis de acesso e elevação** · **`0010` catálogo do v1 e clientes MCP** · **`0011` reranker de licença comercial**.
 
-Cartões de tarefa da F0: `docs/F0-tarefas.md`.
+Cartões de tarefa: F0 em `docs/F0-tarefas.md`, F1 em `docs/F1-tarefas.md`.
