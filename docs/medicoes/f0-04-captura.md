@@ -6,7 +6,7 @@
 
 - hardware: AMD Ryzen 5 5600G with Radeon Graphics, 12 fios, 31 GiB de RAM
 - Linux-7.2.9-200.nobara.fc44.x86_64-x86_64-with-glibc2.43, Python 3.12.14, rustc 1.98.1 (48a229cea 2026-09-01)
-- 200 frames de 20 ms por execução (4 s de áudio), 1 execuções
+- 10000 frames de 20 ms por execução (200 s de áudio), 3 execuções
 - o caminho medido é `frame de 20 ms → pré-filtro → VAD → evento`; os braços `rust-std` e `python-numpy` usam a **mesma** aritmética e os mesmos limiares, para a comparação ser de linguagem e não de algoritmo
 - áudio sintético determinístico, idêntico para os três braços (fala e silêncio alternados). **Não é corpus**: corpus pt-BR de turno é da F1, com consentimento
 - `rust-std` compila com `rustc -O`, **só biblioteca padrão**: sem cargo, sem rede e sem instalar nada na máquina
@@ -17,15 +17,17 @@
 
 | braço | p50 (ms) | p95 (ms) | p99 (ms) | máximo (ms) | pausas de GC | GC total (ms) |
 |---|---:|---:|---:|---:|---:|---:|
-| `rust-std` | 0.0004 | 0.0005 | 0.0007 | 0.0067 | 0 | 0.0 |
-| `python-numpy` | 0.0155 | 0.0266 | 0.0354 | 0.3360 | 0 | 0.0 |
-| `evento-no-barramento` | 0.3862 | 0.5967 | 0.7182 | 1.0269 | 1 | 0.1 |
+| `rust-std` | 0.0003 | 0.0003 | 0.0004 | 0.0112 | 0 | 0.0 |
+| `python-numpy` | 0.0099 | 0.0103 | 0.0157 | 0.1773 | 0 | 0.0 |
+| `python-onnx` | 0.1016 | 0.1129 | 0.1232 | 0.4852 | 1 | 0.1 |
+| `evento-no-barramento` | 0.3576 | 0.3842 | 0.4210 | 0.7940 | 1 | 0.1 |
 
 ## Pisos: o que é da máquina, não nosso
 
 | piso | n | p50 (ms) | p95 (ms) | p99 (ms) | observação |
 |---|---:|---:|---:|---:|---|
-| agendamento (laço de 20 ms, sem nosso código) | 200 | 0.070 | 0.093 | 0.099 |  |
+| agendamento (laço de 20 ms, sem nosso código) | 500 | 0.062 | 0.096 | 0.290 |  |
+| dispositivo (monitor de saída alsa_output.usb-MV-SILICON_fifine_Microphone_20190808-00.analog-stereo.monitor, sem nosso código) | 272 | 1.335 | 19.997 | 19.999 | jitter entre blocos de 20 ms; monitor, nunca microfone |
 
 ## Proposta de D1 (linguagem e IPC do núcleo)
 
@@ -33,12 +35,12 @@ O orçamento do SLO-1 é **p95 ≤ 80 ms** de captura a evento. Somando o que é
 
 | caminho | p95 somado (ms) | fração do SLO-1 |
 |---|---:|---:|
-| Python + ONNX (silero) | 0.690 | 0.86% |
-| Rust (VAD barato) + barramento em Python | 0.690 | 0.86% |
+| Python + ONNX (silero) | 0.593 | 0.74% |
+| Rust (VAD barato) + barramento em Python | 0.481 | 0.60% |
 
-- A diferença de linguagem **no VAD** é de 0.0005 ms (Rust) contra 0.0266 ms (Python+numpy, mesma aritmética) e 0.0000 ms (Python+ONNX, VAD neural de verdade). Em termos de SLO-1, a maior dessas é 0.00% do orçamento.
-- O **custo do evento** (0.597 ms p95: envelope, validação de borda, IPC ida e volta e log encadeado) é maior que o custo do VAD em qualquer linguagem. O gargalo do nosso lado é a fronteira, não a aritmética.
-- O **piso do dispositivo** medido (0.0 ms p95) é uma a duas ordens de grandeza maior que tudo que fazemos — com a ressalva de viés logo abaixo.
+- A diferença de linguagem **no VAD** é de 0.0003 ms (Rust) contra 0.0103 ms (Python+numpy, mesma aritmética) e 0.1129 ms (Python+ONNX, VAD neural de verdade). Em termos de SLO-1, a maior dessas é 0.14% do orçamento.
+- O **custo do evento** (0.384 ms p95: envelope, validação de borda, IPC ida e volta e log encadeado) é maior que o custo do VAD em qualquer linguagem. O gargalo do nosso lado é a fronteira, não a aritmética.
+- O **piso do dispositivo** medido (20.0 ms p95) é uma a duas ordens de grandeza maior que tudo que fazemos — com a ressalva de viés logo abaixo.
 
 **Proposta:** manter **Python 3.12 nos sete processos no v0**, com a fronteira pronta para trocar `audio-io`/`agentd` por Rust sem reescrever contrato (o contrato é dado: `schemas/events.v1.json` e `schemas/event_log.sql`). O número não justifica pagar duas linguagens agora: o nosso custo total é menos de 1% do SLO-1, e o ecossistema de ML (ONNX, ASR, TTS) está em Python.
 
@@ -46,8 +48,6 @@ O orçamento do SLO-1 é **p95 ≤ 80 ms** de captura a evento. Somando o que é
 
 ## O que **não** foi medido
 
-- **braço `python-onnx`** — o modelo silero-vad não foi passado em `--modelo` (o peso não é versionado no repositório; baixe-o e aponte o caminho)
-- **piso do dispositivo de áudio** — o monitor entregou só 23 frames: amostra insuficiente
 - **captura do microfone de verdade** — não foi medida de propósito: gravar o microfone do dono para medir jitter seria invadir privacidade sem necessidade. O piso do dispositivo usa o monitor da saída, que tem o mesmo caminho de driver
 - **Windows** — o harness é portável (Rust std, Python, stdlib), mas foi executado só em Linux: não há máquina Windows nem remoto nesta sessão
 - **AEC e redução de ruído de verdade** — o pré-filtro medido é pré-ênfase + RMS + ZCR, que é o 'VAD barato' do esqueleto. AEC (WebRTC ou equivalente) entra na F1 e tem custo próprio, não medido aqui

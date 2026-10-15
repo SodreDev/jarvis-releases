@@ -82,6 +82,27 @@ este cartão é justamente o banco de teste, o conserto entrou aqui: `tools/harn
 ganhou `--saida` (padrão `docs/medicoes`) e o teste de fumaça escreve em pasta temporária.
 Medição publicada é dado comitado; teste não a reescreve.
 
+### A medição da F0-04 foi refeita, porque a publicada era a de fumaça
+
+Depois do conserto, ficou claro que o dano já estava **comitado**: `docs/medicoes/f0-04-captura.*`
+no repositório trazia `n = 200`, **1 execução** e três braços, enquanto a ADR-0014 cita
+`n = 10 000`, **3 execuções** e quatro braços. A medição de verdade tinha sido substituída por
+uma execução de fumaça em algum `pytest` da F0, e o CSV publicado deixou de sustentar a decisão
+D1.
+
+O harness foi executado de novo, com os quatro braços (baixei o `silero_vad.onnx` — MIT, já
+verificado na porta de licença, fora do repositório). Os números da ADR se sustentam:
+
+| braço | ADR-0014 (p95) | reexecução (p95) |
+|---|---:|---:|
+| `rust-std` | 0,0003 ms | 0,0003 ms |
+| `python-numpy` | 0,0105 ms | 0,0103 ms |
+| `python-onnx` (silero) | 0,110 ms | 0,1129 ms |
+| `evento-no-barramento` | 0,384 ms | 0,3842 ms |
+
+Ou seja: a conclusão de D1 (0,575 ms p95 = 0,72% do SLO-1) continua válida; o que estava
+perdido era a **procedência** publicada, e ela voltou.
+
 ### Não verificado (exige hardware real)
 
 - **Jitter de captura, *xruns*, latência e período do driver (PipeWire/WASAPI) e deriva de
