@@ -16,35 +16,41 @@ produz **uma** revisão de estado. O transcritor não tenta ser esperto sozinho.
 
 A ordem com o `Cancel` não é problema deste módulo: a `Percepcao` (F1-05) já garante que o
 `Cancel` sai primeiro, e o transcritor só é chamado depois — com o epoch novo.
+
+**A interface do motor mora em `jarvis.voz` desde a ADR-0017** e é reexportada aqui para o
+código do F1-06 continuar importando do mesmo lugar. O que o motor é não mudou (um bloco
+entra, texto e confiança saem); o que ele passou a declarar é `idioma`, `onde` (local ou
+nuvem) e o `registrado` — o id pelo qual o portão de motores decide se ele pode rodar.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final
 
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO, Quadro
 from jarvis.barramento.contrato import validar
 from jarvis.barramento.envelope import Envelope, Prioridade, Tipo, Trust
 from jarvis.corpus.metricas import acordo_de_prefixo, palavras
+from jarvis.voz.interface import IDIOMA_PADRAO, Hipotese, MotorDeAsr, Onde
+from jarvis.voz.registro import exigir_motor
 
 PASSO_PADRAO_MS: Final = 200.0
 ESTABILIDADE_MINIMA: Final = 0.6
 """Limiar de "utilizável" do SLO-3, escrito **antes** de medir (aceite (b) do F1-06)."""
-IDIOMA: Final = "pt-BR"
+IDIOMA: Final = IDIOMA_PADRAO
 
-
-@runtime_checkable
-class MotorDeAsr(Protocol):
-    """Transcreve um bloco de áudio. Quem é incremental é o `TranscritorIncremental`."""
-
-    nome: str
-    modelo: str
-    licenca: str
-
-    def transcrever(self, amostras: bytes) -> tuple[str, float]:
-        """Texto e confiança em [0, 1] para o bloco inteiro."""
-        ...
+__all__ = [
+    "ESTABILIDADE_MINIMA",
+    "IDIOMA",
+    "PASSO_PADRAO_MS",
+    "Hipotese",
+    "MotorDeAsr",
+    "MotorDeReferencia",
+    "MotorWhisper",
+    "Passo",
+    "TranscritorIncremental",
+]
 
 
 @dataclass(slots=True)
@@ -62,15 +68,18 @@ class MotorDeReferencia:
     nome: str = "oráculo-do-rótulo@1"
     modelo: str = "(nenhum)"
     licenca: str = "não se aplica (texto do próprio corpus)"
+    idioma: str = IDIOMA_PADRAO
+    onde: Onde = Onde.LOCAL
+    registrado: str = "asr-oraculo"
 
-    def transcrever(self, amostras: bytes) -> tuple[str, float]:
+    def transcrever(self, amostras: bytes) -> Hipotese:
         if self.duracao_ms <= 0:
-            return self.texto, 1.0
+            return Hipotese(self.texto, 1.0)
         ouvido_ms = 1000.0 * (len(amostras) // BYTES_POR_AMOSTRA) / TAXA_PADRAO
         fracao = max(0.0, min(1.0, ouvido_ms / self.duracao_ms))
         todas = palavras(self.texto)
         quantas = round(fracao * len(todas))
-        return " ".join(todas[:quantas]), 1.0
+        return Hipotese(" ".join(todas[:quantas]), 1.0)
 
 
 @dataclass(slots=True)
@@ -89,6 +98,9 @@ class MotorWhisper:
     nome: str = ""
     modelo: str = ""
     licenca: str = "Apache-2.0"
+    onde: Onde = Onde.LOCAL
+    registrado: str = "asr-whisper-local"
+    """Id no `licenses/motores.toml`: é o portão que diz se este motor pode rodar."""
     _modelo: Any = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -98,6 +110,10 @@ class MotorWhisper:
             self.modelo = f"openai/whisper-{self.tamanho}"
 
     def abrir(self) -> None:
+        # O portão **antes** do runtime: motor não registrado não carrega, e a licença do
+        # cliente (faster-whisper, MIT) é conferida no registro, não no que este código afirma.
+        motor = exigir_motor(self.registrado)
+        self.licenca = motor.licenca_do_cliente
         try:
             from faster_whisper import WhisperModel
         except ImportError as erro:  # pragma: no cover — ambiente sem o grupo `asr`
@@ -112,7 +128,7 @@ class MotorWhisper:
             download_root=self.pasta or None,
         )
 
-    def transcrever(self, amostras: bytes) -> tuple[str, float]:
+    def transcrever(self, amostras: bytes) -> Hipotese:
         import numpy as np
 
         if self._modelo is None:
@@ -124,10 +140,10 @@ class MotorWhisper:
         partes = list(trechos)
         texto = " ".join(t.text for t in partes).strip()
         if not partes:
-            return "", 0.0
+            return Hipotese("", 0.0)
         # avg_logprob é logaritmo de probabilidade média por token; exp traz para [0, 1].
         media = sum(float(t.avg_logprob) for t in partes) / len(partes)
-        return texto, float(min(1.0, max(0.0, 2.718281828**media)))
+        return Hipotese(texto, float(min(1.0, max(0.0, 2.718281828**media))))
 
 
 @dataclass(frozen=True, slots=True)
