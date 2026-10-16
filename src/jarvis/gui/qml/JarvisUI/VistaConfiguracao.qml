@@ -24,7 +24,7 @@ Item {
     Column {
         id: coluna
         width: rolagem.width
-        spacing: 18
+        spacing: 14
 
         Repeater {
             model: [{ papel: "asr", titulo: "quem ouve" }, { papel: "tts", titulo: "quem fala" }]
@@ -37,7 +37,7 @@ Item {
                     model: ponte ? ponte.motores.filter(function (m) { return m.papel === papel }) : []
                     Rectangle {
                         width: coluna.width
-                        height: 38
+                        height: 34
                         color: modelData.escolhido ? Qt.rgba(0.22, 0.78, 0.91, 0.07) : "transparent"
                         border.width: 1
                         border.color: modelData.escolhido ? Tema.cianoFraco : Tema.linha

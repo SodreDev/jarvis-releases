@@ -39,9 +39,10 @@ from tests.unit.voz.test_app import MotorDeAsrFalso
 PRESAS: list[tuple[QQuickView, Ponte]] = []
 """Janelas já usadas, seguradas até o fim do processo (ver o desmonte da fixture `abrir`)."""
 
-TELAS = Path(os.environ.get("JARVIS_TELAS", "/tmp/jarvis-telas"))  # noqa: S108
-"""Onde as capturas saem. É o caminho que o dono pediu, fora do repositório — e dá para
-apontar para outro lugar com `JARVIS_TELAS` sem tocar no teste."""
+TELAS = Path(os.environ.get("JARVIS_TELAS", "/tmp/jarvis-telas/teste"))  # noqa: S108
+"""Onde as capturas do **teste** saem: uma subpasta, para não sobrescrever as telas que o dono
+pediu em `/tmp/jarvis-telas/` — as dele saem de `jarvis --capturar`, com a configuração dele.
+`JARVIS_TELAS` aponta para outro lugar sem tocar no teste."""
 CONFIGURACAO = Configuracao(asr="asr-whisper-local", tts="tts-parametrico", s2="eco")
 
 
