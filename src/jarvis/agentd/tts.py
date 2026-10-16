@@ -31,13 +31,18 @@ roda **no** produto. As opções estão nas notas do executor; a escolha é do d
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
 
 from jarvis.audio_io.playback import Pedaco
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
+from jarvis.fatiador import (
+    PALAVRAS_DO_PRIMEIRO_PEDACO,
+    PALAVRAS_POR_PEDACO,
+    PONTUACAO_DE_CORTE,
+    fatiar_tudo,
+)
 from jarvis.licencas import (
     ARQUIVO_MODELOS,
     Categoria,
@@ -64,11 +69,6 @@ __all__ = [
     "falar_para",
     "fatiar",
 ]
-
-PALAVRAS_DO_PRIMEIRO_PEDACO: Final = 3
-"""O primeiro pedaço é curto de propósito: ele é o que atrasa o SLO-5 e o que se joga fora."""
-PALAVRAS_POR_PEDACO: Final = 8
-PONTUACAO_DE_CORTE: Final = (",", ";", ":", ".", "!", "?")
 
 
 class VozRecusada(RuntimeError):
@@ -161,27 +161,11 @@ def fatiar(texto: str) -> list[tuple[int, str]]:
     """Fatia o texto em trechos para síntese: o primeiro curto, os outros maiores.
 
     Corta em pontuação quando ela aparece dentro do limite de palavras — prosódia de pedaço
-    que termina em vírgula é melhor do que a de pedaço cortado no meio de uma oração.
+    que termina em vírgula é melhor do que a de pedaço cortado no meio de uma oração. A regra
+    mora em `jarvis.fatiador` desde a ADR-0025, para o `s2` cortar o stream com a **mesma**
+    regra: aqui ela recebe o texto de uma vez.
     """
-    palavras = texto.split()
-    if not palavras:
-        return []
-    fatias: list[tuple[int, str]] = []
-    posicao = 0
-    indice = 0
-    while indice < len(palavras):
-        limite = PALAVRAS_DO_PRIMEIRO_PEDACO if not fatias else PALAVRAS_POR_PEDACO
-        tomadas = palavras[indice : indice + limite]
-        for i, palavra in enumerate(tomadas):
-            if palavra.endswith(PONTUACAO_DE_CORTE) and i + 1 < len(tomadas):
-                tomadas = tomadas[: i + 1]
-                break
-        trecho = " ".join(tomadas)
-        inicio = texto.index(tomadas[0], posicao)
-        fatias.append((inicio, trecho))
-        posicao = inicio + len(trecho)
-        indice += len(tomadas)
-    return fatias
+    return [(pedaco.inicio, pedaco.texto) for pedaco in fatiar_tudo(texto)]
 
 
 @dataclass(slots=True)
@@ -213,8 +197,24 @@ class SintetizadorEmStreaming:
 
     def pedacos(self, texto: str, *, chunk_id: str = "tts") -> Iterator[tuple[Pedaco, Trecho]]:
         """Gera pedaço por pedaço. Para de gerar assim que o cancelamento aparece."""
+        return self._sintetizar(fatiar(texto), chunk_id=chunk_id)
+
+    def pedacos_do_stream(
+        self, trechos: Iterable[tuple[int, str]], *, chunk_id: str = "tts"
+    ) -> Iterator[tuple[Pedaco, Trecho]]:
+        """O mesmo, com os trechos **já cortados** chegando do `s2` (ADR-0025, regra 10).
+
+        `trechos` é `(inicio_no_texto, texto)`, como o `fatiar` devolve; quem monta isso a
+        partir dos `ResponseChunk` do epoch corrente é `jarvis.s2.stream`. Trecho vazio (o fim
+        de uma resposta que acabou numa pontuação) não vira síntese.
+        """
+        return self._sintetizar(((i, t) for i, t in trechos if t), chunk_id=chunk_id)
+
+    def _sintetizar(
+        self, trechos: Iterable[tuple[int, str]], *, chunk_id: str
+    ) -> Iterator[tuple[Pedaco, Trecho]]:
         amostras_acumuladas = 0
-        for indice, (inicio, trecho_texto) in enumerate(fatiar(texto), start=1):
+        for indice, (inicio, trecho_texto) in enumerate(trechos, start=1):
             if self.cancelado():
                 return
             amostras = self.motor.sintetizar(trecho_texto)

@@ -1,0 +1,148 @@
+"""Onde a fala pode ser cortada: a regra única de fronteira para o TTS (ADR-0025, regra 7).
+
+O TTS sintetiza por pedaços, e o primeiro pedaço é curto de propósito — ele é o que atrasa a
+primeira palavra (SLO-5) e o que se joga fora num barge-in. Até a ADR-0025 essa regra morava só
+no `fatiar()` do `agentd/tts.py`, que recebe o **texto inteiro**. Com o cérebro respondendo em
+stream, o `s2` precisa cortar o texto **enquanto ele chega**, e duas regras de corte (uma em
+cada processo) seriam dois lugares para divergir. Por isso a regra mora aqui, incremental, e o
+`fatiar()` é este mesmo fatiador alimentado de uma vez.
+
+A regra: o primeiro pedaço tem até 3 palavras, os seguintes até 8, e o pedaço termina antes do
+limite na primeira palavra que acabe em pontuação de corte. Uma palavra só conta quando está
+**completa** — seguida de espaço, ou no fim do texto —, porque o stream entrega pedaço de
+palavra: "3," pode virar "3,5" no delta seguinte, e cortar ali partiria o número.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Final
+
+PALAVRAS_DO_PRIMEIRO_PEDACO: Final = 3
+"""O primeiro pedaço é curto de propósito: ele é o que atrasa o SLO-5 e o que se joga fora."""
+PALAVRAS_POR_PEDACO: Final = 8
+PONTUACAO_DE_FRASE: Final = (".", "!", "?")
+PONTUACAO_DE_VIRGULA: Final = (",", ";", ":")
+PONTUACAO_DE_CORTE: Final = PONTUACAO_DE_VIRGULA + PONTUACAO_DE_FRASE
+
+
+class Corte(StrEnum):
+    """Por que o pedaço acabou ali. É o `boundary` do `ResponseChunk`."""
+
+    FRASE = "frase"
+    VIRGULA = "virgula"
+    LIMITE = "limite"
+    FIM = "fim"
+    """O texto acabou. Pode vir **vazio**: quando o último pedaço já saiu numa pontuação, só o
+    fim do stream diz que ele era o último, e esperar para saber atrasaria a primeira palavra."""
+
+
+@dataclass(frozen=True, slots=True)
+class PedacoDeFala:
+    """Um trecho pronto para sintetizar, com a posição dele no texto recebido."""
+
+    texto: str
+    inicio: int
+    corte: Corte
+
+
+@dataclass(slots=True)
+class FatiadorDeFala:
+    """Recebe o texto aos poucos e devolve pedaços assim que uma fronteira é certa."""
+
+    primeiro: int = PALAVRAS_DO_PRIMEIRO_PEDACO
+    seguintes: int = PALAVRAS_POR_PEDACO
+    _texto: str = ""
+    _varrido: int = 0
+    """Até onde o texto já foi lido em busca de palavra completa."""
+    _palavras: list[tuple[int, str]] = field(default_factory=list)
+    _emitidos: int = 0
+    _fechado: bool = False
+
+    @property
+    def texto(self) -> str:
+        """Tudo o que chegou até agora, sem normalizar espaço."""
+        return self._texto
+
+    def alimentar(self, delta: str) -> list[PedacoDeFala]:
+        """Acrescenta texto e devolve os pedaços que ficaram certos com ele."""
+        if self._fechado:
+            raise RuntimeError("fatiador já fechado: a resposta acabou")
+        self._texto += delta
+        return self._consumir(final=False)
+
+    def fechar(self) -> list[PedacoDeFala]:
+        """O stream acabou: o que sobrou vira pedaço, e o último sai com corte `FIM`.
+
+        Sempre devolve pelo menos um pedaço — o último —, mesmo vazio, para quem consome saber
+        que a resposta terminou sem precisar de outro sinal.
+        """
+        if self._fechado:
+            return []
+        self._fechado = True
+        pedacos = self._consumir(final=True)
+        if self._palavras:
+            pedacos.append(self._emitir(Corte.FIM))
+        else:
+            pedacos.append(PedacoDeFala(texto="", inicio=len(self._texto), corte=Corte.FIM))
+        return pedacos
+
+    def _consumir(self, *, final: bool) -> list[PedacoDeFala]:
+        pedacos: list[PedacoDeFala] = []
+        texto = self._texto
+        i = self._varrido
+        while i < len(texto):
+            while i < len(texto) and texto[i].isspace():
+                i += 1
+            inicio = i
+            while i < len(texto) and not texto[i].isspace():
+                i += 1
+            if inicio == i:
+                break
+            if i == len(texto) and not final:
+                # Palavra que encosta no fim pode continuar no próximo delta.
+                i = inicio
+                break
+            palavra = texto[inicio:i]
+            self._palavras.append((inicio, palavra))
+            corte = _corte_de(palavra)
+            limite = self.primeiro if self._emitidos == 0 else self.seguintes
+            if corte is not None:
+                pedacos.append(self._emitir(corte))
+            elif len(self._palavras) >= limite:
+                pedacos.append(self._emitir(Corte.LIMITE))
+        self._varrido = i
+        return pedacos
+
+    def _emitir(self, corte: Corte) -> PedacoDeFala:
+        inicio = self._palavras[0][0]
+        texto = " ".join(palavra for _, palavra in self._palavras)
+        self._palavras.clear()
+        self._emitidos += 1
+        return PedacoDeFala(texto=texto, inicio=inicio, corte=corte)
+
+
+def _corte_de(palavra: str) -> Corte | None:
+    if palavra.endswith(PONTUACAO_DE_FRASE):
+        return Corte.FRASE
+    if palavra.endswith(PONTUACAO_DE_VIRGULA):
+        return Corte.VIRGULA
+    return None
+
+
+def fatiar_tudo(texto: str) -> list[PedacoDeFala]:
+    """O texto inteiro de uma vez — sem o pedaço vazio do fim."""
+    fatiador = FatiadorDeFala()
+    pedacos = fatiador.alimentar(texto) + fatiador.fechar()
+    return [p for p in pedacos if p.texto]
+
+
+def fatiar_em_deltas(deltas: Iterable[str]) -> list[PedacoDeFala]:
+    """O mesmo texto chegando aos poucos. Tem de dar os mesmos pedaços que `fatiar_tudo`."""
+    fatiador = FatiadorDeFala()
+    pedacos: list[PedacoDeFala] = []
+    for delta in deltas:
+        pedacos += fatiador.alimentar(delta)
+    return [p for p in pedacos + fatiador.fechar() if p.texto]
