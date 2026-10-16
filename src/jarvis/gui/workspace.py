@@ -43,6 +43,7 @@ from jarvis.gui.componentes import (
     componente,
     validar_dados,
 )
+from jarvis.voz.escuta import Escuta, confirmacao_necessaria
 
 LAYOUT_ANTERIOR: Final = "anterior"
 """O instantâneo que o gerente guarda sozinho antes de mudar de modo ou maximizar — é o que
@@ -177,6 +178,8 @@ class Resultado:
             return f"modo {self.acao.modo.frase}"
         if self.acao.tipo is Tipo.RESTAURAR:
             return "layout de antes de volta"
+        if self.acao.tipo is Tipo.ESCUTA and self.acao.escuta is not None:
+            return f"agora: {self.acao.escuta.frase}"
         feito = {
             Tipo.CRIAR: f"{nome} aberto",
             Tipo.REMOVER: f"{nome} fechado — dá para recuperar",
@@ -201,6 +204,11 @@ class Workspace:
     instantaneos: dict[str, tuple[Modo, tuple[Widget, ...]]] = field(default_factory=dict)
     historico: list[Resultado] = field(default_factory=list)
     ao_mudar: Callable[[], None] | None = None
+    escuta: Escuta | None = None
+    """O modo de escuta vivo da sessão de voz (ADR-0021). Sem ele, `definirModoDeEscuta` é
+    recusada: não há o que trocar."""
+    asr_na_nuvem: Callable[[], bool] = lambda: False
+    """Se o ASR escolhido é de nuvem — muda o que precisa de confirmação."""
     _proximo: int = 0
 
     # --- leitura -------------------------------------------------------------------------
@@ -228,10 +236,15 @@ class Workspace:
         }
 
     # --- a porta por onde a IA fala -------------------------------------------------------
-    def aplicar(self, acao: Acao) -> Resultado:
-        """Uma proposta. Devolve o que aconteceu, e **nunca** levanta por proposta ruim."""
+    def aplicar(self, acao: Acao, *, confirmada: bool = False) -> Resultado:
+        """Uma proposta. Devolve o que aconteceu, e **nunca** levanta por proposta ruim.
+
+        `confirmada` é **só** de `confirmar` — o sim do dono. Não existe campo da proposta que
+        diga "já confirmado": antes, um `widget` começando com `confirmado:` fazia esse papel,
+        e a própria IA podia escrevê-lo e pular a confirmação.
+        """
         try:
-            resultado = self._aplicar(acao)
+            resultado = self._aplicar(acao, confirmada=confirmada)
         except (AcaoInvalida, ComponenteNaoAutorizado) as erro:
             resultado = Resultado(aceita=False, acao=acao, motivo=str(erro))
         self.historico.append(resultado)
@@ -257,9 +270,11 @@ class Workspace:
     def aplicar_todas(self, acoes: Iterator[Acao] | list[Acao]) -> list[Resultado]:
         return [self.aplicar(acao) for acao in acoes]
 
-    def _aplicar(self, acao: Acao) -> Resultado:
+    def _aplicar(self, acao: Acao, *, confirmada: bool = False) -> Resultado:
         if acao.tipo is Tipo.CRIAR:
-            return self._criar(acao)
+            return self._criar(acao, confirmada=confirmada)
+        if acao.tipo is Tipo.ESCUTA:
+            return self._definir_escuta(acao, confirmada=confirmada)
         if acao.tipo is Tipo.MODO:
             return self._mudar_de_modo(acao)
         if acao.tipo is Tipo.RESTAURAR:
@@ -292,12 +307,12 @@ class Workspace:
         return self._mover_ou_redimensionar(acao, alvo)
 
     # --- cada ação -----------------------------------------------------------------------
-    def _criar(self, acao: Acao) -> Resultado:
+    def _criar(self, acao: Acao, *, confirmada: bool = False) -> Resultado:
         alvo = componente(acao.componente)
         dados = validar_dados(alvo, acao.dados)
-        if alvo.sensivel and not acao.widget.startswith("confirmado:"):
+        if alvo.sensivel and not confirmada:
             pendencia = self._identificador("pendencia")
-            self.pendentes[pendencia] = replace(acao, widget=f"confirmado:{pendencia}")
+            self.pendentes[pendencia] = acao
             return Resultado(
                 aceita=False,
                 acao=acao,
@@ -331,6 +346,31 @@ class Workspace:
             )
         )
         return Resultado(aceita=True, acao=acao, widget=identificador, ajuste=ajuste)
+
+    def _definir_escuta(self, acao: Acao, *, confirmada: bool = False) -> Resultado:
+        """O modelo propõe o modo; a política de `jarvis.voz.escuta` decide se espera o dono."""
+        if self.escuta is None or acao.escuta is None:
+            return Resultado(
+                aceita=False, acao=acao, motivo="não há sessão de voz cujo modo trocar"
+            )
+        motivo = confirmacao_necessaria(
+            acao.escuta, atual=self.escuta.modo, asr_na_nuvem=self.asr_na_nuvem()
+        )
+        if motivo and not confirmada:
+            pendencia = self._identificador("pendencia")
+            # A pendência precisa de nome na tela: esta ação não tem componente nem título.
+            self.pendentes[pendencia] = replace(
+                acao, titulo=acao.titulo or f"escuta: {acao.escuta.frase}"
+            )
+            return Resultado(
+                aceita=False,
+                acao=acao,
+                pendencia=pendencia,
+                motivo=f"{motivo}. {acao.motivo or 'A IA não disse por que precisa disto.'}",
+            )
+        ajuste = "já estava neste modo" if acao.escuta is self.escuta.modo else ""
+        self.escuta.trocar(acao.escuta)
+        return Resultado(aceita=True, acao=acao, ajuste=ajuste)
 
     def _remover(self, acao: Acao, alvo: Widget) -> Resultado:
         del self.widgets[alvo.id]
@@ -530,7 +570,7 @@ class Workspace:
             self.historico.append(recusa)
             self._avisar()
             return recusa
-        resultado = self.aplicar(acao)
+        resultado = self.aplicar(acao, confirmada=True)
         self._avisar()
         return resultado
 

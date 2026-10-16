@@ -5,9 +5,10 @@ não desenha tela, não escreve HTML, não manda script: ela emite **ações est
 conjunto fechado, e quem decide se cada uma acontece é o `Workspace` (`jarvis.gui.workspace`),
 com as regras do dono em cima.
 
-Por isso este módulo não tem nada de Qt e nada de desenho. Ele é o **contrato**: oito tipos de
-ação, uma área em unidades de grade, e uma leitura que recusa o que não entende — porque tudo
-que vem da IA é `untrusted` (P6), inclusive quando a IA é a nossa.
+Por isso este módulo não tem nada de Qt e nada de desenho. Ele é o **contrato**: nove tipos de
+ação (o nono, `definirModoDeEscuta`, é da ADR-0021), uma área em unidades de grade, e uma
+leitura que recusa o que não entende — porque tudo que vem da IA é `untrusted` (P6), inclusive
+quando a IA é a nossa.
 
 A recusa é sempre **com motivo**: ação recusada em silêncio vira IA insistindo no mesmo erro,
 e dono sem saber por que a tela não mudou.
@@ -19,6 +20,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Final
+
+from jarvis.voz.escuta import MODOS, ModoDeEscuta
 
 COLUNAS: Final = 12
 LINHAS: Final = 8
@@ -33,7 +36,7 @@ class AcaoInvalida(ValueError):
 
 
 class Tipo(StrEnum):
-    """As oito ações. Mais nenhuma — acrescentar é emenda de ADR, não detalhe de tela."""
+    """As nove ações. Mais nenhuma — acrescentar é emenda de ADR, não detalhe de tela."""
 
     CRIAR = "createWidget"
     REMOVER = "removeWidget"
@@ -43,6 +46,9 @@ class Tipo(StrEnum):
     MINIMIZAR = "minimizeWidget"
     MODO = "setWorkspaceMode"
     RESTAURAR = "restoreLayout"
+    ESCUTA = "definirModoDeEscuta"
+    """ADR-0021: trocar atalho ↔ palavra ↔ contínua. Não mexe na tela, mexe em **quando o
+    Jarvis escuta** — por isso a política de confirmação é a de `jarvis.voz.escuta`."""
 
 
 class Modo(StrEnum):
@@ -128,6 +134,8 @@ class Acao:
     layout: str = ""
     motivo: str = ""
     """Por que a IA está propondo isto. É o que aparece numa confirmação pedida ao dono."""
+    escuta: ModoDeEscuta | None = None
+    """Só em `definirModoDeEscuta`: o modo pedido (`ptt`, `palavra` ou `vad`)."""
 
     def para_dict(self) -> dict[str, Any]:
         bruto: dict[str, Any] = {"tipo": str(self.tipo)}
@@ -146,6 +154,8 @@ class Acao:
             bruto["modo"] = str(self.modo)
         if self.dados:
             bruto["dados"] = dict(self.dados)
+        if self.escuta is not None:
+            bruto["escuta"] = str(self.escuta)
         return bruto
 
 
@@ -194,6 +204,7 @@ def ler_acao(bruto: Mapping[str, Any]) -> Acao:
         "modo",
         "layout",
         "motivo",
+        "escuta",
     }
     estranhos = sorted(set(bruto) - conhecidos)
     if estranhos:
@@ -220,6 +231,7 @@ def ler_acao(bruto: Mapping[str, Any]) -> Acao:
     dados = bruto.get("dados") or {}
     if not isinstance(dados, Mapping):
         raise AcaoInvalida(f"dados: esperava um mapa, veio {type(dados).__name__}")
+    escuta = _escuta(bruto, tipo, dados)
     return Acao(
         tipo=tipo,
         widget=_texto(bruto, "widget"),
@@ -230,4 +242,30 @@ def ler_acao(bruto: Mapping[str, Any]) -> Acao:
         modo=modo,
         layout=_texto(bruto, "layout"),
         motivo=_texto(bruto, "motivo"),
+        escuta=escuta,
     )
+
+
+def _escuta(bruto: Mapping[str, Any], tipo: Tipo, dados: Mapping[str, Any]) -> ModoDeEscuta | None:
+    """O modo de `definirModoDeEscuta` — e **só** o modo.
+
+    Nada de `dados` aqui: a palavra, o limiar, o atalho e o interruptor da nuvem são escolhas
+    do dono na tela, e nenhuma ação do vocabulário chega neles. Um `dados` com `nuvem` ou
+    `palavra` não é ignorado — é recusado, para a IA saber que não pode.
+    """
+    cru = bruto.get("escuta")
+    if tipo is not Tipo.ESCUTA:
+        if cru is not None:
+            raise AcaoInvalida(f"escuta só existe em {Tipo.ESCUTA}, não em {tipo}")
+        return None
+    if dados:
+        raise AcaoInvalida(
+            f"{Tipo.ESCUTA} não leva dados ({', '.join(sorted(map(str, dados)))}): palavra, "
+            "atalho e nuvem são escolha do dono na tela"
+        )
+    try:
+        return ModoDeEscuta(str(cru))
+    except ValueError:
+        raise AcaoInvalida(
+            f"escuta {cru!r} não existe. Os que existem: {', '.join(MODOS)}"
+        ) from None
