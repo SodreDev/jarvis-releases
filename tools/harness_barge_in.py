@@ -51,6 +51,18 @@ RAIZ: Final = Path(__file__).resolve().parent.parent
 PASTA_SAIDA: Final = RAIZ / "docs" / "medicoes"
 CORPUS_PADRAO: Final = RAIZ / "corpus" / "turnos"
 MODELO_SILERO: Final = PASTA_MODELOS_PADRAO / ARQUIVO_SILERO
+CABECALHO_DA_META: Final = f"piso p50 ≤ {SLO2_P50_MS:.0f}?"
+CABECALHO_DO_VEREDITO: Final = f"piso p95 ≤ {SLO2_P95_MS:.0f}? (gatilho)"
+"""Os dois vereditos da tabela são sobre o PISO DE SOFTWARE, não sobre o SLO-2.
+
+A fila do driver não está na conta, e é nela que o áudio velho sobrevive — então `sim` na
+coluna do limite fazia "o piso cabe" ser lido como "o SLO-2 fechou", e o F1-16 (único veredito
+do SLO, na máquina do dono) parecia dispensável. A meta (p50) e o limite (p95) continuam
+separados: a SPEC §7 tem os dois e o gatilho da ADR-0014 é o limite.
+"""
+VEREDITO_CABE: Final = "piso cabe"
+VEREDITO_EXCEDE: Final = "**piso excede**"
+VEREDITO_EXCEDE_GATILHO: Final = "**piso excede — gatilho aberto**"
 
 
 @dataclass(slots=True)
@@ -130,7 +142,7 @@ def escrever_markdown(medicao: Medicao, caminho: Path) -> None:
         "## SLO-2 por VAD",
         "",
         "| VAD | n | SLO-2 p50 | SLO-2 p95 | máximo | só áudio p95 | atraso do VAD p50 | "
-        f"custo de código p95 | p50 ≤ {SLO2_P50_MS:.0f}? | p95 ≤ {SLO2_P95_MS:.0f}? (gatilho) |",
+        f"custo de código p95 | {CABECALHO_DA_META} | {CABECALHO_DO_VEREDITO} |",
         "|---|---:|---:|---:|---:|---:|---:|---:|:--|:--|",
     ]
     for vad, interrupcoes in medicao.por_vad.items():
@@ -142,8 +154,8 @@ def escrever_markdown(medicao: Medicao, caminho: Path) -> None:
             f"| `{vad}` | {r['n']:.0f} | {r['slo2_p50']:.1f} ms | {r['slo2_p95']:.1f} ms "
             f"| {r['slo2_max']:.1f} ms | {r['slo2_audio_p95']:.1f} ms | {r['vad_p50']:.1f} ms "
             f"| {r['codigo_us_p95']:.0f} µs "
-            f"| {'sim' if r['slo2_p50'] <= SLO2_P50_MS else '**não**'} "
-            f"| {'sim' if r['slo2_p95'] <= SLO2_P95_MS else '**NÃO — gatilho aberto**'} |"
+            f"| {VEREDITO_CABE if r['slo2_p50'] <= SLO2_P50_MS else VEREDITO_EXCEDE} "
+            f"| {VEREDITO_CABE if r['slo2_p95'] <= SLO2_P95_MS else VEREDITO_EXCEDE_GATILHO} |"
         )
 
     linhas += [

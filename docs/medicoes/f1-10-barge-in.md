@@ -15,10 +15,10 @@
 
 ## SLO-2 por VAD
 
-| VAD | n | SLO-2 p50 | SLO-2 p95 | máximo | só áudio p95 | atraso do VAD p50 | custo de código p95 | p50 ≤ 80? | p95 ≤ 150? (gatilho) |
+| VAD | n | SLO-2 p50 | SLO-2 p95 | máximo | só áudio p95 | atraso do VAD p50 | custo de código p95 | piso p50 ≤ 80? | piso p95 ≤ 150? (gatilho) |
 |---|---:|---:|---:|---:|---:|---:|---:|:--|:--|
-| `energia` | 600 | 51.7 ms | 71.7 ms | 79.7 ms | 71.0 ms | 51.0 ms | 831 µs | sim | sim |
-| `silero` | 600 | 81.6 ms | 105.7 ms | 123.7 ms | 105.0 ms | 81.0 ms | 957 µs | **não** | sim |
+| `energia` | 600 | 51.7 ms | 71.7 ms | 79.7 ms | 71.0 ms | 51.0 ms | 831 µs | piso cabe | piso cabe |
+| `silero` | 600 | 81.6 ms | 105.7 ms | 123.7 ms | 105.0 ms | 81.0 ms | 957 µs | **piso excede** | piso cabe |
 
 **Quem gasta o SLO-2 é o VAD, não o nosso caminho de cancelamento.** O custo de código dos cinco saltos depois da detecção fica na casa de 1 a 4 ms; o resto é o tempo que o VAD leva para ter certeza de que é fala. É aí que está a troca: o limiar de energia detecta mais rápido (menor p50) e o `silero` não produz falso positivo por quadro (F1-05, precisão 1,000 contra 0,999). Escolher entre os dois é escolher entre calar mais rápido e calar por engano — e isso se decide com voz real (F1-16).
 

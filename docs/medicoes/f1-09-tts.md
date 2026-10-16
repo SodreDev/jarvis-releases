@@ -15,10 +15,10 @@
 
 ## Resultado por candidato
 
-| motor | voz | licença | n | 1º pedaço p50 | 1º pedaço p95 | piso SLO-5 p50 | piso SLO-5 p95 | atinge SLO-5? | RTF p50 |
+| motor | voz | licença | n | 1º pedaço p50 | 1º pedaço p95 | piso SLO-5 p50 | piso SLO-5 p95 | piso cabe no SLO-5? | RTF p50 |
 |---|---|---|---:|---:|---:|---:|---:|:--|---:|
-| `parametrico@1` | `parametrico` | Apache-2.0 | 40 | 17.3 ms | 24.9 ms | 17.3 ms | 24.9 ms | sim | 0.026× |
-| `piper-onnx@1.0.0+pt_BR-faber-medium` | `pt_BR-faber-medium` | MIT | 40 | 116.3 ms | 145.2 ms | 116.3 ms | 145.3 ms | sim | 0.113× |
+| `parametrico@1` | `parametrico` | Apache-2.0 | 40 | 17.3 ms | 24.9 ms | 17.3 ms | 24.9 ms | piso cabe | 0.026× |
+| `piper-onnx@1.0.0+pt_BR-faber-medium` | `pt_BR-faber-medium` | MIT | 40 | 116.3 ms | 145.2 ms | 116.3 ms | 145.3 ms | piso cabe | 0.113× |
 
 ## O que não foi medido
 

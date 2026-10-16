@@ -52,6 +52,15 @@ ID_REGISTRADO: Final = "rhasspy/piper-voices:pt_BR-faber-medium"
 SESSAO: Final = "0193f0a0-0000-7000-8000-000000000000"
 SLO5_P50_MS: Final = 600.0
 SLO5_P95_MS: Final = 900.0
+CABECALHO_DO_VEREDITO: Final = "piso cabe no SLO-5?"
+"""O veredito da tabela é sobre o PISO DE SOFTWARE, não sobre o SLO-5.
+
+"atinge SLO-5: sim" com 145 ms contra alvo de 900 ms confunde "o piso cabe" com "o SLO fecha":
+a fila do driver não está na conta e em USB pode custar 300–500 ms. O SLO-5 de verdade é
+veredito do F1-16, na máquina do dono — e a coluna agora diz isso sem depender do rodapé.
+"""
+VEREDITO_CABE: Final = "piso cabe"
+VEREDITO_EXCEDE: Final = "**piso excede**"
 
 
 def fonemizar_com_espeak(texto: str) -> str:
@@ -237,7 +246,7 @@ def escrever_markdown(medicao: Medicao, caminho: Path) -> None:
         "## Resultado por candidato",
         "",
         "| motor | voz | licença | n | 1º pedaço p50 | 1º pedaço p95 | piso SLO-5 p50 | "
-        "piso SLO-5 p95 | atinge SLO-5? | RTF p50 |",
+        f"piso SLO-5 p95 | {CABECALHO_DO_VEREDITO} | RTF p50 |",
         "|---|---|---|---:|---:|---:|---:|---:|:--|---:|",
     ]
     for nome, v in tabela.items():
@@ -245,7 +254,8 @@ def escrever_markdown(medicao: Medicao, caminho: Path) -> None:
             f"| `{nome}` | `{v['voz']}` | {v['licenca']} | {v['n']:.0f} "
             f"| {float(v['primeiro_p50']):.1f} ms | {float(v['primeiro_p95']):.1f} ms "
             f"| {float(v['piso_p50']):.1f} ms | {float(v['piso_p95']):.1f} ms "
-            f"| {'sim' if v['atinge_slo5'] else '**não**'} | {float(v['rtf_p50']):.3f}× |"
+            f"| {VEREDITO_CABE if v['atinge_slo5'] else VEREDITO_EXCEDE} "
+            f"| {float(v['rtf_p50']):.3f}× |"
         )
     linhas += ["", "## O que não foi medido", ""]
     linhas += [f"- **{o_que}** — {por_que}" for o_que, por_que in medicao.lacunas]
