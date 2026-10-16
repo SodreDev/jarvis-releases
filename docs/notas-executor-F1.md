@@ -1121,3 +1121,121 @@ e dois processos escrevendo no mesmo `.tmp` intercalariam bytes antes do `replac
 Não há Windows aqui: a disputa de arquivo é **simulada** levantando `PermissionError` no lugar
 certo (`tests/unit/test_arquivos.py`), e isso está dito no arquivo de teste. O que confirma de
 verdade é o CI nos dois sistemas; o que os testes garantem é que o **nosso** lado se comporta.
+
+## Revisão independente F0+F1: os dez achados corrigidos
+
+Um revisor sem autoria no código leu `0ef035c..5724c37` e achou 12 defeitos
+(`/tmp/revisao-jarvis-F0F1.md`). O dono mandou corrigir dez deles, nesta ordem: 1, 2, 3, 5, 7,
+8, 11, 12 e, por último, 9 e 10. Um commit por achado, e em todos o **teste veio primeiro**,
+falhando pelo motivo do achado — nenhuma correção entrou sem ter visto o defeito acontecer.
+
+Os achados **4** (TOCTOU e umask no fallback do socket para `/tmp`) e **6** (cursor do
+handshake não clampado contra `maior_seq`) ficaram **fora** desta rodada porque não estavam na
+ordem que o dono passou. Os dois seguem de pé na leitura do revisor; não foram contestados.
+
+### 1 — o canal de áudio bloqueava o laço de 20 ms
+
+`CanalDeConexao.enviar` chamava `send_bytes` sem perguntar por espaço, enquanto o docstring
+afirmava que "o envio só acontece quando `poll` diz que há espaço". O pipe do kernel tem ~64 KiB
+(≈100 quadros): `agentd` atrasado 2 s enchia o pipe e o envio ficava **pendurado dentro do
+tique** da captura. O teste enche com 2 000 quadros numa linha própria e cobra que ela termine;
+antes não terminava em 5 s. Agora `ha_espaco_para_enviar` (um `select` de escrita) decide, e
+essa pergunta também é o que **impede mensagem partida**: pipe só fica pronto com `PIPE_BUF`
+livre, `AF_UNIX` em fluxo com três quartos do buffer. Commit `22b1864`.
+
+### 2 — o grant valia sobre o texto do caminho
+
+O `Grant` nascia com `identidade=None` e `abrir_para` reabria a raiz pelo texto, conferindo
+`ainda_e_a_mesma()` contra a identidade **recém-capturada** — comparação que não pode falhar.
+Agora `_registrar` abre a raiz no instante da decisão (§5.5), guarda `fd` + identidade, e a
+auditoria registra o inode autorizado no campo `identidade`, que até aqui ia vazio. O teste faz
+`mv projeto projeto.bak && mkdir projeto` entre a decisão e o uso: antes passava, agora recusa.
+**Armadilha que o primeiro teste de TTL pegou por motivo errado:** `fstat` do grant velho
+respondia porque a decisão seguinte **reusou o número** do descritor fechado. Por isso quem sai
+de `_raizes` não volta, e fechar acontece uma vez só. Commit `f9043b3`.
+
+### 3 — a tabela da ADR de D1 deixou de ser o número medido
+
+O `conferir` do F0-10 olhava só a **estrutura** da tabela, então a republicação do `5feb551`
+passou sem a ADR-0014 acompanhar: 16 valores velhos, o pior sendo o p99 do piso de agendamento
+(0,086 ms publicado contra 0,290 ms medidos, 3,4× na cauda). Agora o portão compara **valor** a
+valor contra o CSV que a ADR cita, com tolerância explícita (1% ou 2 µs) e a agregação escrita
+(percentil é mediana das execuções, `max` é o máximo). Os 21 valores foram republicados por
+`tools/adr.py republicar`, não digitados — regra do dono: medição publicada não se edita à mão.
+`alcance_da_conferencia` devolve o que ficou **fora** com motivo (`f1-canal.csv` e
+`f0-05-grafo.csv` têm mais de uma linha por chave e execução), para o portão não ser vazio.
+Commit `260b704`.
+
+### 5 — dois escritores perdiam o `call_id` da regra 5
+
+`degradacao.json` tem dois escritores e os dois fazem ler→decidir→escrever. Troca atômica
+resolve bytes pela metade, não perda de atualização: o teste com dois adaptadores em paralelo
+perdia os três `call_id` do `s2`, e `call_id` perdido é pedido que pode ser **refeito** quando a
+rede volta. `jarvis.arquivos.tranca_exclusiva` passou a abraçar o par nos três escritores
+(`_cair`, `_voltar`, `reservar_aviso_por_voz`). A trava **não pode ser no próprio arquivo**:
+`replace` cria inode novo e os dois lados travariam objetos diferentes — é um arquivo `.lock` ao
+lado, e um teste cobra isso. Espera limitada a 1 s e depois segue sem a trava: travar o Jarvis
+porque alguém morreu segurando seria pior. Commit `4f6a628`.
+
+### 7, 8 e 11 — o trio que cruza P11
+
+- **7:** `CanalDeSocket.par()` recusa `win32` na origem, com a frase que aponta a alternativa.
+  O sistema entra por **parâmetro**, como na canonicalização do F0-06, então a recusa é provada
+  rodando em Linux. Commit `256ace1`.
+- **8:** `_abrir_raiz_windows` abria com `os.open` — **seguindo** junção e link — enquanto o
+  docstring prometia `FILE_FLAG_OPEN_REPARSE_POINT`, e `caminho_final_do_handle` não era chamado
+  por ninguém. Agora `abrir_raiz_windows` abre com `CreateFileW` + `BACKUP_SEMANTICS |
+  OPEN_REPARSE_POINT`, recusa reparse point, recusa caminho real divergente e converte o handle
+  conferido em descritor (`msvcrt.open_osfhandle`) em vez de reabrir pelo texto. A fronteira com
+  o `kernel32` é **injetável**, e é por isso que a decisão tem teste em Linux. Commit `d63c84a`.
+- **11:** a exceção da regra 6 valia só para o epoch do passado; `POLICY_DECISION` vinda do
+  "futuro" (o `policy` acorda de um restart um tique adiantado) era descartada **sem registro**.
+  Agora é simétrica. Commit `676a2e4`.
+
+### 12 — um glitch de I/O virava kill switch
+
+`ler_pedido` devolvia `DESLIGADO` para qualquer JSON inválido e o `tick` só preservava o pedido
+anterior em `None`. Uma leitura corrompida (meia escrita pega antes do `replace`, cache
+invalidado em VM) desligava o microfone do dono por um tique: piscada que ninguém explica, e
+começo de fala perdido se ele tivesse tocado o PTT. Agora são **quatro** casos:
+ausente/ocupado (`None`), **corrompido** (`PedidoCorrompido`, e quem chama decide) e **modo
+inexistente** com JSON válido (`DESLIGADO` na hora — isso é pichação, não glitch). O `audio-io`
+decide por teimosia: `CORROMPIDOS_PARA_DESLIGAR = 3` (≈60 ms). "Na dúvida, fechado" continua
+valendo; mudou o que conta como dúvida. **Isto emenda o item 3 da nota do F1-13 acima**, que
+dizia "pedido ilegível vira `DESLIGADO`" sem distinguir glitch de pichação. Commit `d325487`.
+
+### 9 e 10 — higiene de publicação (texto, não código)
+
+- **9:** o piso do dispositivo (20 ms p95, medido no **monitor de uma saída ociosa**) estava na
+  mesma coluna de valores de 0,096 ms. Saiu para quadro próprio, rotulado "não medido no caminho
+  real", com o viés na própria linha. Nenhum número mudou: a conferência do achado 3 continua
+  cobrindo os mesmos 22 valores. Commit `7ebbc7c`.
+- **10:** "atinge SLO-5: sim" com 145 ms contra alvo de 900 ms confunde "o piso cabe" com "o SLO
+  fecha" — a fila do driver não está na conta e em USB pode custar 300–500 ms. As colunas do
+  F1-09 e do F1-10 passaram a falar de **piso** (`piso cabe` / `**piso excede**`), e o rótulo
+  virou constante **no harness**, com teste cobrando que o arquivo publicado use o rótulo do
+  gerador. Os dois arquivos avisam "não editar à mão" e os harness não podem ser reexecutados
+  aqui (voz piper + espeak; silero + corpus), e reexecutar mudaria número medido — então a troca
+  foi por script, três linhas por arquivo, só cabeçalho e veredito. Commit `05ef468`.
+
+### Pendências que estes achados abriram (nenhuma é ajuste; são desenho)
+
+1. **Abrir SOB a raiz no Windows não funciona.** `os.open(..., dir_fd=...)` não existe lá, então
+   a travessia componente a componente de `RaizAberta.abrir` levanta `NotImplementedError`. O
+   achado 8 consertou a **raiz**; o que fica é o caminho de abertura, que precisa de desenho
+   próprio (handle relativo com `NtCreateFile`, ou outra estratégia). Decisão do dono.
+2. **"Pedido corrompido" não vira evento.** É observável por
+   `ControleDoMicrofone.pedidos_corrompidos`, mas os onze tipos da §3.2 são fechados — o mesmo
+   motivo de o arquivo de pedido existir. Virar evento é mexer no contrato.
+3. **O job `windows-latest` do CI nunca rodou** (não há remoto). Tudo que os achados 7, 8 e 11
+   entregam do lado do Windows é decisão testada em Linux com a fronteira falsificada.
+
+### Uma falha do portão que não se reproduziu (dito porque não dá para provar que não existe)
+
+A **primeira** execução de `tools/verificar.py` depois do último achado falhou na etapa de
+testes, e a saída não foi capturada em arquivo — então não há achado, só o fato. Depois dela:
+`pytest -m "not cancelamento"` verde 4 vezes (622 testes) e `verificar.py` verde 3 vezes, as
+doze etapas. Os testes novos com relógio foram examinados por conta disso e têm folga grande
+(o do canal espera 5 s para um laço de microssegundos; o dos dois escritores espera 30 s para
+~300 ms de trabalho serializado), mas folga não é prova de ausência: se o portão falhar de novo
+nessa etapa, **capture a saída em arquivo** (`verificar.py > log 2>&1`) antes de reexecutar.
