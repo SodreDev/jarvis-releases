@@ -10,7 +10,10 @@
 #   - não comercial: bloqueia sempre, em qualquer estado;
 #   - copyleft forte (GPL/AGPL/SSPL) com estado `em_uso`: **bloqueia** — abrir o produto não é
 #     uma decisão que uma dependência toma por nós;
-#   - copyleft forte `fora_do_produto`: aviso, com a justificativa abaixo.
+#   - copyleft forte `fora_do_produto`: aviso, com a justificativa abaixo;
+#   - copyleft forte `extra_opcional`: aviso. É a ferramenta de que um motor **barrado por
+#     padrão** depende: o dono instala por conta e liga por conta (ADR-0017). Se o motor
+#     virar caminho de produto, o estado vira `em_uso` e aí a porta bloqueia.
 
 data_da_verificacao = "2026-10-15"
 verificado_por = "executor"
@@ -29,3 +32,19 @@ distribui e não depende de espeak-ng — o caminho de TTS do v1 (cartão F1-09)
 licença permissiva e fonemização própria ou embutida no modelo. É também por isso que o pacote \
 `piper-tts` do PyPI (GPL-3.0-or-later, por ligar o espeak-ng) NÃO entrou: a voz é lida direto \
 do .onnx com onnxruntime (MIT)."""
+
+[[ferramenta]]
+id = "ffmpeg"
+papel = "decodifica o MP3 do serviço de read-aloud do Edge para PCM16 16 kHz"
+licenca = "LGPL-2.1-or-later"
+estado = "extra_opcional"
+versao = "(a do sistema do dono)"
+fonte = "https://www.ffmpeg.org/legal.html"
+data_de_acesso = "2026-10-15"
+nota = """Só o motor `tts-edge` precisa dele, e esse motor é **barrado por padrão** pelo \
+portão (ADR-0017: serviço sem termos publicados). O FFmpeg é LGPL-2.1+ no projeto, mas um \
+build com `--enable-gpl` é GPL — e o registro não tem como saber qual build o dono instalou. \
+Por isso quem publica essa licença é o próprio motor, em tempo de execução: \
+`jarvis.voz.edge.licenca_do_ffmpeg` lê o `-version` do build local e diz. Chamado com argv \
+explícito, em processo separado, trocando bytes de áudio — o mesmo critério de "programas \
+separados" que a ADR-0016 usou com o espeak-ng."""

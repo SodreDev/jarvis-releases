@@ -41,6 +41,7 @@ copyleft forte com estado `em_uso` **bloqueia** a porta.
 | ferramenta | licença | categoria | estado | fonte | acesso |
 |---|---|---|---|---|---|
 | `espeak-ng 1.52.0` | GPL-3.0 | copyleft_forte | fora_do_produto | <https://api.github.com/repos/espeak-ng/espeak-ng/license> | 2026-10-15 |
+| `ffmpeg (a do sistema do dono)` | LGPL-2.1-or-later | permissiva | extra_opcional | <https://www.ffmpeg.org/legal.html> | 2026-10-15 |
 
 ## Motores de voz
 

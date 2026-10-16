@@ -48,6 +48,15 @@ CAMPOS_DE_PROCEDENCIA: Final[tuple[str, ...]] = ("fonte", "data_de_acesso")
 """Vale para **todo** motor: fato sem fonte e sem data não é fato (ADR-0012)."""
 
 
+def _ou_desconhecido(valor: str) -> str:
+    """Campo vazio vira "não verificado" na frase, nunca um espaço em branco.
+
+    Espaço em branco num aviso lê-se como "tudo bem aqui"; "não verificado" lê-se como o que
+    é. A diferença importa porque é esta frase que o dono vê antes de ligar nuvem.
+    """
+    return valor.strip() or "**não verificado**"
+
+
 class MotorRecusado(RuntimeError):
     """O motor não roda: não está registrado, a licença não presta, falta termo ou é nuvem
     desligada. A mensagem diz **qual** das quatro, porque o dono precisa saber o que fazer."""
@@ -118,12 +127,18 @@ class Motor:
         """
         if not self.na_nuvem:
             return ""
-        partes = [
+        partes: list[str] = []
+        if set(self.campos_vazios) & set(CAMPOS_DE_NUVEM):
+            partes.append(
+                "ATENÇÃO: este serviço não publica termos para este uso, então não há "
+                "contrato lido — o que vem abaixo é o que se sabe, e o resto é desconhecido."
+            )
+        partes += [
             f"Com {self.id} ligado, {self.o_que_sai} sai desta máquina para {self.servico}.",
-            f"Retenção declarada: {self.retencao_declarada}.",
-            f"Treina com a entrada: {self.treina_com_entrada}.",
-            f"Dono da saída: {self.dono_da_saida}.",
-            f"Uso comercial: {self.uso_comercial}.",
+            f"Retenção declarada: {_ou_desconhecido(self.retencao_declarada)}.",
+            f"Treina com a entrada: {_ou_desconhecido(self.treina_com_entrada)}.",
+            f"Dono da saída: {_ou_desconhecido(self.dono_da_saida)}.",
+            f"Uso comercial: {_ou_desconhecido(self.uso_comercial)}.",
         ]
         if self.marca_o_audio:
             partes.append(f"Marca d'água no áudio: {self.marca_dagua}.")
@@ -177,6 +192,7 @@ def exigir_motor(
     arquivo: Path = ARQUIVO_MOTORES,
     nuvem_ligada: Collection[str] = (),
     permitir_fora_do_produto: bool = False,
+    sem_termos_aceitos: Collection[str] = (),
 ) -> Motor:
     """Devolve o motor, ou recusa dizendo qual das quatro regras barrou.
 
@@ -207,10 +223,17 @@ def exigir_motor(
     vazios = motor.campos_vazios
     if vazios:
         quais = ", ".join(vazios)
-        raise MotorRecusado(
-            f"motor {identificador!r} está com campo obrigatório vazio no registro: {quais}. "
-            "No v0, 'não verificado' não liga nuvem (ADR-0017, política 4)"
-        )
+        # Procedência (fonte e data) **nunca** é dispensável: sem ela nem dá para saber o que
+        # se está aceitando. Já os quatro campos de termo podem faltar porque o serviço não
+        # publica contrato — e aí a escolha de usar assim mesmo é do dono, motor por motor,
+        # escrita na configuração dele (`nuvem_sem_termos`). O aviso passa a abrir dizendo
+        # que não há termos verificados, e continua dizendo isso toda vez.
+        sem_procedencia = set(vazios) & set(CAMPOS_DE_PROCEDENCIA)
+        if sem_procedencia or identificador not in sem_termos_aceitos:
+            raise MotorRecusado(
+                f"motor {identificador!r} está com campo obrigatório vazio no registro: "
+                f"{quais}. No v0, 'não verificado' não liga nuvem (ADR-0017, política 4)"
+            )
     if motor.na_nuvem and not (motor.ligado or identificador in nuvem_ligada):
         raise MotorRecusado(
             f"motor {identificador!r} é de nuvem e está desligado: {motor.o_que_sai} sairia "
