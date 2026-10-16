@@ -29,8 +29,8 @@ de citar um item que o produto distribui.
   `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only`; escolhemos a primeira).
   O Jarvis **não modifica o Qt** e **não o liga estaticamente**: as bibliotecas vêm das rodas
   oficiais, como arquivos `.so` separados em
-  `opt/jarvis/lib/python3.12/site-packages/PySide6/Qt/lib/` (no AppImage, dentro de
-  `usr/`), e podem ser substituídas por outra compilação compatível — o AppImage se abre com
+  `/usr/lib/jarvis/python/lib/python3.12/site-packages/PySide6/Qt/lib/` (no AppImage, o mesmo
+  caminho dentro da imagem), e podem ser substituídas por outra compilação compatível — o AppImage se abre com
   `--appimage-extract` e volta a empacotar com o `appimagetool`. Os textos da
   [LGPL-3.0](licenses/texto/LGPL-3.0.txt) e da [GPL-3.0](licenses/texto/GPL-3.0.txt), que a
   LGPLv3 incorpora, acompanham cada artefato em `usr/share/licenses/jarvis/`.

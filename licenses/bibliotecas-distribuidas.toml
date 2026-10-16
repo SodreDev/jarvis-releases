@@ -50,8 +50,9 @@ obrigacoes = [
 ]
 como_cumprimos = """As rodas oficiais trazem o Qt em `.so`; não compilamos, não alteramos e \
 não ligamos nada estaticamente. Nos três artefatos da ADR-0020 as bibliotecas ficam em \
-`opt/jarvis/lib/python3.12/site-packages/PySide6/Qt/lib/`, substituíveis — o AppImage se abre \
-com `--appimage-extract` e volta a empacotar com o `appimagetool`. Os textos do LGPL-3.0 e do \
+`/usr/lib/jarvis/python/lib/python3.12/site-packages/PySide6/Qt/lib/` (no AppImage, o mesmo \
+caminho dentro da imagem), substituíveis — o AppImage se abre com `--appimage-extract` e volta \
+a empacotar com o `appimagetool`. Os textos do LGPL-3.0 e do \
 GPL-3.0 são copiados para `usr/share/licenses/jarvis/` em cada pacote, o `NOTICE` traz o aviso \
 e a oferta escrita do código do Qt, e a aba de diagnóstico mostra isso na tela."""
 
