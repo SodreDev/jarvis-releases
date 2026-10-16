@@ -161,3 +161,28 @@ def test_regra6_evento_do_epoch_atual_e_aceito_e_do_futuro_e_descartado(sessao: 
 
     assert dono.classificar(evento(Tipo.FINAL_TRANSCRIPT, sessao, epoch=3)) is Veredito.ACEITAR
     assert dono.classificar(evento(Tipo.FINAL_TRANSCRIPT, sessao, epoch=9)) is Veredito.DESCARTAR
+
+
+def test_regra6_a_excecao_de_auditoria_vale_tambem_para_epoch_do_futuro(sessao: str) -> None:
+    """Achado 11 da revisão F0+F1: a exceção da regra 6 era só para o epoch do passado.
+
+    `classificar` descartava tudo que vinha com `epoch > epoch_atual` antes de consultar
+    `TIPOS_DE_AUDITORIA`. Cenário: depois de um restart o `policy` lê o epoch do log e publica
+    `POLICY_DECISION` enquanto o `agentd` ainda não processou o `fala_comecou` que incrementa o
+    contador dele. A decisão chegava do "futuro" e era descartada **sem registro** — buraco no
+    audit_log justamente na decisão de política, que a §5.5 manda registrar antes do efeito.
+
+    A invariante do comentário do módulo não distingue passado de futuro, e agora o código
+    também não.
+    """
+    dono = DonoDoEpoch(session_id=sessao, epoch_atual=3)
+
+    for tipo in TIPOS_DE_AUDITORIA:
+        do_futuro = evento(tipo, sessao, epoch=9)
+
+        assert dono.classificar(do_futuro) is Veredito.SO_AUDITORIA, (
+            f"{tipo} do futuro tem de chegar à auditoria, não ao raciocínio"
+        )
+
+    # O resto do futuro continua descartado: a exceção é dos dois tipos, não do epoch.
+    assert dono.classificar(evento(Tipo.FINAL_TRANSCRIPT, sessao, epoch=9)) is Veredito.DESCARTAR

@@ -22,6 +22,11 @@ TIPOS_DE_AUDITORIA: frozenset[Tipo] = frozenset({Tipo.POLICY_DECISION, Tipo.TOOL
 
 A §5.5 exige decisão registrada antes do efeito e resultado anexado depois. Descartar por
 epoch velho abriria um buraco no registro exatamente no caso interessante (o cancelado).
+
+**Vale nos dois sentidos**: epoch do passado e epoch do futuro. "Do futuro" acontece de
+verdade — o `policy` acorda de um restart lendo o epoch do log e publica antes de o `agentd`
+processar o `fala_comecou` que incrementa o contador dele. Nos dois casos o evento vai para o
+log e **não** alimenta raciocínio nem histórico.
 """
 
 MOTIVOS_DE_CANCELAMENTO: frozenset[str] = frozenset(
@@ -104,7 +109,12 @@ class DonoDoEpoch:
     def classificar(self, envelope: Envelope) -> Veredito:
         """Veredito sobre um evento recebido, pela regra 6 e suas exceções."""
         if envelope.epoch > self.epoch_atual:
-            # Epoch do futuro: ou o emissor está adiantado, ou não é desta sessão.
+            # Epoch do futuro: ou o emissor está adiantado (restart do `policy`), ou não é
+            # desta sessão. A exceção da regra 6 é simétrica: o que a §5.5 manda registrar
+            # chega ao log de qualquer um dos dois lados — descartar o do futuro deixava
+            # buraco na auditoria, e um evento estranho registrado é melhor que um sumido.
+            if envelope.type in TIPOS_DE_AUDITORIA:
+                return Veredito.SO_AUDITORIA
             return Veredito.DESCARTAR
         if envelope.epoch == self.epoch_atual:
             return Veredito.ACEITAR
