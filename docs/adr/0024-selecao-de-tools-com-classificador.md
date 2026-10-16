@@ -1,6 +1,7 @@
 # ADR-0024 — Seleção de tools: a recuperação ordena, o Jev responde perguntas fechadas, e nada disso autoriza
 
-**Data:** 2026-10-16 · **Estado:** proposta · **Decide:** dono (Jev de nuvem ou não, e a regra
+**Data:** 2026-10-16 · **Estado:** proposta; emendada em 2026-10-16 pela ADR-0025 (ver "Emenda de
+2026-10-16") · **Decide:** dono (Jev de nuvem ou não, e a regra
 de decisão antes de medir), arquiteto (o desenho e o harness)
 **Pedido:** ideia do dono de 2026-10-15 (memória `b63298d6`): a classificação e a seleção de
 tools passam pelo modelo classificador recente do Jev **antes** de o modelo principal escolher,
@@ -82,7 +83,7 @@ motor local, com o reranker de licença comercial da ADR-0011.
 | Vê | Não vê |
 |---|---|
 | o texto **estável** do turno (`FinalTranscript` ou digitado) | transcrição parcial (P5, e seria egress de hipótese) |
-| a última fala do Jarvis, para referências como "e o outro?" **[SUPOSIÇÃO: um turno basta; confirma ou derruba o subconjunto de ambíguos do corpus]** | histórico além disso |
+| a última fala do Jarvis **tal como tocou** (P4; ADR-0025 regra 3), para referências como "e o outro?" **[SUPOSIÇÃO: um turno basta; confirma ou derruba o subconjunto de ambíguos do corpus]** | histórico além disso |
 | cenário estimado (nome e probabilidade) | memória, grafo, conteúdo de arquivo |
 | nomes e descrições das famílias, **escritos por nós** no manifesto | descrição vinda de servidor MCP sem promoção (ADR-0023) |
 | — | saída de tool, de MCP, de tarefa (ADR-0022), tela, notificação |
@@ -128,6 +129,45 @@ prazo, o turno segue sem ele.
 - Cada fallback é registrado no turno (motivo, motor, latência), para o replay da F2.
 - O PDP filtra **depois**, sempre (P1). Nenhum caminho do Jev chega à `politica`.
 
+## Emenda de 2026-10-16 (cérebro único e cache de prefixo)
+
+A ADR-0025 decidiu um cérebro só, com o contexto montado por nós a cada pedido e o prefixo estável
+guardado em cache pelo motor quando ele oferece isso. Dois fatos mudam a conta desta ADR:
+
+- **Mudar a lista de tools derruba o cache inteiro.** A documentação de *prompt caching* da
+  Anthropic (acesso em 2026-10-16) diz que o prefixo é `tools` → `system` → `messages` e que
+  "Modifying tool definitions (names, descriptions, parameters) invalidates the entire cache". Uma
+  *shortlist* diferente por turno — que é o que D-A e D-B produzem — paga o prefixo inteiro sem
+  cache em todo turno em que a lista muda. O ganho de tokens desta ADR pode virar **perda de tempo
+  até a primeira fala**, que é o que o dono mais cobrou ("natural e instantâneo").
+- **O catálogo do v1 é pequeno.** 15–25 capacidades da F2 (§5.6) mais as 8 `memoria.*` da
+  ADR-0026. O argumento do RAG-MCP (−50% de tokens) foi medido com catálogos muito maiores.
+
+Por isso, decidido pelo planejador:
+
+1. **Braço novo, C0 — catálogo inteiro fixo no prefixo em cache, sem seleção.** O harness da fatia
+   mínima mede os quatro braços (C0, recuperação sozinha, D-B, D-A).
+2. **Métrica nova: tempo até a 1ª fronteira de fala** (ADR-0025) com o motor de conversa real e o
+   cache ligado, além das seis métricas desta ADR. Tokens por turno sozinhos não decidem mais.
+3. **Regra de decisão, acrescida:** nenhum braço com seleção substitui o C0 se aumentar a mediana
+   do tempo até a 1ª fronteira em mais de 50 ms contra o C0 **[SUPOSIÇÃO: o limiar é proposta do
+   planejador, como os outros três; o dono confirma ou troca antes da medição (D14 do roteiro)]**.
+   O C0 vale enquanto couber no orçamento de contexto do motor e o `recall@5` dele não for pior
+   que o dos outros.
+4. **Seleção nunca em série antes do pedido ao motor.** Se algum braço com Jev vencer, ele roda em
+   paralelo à montagem do contexto e dentro do orçamento de montagem da ADR-0025 (100 ms); fora do
+   prazo, vale o fallback desta ADR, e o turno não espera.
+5. **As tools de leitura de memória** (`memoria.buscar_historico`, `memoria.ler_mensagem`,
+   `memoria.buscar`) entram no núcleo invariável: o cérebro sempre pode lembrar. As de escrita
+   ficam na recuperação normal.
+6. **"Isto exige S2?" (§5.2) perde o sentido** com um cérebro só: todo turno vai ao cérebro. O
+   que sobra é "isto exige pensar?", e a ADR-0025 (regra 4) deixa isso com o próprio motor. Uma
+   pergunta do Jev sobre isso só entra se o corpus mostrar que o sinal do motor erra, e entra
+   medida no mesmo harness.
+
+O que **não** mudou: o Jev não autoriza, não vê memória, histórico, `third_party`, nem parcial; o
+fallback; os testes (a)–(e).
+
 ## Alternativas descartadas
 
 - **D-A como padrão** — erro do classificador vira tool ausente, e o número de opções cresce com
@@ -162,7 +202,7 @@ prazo, o turno segue sem ele.
 1. **Harness offline** `tools/harness_selecao.py` sobre o catálogo do v1 (§5.6) e um corpus
    inicial **sintético**, escrito a partir dos manifestos, com negativos e ambíguos — a fala real
    do dono não vai ao motor de nuvem na fatia.
-2. Três braços: recuperação sozinha; D-B com motor local; D-A com motor local. O braço de nuvem só
+2. Três braços (quatro desde a emenda de 2026-10-16, com o C0): recuperação sozinha; D-B com motor local; D-A com motor local. O braço de nuvem só
    roda se o dono autorizar, e só com o corpus sintético.
 3. CSV em `docs/medicoes/` com `n`, hardware e commit, para o portão `tools/adr.py` conferir e
    `republicar` levar os números a esta ADR.
