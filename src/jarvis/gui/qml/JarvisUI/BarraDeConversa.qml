@@ -47,7 +47,7 @@ Item {
         id: campo
         anchors.left: marcaDoMicrofone.right
         anchors.leftMargin: 16
-        anchors.right: estadoDoMicrofone.left
+        anchors.right: acoes.left
         anchors.rightMargin: 16
         anchors.verticalCenter: parent.verticalCenter
         color: Tema.texto
@@ -74,20 +74,6 @@ Item {
             visible: campo.text === ""
             renderType: Text.NativeRendering
         }
-    }
-
-    // O indicador por extenso: a fonte como ela está (F1-13) e quando o que ela ouve vira
-    // pedido (ADR-0021). Sempre à vista, com ou sem conversa aberta.
-    Rotulo {
-        id: estadoDoMicrofone
-        anchors.right: acoes.left
-        anchors.rightMargin: 16
-        anchors.verticalCenter: parent.verticalCenter
-        text: (barra.microfone.frase || "microfone fechado")
-              + (barra.microfone.armado ? " · chamado: pode falar"
-                 : barra.microfone.modoFrase ? " · " + barra.microfone.modoFrase : "")
-        color: barra.microfone.armado ? Tema.alerta
-               : barra.microfone.aberta ? Tema.ciano : Tema.textoFraco
     }
 
     Row {

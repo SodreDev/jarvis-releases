@@ -17,6 +17,7 @@ Item {
     property bool processando: false
     property string estadoFrase: ""
     property string estado: "parado"
+    property var microfone: ({})
     property real escala: Math.min(width, height) / 2
 
     readonly property color corDoEstado: estado === "falando" ? Tema.positivo
@@ -24,6 +25,8 @@ Item {
         : estado === "ouvindo" ? Tema.ciano
         : Tema.cianoFraco
     readonly property bool detalhado: escala > 70
+    // Núcleo grande (modo assistente): cabe uma linha de texto a mais dentro do anel.
+    readonly property bool amplo: escala > 160
 
     // --- escala fina da borda: 120 marcas, 3 em 3 graus ------------------------------------
     Item {
@@ -202,6 +205,13 @@ Item {
                 text: hud.estadoFrase
                 color: Tema.textoFraco
             }
+        }
+        // No núcleo grande, o microfone e o modo logo abaixo do estado: é para onde o olho vai.
+        IndicadorDeEscuta {
+            objectName: "indicadorNoNucleo"
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: hud.amplo
+            microfone: hud.microfone
         }
     }
 }

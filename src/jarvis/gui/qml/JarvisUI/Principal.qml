@@ -99,6 +99,18 @@ Rectangle {
         Rotulo { text: ponte ? ponte.modoFrase : ""; destaque: true }
         Rectangle { width: 1; height: 12; color: Tema.linha; anchors.verticalCenter: parent.verticalCenter }
         Rotulo { text: ponte ? ponte.estadoFrase : "" }
+        // O microfone como a fonte **está** (arquivo do F1-13) e o modo de escuta vivo
+        // (ADR-0021). Mora no núcleo quando ele é grande; quando encolhe, sobe para cá —
+        // um lugar só de cada vez, para não repetir a mesma frase na tela.
+        Rectangle {
+            visible: !hud.amplo
+            width: 1; height: 12; color: Tema.linha; anchors.verticalCenter: parent.verticalCenter
+        }
+        IndicadorDeEscuta {
+            objectName: "indicadorNoCabecalho"
+            visible: !hud.amplo
+            microfone: ponte ? ponte.microfone : ({})
+        }
     }
 
     // --- área de trabalho -----------------------------------------------------------------
@@ -168,6 +180,7 @@ Rectangle {
             processando: ponte ? ponte.processando : false
             estado: ponte ? ponte.estado : "parado"
             estadoFrase: ponte ? ponte.estadoFrase : ""
+            microfone: ponte ? ponte.microfone : ({})
             Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
             Behavior on y { NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
             Behavior on width { NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
