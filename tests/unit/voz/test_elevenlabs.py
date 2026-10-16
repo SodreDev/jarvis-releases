@@ -191,9 +191,11 @@ def test_sonda_apagada_nem_tenta(tmp_path: Path) -> None:
 
 def test_chave_invalida_sobe_como_recusa_e_nao_como_queda(tmp_path: Path) -> None:
     corpo = json.dumps({"detail": {"message": f"invalid key {SEGREDO}"}}).encode()
-    with ServicoFalso(roteiro=Roteiro(status=401, corpo=corpo)) as servico:
-        with pytest.raises(ServicoRecusou) as erro:
-            motor_em(servico, tmp_path).sintetizar(TEXTO)
+    with (
+        ServicoFalso(roteiro=Roteiro(status=401, corpo=corpo)) as servico,
+        pytest.raises(ServicoRecusou) as erro,
+    ):
+        motor_em(servico, tmp_path).sintetizar(TEXTO)
 
     assert SEGREDO not in str(erro.value)
     assert not ler_degradacao(tmp_path).ativa
