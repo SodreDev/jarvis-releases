@@ -7,6 +7,7 @@ objeto aberto — e quando a troca acontece, a abertura falha em vez de escapar.
 
 from __future__ import annotations
 
+import inspect
 import os
 import threading
 from pathlib import Path
@@ -14,8 +15,13 @@ from pathlib import Path
 import pytest
 
 from jarvis.politica.descritor import (
+    FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_FLAG_OPEN_REPARSE_POINT,
+    FLAGS_DA_RAIZ_WINDOWS,
     AberturaRecusada,
+    Kernel32,
     abrir_raiz,
+    abrir_raiz_windows,
     openat2_disponivel,
 )
 
@@ -175,3 +181,82 @@ def test_identidade_do_arquivo_e_conferida(tmp_path: Path) -> None:
         real = (raiz / "sub" / "dentro.txt").stat()
         assert alvo.identidade.device == real.st_dev
         assert alvo.identidade.inode == real.st_ino
+
+
+# --- (achado 8 da revisão F0+F1) a raiz no Windows, com a fronteira injetada -------
+class JanelaFalsa:
+    """O `kernel32` do teste: a decisão é nossa e roda em Linux; a fronteira é dele.
+
+    O que esta falsificação **não** prova é a fronteira em si (as quatro chamadas do
+    `kernel32`); o que ela prova é a decisão, que é onde o achado 8 mora: abrir sem seguir
+    reparse point, recusar quando o objeto É reparse point, recusar quando o caminho real
+    divergir do pedido, e não vazar handle quando recusa.
+    """
+
+    def __init__(self, *, reparse: bool = False, final: str | None = None, fd: int = -1) -> None:
+        self.reparse = reparse
+        self.final = final
+        self.fd = fd
+        self.abertos: list[Path] = []
+        self.fechados: list[int] = []
+
+    def abrir_sem_seguir_reparse(self, caminho: Path) -> int:
+        self.abertos.append(caminho)
+        return 777
+
+    def e_reparse_point(self, handle: int) -> bool:
+        return self.reparse
+
+    def caminho_final(self, handle: int) -> str:
+        return self.final if self.final is not None else ""
+
+    def descritor_de(self, handle: int) -> int:
+        return self.fd
+
+    def fechar(self, handle: int) -> None:
+        self.fechados.append(handle)
+
+
+def test_a_raiz_no_windows_recusa_reparse_point(tmp_path: Path) -> None:
+    """O docstring do módulo prometia `FILE_FLAG_OPEN_REPARSE_POINT` e o código não usava.
+
+    `_abrir_raiz_windows` abria com `os.open`, que **segue** junção e link: uma raiz
+    "autorizada" poderia apontar para outra pasta, e o `caminho_final_do_handle` que o
+    docstring dizia ser aplicado "em cada abertura" nunca era chamado por ninguém.
+    """
+    janela = JanelaFalsa(reparse=True, final=f"\\\\?\\{tmp_path}")
+
+    with pytest.raises(AberturaRecusada, match="reparse point"):
+        abrir_raiz_windows(tmp_path, janela)
+
+    assert janela.fechados == [777], "recusar não pode vazar o handle"
+
+
+def test_a_raiz_no_windows_recusa_quando_o_caminho_real_diverge(tmp_path: Path) -> None:
+    janela = JanelaFalsa(final="C:\\Windows\\Temp\\outra")
+
+    with pytest.raises(AberturaRecusada, match="caminho real"):
+        abrir_raiz_windows(tmp_path, janela)
+
+    assert janela.fechados == [777]
+
+
+def test_a_raiz_no_windows_aceita_pasta_de_verdade_e_guarda_a_identidade(tmp_path: Path) -> None:
+    """O prefixo de caminho longo (`\\\\?\\`) não é divergência: é a mesma pasta, escrita assim."""
+    descritor = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    janela = JanelaFalsa(final=f"\\\\?\\{tmp_path}", fd=descritor)
+
+    with abrir_raiz_windows(tmp_path, janela) as aberta:
+        real = tmp_path.stat()
+        assert aberta.identidade.device == real.st_dev
+        assert aberta.identidade.inode == real.st_ino
+        assert aberta.fd == descritor, "o descritor é o do handle conferido, sem reabrir"
+    assert janela.fechados == [], "handle convertido em descritor é fechado pelo descritor"
+
+
+def test_a_flag_de_reparse_point_esta_na_abertura_de_verdade() -> None:
+    """A fronteira real não roda aqui, então o que se confere é que ela usa a flag certa."""
+    assert FLAGS_DA_RAIZ_WINDOWS & FILE_FLAG_OPEN_REPARSE_POINT
+    assert FLAGS_DA_RAIZ_WINDOWS & FILE_FLAG_BACKUP_SEMANTICS
+    fonte = inspect.getsource(Kernel32.abrir_sem_seguir_reparse)
+    assert "CreateFileW" in fonte and "FLAGS_DA_RAIZ_WINDOWS" in fonte

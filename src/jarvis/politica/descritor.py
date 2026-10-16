@@ -9,9 +9,19 @@ RESOLVE_NO_XDEV`; quando a chamada não existe (kernel < 5.6), a travessia é co
 componente com `O_NOFOLLOW` e `dir_fd`, conferindo o device a cada passo — mais lenta, mesma
 garantia contra link simbólico e contra ponto de montagem.
 
-Windows: handle com `FILE_FLAG_OPEN_REPARSE_POINT` + `GetFinalPathNameByHandleW`, conferindo
-o prefixo da raiz e a identidade (volume + índice do arquivo). **Escrito e revisado, nunca
-executado** — esta máquina é Linux (ver docs/notas-executor-F0.md).
+Windows: a raiz abre com `CreateFileW` + `FILE_FLAG_BACKUP_SEMANTICS |
+FILE_FLAG_OPEN_REPARSE_POINT` (não segue junção nem link), **recusa** quando o objeto é um
+reparse point — o equivalente de `O_NOFOLLOW`/`RESOLVE_NO_SYMLINKS` lá — e **recusa** quando o
+`GetFinalPathNameByHandleW` do handle aponta para outro caminho. O descritor da `RaizAberta` é o
+próprio handle conferido (`msvcrt.open_osfhandle`), não um segundo `open` pelo texto.
+
+**Escrito e revisado, nunca executado**: esta máquina é Linux, e o job `windows-latest` do CI
+nunca rodou (não há remoto). A fronteira com o `kernel32` é injetável justamente por isso: a
+DECISÃO é testada aqui, em Linux, com a fronteira falsificada; as chamadas do `kernel32` só o CI
+do Windows confirma. Duas lacunas de P11 ficam declaradas, e estão em
+docs/notas-executor-F1.md: as chamadas em si, e o fato de que **abrir sob a raiz** no Windows
+ainda não existe — `os.open(..., dir_fd=...)` não é suportado lá, então a travessia componente a
+componente levanta `NotImplementedError` e o caminho do Windows precisa de desenho próprio.
 """
 
 from __future__ import annotations
@@ -23,7 +33,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Self
+from typing import Final, Protocol, Self, runtime_checkable
 
 RESOLVE_NO_XDEV: Final = 0x01
 RESOLVE_NO_MAGICLINKS: Final = 0x02
@@ -37,9 +47,15 @@ RESOLVE_DA_POLITICA: Final = (
 
 FILE_FLAG_BACKUP_SEMANTICS: Final = 0x02000000
 FILE_FLAG_OPEN_REPARSE_POINT: Final = 0x00200000
+FILE_ATTRIBUTE_REPARSE_POINT: Final = 0x00000400
 FILE_SHARE_READ: Final = 0x00000001
 GENERIC_READ: Final = 0x80000000
 OPEN_EXISTING: Final = 3
+HANDLE_INVALIDO: Final = -1
+FLAGS_DA_RAIZ_WINDOWS: Final = FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT
+"""Abrir diretório (`BACKUP_SEMANTICS`) **sem seguir** junção ou link (`OPEN_REPARSE_POINT`)."""
+PREFIXO_LONGO: Final = "\\\\?\\"
+PREFIXO_LONGO_UNC: Final = "\\\\?\\UNC\\"
 
 
 class AberturaRecusada(OSError):
@@ -233,7 +249,7 @@ class RaizAberta:
 def abrir_raiz(caminho: Path) -> RaizAberta:
     """Abre a raiz uma vez e guarda a identidade dela (§5.5: a raiz é aberta no grant)."""
     if sys.platform == "win32":  # pragma: no cover - não executado nesta máquina
-        return _abrir_raiz_windows(caminho)
+        return abrir_raiz_windows(caminho)
     try:
         fd = os.open(caminho, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     except OSError as erro:
@@ -242,16 +258,130 @@ def abrir_raiz(caminho: Path) -> RaizAberta:
     return RaizAberta(caminho=caminho, fd=fd, identidade=Identidade(info.st_dev, info.st_ino))
 
 
-def _abrir_raiz_windows(caminho: Path) -> RaizAberta:  # pragma: no cover - ver docstring
-    """Raiz no Windows: handle sem seguir reparse point, identidade por volume + file id.
+@runtime_checkable
+class ApiDoWindows(Protocol):
+    """A fronteira com o `kernel32`, injetável para a decisão ser testada fora do Windows."""
 
-    **Não executado nesta máquina.** O `fd` devolvido é o do `os.open` com
-    `O_NOFOLLOW` indisponível no Windows, então a garantia real vem da conferência de
-    `GetFinalPathNameByHandleW` em `caminho_final_do_handle`, aplicada em cada abertura.
+    def abrir_sem_seguir_reparse(self, caminho: Path) -> int: ...
+
+    def e_reparse_point(self, handle: int) -> bool: ...
+
+    def caminho_final(self, handle: int) -> str: ...
+
+    def descritor_de(self, handle: int) -> int: ...
+
+    def fechar(self, handle: int) -> None: ...
+
+
+class _InformacaoPorHandle(ctypes.Structure):  # pragma: no cover - só Windows
+    """`BY_HANDLE_FILE_INFORMATION`: atributos, volume e índice do arquivo."""
+
+    _fields_ = (
+        ("dwFileAttributes", ctypes.c_uint32),
+        ("ftCreationTime", ctypes.c_uint64),
+        ("ftLastAccessTime", ctypes.c_uint64),
+        ("ftLastWriteTime", ctypes.c_uint64),
+        ("dwVolumeSerialNumber", ctypes.c_uint32),
+        ("nFileSizeHigh", ctypes.c_uint32),
+        ("nFileSizeLow", ctypes.c_uint32),
+        ("nNumberOfLinks", ctypes.c_uint32),
+        ("nFileIndexHigh", ctypes.c_uint32),
+        ("nFileIndexLow", ctypes.c_uint32),
+    )
+
+
+class Kernel32:  # pragma: no cover - só Windows, nunca executado nesta máquina
+    """A fronteira de verdade. Cada método é uma chamada do `kernel32`, e nada mais."""
+
+    def abrir_sem_seguir_reparse(self, caminho: Path) -> int:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        handle = kernel32.CreateFileW(
+            str(caminho),
+            GENERIC_READ,
+            FILE_SHARE_READ,
+            None,
+            OPEN_EXISTING,
+            FLAGS_DA_RAIZ_WINDOWS,
+            None,
+        )
+        if handle == HANDLE_INVALIDO:
+            raise AberturaRecusada(
+                f"raiz {caminho} não abriu: erro {ctypes.get_last_error()} em CreateFileW"  # type: ignore[attr-defined]
+            )
+        return int(handle)
+
+    def e_reparse_point(self, handle: int) -> bool:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        informacao = _InformacaoPorHandle()
+        if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(informacao)):
+            raise AberturaRecusada(f"erro {ctypes.get_last_error()} em GetFileInformationByHandle")  # type: ignore[attr-defined]
+        return bool(informacao.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+
+    def caminho_final(self, handle: int) -> str:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        buffer = ctypes.create_unicode_buffer(32768)
+        if kernel32.GetFinalPathNameByHandleW(handle, buffer, len(buffer), 0) == 0:
+            raise AberturaRecusada(f"erro {ctypes.get_last_error()} em GetFinalPathNameByHandleW")  # type: ignore[attr-defined]
+        return str(buffer.value)
+
+    def descritor_de(self, handle: int) -> int:
+        """Converte o handle conferido em descritor: a posse passa para o descritor."""
+        import msvcrt
+
+        return int(msvcrt.open_osfhandle(handle, os.O_RDONLY))  # type: ignore[attr-defined]
+
+    def fechar(self, handle: int) -> None:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.CloseHandle(handle)
+
+
+def _normalizar_windows(texto: str) -> str:
+    """Compara caminho do Windows como o sistema compara: sem prefixo longo e sem caixa."""
+    limpo = texto.replace("/", "\\")
+    if limpo.startswith(PREFIXO_LONGO_UNC):
+        limpo = "\\\\" + limpo[len(PREFIXO_LONGO_UNC) :]
+    elif limpo.startswith(PREFIXO_LONGO):
+        limpo = limpo[len(PREFIXO_LONGO) :]
+    return limpo.rstrip("\\").casefold()
+
+
+def abrir_raiz_windows(caminho: Path, api: ApiDoWindows | None = None) -> RaizAberta:
+    """Raiz no Windows: handle que **não segue** reparse point, e identidade por handle.
+
+    Três recusas, nesta ordem, e cada uma é a tradução de uma garantia do caminho POSIX:
+
+    1. o `CreateFileW` falhou — não há raiz para autorizar;
+    2. o objeto **é** reparse point (junção ou link) — é o `O_NOFOLLOW` de lá: seguir deixaria
+       a raiz "autorizada" apontando para outra pasta;
+    3. o `GetFinalPathNameByHandleW` do handle aponta para outro caminho — defesa em
+       profundidade, porque a flag do item 2 é o que **devia** impedir isto.
+
+    O descritor da `RaizAberta` é o próprio handle conferido, não um `os.open` novo pelo texto:
+    reabrir pelo texto é a reabertura que o F0-06 existe para proibir.
     """
-    fd = os.open(caminho, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-    info = os.fstat(fd)
-    return RaizAberta(caminho=caminho, fd=fd, identidade=Identidade(info.st_dev, info.st_ino))
+    janela = api if api is not None else Kernel32()
+    handle = janela.abrir_sem_seguir_reparse(caminho)
+    try:
+        if janela.e_reparse_point(handle):
+            raise AberturaRecusada(
+                f"raiz {caminho} é reparse point (junção ou link): no Windows a recusa aqui é "
+                "o que O_NOFOLLOW faz no POSIX"
+            )
+        final = janela.caminho_final(handle)
+        if _normalizar_windows(final) != _normalizar_windows(str(caminho)):
+            raise AberturaRecusada(f"raiz {caminho} tem caminho real diferente: {final}")
+        descritor = janela.descritor_de(handle)
+    except BaseException:
+        janela.fechar(handle)
+        raise
+    try:
+        info = os.fstat(descritor)
+    except OSError as erro:
+        os.close(descritor)
+        raise AberturaRecusada(f"raiz {caminho}: {erro.strerror}") from erro
+    return RaizAberta(
+        caminho=caminho, fd=descritor, identidade=Identidade(info.st_dev, info.st_ino)
+    )
 
 
 def caminho_final_do_handle(caminho: Path) -> str:  # pragma: no cover - só Windows
