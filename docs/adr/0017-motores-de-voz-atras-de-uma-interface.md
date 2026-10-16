@@ -1,6 +1,8 @@
 # ADR-0017 — Motores de voz (ASR e TTS) atrás de uma interface, local por padrão
 
-**Data:** 2026-10-15 · **Estado:** proposta · **Decide:** dono
+**Data:** 2026-10-15 · **Estado:** aceita quanto à fronteira e à política (o dono mandou
+implementar em 2026-10-15); **qual** motor o v1 usa continua aberto e é do F1-16 · **Decide:** dono
+**Implementada em:** 2026-10-16, commits `4552446`..`c72d236` — ver "Emenda da implementação"
 **Pedido:** o dono aceitou o caminho local do TTS (piper + `epitran`, ADR-0016) e quer
 **comparar motores** antes de fechar. Esta ADR levanta os candidatos com licença e termos
 verificados **na origem** e propõe a fronteira; **nenhum produto foi implementado**.
@@ -189,6 +191,102 @@ GPL-3.0** — é a prova prática de que o pt-BR do Kokoro carrega a GPL junto).
   lidos, e por isso o plano de amostra imprime o tamanho antes de baixar.
 - **Qualidade das vozes pt-BR do Kokoro:** o `VOICES.md` não dá nota para elas, e avisa que
   idioma fora do inglês pode estar "thin due to weak G2P and/or lack of training data".
+
+## Emenda da implementação (2026-10-16)
+
+O dono mandou implementar. Quatro coisas mudaram em relação ao que esta ADR propôs, e cada
+uma mudou porque a implementação mostrou algo que a proposta não sabia.
+
+### 1. A interface ficou mais estreita do que a proposta
+
+A proposta era:
+
+```text
+transcrever_parcial(quadros) -> Hipotese        sintetizar(texto, epoch) -> Iterator[Pedaco]
+transcrever_final(quadros)   -> Texto           cancelar()
+```
+
+Implementar assim obrigaria **cada** motor — quatro de cada lado, dois deles de nuvem — a
+reimplementar o acordo de prefixo do F1-06, o fatiamento e o descarte de pedaço em voo do
+F1-09 e as vinte interrupções do F1-11. Trocar de motor passaria a poder afrouxar o
+cancelamento, que é justamente o que não pode acontecer. O que ficou:
+
+```text
+jarvis.voz.MotorDeAsr (Protocol)           jarvis.voz.MotorDeTts (Protocol)
+  transcrever(amostras) -> Hipotese          sintetizar(texto) -> bytes
+  nome, modelo, licenca, idioma, onde        nome, voz, licenca, onde
+```
+
+O motor traduz **um bloco** e declara **de onde ele é**; quem é incremental, fatia, cancela e
+conhece epoch continua sendo a camada compartilhada que já é regressão. O cancelamento chega
+ao motor como **uma pergunta** (`Cancelado = Callable[[], bool]`, montada por
+`cancelado_por_epoch`): o motor não recebe o `DonoDoEpoch` e por isso não tem como mexer no
+epoch. `Hipotese` é `NamedTuple` para o `TranscritorIncremental` do F1-06 continuar
+desempacotando `texto, confianca` sem reescrita.
+
+Para motor de **nuvem** o contrato ganhou uma segunda chance de parar, que o local não
+precisa: o cancelamento é consultado **antes de abrir o socket** (epoch morto não paga
+requisição) e **entre pedaços do corpo da resposta**, caso em que o que chegou é descartado.
+O limite do descarte é o pedaço lido: uma leitura já bloqueada só termina pelo prazo, e é por
+isso que o prazo é obrigatório.
+
+### 2. O `edge-tts`: decidido, e o custo é maior do que esta ADR tinha achado
+
+A ADR tinha achado duas barreiras (biblioteca LGPL e endpoint sem contrato). São **três**:
+
+3. o serviço só devolve **MP3**, e o pacote não deixa escolher formato (`MP3_BITRATE_BPS` é
+   constante do módulo, não parâmetro). O caminho de áudio deste produto é PCM16 16 kHz, então
+   o motor precisa de um decodificador externo. O FFmpeg do projeto é LGPL-2.1+, **mas o build
+   desta máquina é GPL** (`--enable-gpl --enable-version3`, lido no `-version` local em
+   2026-10-16) — e o registro não tem como saber qual build o dono instalou.
+
+**Decisão:** usar o pacote `edge-tts` como **extra opcional isolado**, e não falar o protocolo
+à mão. Escrever o WebSocket tiraria a LGPL e deixaria as outras duas barreiras de pé (sem
+contrato, MP3 para decodificar), trocando-as por manutenção de um protocolo não documentado
+que a Microsoft muda quando quer. O decodificador publica a licença do build local em tempo de
+execução (`jarvis.voz.edge.licenca_do_ffmpeg`), em vez de o registro afirmar o que não sabe.
+
+### 3. "Não verificado não liga nuvem" ganhou uma saída explícita — e ela é do dono
+
+A política 4, aplicada ao pé da letra, deixa o `tts-edge` permanentemente fora: não existe
+página de termos para esse uso, e campo vazio barra. Isso tornaria o motor impossível de
+testar, que não é o que o dono pediu. A saída é **por motor e explícita**, na configuração do
+dono: `nuvem_sem_termos = ["tts-edge"]`. Com ela:
+
+- o aviso **abre** com "ATENÇÃO: este serviço não publica termos para este uso";
+- cada campo vazio aparece como "**não verificado**", nunca em branco — branco num aviso
+  lê-se como "tudo bem aqui";
+- **procedência (fonte e data) continua não dispensável**, com ou sem aceite: sem ela não dá
+  nem para saber o que se está aceitando.
+
+O padrão não mudou: sem a linha na configuração, o portão recusa.
+
+### 4. A opção B da ADR-0016 está inteira, e as duas lacunas que a amostra mediu foram fechadas
+
+- **tônica:** a amostra tinha medido 14 acentos do espeak contra zero do `epitran` na mesma
+  frase. `jarvis.voz.tonica` repõe por **ortografia** (acento gráfico manda; sem acento, a
+  terminação manda; lista fechada de 40 átonas de gramática não recebe marca), com a regra de
+  ataque do português para o acento cair antes das consoantes que abrem a sílaba (`ˈtɾintɐ`,
+  mas `ʒɐɾˈviʃ`). A frase da amostra sai com 13 tônicas em vez de zero;
+- **`ʷ`:** substituição declarada para vazio, porque em pt-BR o `u` do `qu` não soa (`quinze`
+  é /ˈkĩzi/); mapear para `w` daria "cuinze".
+
+E a conferência de cobertura (`conferir_cobertura`), que a ADR pedia como ideia, achou um
+defeito que ninguém veria de ouvido sem suspeitar: o `epitran` devolve vogal nasal ora
+pré-composta (`ĩ`), ora com til combinante (`ɐ̃`), e o inventário da voz só conhece a segunda
+— `jardim` perdia a nasalidade **em silêncio**. A saída passou a ser normalizada em NFD, e
+sobre as seis frases de teste a cobertura do inventário é completa.
+
+Sobre o achado 4 desta ADR (o descarte silencioso de fonema fora do mapa): o código **conta**
+agora (`fonemas_descartados`, `simbolos_descartados`) e a cobertura mede antes de sintetizar.
+Trocar descarte por erro continua sendo emenda da ADR-0016 e **decisão do dono**.
+
+### O que a implementação não mudou
+
+Local por padrão, nuvem desligada no registro, aviso obrigatório derivado dos campos, portão
+de licença por motor e marca d'água declarada: tudo como a proposta dizia. O registro
+`licenses/motores.toml` tem nove motores, nenhum de nuvem ligado, e um teste cobra isso do
+arquivo comitado em vez da intenção de quem leu.
 
 ## Como invalidar esta proposta
 
