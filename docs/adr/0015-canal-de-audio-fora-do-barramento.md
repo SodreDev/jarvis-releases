@@ -1,9 +1,12 @@
 # ADR-0015 — canal de áudio entre `audio-io` e `agentd`, fora do barramento
 
-**Data:** 2026-10-15 · **Estado:** proposta · **Decide:** dono (emenda à SPEC §2 e §3)
+**Data:** 2026-10-15 · **Estado:** aceita · **Decide:** dono (emenda à SPEC §2 e §3)
+**Aceita em:** 2026-10-15, pelo dono.
 **Mede:** executor, cartão F1-10 (achado) · **Commit da medição:** `7272d0c`
-**Emenda proposta:** §2 (a seta "frames + PlaybackProgress" do desenho) e §3 (o alcance do
-"todo evento no barramento, sem exceção").
+**Emenda aplicada** na aceitação: §2 (a seta "frames + PlaybackProgress" do desenho) e §3.1 (o
+alcance do "todo evento no barramento, sem exceção") passaram a citar esta ADR. É o que o
+CONTRIBUTING manda: a SPEC manda, e só é emendada por ADR — aceitar esta sem tocar na SPEC
+deixaria o código errado por definição.
 **Gatilho de reabertura:** ver "Como invalidar".
 
 ## Contexto
@@ -134,7 +137,7 @@ encadeado.
 
 ## Como invalidar esta decisão — o gatilho é explícito
 
-Esta proposta cai, e o `anel` (ou um canal em Rust) assume, quando **qualquer** destes aparecer
+Esta decisão cai, e o `anel` (ou um canal em Rust) assume, quando **qualquer** destes aparecer
 numa medição com os sete processos de pé na máquina do dono:
 
 1. p95 do canal acima de **1 ms** (2 ordens de grandeza do medido, ainda 1,25% do SLO-1), ou

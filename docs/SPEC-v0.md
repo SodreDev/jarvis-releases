@@ -34,12 +34,14 @@
 
 Sete processos/áreas, cada um reiniciável e testável sozinho. A fronteira é o barramento de eventos (§3), não uma biblioteca compartilhada.
 
+**Emenda (ADR-0015, aceita pelo dono em 2026-10-15).** A seta de `audio-io` para `agentd` no desenho abaixo carrega **duas coisas diferentes**, e só uma delas é evento: `PlaybackProgress` vai pelo barramento, e os **frames de PCM vão por um canal dedicado**, ponto a ponto, fora do barramento e fora do log. O motivo é de orçamento, não de gosto: 50 quadros por segundo com envelope e log encadeado por hash é 19 ms de CPU por segundo de áudio só de barramento, e um log que cresce em PCM contraria a §9 ("nada de áudio bruto por padrão"). O contrato do canal (cabeçalho `epoch, seq, ts_mono_ns, amostras`) está em dados, não em código, e `epoch` vem primeiro para o descarte da §3.3 regra 6 custar 4 bytes de leitura.
+
 ```text
  ┌──────────────┐  PCM 20 ms, AEC/NR/AGC, botão de privacidade
  │ audio-io     │  (processo do usuário, perto do dispositivo)
  │ captura+play │◄──── chunks de TTS com epoch + PlaybackProgress
  └──────┬───────┘
-        │ frames + PlaybackProgress
+        │ frames (canal próprio, ADR-0015) + PlaybackProgress (evento)
         ▼
  ┌──────────────────────────────────────────────┐
  │ agentd  (percepção + barramento + S1)        │
@@ -88,7 +90,9 @@ Sete processos/áreas, cada um reiniciável e testável sozinho. A fronteira é 
 
 ### 3.1 Envelope comum
 
-Todo evento no barramento, sem exceção:
+Todo evento no barramento, sem exceção — **e o que não é evento não entra no barramento**: os
+frames de PCM do `audio-io` andam por canal dedicado, com cabeçalho próprio (ADR-0015, aceita em
+2026-10-15). A regra do envelope não afrouxou; o que a emenda diz é que **sinal não é decisão**.
 
 ```jsonc
 {

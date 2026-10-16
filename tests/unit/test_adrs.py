@@ -163,3 +163,26 @@ def test_csv_que_nao_identifica_a_linha_fica_fora_do_alcance_e_dito(tmp_path: Pa
 
     assert alcance.valores == 0
     assert any("mais de uma linha" in motivo for motivo in alcance.fora), alcance.fora
+
+
+# --- item B do lote: o dono aceitou a ADR-0015 ------------------------------------
+def test_adr_do_canal_de_audio_esta_aceita_e_a_spec_registra_a_emenda() -> None:
+    """O dono aceitou em 2026-10-15; a SPEC é emendada por ADR (CONTRIBUTING, linha 4).
+
+    A 0015 pediu emenda em dois pontos, e os dois eram leituras ao pé da letra que o código
+    contradizia: a seta "frames + PlaybackProgress" do desenho da §2 e o "todo evento no
+    barramento, sem exceção" da §3.1. Aceitar a ADR sem emendar a SPEC deixaria o repositório
+    com o código errado por definição.
+    """
+    adr = (PASTA / "0015-canal-de-audio-fora-do-barramento.md").read_text(encoding="utf-8")
+
+    assert "**Estado:** aceita" in adr
+    assert "**Decide:** dono" in adr
+    assert "2026-10-15" in adr
+    assert conferir_adr(PASTA / "0015-canal-de-audio-fora-do-barramento.md") == []
+
+    spec = (RAIZ / "docs" / "SPEC-v0.md").read_text(encoding="utf-8")
+    secao_3 = spec.split("### 3.1 Envelope comum")[1].split("```")[0]
+    assert "ADR-0015" in secao_3, "a §3.1 ainda diz 'sem exceção' sem citar a emenda"
+    desenho = spec.split("## 2. Processos e fronteiras")[1].split("## 3.")[0]
+    assert "ADR-0015" in desenho, "o desenho da §2 ainda manda PCM pela seta do barramento"
