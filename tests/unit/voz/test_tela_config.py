@@ -116,7 +116,7 @@ def test_vazio_mantem_a_escolha_atual(tmp_path: Path) -> None:
 
 
 def test_trocar_a_escuta_para_vad(tmp_path: Path) -> None:
-    config, _ = tela(tmp_path, ["8", "2", "s"])
+    config, _ = tela(tmp_path, ["8", "3", "s"])
     config.rodar()
     assert ler(tmp_path / "jarvis-voz.toml").escuta == "vad"
 
@@ -269,3 +269,47 @@ def test_escolha_sem_sentido_so_explica(tmp_path: Path, escolha: str) -> None:
     config, linhas = tela(tmp_path, [escolha, "q"])
     config.rodar()
     assert "escolha um número" in texto(linhas)
+
+
+# --- modos de ativação (ADR-0021) -----------------------------------------------------------
+def test_escolher_a_palavra_de_ativacao(tmp_path: Path) -> None:
+    config, linhas = tela(tmp_path, ["8", "2", "12", "Sexta", "0,9", "s"])
+    config.rodar()
+    salvo = ler(tmp_path / "jarvis-voz.toml")
+    assert salvo.escuta == "palavra"
+    assert salvo.palavra == "sexta"
+    assert salvo.limiar_palavra == 0.9
+    assert "palavra de ativação" in texto(linhas)
+
+
+def test_palavra_que_nao_serve_e_recusada_sem_mudar_nada(tmp_path: Path) -> None:
+    config, linhas = tela(tmp_path, ["12", "ô jarvis", "", "q"])
+    config.rodar()
+    assert config.configuracao.palavra == "jarvis"
+    assert "recusado: " in texto(linhas)
+    assert not config.mudou
+
+
+def test_limiar_fora_da_faixa_e_recusado(tmp_path: Path) -> None:
+    config, linhas = tela(tmp_path, ["12", "", "0.3", "q"])
+    config.rodar()
+    assert config.configuracao.limiar_palavra == 0.75
+    assert "fora da faixa" in texto(linhas)
+
+
+def test_escolher_o_atalho_e_voltar_para_a_barra(tmp_path: Path) -> None:
+    config, linhas = tela(tmp_path, ["13", "ctrl+shift+j", "s"])
+    config.rodar()
+    assert ler(tmp_path / "jarvis-voz.toml").atalho == "Ctrl+Shift+J"
+    assert "com a janela em foco" in texto(linhas)
+
+    de_volta, _ = tela(tmp_path, ["13", "-", "s"])
+    de_volta.rodar()
+    assert ler(tmp_path / "jarvis-voz.toml").atalho == ""
+
+
+def test_atalho_sem_modificador_e_recusado(tmp_path: Path) -> None:
+    config, linhas = tela(tmp_path, ["13", "j", "q"])
+    config.rodar()
+    assert config.configuracao.atalho == ""
+    assert "modificador" in texto(linhas)

@@ -31,7 +31,15 @@ from typing import Any, Final
 
 from jarvis.ambiente import ambiente_ou_os
 from jarvis.voz.chaves import proibir_segredo_na_configuracao
+from jarvis.voz.escuta import MODOS, CombinacaoInvalida, exigir_combinacao
 from jarvis.voz.interface import Onde
+from jarvis.voz.palavra import (
+    LIMIAR_PADRAO,
+    PALAVRA_PADRAO,
+    PalavraInvalida,
+    exigir_limiar,
+    exigir_palavra,
+)
 from jarvis.voz.registro import Motor, MotorRecusado, exigir_modelo, ler_motores, motor_registrado
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
@@ -45,7 +53,8 @@ TTS_PADRAO: Final = "tts-piper-epitran"
 S2_PADRAO: Final = "eco"
 VOZ_PADRAO: Final = "pt_BR-faber-medium"
 MODELO_DO_ASR_PADRAO: Final = "small"
-ESCUTAS: Final[tuple[str, ...]] = ("ptt", "vad")
+ESCUTAS: Final[tuple[str, ...]] = MODOS
+"""`ptt` (atalho de teclas), `palavra` (palavra de ativação) e `vad` (escuta contínua)."""
 TTS_ELEVENLABS: Final = "tts-elevenlabs"
 FORMA_DO_ID_DE_VOZ: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_-]{1,64}")
 """O `voice_id` vai **no caminho** da URL (`/v1/text-to-speech/{voice_id}`): barra, `?`, `#`
@@ -94,6 +103,12 @@ class Configuracao:
     """Dispositivo de captura: índice ou nome, como o `--diagnostico` lista. Vazio = padrão."""
     saida: str = ""
     escuta: str = "ptt"
+    palavra: str = PALAVRA_PADRAO
+    """A palavra de ativação do modo `palavra` (ADR-0021)."""
+    limiar_palavra: float = LIMIAR_PADRAO
+    """O quanto a transcrição tem de soar como a palavra, de 0,50 a 1,0."""
+    atalho: str = ""
+    """A combinação de teclas do modo `ptt`, na grafia do Qt. Vazio = barra de espaço."""
     nuvem_ligada: tuple[str, ...] = ()
     """Os motores de nuvem que o dono ligou. Vazio = nada sai da máquina."""
     nuvem_sem_termos: tuple[str, ...] = ()
@@ -112,6 +127,9 @@ class Configuracao:
             "entrada": self.entrada,
             "saida": self.saida,
             "escuta": self.escuta,
+            "palavra": self.palavra,
+            "limiar_palavra": self.limiar_palavra,
+            "atalho": self.atalho,
             "nuvem_ligada": list(self.nuvem_ligada),
             "nuvem_sem_termos": list(self.nuvem_sem_termos),
         }
@@ -138,7 +156,7 @@ class Configuracao:
 
 
 def _texto_toml(configuracao: Configuracao) -> str:
-    """TOML escrito à mão: são treze campos e nenhuma dependência nova por isso."""
+    """TOML escrito à mão: são dezesseis campos e nenhuma dependência nova por isso."""
 
     def aspas(valor: str) -> str:
         return '"' + valor.replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -168,6 +186,9 @@ modelo_do_s2 = {aspas(configuracao.modelo_do_s2)}
 entrada = {aspas(configuracao.entrada)}
 saida = {aspas(configuracao.saida)}
 escuta = {aspas(configuracao.escuta)}
+palavra = {aspas(configuracao.palavra)}
+limiar_palavra = {configuracao.limiar_palavra!r}
+atalho = {aspas(configuracao.atalho)}
 nuvem_ligada = {lista(configuracao.nuvem_ligada)}
 nuvem_sem_termos = {lista(configuracao.nuvem_sem_termos)}
 """
@@ -185,6 +206,13 @@ def _texto(dados: Mapping[str, Any], chave: str, padrao: str) -> str:
     if not isinstance(valor, str):
         raise ConfiguracaoInvalida(f"{chave}: esperava texto, veio {type(valor).__name__}")
     return valor
+
+
+def _numero(dados: Mapping[str, Any], chave: str, padrao: float) -> float:
+    valor = dados.get(chave, padrao)
+    if isinstance(valor, bool) or not isinstance(valor, int | float):
+        raise ConfiguracaoInvalida(f"{chave}: esperava número, veio {type(valor).__name__}")
+    return float(valor)
 
 
 def _lista(dados: Mapping[str, Any], chave: str) -> tuple[str, ...]:
@@ -235,6 +263,12 @@ def validar(configuracao: Configuracao) -> Configuracao:
         raise ConfiguracaoInvalida(
             f"escuta = {configuracao.escuta!r} não existe. Válidos: {', '.join(ESCUTAS)}"
         )
+    try:
+        exigir_palavra(configuracao.palavra)
+        exigir_limiar(configuracao.limiar_palavra)
+        exigir_combinacao(configuracao.atalho)
+    except (PalavraInvalida, CombinacaoInvalida) as erro:
+        raise ConfiguracaoInvalida(str(erro)) from None
     for identificador in configuracao.nuvem_ligada:
         motor = motores.get(identificador)
         if motor is None:
@@ -288,6 +322,9 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         entrada=_texto(dados, "entrada", ""),
         saida=_texto(dados, "saida", ""),
         escuta=_texto(dados, "escuta", "ptt"),
+        palavra=_texto(dados, "palavra", PALAVRA_PADRAO),
+        limiar_palavra=_numero(dados, "limiar_palavra", LIMIAR_PADRAO),
+        atalho=_texto(dados, "atalho", ""),
         nuvem_ligada=_lista(dados, "nuvem_ligada"),
         nuvem_sem_termos=_lista(dados, "nuvem_sem_termos"),
     )

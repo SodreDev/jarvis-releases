@@ -30,6 +30,7 @@ from typing import Final
 from jarvis.microfone import EstadoDaFonte, ler_estado
 from jarvis.voz.app import Aplicativo, AplicativoIndisponivel
 from jarvis.voz.config import Configuracao
+from jarvis.voz.escuta import Escuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.teclado import ESPACO
 
@@ -77,6 +78,9 @@ class SessaoDeVoz:
     ao_estado: Callable[[Estado], None] = _nada
     ao_terminar: Callable[[str], None] = _nada
     """Fim da sessão: frase do erro, ou vazio quando terminou porque mandaram parar."""
+    escuta: Escuta | None = None
+    """O modo de escuta vivo, de quem abriu a sessão (a ponte). Trocá-lo vale no próximo tique
+    do laço, sem reiniciar nada (ADR-0021). `None` = o laço monta um da configuração."""
     modo_texto: bool = False
     """Começa no modo texto (sem abrir dispositivo). Vira verdadeiro sozinho se o áudio cair."""
 
@@ -111,7 +115,11 @@ class SessaoDeVoz:
         aplicativo.escrever_na_tela = self.ao_linha
         aplicativo.teclado = self.teclado
         aplicativo.ao_mudar_estado = self.ao_estado
-        aplicativo.pressionado = self._pressionado if self.configuracao.escuta == "ptt" else None
+        # A porta do dedo fica **sempre** ligada: o modo troca com a sessão aberta, e quem
+        # decide se o dedo manda é o laço, pelo modo vivo — não esta montagem.
+        aplicativo.pressionado = self._pressionado
+        if self.escuta is not None:
+            aplicativo.escuta = self.escuta
         aplicativo.texto_digitado = self._texto_pendente
         return aplicativo
 

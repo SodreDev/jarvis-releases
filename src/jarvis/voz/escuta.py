@@ -216,6 +216,8 @@ class Escuta:
     """Se o atalho vale com a janela fora de foco (portal registrado). Quem escreve é quem
     registrou — nunca a tela supondo."""
     armado_ate_ns: int = 0
+    descartados: int = 0
+    """Trechos ouvidos sem a palavra, nesta sessão. O texto deles não fica em lugar nenhum."""
     ao_mudar: Callable[[], None] | None = None
 
     @classmethod
@@ -261,6 +263,10 @@ class Escuta:
     def armado(self, agora_ns: int) -> bool:
         return self.modo is ModoDeEscuta.PALAVRA and agora_ns < self.armado_ate_ns
 
+    def descartar(self) -> None:
+        self.descartados += 1
+        self._avisar()
+
     def desarmar(self) -> None:
         if self.armado_ate_ns:
             self.armado_ate_ns = 0
@@ -288,6 +294,7 @@ class Escuta:
             "atalho": self.atalho,
             "atalhoGlobal": self.atalho_global,
             "armado": self.armado(agora_ns),
+            "descartados": self.descartados,
             "frase": self.frase(agora_ns),
         }
 

@@ -8,10 +8,12 @@ ASR local e com ASR na nuvem.
 from __future__ import annotations
 
 import itertools
+from pathlib import Path
 
 import pytest
 
 from jarvis.microfone import Modo
+from jarvis.voz.config import Configuracao, ConfiguracaoInvalida, escrever, ler
 from jarvis.voz.escuta import (
     ARMADO_POR_S,
     MODOS,
@@ -181,3 +183,47 @@ def test_combinacao_normalizada_e_traduzida_para_o_portal(
 def test_combinacao_que_nao_serve_e_recusada(bruta: str, trecho: str) -> None:
     with pytest.raises(CombinacaoInvalida, match=trecho):
         exigir_combinacao(bruta)
+
+
+# --- no arquivo do dono ---------------------------------------------------------------------
+def test_palavra_limiar_e_atalho_vao_e_voltam_do_arquivo(tmp_path: Path) -> None:
+    caminho = tmp_path / "jarvis-voz.toml"
+    escrever(
+        Configuracao(escuta="palavra", palavra="sexta", limiar_palavra=0.8, atalho="Ctrl+Space"),
+        caminho,
+    )
+    lida = ler(caminho)
+    assert (lida.escuta, lida.palavra, lida.limiar_palavra, lida.atalho) == (
+        "palavra",
+        "sexta",
+        0.8,
+        "Ctrl+Space",
+    )
+
+
+def test_arquivo_antigo_sem_os_campos_novos_continua_valendo(tmp_path: Path) -> None:
+    caminho = tmp_path / "jarvis-voz.toml"
+    caminho.write_text('escuta = "vad"\n', encoding="utf-8")
+    lida = ler(caminho)
+    assert lida.escuta == "vad"
+    assert lida.palavra == "jarvis" and lida.limiar_palavra == LIMIAR_PADRAO
+    assert lida.atalho == ""
+
+
+@pytest.mark.parametrize(
+    ("linha", "trecho"),
+    [
+        ('escuta = "sempre"', "Válidos: ptt, palavra, vad"),
+        ('palavra = "ô jarvis"', "mais de uma palavra"),
+        ("limiar_palavra = 0.2", "fora da faixa"),
+        ('limiar_palavra = "alto"', "esperava número"),
+        ('atalho = "j"', "modificador"),
+    ],
+)
+def test_arquivo_com_escuta_que_nao_serve_e_recusado(
+    tmp_path: Path, linha: str, trecho: str
+) -> None:
+    caminho = tmp_path / "jarvis-voz.toml"
+    caminho.write_text(linha + "\n", encoding="utf-8")
+    with pytest.raises(ConfiguracaoInvalida, match=trecho):
+        ler(caminho)

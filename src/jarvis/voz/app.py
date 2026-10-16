@@ -50,6 +50,7 @@ from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import Configuracao
+from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde
 from jarvis.voz.registro import MotorRecusado, motor_registrado
@@ -257,6 +258,12 @@ class Aplicativo:
     o que o botão controla é o que vira turno. Fechar e reabrir o dispositivo a cada aperto é
     trabalho do `audio-io` com o arquivo de pedido do F1-13, na F2 — e o indicador continua
     mostrando a fonte como ela está, não como a tela gostaria que estivesse."""
+    escuta: Escuta | None = None
+    """O modo de escuta **vivo** (ADR-0021): atalho, palavra de ativação ou contínua.
+
+    Lido a cada tique, trocado de outra thread (a janela, o controlador) sem reiniciar a
+    sessão. `None` monta um da configuração na primeira leitura — o terminal não precisa
+    saber que isto existe."""
     texto_digitado: Callable[[], str | None] | None = None
     """Uma linha que o dono digitou, se houver. É consultada entre os quadros do laço de áudio.
 
@@ -280,6 +287,18 @@ class Aplicativo:
             return self.epoch > epoch
 
         return cancelado
+
+    @property
+    def modo_de_escuta(self) -> Escuta:
+        """O estado vivo, montado da configuração na primeira vez que alguém pergunta."""
+        if self.escuta is None:
+            self.escuta = Escuta.de(
+                self.configuracao.escuta,
+                palavra=self.configuracao.palavra,
+                limiar=self.configuracao.limiar_palavra,
+                atalho=self.configuracao.atalho,
+            )
+        return self.escuta
 
     def _cancelado_agora(self) -> bool:
         return self.cancelado_de(self.epoch)()
@@ -559,11 +578,11 @@ class Aplicativo:
                 elif falando:
                     silencio_ms += 20.0
                     audio.extend(quadro.amostras)
-                    # No PTT o fim do turno é o dedo saindo do botão: esperar 700 ms de
-                    # silêncio ali seria cobrar do dono um silêncio que ele já declarou.
-                    fechou = self.pressionado is not None or (
-                        silencio_ms >= SILENCIO_PARA_FECHAR_O_TURNO_MS
-                    )
+                    # No atalho o fim do turno é o dedo saindo do botão: esperar 700 ms de
+                    # silêncio ali seria cobrar do dono um silêncio que ele já declarou. Nos
+                    # outros dois quem fecha é o silêncio, mesmo com a porta do dedo ligada —
+                    # o modo troca com a sessão aberta, e a porta fica.
+                    fechou = self._pelo_dedo or silencio_ms >= SILENCIO_PARA_FECHAR_O_TURNO_MS
                     if fechou:
                         falando = False
                         turnos += 1
@@ -583,9 +602,18 @@ class Aplicativo:
             self._mudar(Estado.PARADO)
         return 0
 
+    @property
+    def _pelo_dedo(self) -> bool:
+        """Quem decide é o dedo: modo atalho **e** uma porta de tecla ligada (a janela).
+
+        Sem a porta (o terminal, que não tem tecla solta) o atalho cai no VAD, como sempre
+        foi."""
+        return self.pressionado is not None and self.modo_de_escuta.modo is ModoDeEscuta.ATALHO
+
     def _quer_falar(self, captura: Captura) -> bool:
-        """Quem diz que o dono está falando: o dedo dele (PTT da janela) ou o VAD."""
-        if self.pressionado is not None:
+        """Quem diz que o dono está falando: o dedo dele (atalho na janela) ou o VAD."""
+        if self._pelo_dedo:
+            assert self.pressionado is not None
             return self.pressionado()
         return bool(captura.detector.falando)
 
@@ -608,13 +636,22 @@ class Aplicativo:
         asr_ms = (time.monotonic() - comeco) * 1000.0
         ouvido_ms = 1000.0 * (len(amostras) // BYTES_POR_AMOSTRA) / TAXA_PADRAO
         if not hipotese.texto.strip():
-            self.escrever_na_tela("  (não entendi nada nesse trecho)")
+            if self.modo_de_escuta.modo is ModoDeEscuta.PALAVRA:
+                # Esperando a chamada, ruído que não vira texto é o caso comum: avisar a cada
+                # um encheria a tela de "não entendi" enquanto a TV fala.
+                self.modo_de_escuta.descartar()
+            else:
+                self.escrever_na_tela("  (não entendi nada nesse trecho)")
             self._mudar(self._repouso)
             return
-        self.escrever_na_tela(f"Você: {hipotese.texto}")
-        turno = self.responder(hipotese.texto, fila=fila)
+        pedido = self._pedido_do_trecho(hipotese.texto)
+        if pedido is None:
+            self._mudar(self._repouso)
+            return
+        self.escrever_na_tela(f"Você: {pedido}")
+        turno = self.responder(pedido, fila=fila)
         completo = Turno(
-            falou=hipotese.texto,
+            falou=pedido,
             respondeu=turno.respondeu,
             ouvido_ms=ouvido_ms,
             asr_ms=asr_ms,
@@ -630,6 +667,35 @@ class Aplicativo:
             self.escrever_na_tela(f"Jarvis: {completo.respondeu}")
         self.escrever_na_tela(completo.resumo())
 
+    def _pedido_do_trecho(self, texto: str) -> str | None:
+        """O que vira pedido neste trecho — ou `None`, que é descartar (ADR-0021).
+
+        Fora do modo `palavra`, o trecho inteiro. No modo `palavra`:
+
+        - **armado** (ele disse só o nome há pouco): o trecho inteiro é o pedido;
+        - **com a chamada e um pedido**: só o pedido, sem o nome ("jarvis, que horas são" e
+          "que horas são, jarvis" pedem a mesma coisa);
+        - **só o nome**: arma por alguns segundos e diz na tela;
+        - **sem a chamada**: descarta. Sem resposta, sem histórico, e **sem o texto na tela** —
+          fala que não era para o Jarvis não fica registrada em lugar nenhum; só a contagem de
+          descartados sobe, para o indicador dizer que ouviu e não era com ele.
+        """
+        escuta = self.modo_de_escuta
+        if escuta.modo is not ModoDeEscuta.PALAVRA:
+            return texto
+        agora = self.relogio.mono_ns()
+        armado = escuta.armado(agora)
+        achado = escuta.detector.achar(texto)
+        if achado is None and not armado:
+            escuta.descartar()
+            return None
+        if achado is not None and achado.so_o_nome:
+            escuta.armar(agora)
+            self.escrever_na_tela(f"  (ouvi “{achado.ouvido}”: pode falar)")
+            return None
+        escuta.desarmar()
+        return achado.comando if achado is not None else texto
+
     def _publicar_estado(self, captura: Captura, *, aberta: bool) -> None:
         """O indicador do F1-13: o que a fonte **está** fazendo, não o que a tela quer."""
         escrever_estado(
@@ -639,7 +705,7 @@ class Aplicativo:
                 amostras=captura.amostras_capturadas if aberta else 0,
                 amostras_totais=captura.amostras_capturadas,
                 device_id=captura.fonte.device_id if aberta else None,
-                modo=Modo.PTT if self.configuracao.escuta == "ptt" else Modo.ESCUTA,
+                modo=Modo.PTT if self.modo_de_escuta.modo is ModoDeEscuta.ATALHO else Modo.ESCUTA,
             ),
         )
 

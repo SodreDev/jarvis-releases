@@ -39,7 +39,9 @@ from jarvis.voz.config import (
     validar,
 )
 from jarvis.voz.elevenlabs import VozDaConta
+from jarvis.voz.escuta import CombinacaoInvalida, ModoDeEscuta, exigir_combinacao
 from jarvis.voz.interface import Onde
+from jarvis.voz.palavra import PalavraInvalida, exigir_limiar, exigir_palavra
 from jarvis.voz.registro import Motor, motor_registrado, motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
@@ -114,12 +116,23 @@ class TelaDeConfiguracao:
         self.saida(f"  5. Resposta (S2) ...... {configuracao.s2}  [provisório até a F2, ADR-0018]")
         self.saida(f"  6. Microfone .......... {configuracao.entrada or PADRAO_DO_SISTEMA}")
         self.saida(f"  7. Alto-falante ....... {configuracao.saida or PADRAO_DO_SISTEMA}")
-        self.saida(f"  8. Escuta ............. {configuracao.escuta}  (ptt = tecla, vad = voz)")
+        self.saida(
+            f"  8. Escuta ............. {ModoDeEscuta(configuracao.escuta).frase}"
+            f"  ({configuracao.escuta})"
+        )
         self.saida(f"  9. Chaves de API ...... {self._linha_de_chaves()}")
         self.saida(
             f" 10. Voz da ElevenLabs .. {configuracao.voz_elevenlabs or '(nenhuma: escolha uma)'}"
         )
         self.saida(f" 11. Modelo ElevenLabs .. {self._modelo_elevenlabs()}")
+        self.saida(
+            f" 12. Palavra de ativação  {configuracao.palavra}"
+            f"  (limiar {configuracao.limiar_palavra:.2f})"
+        )
+        self.saida(
+            f" 13. Atalho de teclas ... {configuracao.atalho or 'barra de espaço'}"
+            "  (global só pelo portal do sistema; senão, com a janela em foco)"
+        )
         self.saida("")
         self.saida("  s. salvar e sair      q. sair sem salvar")
 
@@ -254,6 +267,41 @@ class TelaDeConfiguracao:
         self.configuracao = self.configuracao.com(**{campo: valor})
         self.mudou = True
 
+    def _trocar_palavra(self) -> None:
+        """A palavra e o limiar, validados aqui — a recusa diz por quê, e nada muda."""
+        atual = self.configuracao
+        bruta = self._perguntar(f"Palavra de ativação (atual: {atual.palavra}): ")
+        limiar = self._perguntar(
+            f"Limiar de 0,50 a 1,0 — mais alto exige pronúncia mais fiel "
+            f"(atual: {atual.limiar_palavra:.2f}): "
+        )
+        try:
+            palavra = exigir_palavra(bruta) if bruta else atual.palavra
+            valor = exigir_limiar(float(limiar.replace(",", "."))) if limiar else None
+        except (PalavraInvalida, ValueError) as erro:
+            self.saida(f"  recusado: {erro}")
+            return
+        self.configuracao = atual.com(
+            palavra=palavra, limiar_palavra=atual.limiar_palavra if valor is None else valor
+        )
+        self.mudou = True
+
+    def _trocar_atalho(self) -> None:
+        """A combinação digitada ("Ctrl+Space"): o terminal não tem como capturar a tecla."""
+        bruta = self._perguntar(
+            f"Combinação (ex.: Ctrl+Space; '-' = barra de espaço) "
+            f"(atual: {self.configuracao.atalho or 'barra de espaço'}): "
+        )
+        if not bruta:
+            return
+        try:
+            atalho = "" if bruta == "-" else exigir_combinacao(bruta)
+        except CombinacaoInvalida as erro:
+            self.saida(f"  recusado: {erro}")
+            return
+        self.configuracao = self.configuracao.com(atalho=atalho)
+        self.mudou = True
+
     def _escolher_dispositivo(self, campo: str, captura: bool) -> None:
         """Lista o que existe; sem lista (sem PortAudio), aceita índice ou nome digitado."""
         try:
@@ -316,11 +364,15 @@ class TelaDeConfiguracao:
         elif escolha == "7":
             self._escolher_dispositivo("saida", captura=False)
         elif escolha == "8":
+            frases = [ModoDeEscuta(m).frase for m in ESCUTAS]
             escolhido = self._escolher_da_lista(
-                "Como o Jarvis escuta:", list(ESCUTAS), self.configuracao.escuta
+                "Como o Jarvis sabe que é com ele:",
+                frases,
+                ModoDeEscuta(self.configuracao.escuta).frase,
             )
             if escolhido is not None:
-                self.configuracao = self.configuracao.com(escuta=escolhido)
+                modo = ESCUTAS[frases.index(escolhido)]
+                self.configuracao = self.configuracao.com(escuta=modo)
                 self.mudou = True
         elif escolha == "9":
             self._mostrar_chaves()
@@ -328,6 +380,10 @@ class TelaDeConfiguracao:
             self._trocar_voz_elevenlabs()
         elif escolha == "11":
             self._trocar_modelo_elevenlabs()
+        elif escolha == "12":
+            self._trocar_palavra()
+        elif escolha == "13":
+            self._trocar_atalho()
         elif escolha == "s":
             return not self._salvar()
         elif escolha == "q":

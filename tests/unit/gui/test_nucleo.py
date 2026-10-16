@@ -171,3 +171,23 @@ def test_o_botao_de_falar_interrompe_pelo_mesmo_caminho_da_barra(tmp_path: Path)
     assert teclado.tecla() == ESPACO
     assert teclado.tecla() == ESPACO
     assert teclado.tecla() is None
+
+
+def test_a_sessao_liga_o_dedo_sempre_e_entrega_a_escuta_viva(tmp_path: Path) -> None:
+    """ADR-0021: o modo troca com a sessão aberta, então a porta do dedo não pode depender do
+    modo da montagem — e a escuta que a janela troca tem de ser a **mesma** que o laço lê."""
+    from jarvis.voz.escuta import Escuta, ModoDeEscuta
+
+    escuta = Escuta(modo=ModoDeEscuta.CONTINUA)
+    sessao = SessaoDeVoz(
+        configuracao=Configuracao(
+            asr="asr-whisper-local", tts="tts-parametrico", s2="eco", escuta="vad"
+        ),
+        raiz=tmp_path / "sessao",
+        escuta=escuta,
+    )
+    app = sessao._ligar(Aplicativo(configuracao=sessao.configuracao, raiz=sessao.raiz))
+    assert app.pressionado is not None, "no modo contínuo a porta do dedo sumiu"
+    assert app.escuta is escuta
+    escuta.trocar(ModoDeEscuta.ATALHO)
+    assert app.modo_de_escuta.modo is ModoDeEscuta.ATALHO
