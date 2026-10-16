@@ -55,7 +55,7 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="tarefas",
                 titulo="Contexto ativo",
-                area={"coluna": 0, "linha": 1, "colunas": 3, "linhas": 5},
+                area={"coluna": 0, "linha": 1, "colunas": 3, "linhas": 3},
                 motivo="o dono pediu para ver o que está em andamento",
                 dados={
                     "itens": [
@@ -80,15 +80,11 @@ class RoteiroDeDemonstracao:
             ),
             _acao(
                 "createWidget",
-                componente="graficos",
-                titulo="Esta máquina",
-                area={"coluna": 9, "linha": 1, "colunas": 3, "linhas": 2},
-                motivo="indicadores discretos desta máquina",
-            ),
-            _acao(
-                "createWidget",
                 componente="notificacoes",
-                area={"coluna": 9, "linha": 4, "colunas": 3, "linhas": 2},
+                # Do mesmo tamanho e na mesma altura do contexto, do outro lado do núcleo: a
+                # composição fica equilibrada e o resto é espaço livre de propósito. O estado da
+                # máquina já está no alto da tela; um card repetindo os mesmos números era ruído.
+                area={"coluna": 9, "linha": 1, "colunas": 3, "linhas": 3},
                 motivo="avisos que chegaram enquanto o dono falava (ADR-0025)",
                 dados={
                     "avisos": [
@@ -130,7 +126,7 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="fontes",
                 titulo="Fontes",
-                area={"coluna": 0, "linha": 2, "colunas": 2, "linhas": 5},
+                area={"coluna": 0, "linha": 2, "colunas": 2, "linhas": 6},
                 dados={
                     "itens": [
                         {"titulo": "SPEC §3.3", "detalhe": "regras de epoch", "estado": "visto"},
@@ -145,7 +141,10 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="noticias",
                 titulo="Resultados",
-                area={"coluna": 2, "linha": 2, "colunas": 6, "linhas": 6},
+                # Logo abaixo da faixa da consulta, sem a linha vazia que sobrava entre as duas;
+                # fontes, resultados e análise terminam juntos, no fim da grade — como no modo
+                # execução —, sem a faixa morta que sobrava acima da barra de conversa.
+                area={"coluna": 2, "linha": 1, "colunas": 6, "linhas": 7},
                 dados={
                     "itens": [
                         {
@@ -184,7 +183,7 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="resumo",
                 titulo="Análise do Jarvis",
-                area={"coluna": 8, "linha": 2, "colunas": 4, "linhas": 5},
+                area={"coluna": 8, "linha": 1, "colunas": 4, "linhas": 7},
                 dados={
                     "texto": (
                         'O cancelamento é uma pergunta só — "o epoch ainda é meu?" — feita por '
@@ -293,7 +292,7 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="arquivos",
                 titulo="Artefatos",
-                area={"coluna": 8, "linha": 0, "colunas": 4, "linhas": 4},
+                area={"coluna": 8, "linha": 0, "colunas": 4, "linhas": 3},
                 motivo="conferir o que saiu do empacotador",
                 dados={
                     "itens": [
@@ -308,13 +307,13 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="graficos",
                 titulo="Esta máquina",
-                area={"coluna": 8, "linha": 4, "colunas": 4, "linhas": 2},
+                area={"coluna": 8, "linha": 3, "colunas": 4, "linhas": 2},
             ),
             _acao(
                 "createWidget",
                 componente="notificacoes",
                 titulo="Avisos do empacotamento",
-                area={"coluna": 8, "linha": 6, "colunas": 4, "linhas": 2},
+                area={"coluna": 8, "linha": 5, "colunas": 4, "linhas": 3},
                 dados={
                     "avisos": [
                         {

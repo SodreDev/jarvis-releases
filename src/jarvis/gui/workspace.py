@@ -180,13 +180,15 @@ class Resultado:
             return "layout de antes de volta"
         if self.acao.tipo is Tipo.ESCUTA and self.acao.escuta is not None:
             return f"agora: {self.acao.escuta.frase}"
+        # "verbo: nome", e não "nome verbo": o título é do dono ou do catálogo ("Notificações",
+        # "Contexto ativo"), e concordar particípio com ele erra metade das vezes.
         feito = {
-            Tipo.CRIAR: f"{nome} aberto",
-            Tipo.REMOVER: f"{nome} fechado — dá para recuperar",
-            Tipo.MOVER: f"{nome} movido",
-            Tipo.REDIMENSIONAR: f"{nome} redimensionado",
-            Tipo.FOCAR: f"{nome} em foco",
-            Tipo.MINIMIZAR: f"{nome} minimizado",
+            Tipo.CRIAR: f"na tela: {nome}",
+            Tipo.REMOVER: f"fechado: {nome} — dá para recuperar",
+            Tipo.MOVER: f"movido: {nome}",
+            Tipo.REDIMENSIONAR: f"redimensionado: {nome}",
+            Tipo.FOCAR: f"em foco: {nome}",
+            Tipo.MINIMIZAR: f"minimizado: {nome}",
         }.get(self.acao.tipo, "")
         if feito and self.ajuste and "ocupado" in self.ajuste:
             return f"{feito}, noutro lugar: o que você pediu estava ocupado"

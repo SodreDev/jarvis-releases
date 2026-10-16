@@ -222,6 +222,9 @@ class Ponte(QObject):
         self._consulta = ""
         self._relogio = ""
         self._medidas: list[dict[str, Any]] = []
+        self._historico_visto = 0
+        """Quantos resultados do gerente já eram da composição do modo: o que o roteiro monta
+        ao trocar de modo não é novidade para o dono, e não vira frase na tela."""
         self._vozes: list[dict[str, Any]] = []
         self._vozes_frase = ""
         self._tique = QTimer(self)
@@ -348,7 +351,7 @@ class Ponte(QObject):
         É o que a janela mostra — discreto, e some sozinho. Nome de ação interna na cara do
         dono é informação de quem escreveu o código, não de quem está usando o Jarvis.
         """
-        for resultado in reversed(self._espaco.historico):
+        for resultado in reversed(self._espaco.historico[self._historico_visto :]):
             frase = resultado.frase_do_dono()
             if frase:
                 return frase
@@ -494,6 +497,7 @@ class Ponte(QObject):
         )
         for bruta in propostas:
             self._espaco.propor(bruta)
+        self._historico_visto = len(self._espaco.historico)
         self._publicar()
 
     @Slot(str)
@@ -533,6 +537,8 @@ class Ponte(QObject):
             # Grande, mas **do tamanho do conteúdo**: um painel esticado até o rodapé deixa
             # dois terços de moldura vazia, que é o oposto de "espaço livre de propósito".
             self._espaco.colocar_em(resultado.widget, AREA_DOS_PAINEIS[componente])
+        # Quem abriu foi o dono, pela barra lateral: dizer a ele que abriu não acrescenta nada.
+        self._historico_visto = len(self._espaco.historico)
         self._publicar()
 
     @Slot()

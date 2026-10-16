@@ -93,3 +93,23 @@ def test_o_indicador_de_escuta_aparece_num_lugar_so(
     assentar(aplicativo, 900)
     assert visiveis(janela, "indicadorNoNucleo") == []
     assert len(visiveis(janela, "indicadorNoCabecalho")) == 1
+
+
+def test_a_linha_de_estado_nao_mexe_na_grade(
+    aplicativo: QGuiApplication,  # noqa: F811
+    abrir: Callable[[Ponte], QQuickView],  # noqa: F811
+    tmp_path: Path,
+    sem_chaveiro: None,  # noqa: F811
+) -> None:
+    """O Column do rodapé ignora item com opacidade 0: a frase que some não pode tirar a linha
+    do layout, senão a grade inteira pula a cada aviso discreto."""
+    ponte = Ponte(raiz=tmp_path / "sessao", caminho_da_configuracao=tmp_path / "jarvis-voz.toml")
+    janela = abrir(ponte)
+    janela.show()
+    assentar(aplicativo, 600)
+    (linha,) = visiveis(janela, "linhaDeEstado")
+    assert linha.opacity() == 1.0 and linha.height() == 18
+    topo_vazio = linha.mapToScene(QPointF(0, 0)).y()
+    ponte.salvarConfiguracao()  # põe frase na linha
+    assentar(aplicativo, 600)
+    assert linha.mapToScene(QPointF(0, 0)).y() == topo_vazio
