@@ -37,7 +37,7 @@ from PySide6.QtCore import (
 )
 
 from jarvis.gui import chaveiro, recursos, sistema
-from jarvis.gui.acoes import Modo
+from jarvis.gui.acoes import Area, Modo
 from jarvis.gui.componentes import CATALOGO
 from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
 from jarvis.gui.nucleo import SessaoDeVoz
@@ -55,6 +55,12 @@ from jarvis.voz.registro import motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
 PAPEIS: Final = ("asr", "tts")
+AREA_DOS_PAINEIS: Final[dict[str, Area]] = {
+    "configuracao": Area(coluna=1, linha=0, colunas=10, linhas=6),
+    "diagnostico": Area(coluna=1, linha=0, colunas=10, linhas=7),
+}
+"""Onde cada painel do dono abre. O de diagnóstico é mais alto porque o que ele mostra é
+texto corrido do `--diagnostico`; o de provedores tem altura de conteúdo."""
 MAXIMO_DE_LINHAS: Final = 400
 
 
@@ -294,7 +300,21 @@ class Ponte(QObject):
 
     @Property(list, notify=mudou)
     def historico(self) -> list[str]:
+        """O rastro **técnico** (`createWidget: feito`): serve a log e a teste, não à tela."""
         return [resultado.frase() for resultado in self._espaco.historico[-12:]]
+
+    @Property(str, notify=mudou)
+    def ultimaMudanca(self) -> str:
+        """A última coisa que aconteceu na tela, **em português**, ou vazio.
+
+        É o que a janela mostra — discreto, e some sozinho. Nome de ação interna na cara do
+        dono é informação de quem escreveu o código, não de quem está usando o Jarvis.
+        """
+        for resultado in reversed(self._espaco.historico):
+            frase = resultado.frase_do_dono()
+            if frase:
+                return frase
+        return ""
 
     @Property(str, notify=mudou)
     def aviso(self) -> str:
@@ -425,7 +445,9 @@ class Ponte(QObject):
             }
         )
         if resultado.widget:
-            self._espaco.maximizar(resultado.widget)
+            # Grande, mas **do tamanho do conteúdo**: um painel esticado até o rodapé deixa
+            # dois terços de moldura vazia, que é o oposto de "espaço livre de propósito".
+            self._espaco.colocar_em(resultado.widget, AREA_DOS_PAINEIS[componente])
         self._publicar()
 
     @Slot()

@@ -260,18 +260,37 @@ Rectangle {
             pendentes: ponte ? ponte.pendentes : []
         }
 
+        // A linha de estado: uma frase curta em português, que aparece quando algo muda e
+        // **some sozinha**. Nada de nome de ação interna, e nada que fique parado na tela.
         Row {
             spacing: 14
-            Rotulo {
-                text: ponte && ponte.historico.length
-                      ? ponte.historico[ponte.historico.length - 1] : ""
-                color: Tema.textoFraco
-                visible: text !== ""
+            opacity: 0
+            Behavior on opacity { NumberAnimation { duration: 260 } }
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 4; height: 4; radius: 2
+                color: Tema.cianoFraco
             }
             Rotulo {
+                id: mudanca
+                anchors.verticalCenter: parent.verticalCenter
+                text: ponte ? ponte.ultimaMudanca : ""
+                color: Tema.textoFraco
+                onTextChanged: if (text !== "") sumir.restart()
+            }
+            Rotulo {
+                anchors.verticalCenter: parent.verticalCenter
                 text: ponte ? ponte.aviso : ""
                 color: Tema.ciano
                 visible: text !== ""
+            }
+
+            Timer {
+                id: sumir
+                interval: 6000
+                onTriggered: parent.opacity = 0
+                onRunningChanged: if (running) parent.opacity = 1
             }
         }
 

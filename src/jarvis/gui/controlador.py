@@ -195,13 +195,35 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="tarefas",
                 titulo="Executando",
-                area={"coluna": 0, "linha": 0, "colunas": 2, "linhas": 8},
+                area={"coluna": 0, "linha": 2, "colunas": 2, "linhas": 6},
                 dados={
                     "itens": [
-                        {"titulo": "Montar o AppDir", "estado": "resultado"},
-                        {"titulo": "Empacotar o AppImage", "estado": "executando"},
-                        {"titulo": "Gerar .deb e .rpm", "estado": "espera"},
-                        {"titulo": "Instalar em contêiner", "estado": "espera"},
+                        {
+                            "titulo": "Montar o AppDir",
+                            "detalhe": "948,2 MB",
+                            "estado": "resultado",
+                        },
+                        {
+                            "titulo": "Empacotar o AppImage",
+                            "detalhe": "squashfs com zstd",
+                            "estado": "executando",
+                        },
+                        {"titulo": "Gerar .deb e .rpm", "detalhe": "nfpm", "estado": "espera"},
+                        {
+                            "titulo": "Instalar em contêiner",
+                            "detalhe": "debian 13 e fedora 44",
+                            "estado": "espera",
+                        },
+                        {
+                            "titulo": "Rodar as telas no pacote",
+                            "detalhe": "--capturar",
+                            "estado": "espera",
+                        },
+                        {
+                            "titulo": "Conferir licenças no artefato",
+                            "detalhe": "LGPL-3.0 e GPL-3.0",
+                            "estado": "espera",
+                        },
                         {
                             "titulo": "Publicar",
                             "detalhe": "só com ordem do dono",
@@ -214,7 +236,7 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="codigo",
                 titulo="src/jarvis/voz/app.py",
-                area={"coluna": 2, "linha": 0, "colunas": 5, "linhas": 5},
+                area={"coluna": 2, "linha": 0, "colunas": 6, "linhas": 5},
                 dados={
                     "linhas": [
                         'def interromper(self, motivo: str = "barge_in") -> int:',
@@ -237,15 +259,19 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="terminal",
                 titulo="Saída do empacotador",
-                area={"coluna": 2, "linha": 5, "colunas": 5, "linhas": 3},
+                area={"coluna": 2, "linha": 5, "colunas": 6, "linhas": 3},
                 motivo="acompanhar o build do AppImage",
                 dados={
                     "linhas": [
-                        "$ uv run python tools/empacotar.py appimage",
-                        "montando AppDir em /tmp/jarvis-dist/AppDir",
-                        "python 3.12 relocável: 68 MB",
-                        "PySide6-Essentials 6.9.3: 272 MB",
-                        "licenças copiadas para usr/share/licenses/jarvis",
+                        "$ uv run python tools/empacotar.py tudo",
+                        "1/6 Python relocável        cpython-3.12.14 (68 MB)",
+                        "2/6 dependências da trava   47 rodas de uv.lock",
+                        "3/6 o próprio Jarvis        jarvis-0.0.0-py3-none-any.whl",
+                        "4/6 dados, licenças, ícones usr/share/jarvis, usr/share/licenses",
+                        "5/6 lançador                usr/bin/jarvis + AppRun",
+                        "6/6 poda                    34,5 MB de peso morto",
+                        "   AppDir: 948.2 MB",
+                        "   AppImage: Jarvis-0.0.0-x86_64.AppImage (244.1 MB)",
                     ]
                 },
             ),
@@ -253,7 +279,7 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="arquivos",
                 titulo="Artefatos",
-                area={"coluna": 7, "linha": 0, "colunas": 5, "linhas": 4},
+                area={"coluna": 8, "linha": 0, "colunas": 4, "linhas": 4},
                 motivo="conferir o que saiu do empacotador",
                 dados={
                     "itens": [
@@ -268,13 +294,13 @@ class RoteiroDeDemonstracao:
                 "createWidget",
                 componente="graficos",
                 titulo="Esta máquina",
-                area={"coluna": 7, "linha": 4, "colunas": 5, "linhas": 2},
+                area={"coluna": 8, "linha": 4, "colunas": 4, "linhas": 2},
             ),
             _acao(
                 "createWidget",
                 componente="notificacoes",
                 titulo="Avisos do empacotamento",
-                area={"coluna": 7, "linha": 6, "colunas": 4, "linhas": 2},
+                area={"coluna": 8, "linha": 6, "colunas": 4, "linhas": 2},
                 dados={
                     "itens": [
                         {

@@ -37,6 +37,7 @@ from jarvis.gui.acoes import (
     ler_acao,
 )
 from jarvis.gui.componentes import (
+    CATALOGO,
     Componente,
     ComponenteNaoAutorizado,
     componente,
@@ -84,7 +85,9 @@ COMPOSICOES: Final[dict[Modo, Composicao]] = {
         frase="o núcleo encolhe; o conteúdo manda",
     ),
     Modo.EXECUCAO: Composicao(
-        nucleo=Area(coluna=11, linha=7, colunas=1, linhas=1),
+        # O núcleo encolhe, mas continua **legível e no alto**, com nome e estado: um aro de
+        # uma célula no canto de baixo virava enfeite solto, sem identidade nenhuma.
+        nucleo=Area(coluna=0, linha=0, colunas=2, linhas=2),
         limite_de_modulos=8,
         frase="várias visões ao mesmo tempo",
     ),
@@ -142,11 +145,49 @@ class Resultado:
         return bool(self.pendencia)
 
     def frase(self) -> str:
+        """A frase **técnica**, com o nome da ação: é o que vai para log e para teste."""
         if self.pendente:
             return f"{self.acao.tipo}: esperando a sua confirmação — {self.motivo}"
         if not self.aceita:
             return f"{self.acao.tipo}: recusada — {self.motivo}"
         return f"{self.acao.tipo}: feito{f' ({self.ajuste})' if self.ajuste else ''}"
+
+    @property
+    def titulo_do_alvo(self) -> str:
+        """Como o dono chama a coisa: o título que a ação pediu, ou o do catálogo."""
+        if self.acao.titulo:
+            return self.acao.titulo
+        alvo = CATALOGO.get(self.acao.componente)
+        return alvo.titulo if alvo is not None else (self.acao.componente or "o módulo")
+
+    def frase_do_dono(self) -> str:
+        """A mesma coisa em português, para a tela. Vazio quando não há o que dizer.
+
+        `createWidget: feito` é nome de ação interna — informação de quem escreveu o código,
+        não de quem está usando o Jarvis. O que o dono precisa ler é o que **aconteceu com a
+        tela dele**, e só quando houve algo digno de nota.
+        """
+        nome = self.titulo_do_alvo
+        if self.pendente:
+            return f"{nome} espera a sua confirmação"
+        if not self.aceita:
+            primeira = self.motivo.split(".")[0].strip()
+            return f"não abri {nome}: {primeira}" if self.acao.tipo is Tipo.CRIAR else primeira
+        if self.acao.tipo is Tipo.MODO and self.acao.modo is not None:
+            return f"modo {self.acao.modo.frase}"
+        if self.acao.tipo is Tipo.RESTAURAR:
+            return "layout de antes de volta"
+        feito = {
+            Tipo.CRIAR: f"{nome} aberto",
+            Tipo.REMOVER: f"{nome} fechado — dá para recuperar",
+            Tipo.MOVER: f"{nome} movido",
+            Tipo.REDIMENSIONAR: f"{nome} redimensionado",
+            Tipo.FOCAR: f"{nome} em foco",
+            Tipo.MINIMIZAR: f"{nome} minimizado",
+        }.get(self.acao.tipo, "")
+        if feito and self.ajuste and "ocupado" in self.ajuste:
+            return f"{feito}, noutro lugar: o que você pediu estava ocupado"
+        return feito
 
 
 @dataclass(slots=True)
@@ -425,6 +466,29 @@ class Workspace:
                 alvo,
                 area_guardada=alvo.area,
                 area=Area(coluna=0, linha=0, colunas=COLUNAS, linhas=LINHAS),
+                maximizado=True,
+                minimizado=False,
+                foco=True,
+            )
+        )
+        self._avisar()
+        return True
+
+    def colocar_em(self, identificador: str, area: Area) -> bool:
+        """Põe o módulo exatamente nesta área, **a pedido do dono**, sem olhar colisão.
+
+        É o caminho dos painéis que ele abre pela barra lateral: quem pediu foi ele, e o que
+        estava na frente já foi minimizado. Guardar a área de antes é o que faz o botão de
+        restaurar ter o que restaurar.
+        """
+        alvo = self.widgets.get(identificador)
+        if alvo is None:
+            return False
+        self._guardar(
+            replace(
+                alvo,
+                area_guardada=alvo.area_guardada or alvo.area,
+                area=area,
                 maximizado=True,
                 minimizado=False,
                 foco=True,
