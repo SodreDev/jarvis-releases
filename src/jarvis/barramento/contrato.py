@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Final
 
 import jsonschema
@@ -23,8 +22,9 @@ from jarvis.barramento.envelope import (
     Tipo,
     Trust,
 )
+from jarvis.dados import caminho
 
-ARQUIVO_CONTRATO: Final = Path(__file__).resolve().parents[3] / "schemas" / "events.v1.json"
+ARQUIVO_CONTRATO: Final = caminho("schemas/events.v1.json")
 
 
 class ErroDeContrato(ValueError):

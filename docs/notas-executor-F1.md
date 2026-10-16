@@ -1340,3 +1340,103 @@ sílaba, e só ouvido julga se incomoda.
    porta bloqueia, que é o comportamento certo para GPL no produto.
 4. **Emenda da ADR-0016 pendente:** trocar o descarte silencioso de fonema por erro. O
    contador e a cobertura existem; a decisão é do dono.
+
+---
+
+# Lote da janela e do empacotamento (ADR-0019 e ADR-0020)
+
+O dono pediu duas coisas: **abrir o Jarvis como aplicativo de verdade** e **instalar** (AppImage,
+`.deb`, `.rpm`). No meio do caminho ele trocou a direção da primeira: a janela em abas virou
+**workspace conduzido pela IA** (emenda da ADR-0019), com HUD circular, três modos e a
+configuração como módulo em vez de formulário.
+
+## O que ficou de pé
+
+- **`jarvis.gui`**, em cinco camadas que o teste separa: quem **propõe** (`controlador`), quem
+  **decide** (`workspace`), o que **pode existir** (`componentes`), o que **anima** (QML) e o
+  que **encosta na máquina do dono** (nada ligado, tudo atrás de confirmação);
+- **o laço de voz ganhou três portas e nada mais** (`ao_mudar_estado`, `pressionado`,
+  `texto_digitado`): a janela não tem um segundo laço, e por isso não tem um segundo
+  cancelamento;
+- **`jarvis.dados`**: o produto acha `licenses/`, `schemas/`, `tabelas/` e `catalogo/` fora da
+  árvore. Sem isso, o pacote subia e morria na primeira tela que lista motores;
+- **`jarvis.voz.modelos`**: peso baixado no primeiro uso, tamanho dito antes, sha256 conferido
+  depois, arquivo só aparece inteiro;
+- **`tools/empacotar.py`**: um AppDir, três embalagens, verificadas em contêiner.
+
+## Armadilhas deste lote (todas custaram tempo, nenhuma era óbvia)
+
+1. **O laço girava para sempre quando a fonte acabava.** `Captura.ultimo_quadro` guarda o
+   último quadro e **continua preenchido** depois do fim do WAV, então a condição de saída
+   nunca disparava: 100% de CPU sem nada para ouvir. Agora o fim é "a contagem de quadros não
+   andou neste tique". Achado pelo teste do PTT, onde nenhum turno fecha.
+2. **Um teste da suíte abria o microfone real do dono.**
+   `test_fora_do_ci_a_recusa_do_dispositivo_diz_o_que_falta_na_maquina` tentava abrir o
+   dispositivo apostando que a máquina não tinha PortAudio. A do dono tem — o teste abria o
+   microfone **e falhava por conseguir abrir**. A falta passou a ser injetada na importação.
+3. **A roda do PySide6 não traz o texto da licença.** Nenhum `LICENSE*` no pacote nem no
+   `.dist-info`, só a expressão nos metadados. Como a LGPL-3.0 exige entregar o texto — e ela é
+   um conjunto de permissões **sobre** a GPL-3.0 —, os dois textos vêm do detentor e ficam
+   versionados em `licenses/texto/`. O mesmo vale para o `SecretStorage` (BSD-3).
+4. **QML não tem docstring.** `"""..."""` depois de uma propriedade é erro de sintaxe
+   (`Expected token ... unqualified name id`), e o arquivo inteiro vira "Type X unavailable".
+   Comentário em QML é `//`. Pela mesma família: `height: 0` e `height: width` no mesmo objeto
+   é `Property value set multiple times`.
+5. **Destruir o `QQuickView` no fim de um teste derruba o processo.** O motor QML ainda tem
+   ligações para a ponte, e o coletor do Python desmonta os dois em ordem arbitrária: despejo
+   de núcleo, sem traceback útil. A fixture segura janela e ponte até o fim do processo.
+   Pela mesma razão, a captura das telas **não** roda o diagnóstico: ele vive numa thread que
+   sobreviveria ao teste.
+6. **`Property` do Qt não existe para o mypy.** `ponte.modo` é um descritor, não um `str`; nos
+   testes isso vira `cast(Any, ponte)`, que é a forma honesta de dizer "estou olhando como o
+   QML olha".
+7. **A barra lateral "escondida" aparecia aberta no retrato.** Sem ponteiro de verdade
+   (offscreen), o Qt considera o mouse parado em cima dela e `containsMouse` fica verdadeiro.
+   A captura declara `semPonteiro`.
+8. **O `uv` marca as instalações dele como `EXTERNALLY-MANAGED`**, e `uv pip install` recusa
+   escrever nelas. A cópia dentro do AppDir não é mais dele: o marcador é removido na montagem.
+9. **`parents[3]` é exato na árvore e errado em `site-packages`.** Onze módulos achavam os
+   dados assim. Quem achou foi o próprio pacote, rodando `--capturar` e morrendo em
+   `schemas/events.v1.json` — e o conserto saiu em duas rodadas, porque a primeira varredura
+   pegou oito dos onze: `grep "Path(__file__)"` acha todos, `grep "licenses"` não.
+10. **`type: license` do nfpm é por arquivo, não por pasta.** Apontado para
+    `usr/share/licenses/jarvis`, o rpm para com "is a directory" — e só o rpm, porque no deb
+    o campo é ignorado. Os textos vão como conteúdo normal, no caminho declarado.
+11. **O `.desktop` com `Categories=Utility;Audio;` é erro futuro no `appimagetool`**: `Audio`
+    exige `AudioVideo` junto. Hoje é aviso; amanhã é fatal.
+
+## Números medidos nesta máquina (2026-10-16)
+
+| artefato | tamanho | o que domina |
+|---|---|---|
+| AppDir | 948,2 MB | PySide6 272 MB, `av` (FFmpeg) 127 MB, `ctranslate2` 137 MB, `onnxruntime` 63 MB, `pandas` 40 MB (vem do `epitran`), `numpy` 57 MB |
+| AppImage | 244,1 MB | squashfs com zstd |
+| `.deb` | 275,5 MB | o mesmo conteúdo, compressão do `dpkg` |
+| `.rpm` | 284,3 MB | idem |
+| poda | 34,5 MB | cache de bytecode, suíte do Python, `designer`/`linguist`/`assistant`, cabeçalhos, stubs e traduções do Qt |
+
+**Verificação (2026-10-16, nesta máquina):** os três artefatos foram instalados e
+**executados** em contêiner — AppImage extraído em `debian:stable-slim`, `.deb` instalado com
+`apt-get` em `debian:stable-slim` e `.rpm` com `dnf` em `fedora:44`. Em cada um: `--versao`,
+`--diagnostico` (que lista motores e dispositivos) e `--capturar`, que desenhou as **seis
+telas** em cada distro. Nos pacotes, o `.desktop` e o texto da LGPL foram conferidos no lugar
+instalado.
+
+**Se o tamanho incomodar**, o corte óbvio é o grupo `asr` (faster-whisper): `av` +
+`ctranslate2` são ~264 MB do AppDir, e o modelo de ASR já é baixado à parte. O caminho de
+nuvem (Groq) continuaria funcionando. É decisão do dono, e mexe só em `GRUPOS` no
+`tools/empacotar.py`.
+
+## O que continua NÃO VERIFICADO
+
+- **a janela numa tela de verdade.** Tudo aqui foi desenhado em `offscreen` com o renderizador
+  de software: o que ninguém viu é como fica em 4K, em dois monitores, com fator de escala do
+  Plasma e com GPU. Nenhuma captura prova isso;
+- **PTT, microfone e voz no hardware do dono** — o laço de voz continua com as mesmas lacunas
+  do lote anterior (F1-16);
+- **o chaveiro do sistema de verdade.** Os testes injetam o `keyring`; guardar e ler no KWallet
+  do dono é a primeira vez dele;
+- **o atalho no menu do Plasma**: o `.desktop` é escrito, e quem diz se o ícone aparece é a
+  sessão gráfica dele;
+- **as outras distros**: o `.deb` foi exercitado em `debian:stable-slim` e o `.rpm` em
+  `fedora:44`. Ubuntu, Arch e derivadas não foram tocadas.

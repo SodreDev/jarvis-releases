@@ -13,8 +13,10 @@ from typing import Any, Final
 import jsonschema
 import yaml
 
-ARQUIVO_SCHEMA: Final = Path(__file__).resolve().parents[3] / "schemas" / "manifesto.v1.json"
-PASTA_CATALOGO: Final = Path(__file__).resolve().parents[3] / "catalogo"
+from jarvis.dados import caminho
+
+ARQUIVO_SCHEMA: Final = caminho("schemas/manifesto.v1.json")
+PASTA_CATALOGO: Final = caminho("catalogo")
 
 
 class ManifestoInvalido(ValueError):

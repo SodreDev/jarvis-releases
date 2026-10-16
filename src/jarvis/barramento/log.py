@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Any, Final, Self
 
 from jarvis.barramento.envelope import Envelope
+from jarvis.dados import caminho
 
 GENESE: Final = "0" * 64
-ARQUIVO_ESQUEMA: Final = Path(__file__).resolve().parents[3] / "schemas" / "event_log.sql"
+ARQUIVO_ESQUEMA: Final = caminho("schemas/event_log.sql")
 
 CAMPOS_ASSINADOS: Final = (
     "seq",

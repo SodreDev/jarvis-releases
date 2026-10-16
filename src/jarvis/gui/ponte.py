@@ -365,6 +365,16 @@ class Ponte(QObject):
 
     # --- o que o QML manda fazer ------------------------------------------------------------
     @Slot(str)
+    def encenar_estado(self, estado: str) -> None:
+        """Põe o núcleo num estado **para o retrato** (`--capturar`), sem laço nenhum rodando.
+
+        Existe por um motivo só: o dono precisa ver como fica o núcleo **pensando** e
+        **falando** sem ter um microfone na frente. Fora da captura ninguém chama isto — quem
+        muda o estado de verdade é o laço, e é por isso que o nome diz "encenar".
+        """
+        self._mudar_estado(Estado(estado))
+
+    @Slot(str)
     def demonstrar(self, modo: str) -> None:
         """Pede ao controlador as propostas deste modo e passa cada uma pelo gerente."""
         alvo = Modo(modo)

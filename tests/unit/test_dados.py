@@ -35,7 +35,7 @@ def test_a_variavel_do_empacotador_tem_precedencia(
 
 
 def test_sem_arvore_e_sem_variavel_a_procura_cai_no_prefixo(
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(dados.VARIAVEL, raising=False)
     monkeypatch.setattr(dados, "raiz_do_repositorio", lambda: None)

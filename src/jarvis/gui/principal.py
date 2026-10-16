@@ -249,6 +249,16 @@ def capturar(
         destino = pasta / f"jarvis-{modo}-autorizado.png"
         janela.grabWindow().save(str(destino))
         salvos.append(destino)
+    # Um retrato do núcleo **pensando**: os anéis só giram em processamento, e o dono não tem
+    # como ver isso num retrato de tela parada.
+    ponte.definirModo("assistente")
+    ponte.encenar_estado("pensando")
+    _esperar(aplicativo, ESPERA_DA_ANIMACAO_MS)
+    destino = pasta / "jarvis-nucleo-pensando.png"
+    janela.grabWindow().save(str(destino))
+    salvos.append(destino)
+    ponte.encenar_estado("parado")
+
     for painel in ("configuracao", "diagnostico"):
         ponte.definirModo("assistente")
         ponte.abrirPainel(painel)
