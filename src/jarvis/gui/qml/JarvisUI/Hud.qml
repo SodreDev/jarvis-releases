@@ -2,11 +2,16 @@ import QtQuick
 import QtQuick.Shapes
 import JarvisUI
 
-// O núcleo: anéis concêntricos, marcadores e um pulso radial (ADR-0019).
+// O núcleo: anéis concêntricos, marcadores em duas escalas e um arco de estado (ADR-0019).
 //
-// Regra do dono, e ela está na estrutura: **os anéis só giram quando há processamento**.
-// Animação decorativa permanente é o que transforma um painel técnico em protetor de tela —
-// e, pior, tira do movimento qualquer significado. Parado é parado.
+// Regra do dono, e ela está na estrutura: **nada gira sem processamento**. Parado é parado —
+// animação decorativa permanente transforma um painel técnico em protetor de tela e tira do
+// movimento qualquer significado. Sem brilho, sem sombra, sem partícula: a "vida" vem da
+// precisão dos marcadores, não de efeito.
+//
+// Duas escalas, como num instrumento de verdade: uma régua fina de 3 em 3 graus na borda, e
+// uma escala maior de 15 em 15 por dentro, com os quatro pontos cardeais mais longos. O arco
+// de estado é o único traço colorido, e a cor diz o estado.
 Item {
     id: hud
     property bool processando: false
@@ -18,85 +23,128 @@ Item {
         : estado === "pensando" ? Tema.alerta
         : estado === "ouvindo" ? Tema.ciano
         : Tema.cianoFraco
+    readonly property bool detalhado: escala > 70
 
-    // anel externo: tracejado por marcadores, gira devagar só em processamento
+    // --- escala fina da borda: 120 marcas, 3 em 3 graus ------------------------------------
     Item {
-        id: anelExterno
+        id: reguaFina
         anchors.centerIn: parent
         width: hud.escala * 2
         height: width
-        // No modo de execução o núcleo cabe numa célula: marcador de 4 px ali vira sujeira.
-        visible: hud.escala > 44
+        visible: hud.detalhado
+
         Repeater {
-            model: 72
+            model: 120
             Rectangle {
-                readonly property real ang: index * (Math.PI * 2 / 72)
-                width: index % 6 === 0 ? 9 : 4
+                readonly property real ang: index * (Math.PI * 2 / 120)
+                width: 4
                 height: 1
-                color: index % 6 === 0 ? Tema.cianoFraco : Tema.linhaForte
-                opacity: index % 6 === 0 ? 0.9 : 0.55
-                x: anelExterno.width / 2 + Math.cos(ang) * (hud.escala - 10) - width / 2
-                y: anelExterno.height / 2 + Math.sin(ang) * (hud.escala - 10) - height / 2
-                transform: Rotation { origin.x: width / 2; origin.y: height / 2;
-                                      angle: index * (360 / 72) }
+                color: Tema.linhaClara
+                opacity: 0.6
+                x: reguaFina.width / 2 + Math.cos(ang) * (hud.escala - 5) - width / 2
+                y: reguaFina.height / 2 + Math.sin(ang) * (hud.escala - 5) - height / 2
+                transform: Rotation {
+                    origin.x: width / 2; origin.y: height / 2
+                    angle: index * 3
+                }
             }
-        }
-        RotationAnimation on rotation {
-            running: hud.processando
-            from: 0; to: 360; duration: 24000; loops: Animation.Infinite
         }
     }
 
-    // anel médio: arco aberto, gira no sentido contrário
-    Shape {
+    // --- escala maior: 24 marcas de 15 em 15, com os cardeais longos -----------------------
+    Item {
+        id: reguaMaior
         anchors.centerIn: parent
-        width: hud.escala * 1.5
+        width: hud.escala * 2
         height: width
-        ShapePath {
-            strokeColor: hud.corDoEstado
-            strokeWidth: 1
-            fillColor: "transparent"
-            capStyle: ShapePath.RoundCap
-            PathAngleArc {
-                centerX: hud.escala * 0.75; centerY: hud.escala * 0.75
-                radiusX: hud.escala * 0.72; radiusY: hud.escala * 0.72
-                startAngle: -60; sweepAngle: 150
+        visible: hud.escala > 44
+
+        Repeater {
+            model: 24
+            Rectangle {
+                readonly property bool cardeal: index % 6 === 0
+                readonly property real ang: index * (Math.PI * 2 / 24)
+                width: cardeal ? 14 : 7
+                height: 1
+                color: cardeal ? Tema.cianoFraco : Tema.linhaClara
+                x: reguaMaior.width / 2 + Math.cos(ang) * (hud.escala - 20) - width / 2
+                y: reguaMaior.height / 2 + Math.sin(ang) * (hud.escala - 20) - height / 2
+                transform: Rotation {
+                    origin.x: width / 2; origin.y: height / 2
+                    angle: index * 15
+                }
             }
         }
-        ShapePath {
-            strokeColor: Tema.linhaForte
-            strokeWidth: 1
-            fillColor: "transparent"
-            PathAngleArc {
-                centerX: hud.escala * 0.75; centerY: hud.escala * 0.75
-                radiusX: hud.escala * 0.72; radiusY: hud.escala * 0.72
-                startAngle: 110; sweepAngle: 200
-            }
-        }
+        // o anel gira **devagar** e só em processamento
         RotationAnimation on rotation {
             running: hud.processando
-            from: 360; to: 0; duration: 9000; loops: Animation.Infinite
+            from: 0; to: 360; duration: 28000; loops: Animation.Infinite
         }
     }
 
-    // anel interno fino
+    // --- arco de estado: o único traço colorido, com a marca na ponta ----------------------
+    Item {
+        id: arcoDeEstado
+        anchors.centerIn: parent
+        width: hud.escala * 1.56
+        height: width
+
+        Shape {
+            anchors.fill: parent
+            ShapePath {
+                strokeColor: hud.corDoEstado
+                strokeWidth: 2
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                PathAngleArc {
+                    centerX: arcoDeEstado.width / 2; centerY: arcoDeEstado.height / 2
+                    radiusX: arcoDeEstado.width / 2; radiusY: arcoDeEstado.height / 2
+                    startAngle: -58; sweepAngle: 96
+                }
+            }
+            ShapePath {
+                strokeColor: Tema.linhaForte
+                strokeWidth: 1
+                fillColor: "transparent"
+                PathAngleArc {
+                    centerX: arcoDeEstado.width / 2; centerY: arcoDeEstado.height / 2
+                    radiusX: arcoDeEstado.width / 2; radiusY: arcoDeEstado.height / 2
+                    startAngle: 64; sweepAngle: 234
+                }
+            }
+        }
+        Rectangle {
+            readonly property real ang: 38 * Math.PI / 180
+            width: 5; height: 5; radius: 2.5
+            color: hud.corDoEstado
+            visible: hud.detalhado
+            x: arcoDeEstado.width / 2 + Math.cos(ang) * arcoDeEstado.width / 2 - width / 2
+            y: arcoDeEstado.height / 2 + Math.sin(ang) * arcoDeEstado.height / 2 - height / 2
+        }
+        RotationAnimation on rotation {
+            running: hud.processando
+            from: 360; to: 0; duration: 11000; loops: Animation.Infinite
+        }
+    }
+
+    // --- anel interno -----------------------------------------------------------------------
     Shape {
         anchors.centerIn: parent
-        width: hud.escala
+        width: hud.escala * 1.04
         height: width
         ShapePath {
             strokeColor: Tema.linhaClara
             strokeWidth: 1
             fillColor: "transparent"
             PathAngleArc {
-                centerX: hud.escala * 0.5; centerY: hud.escala * 0.5
-                radiusX: hud.escala * 0.48; radiusY: hud.escala * 0.48
+                centerX: hud.escala * 0.52; centerY: hud.escala * 0.52
+                radiusX: hud.escala * 0.52; radiusY: hud.escala * 0.52
                 startAngle: 0; sweepAngle: 360
             }
         }
     }
 
-    // pulso radial: um anel que nasce no centro e some na borda, só em processamento
+    // --- pulso radial: nasce no centro e some na borda, só em processamento -----------------
     Rectangle {
         id: pulso
         anchors.centerIn: parent
@@ -120,22 +168,23 @@ Item {
         }
     }
 
+    // --- nome e estado ----------------------------------------------------------------------
     Column {
         anchors.centerIn: parent
-        spacing: 8
+        spacing: hud.detalhado ? 8 : 5
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "JARVIS"
             color: Tema.textoForte
-            font.pixelSize: Math.max(13, hud.escala * 0.18)
-            font.letterSpacing: Math.max(4, hud.escala * 0.06)
+            font.pixelSize: Math.max(11, Math.min(hud.escala * 0.18, 34))
+            font.letterSpacing: Math.max(3, hud.escala * 0.05)
             renderType: Text.NativeRendering
-            visible: hud.escala > 48
+            visible: hud.escala > 40
         }
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 7
-            visible: hud.escala > 48
+            visible: hud.escala > 40
             Rectangle {
                 width: 5; height: 5; radius: 2.5
                 anchors.verticalCenter: parent.verticalCenter
