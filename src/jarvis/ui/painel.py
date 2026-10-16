@@ -31,6 +31,7 @@ from jarvis.microfone import (
     escrever_pedido,
     ler_estado,
 )
+from jarvis.rede import Degradacao, ler_degradacao
 from jarvis.ui.atalhos import AtalhoIndisponivel, BackendDeAtalho, SemAtalho
 
 ARQUIVO_TELA: Final = "ui-microfone.txt"
@@ -52,7 +53,10 @@ class PainelDoMicrofone:
     """Motivo de não haver atalho global nesta máquina. A tela cai no botão."""
     tolerancia_s: float = TOLERANCIA_PADRAO_S
     agora: Callable[[], float] = time.time
+    degradado: bool = False
+    """Cartão F1-14: a rede caiu e a escuta contínua está desligada por causa disso."""
     _modo_antes_de_desligar: Modo = Modo.PTT
+    _modo_antes_da_degradacao: Modo | None = None
 
     def abrir(self) -> None:
         """Registra o atalho; recusa do sistema **não** derruba a `ui`, vira aviso na tela.
@@ -86,6 +90,30 @@ class PainelDoMicrofone:
     @property
     def desligado(self) -> bool:
         return self.modo is Modo.DESLIGADO
+
+    def aplicar_degradacao(self, degradacao: Degradacao | None = None) -> Degradacao:
+        """Cai para PTT e mostra a frase enquanto o serviço estiver fora (cartão F1-14).
+
+        O *kill switch* **vence**: se o dono desligou o microfone, a degradação não o religa em
+        PTT. E a volta restaura o modo que existia antes, em vez de inventar escuta contínua
+        que o dono não pediu.
+        """
+        degradacao = ler_degradacao(self.raiz) if degradacao is None else degradacao
+        if degradacao.ativa:
+            if not self.degradado and self.modo is not Modo.DESLIGADO:
+                self._modo_antes_da_degradacao = self.modo
+            if self.modo is Modo.ESCUTA:
+                self.modo = Modo.PTT
+            self.degradado = True
+            self.aviso = degradacao.frase or None
+            return degradacao
+        if self.degradado:
+            self.degradado = False
+            if self.modo is not Modo.DESLIGADO and self._modo_antes_da_degradacao is not None:
+                self.modo = self._modo_antes_da_degradacao
+            self._modo_antes_da_degradacao = None
+            self.aviso = degradacao.frase or None
+        return degradacao
 
     def tick(self) -> Pedido:
         """Lê a tecla e escreve o pedido. É a única coisa que o painel escreve."""

@@ -6,7 +6,10 @@ Duas responsabilidades, e nenhuma delas é decidir:
   registra o pedido, e quem confirma é o dono;
 - **PTT, indicador e *kill switch*** (cartão F1-13): a `ui` escreve o que o dono pediu e mostra
   o que a fonte **está** fazendo — nunca o que ela mesma pediu. A regra e o porquê estão em
-  `jarvis.ui.painel`.
+  `jarvis.ui.painel`;
+- **degradação declarada** (cartão F1-14): caiu a rede, a escuta contínua sai, o PTT entra e a
+  frase do que deixou de funcionar aparece na tela. A `ui` não detecta rede — ela **mostra** o
+  que o adaptador do `s2` detectou.
 
 O botão da tela, num esqueleto sem tela, é um arquivo: `ui-botao` com uma palavra
 (`escuta`, `ptt` ou `desligado`). Não é atalho de teste nem porta de fundo — é o mesmo
@@ -95,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         while limite is None or relogio.mono_ns() < limite:
             ler_botao(painel)
+            painel.aplicar_degradacao()
             painel.tick()
             painel.escrever_tela()
             for envelope, veredito in processo.recebidos(timeout=0.0):

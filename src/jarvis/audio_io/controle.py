@@ -22,6 +22,7 @@ from typing import Final
 
 from jarvis.audio_io.captura import Captura
 from jarvis.audio_io.erros import ErroDeAudio
+from jarvis.audio_io.playback import FilaDePlayback
 from jarvis.microfone import EstadoDaFonte, Modo, Pedido, escrever_estado, ler_pedido
 
 TICKS_ENTRE_ESCRITAS: Final = 12
@@ -108,3 +109,24 @@ class ControleDoMicrofone:
             self.escritas += 1
             self._ticks = 0
         return estado
+
+
+def seguir_epoch(captura: Captura, fila: FilaDePlayback | None, epoch: int) -> bool:
+    """O `audio-io` **segue** o epoch do barramento; ele não é dono dele (§3.2 é o `agentd`).
+
+    **Isto é correção de um defeito achado no F1-14, e o defeito era grave:** `Captura.epoch`
+    era gravado na conexão e nunca mais mudava. Depois do **primeiro** `Cancel` — ou seja,
+    depois do primeiro barge-in da sessão — todo `AudioActivity` da captura saía com epoch
+    morto, e `DonoDoEpoch.classificar` manda descartar (AudioActivity não é tipo de auditoria).
+    O microfone ficava **surdo** para o resto da sessão, sem erro, sem log e sem ninguém
+    notando: o processo continuava capturando, publicando e sendo ignorado.
+
+    Apareceu porque o F1-14 precisa de um **segundo** turno (o dono falando por PTT com a rede
+    fora) e o segundo turno nunca chegava ao `agentd`.
+    """
+    if epoch <= captura.epoch:
+        return False
+    captura.epoch = epoch
+    if fila is not None:
+        fila.epoch_atual = epoch
+    return True

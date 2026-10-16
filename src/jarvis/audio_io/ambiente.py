@@ -10,16 +10,29 @@ recusa. Teste prova as duas pontas (`tests/unit/audio_io/test_backend.py`).
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from enum import StrEnum
 from typing import Final
 
+from jarvis.ambiente import (
+    VALORES_VERDADEIROS,
+    VARIAVEL_CI,
+    ambiente_ou_os,
+    em_ci,
+)
 from jarvis.audio_io.erros import DispositivoProibidoEmCI
 
+__all__ = [
+    "VALORES_VERDADEIROS",
+    "VARIAVEL_BACKEND",
+    "VARIAVEL_CI",
+    "Backend",
+    "backend_escolhido",
+    "em_ci",
+    "proibir_dispositivo_em_ci",
+]
+
 VARIAVEL_BACKEND: Final = "JARVIS_AUDIO_BACKEND"
-VARIAVEL_CI: Final = "CI"
-VALORES_VERDADEIROS: Final[frozenset[str]] = frozenset({"1", "true", "yes", "on", "sim"})
 
 
 class Backend(StrEnum):
@@ -30,13 +43,9 @@ class Backend(StrEnum):
     DISPOSITIVO = "dispositivo"
 
 
-def _ambiente(ambiente: Mapping[str, str] | None) -> Mapping[str, str]:
-    return os.environ if ambiente is None else ambiente
-
-
 def backend_escolhido(ambiente: Mapping[str, str] | None = None) -> Backend:
     """Backend pedido por `JARVIS_AUDIO_BACKEND`; valor desconhecido é erro, não padrão."""
-    bruto = _ambiente(ambiente).get(VARIAVEL_BACKEND, "").strip().lower()
+    bruto = ambiente_ou_os(ambiente).get(VARIAVEL_BACKEND, "").strip().lower()
     if not bruto:
         return Backend.SINTETICO
     try:
@@ -44,10 +53,6 @@ def backend_escolhido(ambiente: Mapping[str, str] | None = None) -> Backend:
     except ValueError:
         validos = ", ".join(b.value for b in Backend)
         raise ValueError(f"{VARIAVEL_BACKEND}={bruto!r} não existe; use um de: {validos}") from None
-
-
-def em_ci(ambiente: Mapping[str, str] | None = None) -> bool:
-    return _ambiente(ambiente).get(VARIAVEL_CI, "").strip().lower() in VALORES_VERDADEIROS
 
 
 def proibir_dispositivo_em_ci(ambiente: Mapping[str, str] | None = None) -> None:

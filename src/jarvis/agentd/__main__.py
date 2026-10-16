@@ -12,6 +12,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from jarvis.agentd.aviso import falar_aviso
 from jarvis.agentd.percepcao import Percepcao
 from jarvis.barramento.canal_de_audio import CanalDeConexao
 from jarvis.barramento.corretor import Corretor
@@ -31,6 +32,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     analisa.add_argument("--timeout", type=float, default=30.0, help="limite total em segundos")
     analisa.add_argument(
+        "--muitos-turnos",
+        action="store_true",
+        help=(
+            "deixa a percepção fechar mais de um turno. O esqueleto fecha UM (F0-03) para a "
+            "cadeia dos sete processos ser determinística; conversa de verdade é F1/F2, e o "
+            "F1-14 precisa de um segundo turno para provar o pedido que cai com a rede fora"
+        ),
+    )
+    analisa.add_argument(
         "--canal-de-audio",
         action="store_true",
         help=(
@@ -49,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
             session_id=session_id,
             log=log,
             dono=dono,
-            percepcao=Percepcao(dono),
+            percepcao=Percepcao(dono, um_turno_so=not args.muitos_turnos),
         )
         corretor.abrir()
         (args.raiz / "sessao").write_text(session_id, encoding="utf-8")
@@ -88,6 +98,14 @@ def _laco(
         corretor.passo(timeout=0.05)
         if canal is not None:
             _consumir_audio(canal, dono=dono, raiz=raiz)
+        if raiz is not None:
+            # Cartão F1-14: quem tem o TTS é o `agentd`, então é ele que diz o aviso de
+            # degradação — e `falar_aviso` devolve `None` depois da primeira vez.
+            falar_aviso(
+                raiz,
+                session_id=corretor.session_id,
+                epoch=dono.epoch_atual if dono is not None else 0,
+            )
         if parar_em and any(
             str(registro.envelope.type) == parar_em
             for registro in log.ler(session_id=corretor.session_id)

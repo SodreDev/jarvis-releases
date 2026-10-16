@@ -2,16 +2,30 @@
 
 O que este esqueleto prova: o reasoner reage a evento (nunca a laço cego), pede capacidade
 pelo `tool_id` do catálogo e **não publica fala de epoch morto**.
+
+**É aqui que a perda de rede é detectada** (cartão F1-14). O `s2` é o processo que, no produto,
+fala com o serviço remoto — então o adaptador com prazo nosso mora no caminho dele, e um pedido
+que cai **não entra no barramento**: nada pendurado em fila (§3.3 regra 5). Quem mostra e
+degrada é a `ui`; quem fala o aviso é o `agentd`.
 """
 
 from __future__ import annotations
 
 import sys
+import time
+from collections.abc import Callable
 
 from jarvis.barramento.envelope import Envelope, Prioridade, Tipo, Trust, uuid7
-from jarvis.processo import Processo, rodar_processo
+from jarvis.processo import Processo, analisador
+from jarvis.rede import AdaptadorRemoto, sonda_do_ambiente
 
 TOOL_DO_ESQUELETO = "system.read.status"
+SERVICO = "o serviço de raciocínio"
+INTERVALO_DEGRADADO_S = 2.0
+"""Degradado, pergunta de dois em dois segundos: é o que faz a volta ser notada sem tráfego."""
+INTERVALO_SAUDAVEL_S = 5.0
+"""Com o serviço de pé a chamada é quem detecta a queda — mas um batimento mais lento existe
+para a `ui` não ficar dizendo que está tudo bem enquanto a rede caiu sem ninguém falar."""
 
 
 def reagir(processo: Processo, envelope: Envelope, veredito: str) -> list[Envelope]:
@@ -31,6 +45,31 @@ def reagir(processo: Processo, envelope: Envelope, veredito: str) -> list[Envelo
     if envelope.type is Tipo.TOOL_RESULT and veredito != "aceitar_stale":
         return [_revisao_de_estado(processo, envelope)]
     return []
+
+
+def reacao_com_rede(adaptador: AdaptadorRemoto) -> Callable[..., list[Envelope]]:
+    """A mesma reação, com o passo remoto atrás do adaptador do F1-14.
+
+    O único passo que depende do serviço é transformar a transcrição final em **pedido de
+    tool**: é o que, no produto, é o raciocínio remoto. Caindo a rede, isso não vira evento —
+    e o `call_id` daquele pedido fica registrado como descartado, para a volta da rede **não**
+    o ressuscitar.
+    """
+
+    def reagir_com_adaptador(
+        processo: Processo, envelope: Envelope, veredito: str
+    ) -> list[Envelope]:
+        if envelope.type is not Tipo.FINAL_TRANSCRIPT or envelope.epoch < processo.epoch:
+            return reagir(processo, envelope, veredito)
+        call_id = f"c-{envelope.event_id[:8]}"
+        pedido = adaptador.chamar(
+            lambda _prazo: _pedido_de_tool(processo, envelope, call_id=call_id),
+            call_id=call_id,
+            epoch=envelope.epoch,
+        )
+        return [] if pedido is None else [pedido]
+
+    return reagir_com_adaptador
 
 
 def _revisao_de_hipotese(processo: Processo, origem: Envelope) -> Envelope:
@@ -56,7 +95,7 @@ def _revisao_de_hipotese(processo: Processo, origem: Envelope) -> Envelope:
     )
 
 
-def _pedido_de_tool(processo: Processo, origem: Envelope) -> Envelope:
+def _pedido_de_tool(processo: Processo, origem: Envelope, *, call_id: str = "") -> Envelope:
     return Envelope(
         session_id=processo.session_id,
         epoch=origem.epoch,
@@ -65,7 +104,7 @@ def _pedido_de_tool(processo: Processo, origem: Envelope) -> Envelope:
         priority=Prioridade.P2,
         type=Tipo.TOOL_CALL_REQUESTED,
         payload={
-            "call_id": f"c-{uuid7()[:8]}",
+            "call_id": call_id or f"c-{uuid7()[:8]}",
             "tool_id": TOOL_DO_ESQUELETO,
             "args": {"sobre": origem.payload["text"]},
             "dry_run": True,
@@ -97,5 +136,48 @@ def _revisao_de_estado(processo: Processo, origem: Envelope) -> Envelope:
     )
 
 
+def main(argv: list[str] | None = None) -> int:
+    """O laço do `s2`. Com `--rede`, o passo remoto passa pelo adaptador do F1-14."""
+    analisa = analisador("s2")
+    analisa.add_argument(
+        "--rede",
+        action="store_true",
+        help="liga o adaptador remoto: prazo nosso, degradação declarada e nada pendurado",
+    )
+    args = analisa.parse_args(argv)
+    adaptador = (
+        AdaptadorRemoto(servico=SERVICO, raiz=args.raiz, sonda=sonda_do_ambiente())
+        if args.rede
+        else None
+    )
+    processo = Processo(
+        nome="s2",
+        raiz=args.raiz,
+        reacao=reagir if adaptador is None else reacao_com_rede(adaptador),
+    )
+    processo.abrir()
+    try:
+        if adaptador is None:
+            processo.rodar(timeout=args.timeout)
+            return 0
+        fim = None if args.timeout is None else time.monotonic() + args.timeout
+        # Sem evento nenhum o laço ainda tem de descobrir que a rede caiu ou voltou: é o
+        # que o aceite (a) e o (c) cobram. Daí o batimento, mais rápido quando degradado.
+        adaptador.conferir(epoch=processo.epoch)
+        sondado = time.monotonic()
+        while fim is None or time.monotonic() < fim:
+            for envelope, veredito in processo.recebidos(timeout=0.05):
+                for resposta in processo.reacao(processo, envelope, veredito):
+                    processo.publicar(resposta)
+            agora = time.monotonic()
+            intervalo = INTERVALO_DEGRADADO_S if adaptador.degradado else INTERVALO_SAUDAVEL_S
+            if agora - sondado >= intervalo:
+                adaptador.conferir(epoch=processo.epoch)
+                sondado = agora
+    finally:
+        processo.fechar()
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(rodar_processo("s2", reagir))
+    sys.exit(main())

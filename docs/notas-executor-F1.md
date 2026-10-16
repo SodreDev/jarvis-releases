@@ -1032,3 +1032,64 @@ seria código de produto sem teste no caminho mais sensível da tela.
 - **se o indicador é visível onde o dono realmente olha**: aqui ele é uma frase em arquivo
   (`ui-microfone.txt`), porque a tela é de outra fase;
 - **dispositivo real**: a fonte do teste é a sintética; `CI=1` recusa abrir placa de som.
+
+## F1-14 — Sem rede: cai para PTT e diz isso
+
+### A detecção fica no adaptador, e o prazo é nosso
+
+`jarvis.rede.AdaptadorRemoto` passa o **prazo restante** para quem faz a chamada
+(`fazer(prazo)`) e **mede** quanto levou: resposta que chegou depois do prazo conta como queda,
+pela mesma regra do orçamento do S1 (F1-08) — informação velha não decide nada. É assim que não
+existe `timeout` herdado: o prazo não é o padrão de um SDK, é o nosso, e desce como argumento.
+
+A sonda é injetável (`JARVIS_REDE_BACKEND=injetada|socket`), e a de produção **recusa abrir
+socket sob `CI=1`**, do mesmo jeito que `proibir_dispositivo_em_ci` recusa abrir a placa de som
+(F1-01). O aceite (d) fica estrutural: a suíte não tem como falar com a rede por descuido. O
+teste da cascata local ainda assim proíbe `AF_INET`/`AF_INET6` por `monkeypatch`, deixando passar
+o socket de domínio do barramento — que é local e é o que a §2 usa.
+
+### Dois defeitos que os aceites pegaram, e valem mais que o código novo
+
+**1. O aviso por voz repetia 50 vezes (aceite (e)).** O arquivo de degradação tem **dois
+escritores**: o adaptador (no `s2`) e quem fala o aviso (no `agentd`). Enquanto `_cair` escrevia
+a partir da cópia em memória, cada nova queda apagava o `avisado_por_voz` que o `agentd` tinha
+acabado de gravar — cinquenta chamadas caindo, cinquenta avisos no ouvido do dono. A correção é
+ler o arquivo antes de escrever (`_no_disco`): o arquivo é a verdade, a cópia em memória é cache.
+A lição geral: **arquivo com dois escritores não pode ser escrito a partir de cache**.
+
+**2. O microfone ficava surdo depois do primeiro `Cancel` da sessão.** `Captura.epoch` era
+gravado na conexão e nunca mais mudava. Depois do primeiro barge-in, todo `AudioActivity` saía
+com epoch morto e `DonoDoEpoch.classificar` manda **descartar** (`AudioActivity` não é tipo de
+auditoria): o `audio-io` seguia capturando, publicando e sendo ignorado, sem erro e sem log.
+Apareceu porque o F1-14 precisa de um **segundo** turno — o dono falando por PTT com a rede fora
+— e o segundo turno nunca chegava ao `agentd`. A correção é `seguir_epoch`: o `audio-io` **segue**
+o epoch do barramento (ele não é dono dele, §3.2 é o `agentd`), e há teste que mostra o veredito
+mudando de `DESCARTAR` para `ACEITAR`.
+
+### Nada pendurado, e a volta não ressuscita
+
+Pedido que cai é **descartado** com o `call_id` registrado, e a lista de descartados **sobrevive
+à volta da rede**: `chamar` recusa um `call_id` descartado sem nem consultar a sonda. Pedido
+novo funciona normalmente — degradar não pode virar sistema inútil. O `s2` tem batimento de
+sondagem (2 s degradado, 5 s saudável) para a queda e a volta serem notadas **sem tráfego**:
+sem isso a `ui` ficaria dizendo que está tudo bem enquanto a rede caiu e ninguém falou.
+
+### Quem faz o quê (e por que não é tudo no mesmo lugar)
+
+- **`s2`** detecta: é o processo que, no produto, fala com o serviço remoto;
+- **`ui`** degrada e mostra: desliga a escuta contínua, liga o PTT (reusando o contrato do
+  F1-13) e põe a frase na tela. O *kill switch* **vence** a degradação: se o dono desligou o
+  microfone, cair a rede não o religa em PTT. A volta restaura o modo de antes, não inventa
+  escuta contínua que o dono não pediu;
+- **`agentd`** fala: é ele que tem o TTS e o epoch.
+
+### Não verificado
+
+- **rede real do dono** (Wi-Fi caindo devagar, DNS lento, captive portal): é observação do
+  F1-16, não número. Aqui a rede cai por arquivo, nunca mexendo no firewall da máquina;
+- **o aviso por voz chegando ao alto-falante**: ele é sintetizado de verdade (há asserção sobre
+  as amostras) e registrado em `aviso-por-voz.jsonl`, mas a ponte de pedaços de TTS do `agentd`
+  para o playback do `audio-io` é a mesma lacuna que o F1-11 já declara — o caminho até a placa
+  de som é o F1-16;
+- **serviço remoto de verdade**: não existe nenhum no v0. O adaptador está no caminho do `s2`
+  com a sonda injetada; o `s2` com LLM é a F2.

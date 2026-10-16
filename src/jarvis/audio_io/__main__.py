@@ -24,7 +24,7 @@ import time
 from jarvis.audio_io.aec import CadeiaDeAec
 from jarvis.audio_io.backend import fonte_do_ambiente
 from jarvis.audio_io.captura import SEGUNDOS_POR_QUADRO, Captura
-from jarvis.audio_io.controle import ControleDoMicrofone
+from jarvis.audio_io.controle import ControleDoMicrofone, seguir_epoch
 from jarvis.audio_io.playback import FilaDePlayback, em_pedacos
 from jarvis.audio_io.quadro import TAXA_PADRAO
 from jarvis.audio_io.sintese import gerar
@@ -112,6 +112,9 @@ def laco_de_20_ms(
         for envelope, veredito in processo.recebidos(timeout=0.0):
             for resposta in processo.reacao(processo, envelope, veredito):
                 processo.publicar(resposta)
+        # O epoch do barramento subiu? A captura passa a carimbar o novo. Sem isto, o
+        # primeiro Cancel deixa o microfone surdo — ver `seguir_epoch`.
+        seguir_epoch(captura, fila, processo.epoch)
         if captura.quadros == quadros_antes and not captura.privacidade:
             # Fonte esgotada (arquivo acabou) ou fechada pelo dono: sem isto o laço vira
             # espera ativa.
