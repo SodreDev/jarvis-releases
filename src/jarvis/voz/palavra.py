@@ -163,12 +163,12 @@ def fonetica_simples(texto: str) -> str:
     indice = 0
     while indice < len(bruto):
         for grafia, simbolo in _DIGRAFOS:
-            if bruto.startswith(grafia, indice):
-                # `gu`/`qu` só perdem o `u` antes de `e`/`i` (`guerra`, mas `água`).
-                if grafia in {"gu", "qu"} and not bruto[indice + 2 : indice + 3].startswith(
-                    ("e", "i")
-                ):
-                    break
+            # `gu`/`qu` só perdem o `u` antes de `e`/`i` (`guerra`, mas `água`): fora disso
+            # não são dígrafo, e a letra segue pelo caminho de letra solta. Um `break` aqui
+            # pulava o avanço do índice e prendia `quando` e `água` num laço sem fim.
+            if bruto.startswith(grafia, indice) and (
+                grafia not in {"gu", "qu"} or bruto[indice + 2 : indice + 3] in {"e", "i"}
+            ):
                 saida.append(simbolo)
                 indice += len(grafia)
                 break
