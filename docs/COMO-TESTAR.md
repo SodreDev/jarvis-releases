@@ -136,9 +136,12 @@ verdade (segurar para falar) é da interface gráfica, no `audio-io`. Aqui a bar
 uv run jarvis-voz config
 ```
 
-Você escolhe: quem ouve (ASR local ou Groq), quem fala (piper+epitran, ElevenLabs ou Edge), a
-voz, o modelo do ASR local, quem responde (eco ou a CLI do Claude), microfone, alto-falante e
-PTT × VAD. Grava em `~/.config/jarvis/jarvis-voz.toml`.
+Você escolhe: quem ouve (ASR local ou Groq — e, na Groq, o modelo: `whisper-large-v3-turbo`
+ou `whisper-large-v3`, com o preço ao lado), quem fala (piper+epitran, ElevenLabs ou Edge), a
+voz local, a voz e o modelo da ElevenLabs (`10` e `11`; em `10`, `l` lista as vozes da sua
+conta), o modelo do ASR local, quem responde (eco ou a CLI do Claude), microfone, alto-falante
+e PTT × VAD. Grava em `~/.config/jarvis/jarvis-voz.toml`. Na janela é o mesmo: em
+**provedores**, clicar no provedor abre os modelos dele, o aviso e o botão de ligar.
 
 **Escolher um motor de nuvem não o liga.** A tela mostra, antes, o que sai da sua máquina,
 para onde, qual a retenção declarada pelo serviço e quem é o dono do áudio — e pede um "sim"

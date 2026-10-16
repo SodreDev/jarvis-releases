@@ -296,3 +296,62 @@ arquivo comitado em vez da intenção de quem leu.
   para distribuir espeak-ng (opção A) ou para um motor sem fonemizador (Parler-TTS, Chatterbox).
 - Qualquer motor de nuvem passar a exigir retenção de áudio: o registro barra, porque campo de
   retenção vazio ou pior que o declarado aqui não liga nuvem.
+
+## Escolha de modelo (emenda de 2026-10-16)
+
+**Problema.** O dono configurou as chaves da Groq e da ElevenLabs e não conseguiu escolher o
+modelo na janela. Três causas, todas na tela e na configuração, nenhuma no portão: (1) a
+janela listava ids de motor (`asr-groq-whisper-large-v3-turbo`) sem dizer que eram modelos;
+(2) não havia botão de ligar nuvem na janela — o slot `ligarNuvem` existia e nenhum QML o
+chamava, então o motor escolhido ficava desligado; (3) o `voice_id` da ElevenLabs dividia o
+campo `voz` com a voz do piper — o arquivo do dono tinha `tts = "tts-elevenlabs"` com
+`voz = "pt_BR-faber-medium"`, que iria como `voice_id` para o serviço.
+
+**Decisão.**
+
+- **Provedor e modelo são duas escolhas.** `jarvis.voz.provedores` agrupa o registro por
+  serviço (Groq, ElevenLabs, Microsoft) e devolve, por provedor, as opções de modelo com o
+  campo e o valor que cada clique escreve. A janela e o `jarvis-voz config` escrevem os mesmos
+  campos.
+- **Groq: um motor por modelo, como já era.** O preço é por modelo e o aviso leva o preço,
+  então o interruptor continua por motor: trocar de turbo para v3 **não** herda o "ligado".
+  Lista conferida em 2026-10-16 em <https://console.groq.com/docs/speech-to-text> e
+  <https://console.groq.com/docs/models>: ASR são só `whisper-large-v3` (US$ 0,111/h, WER
+  10,3%) e `whisper-large-v3-turbo` (US$ 0,04/h, WER 12%), nenhum em prévia; o
+  `distil-whisper-large-v3-en` foi desligado em 2025-08-23
+  (<https://console.groq.com/docs/deprecations>). Nenhum motor novo entrou.
+- **ElevenLabs: um motor com lista de modelos.** Mesmo serviço e mesmos termos para todos,
+  então o interruptor é um só. O registro ganhou `modelos`, `fonte_dos_modelos` e
+  `data_dos_modelos`; lista com `modelos` e sem procedência **barra o motor** no portão
+  (`CAMPOS_DOS_MODELOS`), e modelo fora da lista recusa na leitura do TOML e na abertura do
+  motor (`exigir_modelo`). Entraram, de <https://elevenlabs.io/docs/models> em 2026-10-16, só
+  os que a página dá com português **e** pelo endpoint de Text to Speech que este motor usa:
+  `eleven_multilingual_v2` (padrão), `eleven_flash_v2_5` e `eleven_v3`. Ficaram fora, com o
+  motivo no registro: `eleven_v4`/`eleven_v4_turbo` e `eleven_v3_conversational` (a página os
+  dá pela Text to Dialogue API/WebSocket), `eleven_turbo_v2_5`/`eleven_turbo_v2` (deprecated),
+  `eleven_flash_v2` (só inglês).
+- **Voz da ElevenLabs em campo próprio** (`voz_elevenlabs`), validado com a forma de um id
+  (`[A-Za-z0-9_-]{1,64}`), porque ele vai no caminho da URL. Arquivo antigo com um id em `voz`
+  migra na leitura; voz com forma de voz do piper fica onde está.
+- **Vozes da conta pela API, não por lista estática.** A página de vozes diz *"All our Default
+  voices will expire on December 31, 2026"*: uma lista fixa de vozes padrão envelheceria em
+  dois meses. O dono pede a lista (botão na janela; `10` → `l` no terminal), que vem de
+  `GET /v2/voices` com a chave no cabeçalho `xi-api-key` — pelo mesmo caminho do motor
+  (ambiente + chaveiro, em memória) — paginada por `has_more`/`next_page_token`, com teto de
+  5 páginas de 100. Nenhum texto do dono sai nessa consulta, por isso ela não depende do
+  interruptor; o id escrito à mão continua valendo. A janela não importa o motor (ADR-0019):
+  a consulta passa por `provedores.vozes_da_elevenlabs`.
+- **A janela** abre o provedor escolhido: modelos como fichas (com preço na Groq), o aviso
+  inteiro montado do registro e só então "li o aviso — ligar"; o painel ocupa a altura toda e
+  rola; "salvar" foi para o alto da coluna da direita.
+
+**Verificado.** 28 testes em `tests/unit/voz/test_escolha_de_modelo.py` e 4 em
+`tests/unit/gui/test_escolha_na_janela.py`, sem rede (servidor falso em porta efêmera, `CI=1`):
+registro, portão, persistência e releitura, migração, recusa de id malformado, o modelo e a
+voz chegando ao pedido, paginação e chave só no cabeçalho, terminal e janela gravando o
+arquivo. Captura offscreen em `/tmp/jarvis-telas/teste/jarvis-configuracao-modelos.png`.
+
+**Não verificado.** Nenhuma chamada real à Groq nem à ElevenLabs (o dono faz a primeira):
+que `eleven_v3` aceite `output_format=pcm_16000` neste endpoint, que a conta do dono devolva
+`verified_languages`/`labels.language` como a documentação descreve, e qualquer diferença de
+qualidade entre os modelos.
