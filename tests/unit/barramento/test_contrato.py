@@ -23,10 +23,10 @@ from jarvis.barramento.contrato import CONTRATO, ORIGEM_CANONICA, PRIORIDADE_CAN
 from tests.fabricas import evento
 
 
-def test_os_onze_tipos_do_contrato_batem_com_o_enum() -> None:
+def test_os_doze_tipos_do_contrato_batem_com_o_enum() -> None:
     """O contrato é `schemas/events.v1.json`; o enum não pode divergir dele em silêncio."""
     assert {str(t) for t in Tipo} == TIPOS
-    assert len(TIPOS) == 11
+    assert len(TIPOS) == 12, "o 12º é o ResponseChunk da ADR-0025"
 
 
 def test_vocabulario_fechado_bate_com_o_contrato() -> None:

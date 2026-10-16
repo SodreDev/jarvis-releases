@@ -138,8 +138,8 @@ esperam o piso livre numa fila do `agentd`.**
    (local/nuvem) e entra no mesmo portão de registro e de egress dos motores de voz. O motor não
    conhece epoch: recebe a pergunta `cancelado()`.
 7. **Evento novo `ResponseChunk`** (`s2`, P1): `response_id`, `turn_id`, `epoch`, `seq`, `text`,
-   `boundary: frase|virgula|limite`, `last: bool`, `end_reason?:
-   concluido|cancelado|erro|prazo`, `notif_ids?: []`. O `s2` **junta os deltas até a fronteira** e
+   `boundary: frase|virgula|limite|fim`, `last: bool`, `end_reason?:
+   concluido|erro|prazo`, `notif_ids?: []`. O `s2` **junta os deltas até a fronteira** e
    publica um evento por pedaço de fala, não por token: são de 3 a 10 eventos por resposta, e não
    centenas — o mesmo motivo de orçamento que tirou o PCM do barramento (ADR-0015). A regra de
    fronteira é a do `fatiar()` (1º pedaço com 3 palavras ou até a 1ª pontuação; os seguintes até 8
@@ -154,7 +154,10 @@ esperam o piso livre numa fila do `agentd`.**
    (já existe); (b) o `s2` para de publicar `ResponseChunk` daquele epoch — o que já saiu é
    descartado pela regra 6 da §3.3; (c) o `s2` cancela o pedido ao motor **em até 50 ms** (uma
    consulta de `cancelado()`, o mesmo intervalo do provisório); (d) o `s2` grava na conversa só o
-   tocado (regra 3). O `ResponseChunk` com `end_reason: cancelado` fecha a resposta no log.
+   tocado (regra 3). **[Ajuste da implementação, 2026-10-16:]** não há `ResponseChunk` com
+   `end_reason: cancelado` — publicá-lo seria publicar no epoch morto, o que o item (b) proíbe; o
+   fim por cancelamento fica na conversa e na `Resposta` do `s2` (auditoria local). `boundary`
+   ganhou `fim`: o último pedaço pode sair vazio, quando a resposta acabou numa pontuação.
 10. **O TTS consome pedaços.** O `SintetizadorEmStreaming` passa a aceitar um iterador de
     `ResponseChunk` do epoch corrente, além do texto inteiro; o resto (cancelamento antes e depois
     de sintetizar, `Fala.texto_ate`) não muda.

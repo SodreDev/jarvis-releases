@@ -32,7 +32,7 @@ class ErroDeContrato(ValueError):
 
 
 class TipoDesconhecido(ErroDeContrato):
-    """Tipo fora dos onze da §3.2 — recusado, nunca ignorado (aceite F0-02 a)."""
+    """Tipo fora dos doze da §3.2 — recusado, nunca ignorado (aceite F0-02 a)."""
 
 
 def _carregar() -> dict[str, Any]:
@@ -126,7 +126,8 @@ def _validar_regras_canonicas(bruto: dict[str, Any]) -> None:
     if efeito_sem_chave:
         raise ErroDeContrato("ToolCallRequested de efeito sem idempotency_key (§3.3 r3)")
 
-    if tipo in (Tipo.PLAYBACK_PROGRESS, Tipo.STATE_REVISION) and payload["epoch"] != bruto["epoch"]:
+    com_epoch = (Tipo.PLAYBACK_PROGRESS, Tipo.STATE_REVISION, Tipo.RESPONSE_CHUNK)
+    if tipo in com_epoch and payload["epoch"] != bruto["epoch"]:
         raise ErroDeContrato(
             f"{tipo}.payload.epoch ({payload['epoch']}) difere do envelope ({bruto['epoch']})"
         )

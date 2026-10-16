@@ -134,7 +134,7 @@ frames de PCM do `audio-io` andam por canal dedicado, com cabeçalho próprio (A
 
 | Tipo | Origem | Prioridade | Payload essencial |
 |---|---|---|---|
-| `ResponseChunk` | s2 | P1 | `response_id`, `turn_id`, `epoch`, `seq`, `text`, `boundary: frase|virgula|limite`, `last`, `end_reason?: concluido|cancelado|erro|prazo`, `notif_ids?` |
+| `ResponseChunk` | s2 | P1 | `response_id`, `turn_id`, `epoch`, `seq`, `text`, `boundary: frase|virgula|limite|fim`, `last`, `end_reason?: concluido|erro|prazo` (o cancelado não é publicado), `notif_ids?` |
 | `Notification` | tarefas/executor/mcp | P3 | `notif_id`, `origem`, `task_id?`, `tipo: concluida|falhou|precisa_decisao|evento`, `resumo_ref`; nunca emite `Cancel` |
 | `NotificationRelease` | agentd | P3 | `notif_ids`, `motivo: piso_livre|mensagem_do_dono`, `turn_id?` |
 

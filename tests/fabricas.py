@@ -55,6 +55,15 @@ PAYLOADS: dict[Tipo, dict[str, Any]] = {
         "cenario": {"nome": "trabalho", "p": 0.8, "ttl_s": 300},
     },
     Tipo.CANCEL: {"epoch_invalidado": 0, "reason": "barge_in"},
+    Tipo.RESPONSE_CHUNK: {
+        "response_id": "r-1",
+        "turn_id": "t-1",
+        "epoch": 0,
+        "seq": 0,
+        "text": "Depois de quinta",
+        "boundary": "limite",
+        "last": False,
+    },
 }
 
 FONTE_PADRAO: dict[Tipo, str] = {
@@ -69,6 +78,7 @@ FONTE_PADRAO: dict[Tipo, str] = {
     Tipo.PLAYBACK_PROGRESS: "audio-io",
     Tipo.STATE_REVISION: "s2",
     Tipo.CANCEL: "agentd",
+    Tipo.RESPONSE_CHUNK: "s2",
 }
 
 TRUST_PADRAO: dict[Tipo, Trust] = {
@@ -90,7 +100,8 @@ def evento(
 ) -> Envelope:
     """Envelope válido do tipo pedido, com o payload canônico e as mudanças aplicadas."""
     payload = {**PAYLOADS[tipo], **mudancas}
-    if tipo in (Tipo.PLAYBACK_PROGRESS, Tipo.STATE_REVISION) and "epoch" not in mudancas:
+    com_epoch = (Tipo.PLAYBACK_PROGRESS, Tipo.STATE_REVISION, Tipo.RESPONSE_CHUNK)
+    if tipo in com_epoch and "epoch" not in mudancas:
         payload["epoch"] = epoch
     return Envelope(
         session_id=session_id,

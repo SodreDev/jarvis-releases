@@ -38,7 +38,7 @@ class Trust(StrEnum):
 
 
 class Tipo(StrEnum):
-    """Os onze tipos fechados da §3.2. Tipo fora desta lista é recusado, não ignorado."""
+    """Os doze tipos fechados da §3.2 (o 12º pela ADR-0025). Tipo fora desta lista é recusado."""
 
     AUDIO_ACTIVITY = "AudioActivity"
     PARTIAL_TRANSCRIPT = "PartialTranscript"
@@ -51,6 +51,7 @@ class Tipo(StrEnum):
     PLAYBACK_PROGRESS = "PlaybackProgress"
     STATE_REVISION = "StateRevision"
     CANCEL = "Cancel"
+    RESPONSE_CHUNK = "ResponseChunk"
 
 
 class Fonte(StrEnum):
