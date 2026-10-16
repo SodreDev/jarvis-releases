@@ -1,6 +1,7 @@
 # ADR-0023 — MCP nos dois sentidos: cliente por servidor isolado, servidor de capacidades atrás do PDP
 
-**Data:** 2026-10-16 · **Estado:** proposta · **Decide:** dono (o que liga, quem conecta, os
+**Data:** 2026-10-16 · **Estado:** proposta; emendada em 2026-10-16 pelas ADRs 0025 e 0026 (ver
+"Emenda de 2026-10-16") · **Decide:** dono (o que liga, quem conecta, os
 tetos), arquiteto (o enforcement)
 **Pedido:** ideia do dono de 2026-10-15 (memória `b63298d6`): o Jarvis é **cliente** MCP (usa
 outros servidores e sabe quais estão conectados) e **servidor** MCP (o Orchestrator e outros apps
@@ -112,7 +113,8 @@ o outro app escreve, o planejador do Jarvis decide o que fazer.
 
 **Decisão do lado servidor: S-A agora; S-B depois da ADR-0022, como tarefa delegada** com
 allowlist = teto do cliente ∩ modelo de tarefa, todo efeito confirmado pelo dono na UI do Jarvis,
-e o resultado devolvido pela extensão Tasks. O servidor **nunca** expõe: escrita de memória,
+e o resultado devolvido pela extensão Tasks. O servidor **nunca** expõe: escrita de memória (e, desde a emenda de 2026-10-16, também a
+leitura de memória e de histórico — ADR-0026 regra 1),
 mudança de nível, elevação, confirmação, `tarefas.delegar` (até o S-B), e nenhuma capacidade com
 `requires_elevation: true`.
 
@@ -208,6 +210,32 @@ os dois sentidos.
   página), sessão marcada como contaminada. Qual navegador/servidor faz isso é **DECISÃO DO DONO**
   depois de medir duas opções; a licença da escolhida entra no portão.
 
+## Emenda de 2026-10-16 (cérebro único e ferramentas de memória)
+
+As respostas do dono de 2026-10-16 (memória `34d72b96`) não mudam o desenho C-A/S-A; mudam três
+pontos de encaixe, decididos pelo planejador para o desenho continuar coerente com as ADRs 0025 e
+0026:
+
+1. **Nenhuma tool `memoria.*` por MCP, nem de leitura.** A memória e o histórico de conversa são o
+   dado mais sensível do produto; um app de entrada com teto `jarvis` lendo "o que o dono disse
+   ontem" anularia o teto. Abrir isso é emenda da ADR-0026 e decisão do dono, por app.
+2. **O S-B nunca entra na conversa do dono.** Com um cérebro só (ADR-0025, regra 1), "conversar
+   com o Jarvis" por MCP não pode virar turno da conversa do dono: o texto de um app de fora é
+   `third_party` e entraria no mesmo contexto que guia o cérebro. O S-B continua sendo o que esta
+   ADR já dizia — uma **tarefa** (ADR-0022), com allowlist = teto do cliente ∩ modelo de tarefa —
+   e o resultado volta ao app pela extensão Tasks, não pela voz.
+3. **O que chega de servidor remoto e precisa do dono vira `Notification`** (ADR-0025, regra 11),
+   com `origem: mcp:<id>` e `trust: third_party`: mudança de lista de tools (suspensão), pedido
+   `input_required`, fim de uma Task remota. `input_required` é `tipo: precisa_decisao` e, pela
+   regra 14 de lá, gera card sempre; o formulário continua só na UI (seção "Confirmação").
+
+**Ordem:** as fatias desta ADR passam para depois das fatias da ADR-0025 e da M1 da ADR-0026 no
+roteiro da F2. Nada do que esta ADR decide depende delas, mas o dono pediu o cérebro primeiro, e a
+regra 3 acima só tem para onde ir quando a fila existir.
+
+O que **não** mudou: C-A, S-A, a política nos quatro níveis, confirmação, segredos, licença, apps
+como MCP, fatia mínima e testes, exceto o (g), que agora também varre tools `memoria.*`.
+
 ## Alternativas descartadas
 
 - **Gateway único (C-B)** — ver tabela. Volta se o número de servidores passar do que a supervisão
@@ -263,7 +291,7 @@ promoção por commit → PDP → chamada → saída `third_party` truncada → 
 - **(e)** Entrada sem token: recusada. Com token e teto `jarvis`, buscar em Documentos: negado e
   auditado com `source: mcp-in:orchestrator`.
 - **(f)** Jarvis→Orchestrator→Jarvis: recusado pelo contador de saltos.
-- **(g)** Varredura do que o servidor lista: 0 capacidades com `requires_elevation`, de mudança de
+- **(g)** Varredura do que o servidor lista: 0 tools `memoria.*` (emenda de 2026-10-16), 0 capacidades com `requires_elevation`, de mudança de
   nível, de confirmação ou de escrita de memória.
 - **(h)** Portão de licença verde com `mcp` na trava.
 - **(i)** O cliente conversa com um servidor da revisão 2025-11-25 ou falha dizendo por quê.
