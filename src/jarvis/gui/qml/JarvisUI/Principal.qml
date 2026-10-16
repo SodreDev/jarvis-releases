@@ -277,7 +277,9 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 text: ponte ? ponte.ultimaMudanca : ""
                 color: Tema.textoFraco
-                onTextChanged: if (text !== "") sumir.restart()
+                // `mudanca.text`, não `text`: o sinal traz um parâmetro com esse nome, e usá-lo
+                // direto é injeção de parâmetro — depreciada, e um aviso no console.
+                onTextChanged: if (mudanca.text !== "") sumir.restart()
             }
             Rotulo {
                 anchors.verticalCenter: parent.verticalCenter

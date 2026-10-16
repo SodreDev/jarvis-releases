@@ -235,18 +235,19 @@ def capturar(
     for modo in MODOS:
         ponte.definirModo(modo)
         _esperar(aplicativo, ESPERA_DA_ANIMACAO_MS)
-        destino = pasta / f"jarvis-{modo}.png"
-        janela.grabWindow().save(str(destino))
-        salvos.append(destino)
         pendentes = ponte.pendencias_abertas()
+        # Com pendência aberta, a composição **ainda não está inteira**: o que encosta na
+        # máquina do dono espera o sim dele. Então o retrato do modo é o de depois da
+        # autorização, e o pedido ganha uma imagem própria — nenhuma das duas esconde nada.
+        primeiro = pasta / (f"jarvis-{modo}-confirmar.png" if pendentes else f"jarvis-{modo}.png")
+        janela.grabWindow().save(str(primeiro))
+        salvos.append(primeiro)
         if not pendentes:
             continue
-        # O que encosta na máquina do dono fica esperando o sim. A primeira imagem mostra o
-        # pedido; esta mostra o workspace depois que ele autorizou — as duas são o mesmo modo.
         for pendencia in pendentes:
             ponte.responderPendencia(pendencia["id"], True)
         _esperar(aplicativo, ESPERA_DA_ANIMACAO_MS)
-        destino = pasta / f"jarvis-{modo}-autorizado.png"
+        destino = pasta / f"jarvis-{modo}.png"
         janela.grabWindow().save(str(destino))
         salvos.append(destino)
     # Um retrato do núcleo **pensando**: os anéis só giram em processamento, e o dono não tem
