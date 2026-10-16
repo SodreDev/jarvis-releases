@@ -186,7 +186,7 @@ Column {
                 }
                 Botao { texto: "buscar vozes da conta"; onApertado: ponte.buscarVozes() }
             }
-            Rotulo {
+            Nota {
                 width: parent.width
                 text: ponte && ponte.vozesFrase !== ""
                       ? ponte.vozesFrase
@@ -209,21 +209,120 @@ Column {
             }
         }
 
-        // O interruptor. Desligado: o aviso inteiro, e só depois o botão.
-        Text {
-            textFormat: Text.PlainText
-            visible: linha.naNuvem && !linha.provedor.ligado
+        // O interruptor. Desligado: o aviso, e só depois o botão. O aviso vem do registro e é
+        // longo (termos, retenção, treino, uso comercial): numa caixa de altura limitada, em
+        // frases separadas e legíveis, ele não empurra o botão para fora da tela — e "ler tudo"
+        // abre o resto sem tirar o botão do lugar.
+        Rectangle {
+            id: caixaDoAviso
+            objectName: "caixaDoAviso"
+            property bool inteiro: false
+            readonly property var frases: (linha.provedor.aviso || "")
+                .split(/\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/)
+                .filter(function (f) { return f.trim() !== "" })
+            readonly property real tetoRecolhido: 132
+            readonly property real tetoInteiro: 300
+            visible: linha.naNuvem && !linha.provedor.ligado && frases.length > 0
             width: parent.width
-            text: linha.provedor.aviso || ""
-            color: Tema.alerta
-            font.pixelSize: Tema.tamanhoTexto - 4
-            wrapMode: Text.WordWrap
-            renderType: Text.NativeRendering
+            height: cabecalhoDoAviso.height + rolagemDoAviso.height + 18
+            color: "transparent"
+            border.width: 1
+            border.color: Tema.linha
+            radius: Tema.raioModulo
+
+            Rectangle {
+                width: 2
+                height: parent.height
+                color: Tema.alerta
+                opacity: 0.85
+            }
+            Item {
+                id: cabecalhoDoAviso
+                x: 14
+                y: 8
+                width: parent.width - 26
+                height: 18
+                Rotulo {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "o que sai da máquina com " + (linha.provedor.nome || "")
+                    color: Tema.alerta
+                }
+                Rotulo {
+                    id: alternar
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: corpoDoAviso.implicitHeight > caixaDoAviso.tetoRecolhido
+                    text: caixaDoAviso.inteiro ? "recolher" : "ler tudo"
+                    destaque: toqueDoAlternar.containsMouse
+                    MouseArea {
+                        id: toqueDoAlternar
+                        anchors.fill: parent
+                        anchors.margins: -6
+                        hoverEnabled: true
+                        onClicked: caixaDoAviso.inteiro = !caixaDoAviso.inteiro
+                    }
+                }
+            }
+            Flickable {
+                id: rolagemDoAviso
+                x: 14
+                anchors.top: cabecalhoDoAviso.bottom
+                anchors.topMargin: 6
+                width: parent.width - 26
+                height: Math.min(
+                    corpoDoAviso.implicitHeight,
+                    caixaDoAviso.inteiro ? caixaDoAviso.tetoInteiro : caixaDoAviso.tetoRecolhido)
+                contentHeight: corpoDoAviso.implicitHeight
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                interactive: contentHeight > height
+                Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Column {
+                    id: corpoDoAviso
+                    width: rolagemDoAviso.width
+                    spacing: 5
+                    Repeater {
+                        model: caixaDoAviso.frases
+                        Row {
+                            width: corpoDoAviso.width
+                            spacing: 8
+                            Text {
+                                textFormat: Text.PlainText
+                                text: "—"
+                                color: Tema.textoFraco
+                                font.pixelSize: Tema.tamanhoTexto - 2
+                                renderType: Text.NativeRendering
+                            }
+                            Text {
+                                textFormat: Text.PlainText
+                                width: parent.width - 18
+                                text: modelData.trim() + (/[.!?)]$/.test(modelData.trim()) ? "" : ".")
+                                color: Tema.texto
+                                font.pixelSize: Tema.tamanhoTexto - 2
+                                lineHeight: 1.25
+                                wrapMode: Text.WordWrap
+                                renderType: Text.NativeRendering
+                            }
+                        }
+                    }
+                }
+            }
+            // Quando há mais texto embaixo, uma linha fina diz isso — sem sombra nem degradê.
+            Rectangle {
+                visible: rolagemDoAviso.interactive && !rolagemDoAviso.atYEnd
+                x: 14
+                anchors.top: rolagemDoAviso.bottom
+                width: rolagemDoAviso.width
+                height: 1
+                color: Tema.alerta
+                opacity: 0.4
+            }
         }
         Row {
             visible: linha.naNuvem
             spacing: 12
             Botao {
+                objectName: "botaoDaNuvem"
                 texto: linha.provedor.ligado ? "desligar" : "li o aviso — ligar " + linha.provedor.nome
                 onApertado: ponte.ligarNuvem(linha.provedor.motor, !linha.provedor.ligado)
             }

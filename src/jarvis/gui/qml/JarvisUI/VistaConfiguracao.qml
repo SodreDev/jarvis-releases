@@ -72,7 +72,7 @@ Item {
                     width: parent.width
                     spacing: 8
                     Botao { texto: "salvar configuração"; onApertado: ponte.salvarConfiguracao() }
-                    Rotulo {
+                    Nota {
                         width: parent.width
                         text: "escolher não liga nuvem nenhuma: ligar é outra confirmação"
                         wrapMode: Text.WordWrap
@@ -120,7 +120,7 @@ Item {
                             onApertado: ponte.definirEscuta("vad")
                         }
                     }
-                    Rotulo {
+                    Nota {
                         width: parent.width
                         text: ponte ? ponte.escuta.frase : ""
                         color: Tema.texto
@@ -191,7 +191,7 @@ Item {
                             visible: ponte && ponte.portalDisponivel && !ponte.escuta.atalhoGlobal
                             onApertado: ponte.ativarAtalhoGlobal()
                         }
-                        Rotulo {
+                        Nota {
                             width: parent.width
                             wrapMode: Text.WordWrap
                             color: ponte && ponte.escuta.atalhoGlobal ? Tema.positivo : Tema.alerta
@@ -254,14 +254,14 @@ Item {
                                 onApertado: ponte.definirPalavra(campoPalavra.text, campoLimiar.text)
                             }
                         }
-                        Rotulo {
+                        Nota {
                             width: parent.width
                             wrapMode: Text.WordWrap
                             text: "reconhecida no computador, sobre o que o ASR transcreve, e "
                                   + "tolerante a pronúncias parecidas. Limiar de 0,50 a 1,0 — "
                                   + "mais alto exige pronúncia mais fiel."
                         }
-                        Rotulo {
+                        Nota {
                             width: parent.width
                             wrapMode: Text.WordWrap
                             visible: ponte && ponte.escuta.asrNaNuvem
@@ -272,7 +272,7 @@ Item {
                     }
 
                     // --- contínua -------------------------------------------------------
-                    Rotulo {
+                    Nota {
                         width: parent.width
                         wrapMode: Text.WordWrap
                         visible: caixaEscuta.modo === "vad"
@@ -309,7 +309,7 @@ Item {
                 Column {
                     width: parent.width
                     spacing: 10
-                    Rotulo {
+                    Nota {
                         width: parent.width
                         text: ponte && ponte.vozFaltando !== ""
                               ? ponte.vozFaltando
@@ -395,7 +395,7 @@ Item {
                             }
                         }
                     }
-                    Rotulo {
+                    Nota {
                         width: parent.width
                         text: "o valor nunca aparece aqui, nem no arquivo de configuração"
                         color: Tema.textoFraco
