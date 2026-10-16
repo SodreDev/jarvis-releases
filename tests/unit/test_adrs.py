@@ -205,11 +205,19 @@ def test_adr_da_fonemizacao_registra_aceite_parcial_e_aponta_a_0017() -> None:
 
 
 def test_adr_dos_motores_de_voz_e_proposta_com_as_quatro_partes() -> None:
-    """ADR-0017: ASR, TTS, interface + política e o plano de amostra — sem implementar produto."""
+    """ADR-0017: ASR, TTS, interface + política, plano de amostra — e a emenda da implementação.
+
+    O estado mudou de `proposta` para `aceita` quando o dono mandou implementar (2026-10-15):
+    o que ele aceitou foi a **fronteira e a política**; qual motor o v1 usa continua aberto e
+    é do F1-16. Por isso o teste cobra as duas coisas — o aceite e a seção de emenda, que é
+    onde os desvios da proposta estão escritos.
+    """
     caminho = PASTA / ADR_DOS_MOTORES
     texto = caminho.read_text(encoding="utf-8")
 
-    assert "**Estado:** proposta" in texto
+    assert "**Estado:** aceita" in texto
+    assert "F1-16" in texto, "o aceite não pode engolir o que continua aberto"
+    assert "## Emenda da implementação" in texto
     assert conferir_adr(caminho) == []
     for motor in (
         "whisper-large-v3",
@@ -275,3 +283,25 @@ def test_a_adr_dos_motores_publica_os_numeros_da_amostra_medida() -> None:
     # bandit, e a regra está certa — o que o teste quer é que a ADR diga ONDE ouvir.
     assert "jarvis-amostras" in texto, "onde ouvir tem de estar dito"
     assert "descarta" in texto.casefold(), "o símbolo fora do mapa é descartado em silêncio"
+
+
+def test_adr_do_s2_provisorio_e_proposta_e_declara_o_alcance() -> None:
+    """ADR-0018: a CLI do Claude como gerador de resposta é provisória e tem alcance escrito.
+
+    O risco desta ADR não é técnico, é de escopo: uma peça "provisória" que ninguém marcou
+    vira produto por inércia. Por isso o teste cobra que ela diga onde **não** vale e o que a
+    invalida.
+    """
+    caminho = PASTA / "0018-s2-provisorio-pela-cli-do-claude.md"
+    texto = caminho.read_text(encoding="utf-8")
+    # Linha quebrada no meio de uma frase é formatação, não conteúdo: a frase é procurada no
+    # texto com os espaços normalizados, senão o teste passa a cobrar onde cai a quebra.
+    corrido = " ".join(texto.split())
+
+    assert "**Estado:** proposta" in texto
+    assert conferir_adr(caminho) == []
+    assert "**Alcance:**" in texto
+    assert "não entra no barramento" in corrido
+    assert "## Como invalidar esta proposta" in texto
+    for regra in ("sem ferramenta", "stdin", "untrusted", "prazo", "Cancelável"):
+        assert regra in texto, f"a regra {regra!r} não está escrita na ADR"

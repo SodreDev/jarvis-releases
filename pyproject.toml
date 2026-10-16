@@ -68,6 +68,10 @@ dispositivo = [
     "sounddevice>=0.5,<1",
 ]
 
+[project.scripts]
+# O aplicativo de teste do dono (ADR-0017, ADR-0018): `uv run jarvis-voz`.
+jarvis-voz = "jarvis.voz.cli:main"
+
 [build-system]
 requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"

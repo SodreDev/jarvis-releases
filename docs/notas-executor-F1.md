@@ -1239,3 +1239,104 @@ doze etapas. Os testes novos com relógio foram examinados por conta disso e tê
 (o do canal espera 5 s para um laço de microssegundos; o dos dois escritores espera 30 s para
 ~300 ms de trabalho serializado), mas folga não é prova de ausência: se o portão falhar de novo
 nessa etapa, **capture a saída em arquivo** (`verificar.py > log 2>&1`) antes de reexecutar.
+
+---
+
+# Motores de voz e o aplicativo de teste (ADR-0017 implementada, ADR-0018 proposta)
+
+2026-10-15/16, executor. O dono mandou implementar os motores de voz e ter um aplicativo que
+ele consiga rodar. São onze commits, `4552446`..(este), e esta nota é o que não cabe em
+mensagem de commit: o que foi decidido por qual motivo, o que quebrou no caminho, e o que
+continua **não verificado**.
+
+## O desenho em uma frase
+
+O motor traduz um bloco e declara **de onde ele é**; quem é incremental, fatia, cancela e
+conhece epoch é a camada compartilhada que já existe. Foi a emenda mais importante à ADR-0017,
+e ela é o que impede trocar de motor de afrouxar o cancelamento: o motor não é quem cancela.
+
+## Quatro coisas que a implementação achou e a proposta não sabia
+
+1. **O `edge-tts` tem três barreiras, não duas.** A terceira é só devolver MP3 (o pacote não
+   deixa escolher formato: `MP3_BITRATE_BPS` é constante do módulo), o que obriga um
+   decodificador externo. O `ffmpeg` do projeto é LGPL-2.1+, mas o build **desta máquina** é
+   GPL (`--enable-gpl --enable-version3`). Por isso quem publica essa licença é o motor, em
+   tempo de execução (`licenca_do_ffmpeg` lê o `-version` local), e não o registro — o
+   registro descreve o projeto, não o pacote que o dono instalou.
+2. **O `epitran` devolve vogal nasal de duas formas na mesma frase** — pré-composta (`ĩ`,
+   U+0129) e com til combinante (`ɐ̃`). O inventário da voz do piper só conhece a segunda:
+   `jardim` perdia a nasalidade **em silêncio**. Quem achou foi `conferir_cobertura`, não
+   ouvido — e por isso a saída passou a ser normalizada em NFD.
+3. **O descarte de fonema desconhecido era mesmo silencioso** (a ADR-0016 dizia que levantava
+   erro). Agora é contado (`fonemas_descartados`, `simbolos_descartados`). Trocar descarte por
+   erro continua sendo decisão do dono.
+4. **A primeira fala do piper custa ~1,8 s** nesta máquina (grafo ONNX + tabelas do `epitran`)
+   e as seguintes ~70 ms — observação de uma execução, **não medição**. O aplicativo aquece a
+   voz ao subir, e **só motor local**: aquecer um motor de nuvem seria mandar texto para fora
+   e pagar uma requisição que ninguém pediu.
+
+## A regra de tônica, que é a parte que mais pode envelhecer mal
+
+O `epitran` não marca tônica em `por-Latn` (zero contra 14 do espeak na mesma frase), e a voz
+foi treinada com tônica. A reposição é ortográfica, não estatística: acento gráfico manda;
+sem acento, a terminação manda; 40 palavras átonas de gramática não recebem marca. Três
+armadilhas que o teste pegou, e que quem mexer nisso vai reencontrar:
+
+- **o acento vai antes do ataque da sílaba, e ataque de duas consoantes só existe em
+  obstruinte + líquida.** `ˈtɾintɐ` está certo, `ʒɐˈɾviʃ` está errado (é `ʒɐɾˈviʃ`): o `ɾ`
+  fecha a sílaba anterior. Sem essa regra, o acento andava uma sílaba para trás em toda
+  palavra com encontro consonantal;
+- **glide entre vogais abre a sílaba seguinte.** Em `ʒowɐ̃w̃` (`João`) o `w` abre `wão`;
+  colado ao núcleo anterior, ele fundia as duas sílabas e a tônica caía em `Jo`;
+- **`-ens` é paroxítona e `-ins` é oxítona** (`jovens` × `jardins`): quem decide é a vogal
+  antes do `n`, e o `s` do plural não muda regra nenhuma.
+
+O que ela **não** resolve: hiato que o `epitran` escreve sem separar (`criança` → `kɾiɐnsɐ`)
+fica com o acento no início do grupo vocálico. É deslocamento de uma vogal dentro da mesma
+sílaba, e só ouvido julga se incomoda.
+
+## Armadilhas de teste deste lote
+
+1. **`AdaptadorRemoto.chamar` captura `ErroDeRede`** — então qualquer exceção que herde dele
+   vira *degradação declarada*, não erro visível. Foi preciso separar `ErroDoServico` (5xx,
+   429, transporte → cai para PTT) de `ServicoRecusou` (4xx → "confira a chave"). Com uma
+   exceção só, chave inválida chegava ao dono como "estou sem internet".
+2. **`urllib` capitaliza o nome do cabeçalho**: `xi-api-key` chega como `Xi-api-key`. Teste
+   que compara a chave literal do dicionário passa a medir a capitalização do cliente.
+3. **`Aplicativo.abrir` tem de ser idempotente.** Enquanto remontava os motores, ele trocava
+   por baixo o motor que o teste tinha injetado — e, em produção, reabriria o modelo a cada
+   turno.
+4. **No modo texto não existe ASR.** Exigir motor de ASR ali faria o dono baixar modelo para
+   digitar, e quebrava justamente o modo que existe para quando o áudio não vai.
+5. **A corrida do `test_ptt_entre_processos`** (não é deste lote, mas apareceu aqui): o teste
+   esperava o arquivo de estado do `audio-io` e lia a tela da `ui`, que ainda não tinha
+   repintado. Dois processos, duas verdades; agora ele espera a tela.
+
+## O que continua NÃO VERIFICADO
+
+- **microfone e alto-falante reais.** Nenhum dispositivo foi aberto: não há placa de som nesta
+  máquina e o PortAudio nem está instalado. O código existe, separa as duas recusas (extra
+  ausente × biblioteca do sistema ausente) e só o hardware do dono fecha o caminho;
+- **barge-in no ouvido.** A nossa fila esvazia no mesmo tique; a do driver não é nossa, e
+  `limpar` devolve 0 porque o PortAudio não diz quantas amostras morreram no buffer dele;
+- **qualquer chamada real à Groq, à ElevenLabs ou ao Edge.** Toda a suíte fala com servidor
+  falso em porta efêmera, e sob `CI=1` o código recusa base que não seja local;
+- **WER em pt-BR** de qualquer ASR, local ou de nuvem;
+- **qualidade da voz com `epitran`**: cobertura de inventário é completa e a tônica está
+  reposta, mas "soa bem" é julgamento do dono (F1-16);
+- **Windows:** nada disto rodou lá. O caminho do teclado (`msvcrt`) e o da pasta de
+  configuração (`%APPDATA%`) estão escritos e não executados.
+
+## Pendências que este lote abre
+
+1. **Número no texto não é falado** (`são 15 horas` sai com "15"). Normalização de texto é
+   outro assunto do TTS e não foi feita — fazer escondido dentro do fonemizador esconderia a
+   decisão.
+2. **O `jarvis-voz` é um processo só.** Ele reusa as peças da F1, mas não é a arquitetura da
+   §2; quando a F2 entregar o `s2`, o laço de verdade mora lá e a ADR-0018 é revogada.
+3. **`tts-edge` depende de `ffmpeg` no caminho do produto** se o dono o ligar. Hoje o registro
+   de ferramentas marca o ffmpeg como `extra_opcional` (avisa, não bloqueia) porque o motor
+   está barrado; se ele virar caminho de produto, o estado tem de virar `em_uso` — e aí a
+   porta bloqueia, que é o comportamento certo para GPL no produto.
+4. **Emenda da ADR-0016 pendente:** trocar o descarte silencioso de fonema por erro. O
+   contador e a cobertura existem; a decisão é do dono.
