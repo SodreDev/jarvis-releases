@@ -32,13 +32,21 @@ class Pedido:
     cabecalhos: dict[str, str]
     corpo: bytes
 
-    @property
-    def autorizacao(self) -> str:
-        return self.cabecalhos.get("Authorization", "")
+    def cabecalho(self, nome: str) -> str:
+        """Busca sem diferenciar maiúscula: o `urllib` manda `Xi-api-key` para `xi-api-key`,
+        e um teste que compara a chave literal passaria a medir a capitalização do cliente."""
+        procurado = nome.lower()
+        for chave, valor in self.cabecalhos.items():
+            if chave.lower() == procurado:
+                return valor
+        return ""
+
+    def tem_cabecalho(self, nome: str) -> bool:
+        return any(chave.lower() == nome.lower() for chave in self.cabecalhos)
 
     @property
-    def chave_xi(self) -> str:
-        return self.cabecalhos.get("xi-api-key", "")
+    def autorizacao(self) -> str:
+        return self.cabecalho("Authorization")
 
     def campo(self, nome: str) -> str:
         """O valor de um campo `multipart`, sem montar um analisador inteiro."""
