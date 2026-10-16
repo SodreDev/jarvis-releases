@@ -14,7 +14,14 @@ from pathlib import Path
 
 import pytest
 
-from jarvis.arquivos import ESPERA_S, TENTATIVAS, LeituraOcupada, escrever_atomico, ler_texto
+from jarvis.arquivos import (
+    ESPERA_S,
+    TENTATIVAS,
+    LeituraOcupada,
+    escrever_atomico,
+    ler_texto,
+    tranca_exclusiva,
+)
 from jarvis.microfone import ARQUIVO_ESTADO, Modo, Pedido, escrever_pedido, ler_pedido
 from jarvis.ui.painel import PainelDoMicrofone
 
@@ -144,3 +151,28 @@ def test_o_indicador_nao_pisca_quando_o_arquivo_esta_ocupado(
     assert ligado_antes is True
     assert painel.ouvindo is True, "o último estado conhecido tem um tick de idade, não mente"
     assert painel.estado.amostras == 320
+
+
+# --- trava do par ler→escrever (achado 5 da revisão F0+F1) ------------------------
+def test_so_um_entra_na_tranca_por_vez(tmp_path: Path) -> None:
+    """A trava é por descritor, então vale entre processos — e entre descritores daqui."""
+    alvo = tmp_path / "estado.json"
+
+    with tranca_exclusiva(alvo) as dentro:
+        assert dentro
+        with tranca_exclusiva(alvo, tentativas=1, espera_s=0.0) as tambem_dentro:
+            assert not tambem_dentro, "dois escritores dentro da mesma trava"
+
+    with tranca_exclusiva(alvo, tentativas=1, espera_s=0.0) as depois:
+        assert depois, "soltar a trava tem de deixar o próximo entrar"
+
+
+def test_a_trava_e_um_arquivo_ao_lado_e_nao_o_arquivo_trocado(tmp_path: Path) -> None:
+    """`replace` cria inode novo: travar o próprio arquivo deixaria os dois lados entrarem."""
+    alvo = tmp_path / "estado.json"
+
+    with tranca_exclusiva(alvo):
+        escrever_atomico(alvo, "{}")
+
+    assert (tmp_path / "estado.json.lock").exists()
+    assert alvo.read_text(encoding="utf-8") == "{}"

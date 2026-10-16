@@ -19,6 +19,13 @@ aplicadas à rede:
 A degradação fica num arquivo da pasta de sessão (`degradacao.json`), pelo mesmo motivo do
 microfone (`jarvis.microfone`): os onze tipos de evento da §3.2 são fechados, e "o serviço caiu"
 não é um deles. Quem lê é a `ui` — que desliga a escuta contínua, liga o PTT e mostra a frase.
+
+**Dois escritores, uma trava.** O arquivo é escrito pelo adaptador (aqui) e por quem fala o
+aviso (`reservar_aviso_por_voz`, no `agentd`), e os dois fazem ler → decidir → escrever. Troca
+atômica resolve bytes pela metade, não perda de atualização: sem trava, A lê, B lê, A escreve e
+B escreve por cima — o `call_id` que A acrescentou some, e pedido que caiu volta a ser
+refeito, que é o que a regra 5 proíbe. Por isso cada par ler→escrever acontece dentro de
+`tranca_exclusiva` (`degradacao.json.lock`).
 """
 
 from __future__ import annotations
@@ -33,7 +40,12 @@ from pathlib import Path
 from typing import Any, Final, Protocol, TypeVar, runtime_checkable
 
 from jarvis.ambiente import VARIAVEL_CI, ambiente_ou_os, em_ci, verdadeiro
-from jarvis.arquivos import LeituraOcupada, escrever_atomico, ler_texto
+from jarvis.arquivos import (
+    LeituraOcupada,
+    escrever_atomico,
+    ler_texto,
+    tranca_exclusiva,
+)
 
 ARQUIVO_DEGRADACAO: Final = "degradacao.json"
 PRAZO_PADRAO_S: Final = 2.0
@@ -230,13 +242,15 @@ def reservar_aviso_por_voz(raiz: Path) -> str | None:
 
     A reserva é gravada antes de alguém falar: se o processo morrer entre reservar e sintetizar,
     o dono perde um aviso — e perder um aviso é melhor que ouvir o mesmo aviso em loop, que é o
-    aceite (e) do cartão.
+    aceite (e) do cartão. Ler e reservar acontecem **dentro da trava**: é o que faz "uma vez"
+    valer com dois processos, e não só com um.
     """
-    degradacao = ler_degradacao(raiz)
-    if not degradacao.ativa or degradacao.avisado_por_voz or not degradacao.frase:
-        return None
-    escrever_degradacao(raiz, replace(degradacao, avisado_por_voz=True))
-    return degradacao.frase
+    with tranca_exclusiva(raiz / ARQUIVO_DEGRADACAO):
+        degradacao = ler_degradacao(raiz)
+        if not degradacao.ativa or degradacao.avisado_por_voz or not degradacao.frase:
+            return None
+        escrever_degradacao(raiz, replace(degradacao, avisado_por_voz=True))
+        return degradacao.frase
 
 
 @dataclass(slots=True)
@@ -313,34 +327,38 @@ class AdaptadorRemoto:
         return replace(do_disco, descartados=descartados)
 
     def _cair(self, *, call_id: str | None, epoch: int) -> None:
-        atual = self._no_disco()
-        descartados = atual.descartados
-        if call_id is not None and call_id not in descartados:
-            descartados = (*descartados, call_id)
-        self._degradacao = Degradacao(
-            ativa=True,
-            servico=self.servico,
-            frase=frase_de_queda(self.servico),
-            epoch=epoch or atual.epoch,
-            # O aviso por voz já dado continua dado: cair de novo no mesmo episódio não
-            # devolve a frase para o ouvido do dono (aceite (e)).
-            avisado_por_voz=atual.ativa and atual.avisado_por_voz,
-            descartados=descartados,
-        )
-        escrever_degradacao(self.raiz, self._degradacao)
+        # A trava abraça o par ler→escrever: sem ela, o `call_id` que o outro processo
+        # acrescentou agora é sobrescrito, e a regra 5 passa a depender de sorte.
+        with tranca_exclusiva(self.raiz / ARQUIVO_DEGRADACAO):
+            atual = self._no_disco()
+            descartados = atual.descartados
+            if call_id is not None and call_id not in descartados:
+                descartados = (*descartados, call_id)
+            self._degradacao = Degradacao(
+                ativa=True,
+                servico=self.servico,
+                frase=frase_de_queda(self.servico),
+                epoch=epoch or atual.epoch,
+                # O aviso por voz já dado continua dado: cair de novo no mesmo episódio não
+                # devolve a frase para o ouvido do dono (aceite (e)).
+                avisado_por_voz=atual.ativa and atual.avisado_por_voz,
+                descartados=descartados,
+            )
+            escrever_degradacao(self.raiz, self._degradacao)
 
     def _voltar(self) -> None:
-        atual = self._no_disco()
-        if not atual.ativa and not self._degradacao.ativa:
-            return
-        # A lista de descartados **sobrevive** à volta: é ela que garante que nada velho
-        # ressuscita (aceite (c)).
-        self._degradacao = Degradacao(
-            ativa=False,
-            servico=self.servico,
-            frase=frase_de_volta(self.servico),
-            epoch=atual.epoch,
-            avisado_por_voz=False,
-            descartados=atual.descartados,
-        )
-        escrever_degradacao(self.raiz, self._degradacao)
+        with tranca_exclusiva(self.raiz / ARQUIVO_DEGRADACAO):
+            atual = self._no_disco()
+            if not atual.ativa and not self._degradacao.ativa:
+                return
+            # A lista de descartados **sobrevive** à volta: é ela que garante que nada velho
+            # ressuscita (aceite (c)).
+            self._degradacao = Degradacao(
+                ativa=False,
+                servico=self.servico,
+                frase=frase_de_volta(self.servico),
+                epoch=atual.epoch,
+                avisado_por_voz=False,
+                descartados=atual.descartados,
+            )
+            escrever_degradacao(self.raiz, self._degradacao)

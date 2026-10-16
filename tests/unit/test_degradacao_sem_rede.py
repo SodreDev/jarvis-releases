@@ -9,6 +9,8 @@ rede não pode ressuscitar pedido velho (§3.3 regra 5).
 from __future__ import annotations
 
 import socket
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -285,3 +287,48 @@ def test_a_cascata_local_inteira_roda_sem_socket_externo(
     assert resultado.fala.amostras_sintetizadas > 0, "a cascata local fala sem rede nenhuma"
     assert resultado.amostras_tocadas > 0
     assert all(r.invariantes_ok for r in por_ponto), "cancelar offline mantém as invariantes"
+
+
+# --- achado 5: dois escritores no mesmo arquivo -----------------------------------
+def test_dois_escritores_ao_mesmo_tempo_nao_perdem_call_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Achado 5 da revisão F0+F1: o par ler→escrever de `degradacao.json` não era trancado.
+
+    O arquivo tem dois escritores reconhecidos (o `s2` e o `agentd`), e `escrever_atomico`
+    impede bytes intercalados, não perda de atualização: A lê, B lê, A escreve, B escreve, e o
+    `call_id` que A acrescentou **some**. Quando a rede volta, esse pedido pode ser refeito —
+    exatamente o que a regra 5 do epoch existe para proibir.
+
+    A escrita lenta não inventa defeito: ela alarga a janela que já existe entre a leitura e a
+    troca atômica, para a corrida ser determinística em vez de sorte.
+    """
+    import jarvis.rede as rede
+
+    escrita_original = rede.escrever_degradacao
+
+    def escrita_lenta(raiz: Path, degradacao: Degradacao) -> None:
+        time.sleep(0.05)
+        escrita_original(raiz, degradacao)
+
+    monkeypatch.setattr(rede, "escrever_degradacao", escrita_lenta)
+
+    esperados = set()
+    linhas = []
+    for nome in ("s2", "agentd"):
+        adaptador = AdaptadorRemoto(servico=SERVICO, raiz=tmp_path, sonda=SondaInjetada(False))
+        ids = [f"{nome}-{i}" for i in range(3)]
+        esperados |= set(ids)
+
+        def cair(adaptador: AdaptadorRemoto = adaptador, ids: list[str] = ids) -> None:
+            for call_id in ids:
+                adaptador.chamar(lambda _prazo: None, call_id=call_id)
+
+        linhas.append(threading.Thread(target=cair, name=nome))
+    for linha in linhas:
+        linha.start()
+    for linha in linhas:
+        linha.join(timeout=30.0)
+
+    descartados = set(ler_degradacao(tmp_path).descartados)
+    assert esperados <= descartados, f"perdidos: {sorted(esperados - descartados)}"
