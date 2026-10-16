@@ -109,20 +109,64 @@ jarvis.voz.MotorDeAsr   (Protocol)        jarvis.voz.MotorDeTts   (Protocol)
 
 Objetivo: **a mesma frase pt-BR em cada motor local viável**, para o dono comparar de ouvido.
 
-- **Frase** (uma só, com os sons que costumam quebrar G2P pt-BR): *"Jarvis, anota aí: a
-  reunião de terça às quinze e trinta mudou para o São João, não esqueça o relatório."*
-- **Onde:** pasta temporária criada por `tempfile.mkdtemp`, um arquivo por motor
-  (`amostra-<motor>.wav`), 16 kHz PCM16 — nada no repositório e nada na sessão do dono.
-- **Motores da amostra:** (a) `piper` + `pt_BR-faber-medium` com `espeak-ng` (linha de base, é
-  o que o F1-09 mediu); (b) o **mesmo** piper com `epitran` (a opção B da ADR-0016 — a amostra
-  é o que mostra se o mapeamento de fonema degrada a voz); (c) `Kokoro-82M` com `pf_dora`;
-  (d) `Chatterbox` pt-BR; (e) `parler-tts-mini-multilingual-v1.1`.
-- **Regra de download:** **nada baixa sem o tamanho na tela e o "sim" do dono.** O tamanho do
-  piper pt-BR é conhecido (~63 MB por voz, ADR-0016); os outros quatro estão em "não
-  verificado" abaixo e o plano é imprimir o tamanho que o repositório declarar **antes** de
-  buscar. Motor que exigir GPU é anotado como "não roda aqui" em vez de baixado.
-- **O que a amostra NÃO decide:** SLO-5 (a fila do dispositivo não está na conta — o veredito é
-  do F1-16) nem licença (quem barra é o portão).
+### Amostra gerada em 2026-10-15 — o que mediu
+
+Quatro arquivos para ouvir, em **`/tmp/jarvis-amostras/`** (fora do repositório; áudio **não é
+comitado**), todos com a mesma frase, uma afirmativa e uma pergunta:
+
+> *"Jarvis, anotei a reunião de terça às quinze e trinta. Quer que eu avise o João agora?"*
+
+Máquina: AMD Ryzen 5 5600G (12 fios), 31 GiB de RAM, Linux 7.2.9 (Nobara 44), Python 3.12.14,
+onnxruntime 1.31.0, CPU. `n` = 3 execuções por motor, valor publicado = **mediana**; p95 com
+`n` = 3 não significa nada, e a medição de verdade continua sendo o harness do F1-09 (commit
+`bced9bf`). Áudio 16 kHz PCM16 mono. RTF = tempo ÷ duração do áudio.
+
+| motor | voz | licença do caminho | fonemização | síntese | áudio | RTF | arquivo |
+|---|---|---|---:|---:|---:|---:|---|
+| piper + espeak (linha de base) | `pt_BR-faber-medium` | voz MIT + **espeak-ng GPL-3.0** (fora do produto) | 19 ms | 654 ms | 4,31 s | **0,156×** | `piper-espeak-pt_BR-faber-medium.wav` |
+| piper + `epitran` (opção B) | `pt_BR-faber-medium` | voz MIT + **epitran MIT** (pode entrar no produto) | 1 ms | 495 ms | 3,55 s | **0,140×** | `piper-epitran-pt_BR-faber-medium.wav` |
+| `Kokoro-82M` (ONNX) | `pf_dora` | modelo apache-2.0, **mas pt-BR via espeak-ng GPL-3.0** | — | 1 872 ms | 4,90 s | **0,382×** | `kokoro-pf_dora.wav` |
+| `Kokoro-82M` (ONNX) | `pm_alex` | idem | — | 1 933 ms | 5,12 s | **0,377×** | `kokoro-pm_alex.wav` |
+
+Nenhum dos quatro saiu silencioso (pico entre 0,41 e 0,55; RMS entre 0,054 e 0,092), e os
+quatro sintetizam **mais rápido do que tocam** nesta máquina.
+
+**O que a amostra achou sobre a opção B (piper + `epitran`), que era a pergunta do dono:**
+
+1. **O IPA do `epitran` é mais fiel ao pt-BR** do que o do espeak nesta frase — `ʒɐɾvis`,
+   `ɐnotɛj`, `tɛɾsɐ` contra `ʒaɾəvˈis`, `ˌænotˈeɪ`, `tˈeɾəs` —, e **71 dos 74** símbolos que
+   ele produz já estão no `phoneme_id_map` da voz.
+2. **Falta tônica.** O espeak marcou **14** acentos (`ˈ`/`ˌ`) na frase; o `epitran`, **zero** —
+   ele não atribui tonicidade em `por-Latn`. A voz foi treinada com o inventário do espeak,
+   **tônica incluída**, então o que a amostra entrega é a prosódia achatada (e o áudio 0,76 s
+   mais curto). É o item concreto que falta para a opção B: **um atribuidor de tônica pt-BR**
+   antes do mapeamento.
+3. **Falta mapear `ʷ`** (labialização, em `kʷinzɛ`): é o único símbolo do `epitran` fora do mapa
+   da voz, e aparece 3 vezes na frase.
+4. **E aqui a ADR-0016 estava errada sobre o código:** ela diz que "fonema fora do mapa hoje
+   levanta erro (F1-09), então divergência aparece como falha, não como voz torta". Não levanta:
+   `MotorPiperOnnx.sintetizar` faz `if simbolo in mapa` e **descarta em silêncio** o que não
+   conhece. Foi o que aconteceu com o `ʷ` nesta amostra. Isso muda o custo da opção B — sem
+   teste de cobertura do inventário, um fonema novo vira **voz torta**, não erro —, e a emenda
+   da ADR-0016 é decisão do dono.
+
+**Não gerados**, com o tamanho que os derrubou (lido na API do Hugging Face antes de baixar
+qualquer coisa, regra do teto de ~2 GB):
+
+- **Chatterbox** (MIT, pt-BR): `t3_mtl23ls_v2.safetensors` 2 144,0 MB + `s3gen.safetensors`
+  1 056,5 MB + `ve.safetensors` 5,7 MB ≈ **3,2 GB** de pesos, sem contar o `torch`;
+- **parler-tts-mini-multilingual-v1.1** (Apache-2.0, pt): `model.safetensors` **3 751,3 MB**,
+  também sem contar o `torch`.
+
+Os dois seguem candidatos; ouvi-los depende de o dono liberar ~3 GB e ~4 GB mais o `torch`.
+Baixado para esta amostra, dentro do teto e avisado antes: `kokoro-v1.0.onnx` 325,5 MB +
+`voices-v1.0.bin` 28,2 MB + ~10 MB de pip (`espeakng-loader`, que **empacota o espeak-ng
+GPL-3.0** — é a prova prática de que o pt-BR do Kokoro carrega a GPL junto). A voz do piper
+(63,2 MB) já estava em cache desde o F1-02.
+
+- **O que a amostra NÃO decide:** inteligibilidade e naturalidade (julgamento de ouvido, do
+  dono), SLO-5 (a fila do dispositivo não está na conta — o veredito é do F1-16) e licença
+  (quem barra é o portão).
 - **Fica para o F1-16:** escolher voz e ASR de ouvido na máquina do dono, medir o SLO-5 com
   fila de dispositivo real, e decidir se nuvem entra como aceleração opcional.
 

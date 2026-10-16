@@ -250,3 +250,28 @@ def test_a_correcao_do_kokoro_esta_nas_duas_adrs() -> None:
     for texto in (dezesseis, dezessete):
         assert "pf_dora" in texto, "a voz pt-BR do Kokoro tem de aparecer com o id de verdade"
         assert "EspeakG2P" in texto, "e o motivo de ela não resolver a licença também"
+
+
+def test_a_adr_dos_motores_publica_os_numeros_da_amostra_medida() -> None:
+    """A amostra foi gerada nesta máquina; o que a ADR publica tem de ser o que foi medido.
+
+    Mesma regra do achado 3 da revisão: número publicado é número medido. Aqui o portão não
+    tem CSV para comparar (o áudio não é comitado), então o teste cobra a estrutura: os quatro
+    arquivos gerados, o RTF de cada um e o que ficou sem gerar com o tamanho que o derrubou.
+    """
+    texto = (PASTA / ADR_DOS_MOTORES).read_text(encoding="utf-8")
+
+    for arquivo in (
+        "piper-espeak-pt_BR-faber-medium.wav",
+        "piper-epitran-pt_BR-faber-medium.wav",
+        "kokoro-pf_dora.wav",
+        "kokoro-pm_alex.wav",
+    ):
+        assert arquivo in texto, f"a ADR não cita a amostra {arquivo}"
+    for rtf in ("0,156", "0,140", "0,382", "0,377"):
+        assert rtf in texto, f"RTF medido {rtf} não está publicado"
+    assert "3 751,3 MB" in texto and "3,2 GB" in texto, "o que não foi gerado precisa do tamanho"
+    # Só o nome da pasta: escrever o caminho temporário literal aqui acenderia o S108 do
+    # bandit, e a regra está certa — o que o teste quer é que a ADR diga ONDE ouvir.
+    assert "jarvis-amostras" in texto, "onde ouvir tem de estar dito"
+    assert "descarta" in texto.casefold(), "o símbolo fora do mapa é descartado em silêncio"
