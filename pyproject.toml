@@ -53,8 +53,19 @@ voz = [
     "epitran>=1.35,<2",
     "onnxruntime>=1.20,<2",
 ]
+# Motor de TTS do Edge (ADR-0017): **extra isolado**, LGPL-3.0, que o portão recusa por
+# padrão (o serviço não publica termos). Só é instalado por quem vai testá-lo, nunca é
+# dependência do produto e nunca é distribuído junto. Precisa também do ffmpeg do sistema,
+# porque o serviço só devolve MP3.
 edge = [
     "edge-tts>=7.3,<8",
+]
+# Abertura de dispositivo real de áudio no aplicativo de teste (`jarvis-voz`): sounddevice
+# (MIT) sobre PortAudio (MIT com pedidos não vinculantes). No Linux o PortAudio é biblioteca
+# do **sistema** e não vem na roda do PyPI — ver docs/COMO-TESTAR.md. NÃO entra no CI, que
+# tem `CI=1` e por isso não abre placa de som nem por acidente (F1-01).
+dispositivo = [
+    "sounddevice>=0.5,<1",
 ]
 
 [build-system]

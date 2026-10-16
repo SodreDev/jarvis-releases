@@ -109,29 +109,59 @@ class SumidouroDeArquivo:
 
 @dataclass(slots=True)
 class SumidouroDeDispositivo:
-    """Playback real. Mesma regra da fonte: recusa com motivo, não finge que tocou.
+    """Playback real, pelo backend de `jarvis.audio_io.dispositivo`.
 
-    **Não verificado:** a fila do driver não é a nossa fila. Cancelamento perceptível ao
-    ouvido só fecha com alto-falante de verdade (F1-10 piso, F1-16 aceite).
+    **Não verificado, e é o ponto que mais importa:** a fila do driver não é a nossa fila.
+    `escrever` volta quando o PortAudio **aceitou** as amostras, não quando o alto-falante
+    tocou, e `limpar` aborta o fluxo sem conseguir dizer quantas amostras morreram no buffer
+    do sistema — por isso devolve 0, que aqui significa "não sei". Cancelamento perceptível ao
+    ouvido continua sendo o aceite do F1-16, de ouvido, na máquina do dono.
     """
 
     device_id: str = "dispositivo:padrao"
     taxa: int = TAXA_PADRAO
     amostras_consumidas: int = 0
     ambiente: Mapping[str, str] | None = None
+    dispositivo: int | str | None = None
+    _saida: object | None = field(default=None, repr=False)
 
     def abrir(self) -> None:
+        from jarvis.audio_io.dispositivo import ReproducaoNoDispositivo
+
         proibir_dispositivo_em_ci(self.ambiente)
-        raise DispositivoIndisponivel(
-            "backend de playback real não implementado neste cartão (F1-01): entra com o "
-            "alto-falante do dono (F1-10/F1-16). Use memoria ou arquivo."
+        saida = ReproducaoNoDispositivo(
+            taxa=self.taxa, dispositivo=self.dispositivo, ambiente=self.ambiente
         )
+        saida.abrir()
+        self.device_id = saida.device_id
+        self._saida = saida
+
+    def _aberto(self) -> object:
+        from jarvis.audio_io.dispositivo import ReproducaoNoDispositivo
+
+        if not isinstance(self._saida, ReproducaoNoDispositivo):
+            raise DispositivoIndisponivel("sumidouro de dispositivo não foi aberto")
+        return self._saida
 
     def escrever(self, amostras: bytes) -> int:
-        raise DispositivoIndisponivel("sumidouro de dispositivo não foi aberto")
+        from jarvis.audio_io.dispositivo import ReproducaoNoDispositivo
+
+        saida = self._aberto()
+        assert isinstance(saida, ReproducaoNoDispositivo)
+        consumidas = saida.escrever(amostras)
+        self.amostras_consumidas = saida.amostras_consumidas
+        return consumidas
 
     def limpar(self) -> int:
+        from jarvis.audio_io.dispositivo import ReproducaoNoDispositivo
+
+        if isinstance(self._saida, ReproducaoNoDispositivo):
+            return self._saida.limpar()
         return 0
 
     def fechar(self) -> None:
-        return None
+        from jarvis.audio_io.dispositivo import ReproducaoNoDispositivo
+
+        if isinstance(self._saida, ReproducaoNoDispositivo):
+            self._saida.fechar()
+        self._saida = None

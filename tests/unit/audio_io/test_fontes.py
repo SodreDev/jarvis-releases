@@ -110,15 +110,26 @@ def test_dispositivo_real_e_proibido_quando_ci_esta_ligado() -> None:
         fonte.abrir()
 
 
-def test_fora_do_ci_o_dispositivo_recusa_por_falta_de_backend_declarada(
+def test_fora_do_ci_a_recusa_do_dispositivo_diz_o_que_falta_na_maquina(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Sem CI, a recusa muda de motivo: não há backend real neste cartão (declarado)."""
+    """Sem CI, a recusa deixou de ser "não existe backend" e passou a ser sobre a máquina.
+
+    Desde que `jarvis.audio_io.dispositivo` existe (sounddevice/PortAudio), a tentativa é de
+    verdade: nesta máquina falta o PortAudio, no CI do dono pode faltar o extra, e com placa
+    de som não falta nada. Em qualquer um dos casos, a frase diz **o que fazer** — é isso que
+    o teste cobra, não o motivo específico desta máquina.
+    """
     monkeypatch.delenv(VARIAVEL_CI, raising=False)
     fonte = FonteDeDispositivo(relogio=RelogioFalso())
 
-    with pytest.raises(DispositivoIndisponivel, match="F1-01"):
+    with pytest.raises(DispositivoIndisponivel) as erro:
         fonte.abrir()
+    mensagem = str(erro.value)
+    assert any(
+        pista in mensagem
+        for pista in ("uv sync --group dispositivo", "install portaudio", "--diagnostico")
+    ), mensagem
 
 
 def test_sumidouro_de_arquivo_grava_wav_que_a_fonte_de_arquivo_le(tmp_path: Path) -> None:

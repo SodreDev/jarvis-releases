@@ -137,29 +137,49 @@ class FonteSintetica:
 
 @dataclass(slots=True)
 class FonteDeDispositivo:
-    """Captura real. Só fora do CI, e hoje só existe como adaptador declarado.
+    """Captura real, pelo backend de `jarvis.audio_io.dispositivo` (sounddevice/PortAudio).
 
-    **Não verificado:** nenhum dispositivo real foi aberto por este código. O backend real
-    (PipeWire/WASAPI por meio de uma biblioteca permissiva) entra com o microfone do dono,
-    nos cartões F1-13 e F1-16. Até lá, `abrir` recusa com motivo em vez de devolver silêncio
-    e fingir que capturou.
+    **Não verificado:** nenhum dispositivo real foi aberto **nesta máquina** — não há placa de
+    som aqui, e o PortAudio nem está instalado. O código existe, tem a recusa separada por
+    motivo (extra ausente × biblioteca do sistema ausente) e só o microfone do dono fecha o
+    caminho (F1-16). Até lá, "funciona" é afirmação dele, não nossa.
+
+    A ponte é fina de propósito: o que o `audio-io` conhece continua sendo `FonteDeAudio`, e
+    quem abre a placa é um módulo que só existe com o extra instalado.
     """
 
     relogio: Relogio
     device_id: str = "dispositivo:padrao"
     taxa: int = TAXA_PADRAO
     ambiente: Mapping[str, str] | None = None
+    dispositivo: int | str | None = None
+    """Índice ou nome, como o `--diagnostico` lista. `None` = o padrão do sistema."""
+    _captura: object | None = field(default=None, repr=False)
 
     def abrir(self) -> None:
+        from jarvis.audio_io.dispositivo import CapturaDoDispositivo
+
         proibir_dispositivo_em_ci(self.ambiente)
-        raise DispositivoIndisponivel(
-            "backend de captura real não implementado neste cartão (F1-01): a captura de "
-            "dispositivo entra com o hardware do dono (F1-13/F1-16). Use arquivo ou sintetico."
+        captura = CapturaDoDispositivo(
+            relogio=self.relogio,
+            taxa=self.taxa,
+            dispositivo=self.dispositivo,
+            ambiente=self.ambiente,
         )
+        captura.abrir()
+        self.device_id = captura.device_id
+        self._captura = captura
 
     def quadros(self) -> Iterator[Quadro]:
-        """Nunca entrega quadro: `abrir` recusa antes de chegar aqui."""
-        raise DispositivoIndisponivel("fonte de dispositivo não foi aberta")
+        from jarvis.audio_io.dispositivo import CapturaDoDispositivo
+
+        if not isinstance(self._captura, CapturaDoDispositivo):
+            raise DispositivoIndisponivel("fonte de dispositivo não foi aberta")
+        yield from self._captura.quadros()
 
     def fechar(self) -> None:
-        return None
+        from jarvis.audio_io.dispositivo import CapturaDoDispositivo
+
+        if isinstance(self._captura, CapturaDoDispositivo):
+            self._captura.fechar()
+        self._captura = None
