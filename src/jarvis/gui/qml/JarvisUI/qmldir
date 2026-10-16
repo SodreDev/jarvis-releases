@@ -1,0 +1,20 @@
+module JarvisUI
+singleton Tema 1.0 Tema.qml
+Rotulo 1.0 Rotulo.qml
+Moldura 1.0 Moldura.qml
+Hud 1.0 Hud.qml
+Modulo 1.0 Modulo.qml
+BarraLateral 1.0 BarraLateral.qml
+BarraDeConversa 1.0 BarraDeConversa.qml
+Pendencias 1.0 Pendencias.qml
+Indicadores 1.0 Indicadores.qml
+Botao 1.0 Botao.qml
+VistaLista 1.0 VistaLista.qml
+VistaTexto 1.0 VistaTexto.qml
+VistaItens 1.0 VistaItens.qml
+VistaConsole 1.0 VistaConsole.qml
+VistaTarefas 1.0 VistaTarefas.qml
+VistaMedidores 1.0 VistaMedidores.qml
+VistaConversa 1.0 VistaConversa.qml
+VistaConfiguracao 1.0 VistaConfiguracao.qml
+VistaDiagnostico 1.0 VistaDiagnostico.qml

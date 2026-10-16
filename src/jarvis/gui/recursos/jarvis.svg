@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ícone do Jarvis (ADR-0019): o mesmo orbe que a janela mostra como estado.
+     Desenhado para ler bem a 24 px: um núcleo, um anel e dois arcos de som. Sem texto,
+     porque texto some no tamanho de bandeja. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <radialGradient id="nucleo" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#9fe8ff"/>
+      <stop offset="45%" stop-color="#2fa8e0"/>
+      <stop offset="100%" stop-color="#11557f"/>
+    </radialGradient>
+    <linearGradient id="anel" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6fd6ff"/>
+      <stop offset="55%" stop-color="#2b8fc4"/>
+      <stop offset="100%" stop-color="#0d3f61"/>
+    </linearGradient>
+    <linearGradient id="fundo" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#132234"/>
+      <stop offset="100%" stop-color="#070d16"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#fundo)"/>
+
+  <!-- arcos de som: dois à esquerda, dois à direita, como uma voz saindo do orbe -->
+  <g fill="none" stroke="#49b7e8" stroke-linecap="round" opacity="0.75">
+    <path d="M70 94 A 54 54 0 0 0 70 162" stroke-width="9"/>
+    <path d="M44 76 A 86 86 0 0 0 44 180" stroke-width="7" opacity="0.5"/>
+    <path d="M186 94 A 54 54 0 0 1 186 162" stroke-width="9"/>
+    <path d="M212 76 A 86 86 0 0 1 212 180" stroke-width="7" opacity="0.5"/>
+  </g>
+
+  <circle cx="128" cy="128" r="62" fill="none" stroke="url(#anel)" stroke-width="10"/>
+  <circle cx="128" cy="128" r="44" fill="url(#nucleo)"/>
+  <ellipse cx="112" cy="110" rx="17" ry="12" fill="#ffffff" opacity="0.35"/>
+</svg>

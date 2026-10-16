@@ -81,7 +81,9 @@ dispositivo = [
 ]
 
 [project.scripts]
-# O aplicativo de teste do dono (ADR-0017, ADR-0018): `uv run jarvis-voz`.
+# A janela (ADR-0019): `uv run jarvis`. É o que o ícone e o menu de aplicativos abrem.
+jarvis = "jarvis.gui.principal:main"
+# O aplicativo de teste do dono no terminal (ADR-0017, ADR-0018): `uv run jarvis-voz`.
 jarvis-voz = "jarvis.voz.cli:main"
 
 [build-system]

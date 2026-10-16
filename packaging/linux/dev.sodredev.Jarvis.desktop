@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Jarvis
+GenericName=Assistente de voz
+GenericName[pt_BR]=Assistente de voz
+Comment=Fale com o Jarvis: voz local, nuvem desligada por padrão
+Comment[pt_BR]=Fale com o Jarvis: voz local, nuvem desligada por padrão
+Exec=jarvis %U
+TryExec=jarvis
+Icon=dev.sodredev.Jarvis
+Terminal=false
+Categories=Utility;Audio;
+Keywords=assistente;voz;jarvis;
+Keywords[pt_BR]=assistente;voz;jarvis;
+StartupNotify=true
+StartupWMClass=dev.sodredev.Jarvis

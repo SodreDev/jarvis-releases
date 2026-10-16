@@ -1,0 +1,89 @@
+import QtQuick
+import JarvisUI
+
+// A conversa, compacta, na base da tela: campo de texto e microfone. Nada de caixa de chat.
+Item {
+    id: barra
+    property bool conversaViva: false
+    property string estado: "parado"
+    property var microfone: ({})
+    signal enviou(string texto)
+    signal segurou()
+    signal soltou()
+    signal parou()
+    signal comecou()
+
+    implicitHeight: 54
+
+    Rectangle {
+        anchors.fill: parent
+        color: Tema.fundoModulo
+        opacity: 0.97
+        radius: Tema.raioModulo
+        border.width: 1
+        border.color: campo.activeFocus ? Tema.cianoFraco : Tema.linha
+        Behavior on border.color { ColorAnimation { duration: 140 } }
+    }
+
+    Rectangle {
+        id: marcaDoMicrofone
+        anchors.left: parent.left
+        anchors.leftMargin: 18
+        anchors.verticalCenter: parent.verticalCenter
+        width: 6; height: 6; radius: 3
+        color: barra.microfone.aberta ? Tema.ciano : Tema.linhaForte
+        SequentialAnimation on opacity {
+            running: barra.microfone.aberta === true
+            loops: Animation.Infinite
+            NumberAnimation { from: 1; to: 0.35; duration: 900 }
+            NumberAnimation { from: 0.35; to: 1; duration: 900 }
+        }
+    }
+
+    TextInput {
+        id: campo
+        anchors.left: marcaDoMicrofone.right
+        anchors.leftMargin: 16
+        anchors.right: acoes.left
+        anchors.rightMargin: 16
+        anchors.verticalCenter: parent.verticalCenter
+        color: Tema.texto
+        font.pixelSize: Tema.tamanhoTexto
+        selectByMouse: true
+        clip: true
+        onAccepted: {
+            if (text.trim() !== "") {
+                barra.enviou(text)
+                text = ""
+            }
+        }
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: barra.conversaViva ? "segure a barra de espaço para falar, ou escreva aqui"
+                                     : "escreva para começar — ou aperte “falar”"
+            color: Tema.textoFraco
+            font.pixelSize: Tema.tamanhoTexto - 1
+            visible: campo.text === ""
+            renderType: Text.NativeRendering
+        }
+    }
+
+    Row {
+        id: acoes
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 10
+
+        Botao {
+            texto: barra.estado === "falando" ? "interromper" : "falar"
+            ativo: barra.microfone.aberta === true && barra.estado === "ouvindo"
+            onApertado: { if (!barra.conversaViva) barra.comecou(); barra.segurou() }
+            onSolto: barra.soltou()
+        }
+        Botao {
+            texto: barra.conversaViva ? "encerrar" : "começar"
+            onApertado: barra.conversaViva ? barra.parou() : barra.comecou()
+        }
+    }
+}
