@@ -48,6 +48,10 @@ CAMPOS_DE_NUVEM: Final[tuple[str, ...]] = (
 CAMPOS_DE_PROCEDENCIA: Final[tuple[str, ...]] = ("fonte", "data_de_acesso")
 """Vale para **todo** motor: fato sem fonte e sem data não é fato (ADR-0012)."""
 
+CAMPOS_DOS_MODELOS: Final[tuple[str, ...]] = ("fonte_dos_modelos", "data_dos_modelos")
+"""Motor com lista de modelos tem de dizer onde a lista foi lida e quando — a lista muda
+mais depressa que o contrato (modelo novo, modelo aposentado)."""
+
 
 def _ou_desconhecido(valor: str) -> str:
     """Campo vazio vira "não verificado" na frase, nunca um espaço em branco.
@@ -91,6 +95,12 @@ class Motor:
     fonte_retencao: str = ""
     data_de_acesso: str = ""
     nota: str = ""
+    modelos: tuple[str, ...] = ()
+    """Os modelos que o dono pode escolher **dentro** deste motor, além de `modelo` (o
+    padrão). Vazio = o motor tem um modelo só. Cada um foi conferido na página oficial do
+    serviço (`fonte_dos_modelos`, `data_dos_modelos`): modelo que não está aqui não roda."""
+    fonte_dos_modelos: str = ""
+    data_dos_modelos: str = ""
 
     @property
     def categoria_da_licenca(self) -> Categoria:
@@ -104,7 +114,14 @@ class Motor:
     def campos_vazios(self) -> tuple[str, ...]:
         """Campos obrigatórios que ninguém preencheu. Para nuvem, qualquer um deles barra."""
         obrigatorios = CAMPOS_DE_PROCEDENCIA + (CAMPOS_DE_NUVEM if self.na_nuvem else ())
+        if self.modelos:
+            obrigatorios += CAMPOS_DOS_MODELOS
         return tuple(campo for campo in obrigatorios if not str(getattr(self, campo)).strip())
+
+    @property
+    def modelos_permitidos(self) -> tuple[str, ...]:
+        """O padrão primeiro, depois os outros do registro, sem repetir."""
+        return tuple(dict.fromkeys((self.modelo, *self.modelos)))
 
     @property
     def marca_o_audio(self) -> bool:
@@ -160,6 +177,7 @@ def _motor_de_dict(bruto: dict[str, Any]) -> Motor:
     dados: dict[str, Any] = {chave: valor for chave, valor in bruto.items() if chave in conhecidos}
     dados["onde"] = Onde(str(bruto.get("onde", Onde.LOCAL)))
     dados["ligado"] = bool(bruto.get("ligado", False))
+    dados["modelos"] = tuple(str(m) for m in bruto.get("modelos", ()))
     return Motor(**dados)
 
 
@@ -242,6 +260,23 @@ def exigir_motor(
             "(ADR-0017, política 1 e 2; SPEC §5.5/P12)"
         )
     return motor
+
+
+def exigir_modelo(motor: Motor, modelo: str) -> str:
+    """O modelo que vai na chamada: o pedido, se o registro o lista; o padrão, se vazio.
+
+    Modelo fora da lista **recusa**, como motor fora do registro: o nome do modelo vai para o
+    serviço de outra empresa, e um nome que ninguém conferiu na página dela pode ser um
+    modelo aposentado, de outra API ou de outro idioma.
+    """
+    if not modelo:
+        return motor.modelo
+    if modelo not in motor.modelos_permitidos:
+        raise MotorRecusado(
+            f"o modelo {modelo!r} não está registrado para {motor.id!r}. Registrados: "
+            f"{', '.join(motor.modelos_permitidos)} (conferidos em {motor.data_dos_modelos or '?'})"
+        )
+    return modelo
 
 
 @dataclass(frozen=True, slots=True)

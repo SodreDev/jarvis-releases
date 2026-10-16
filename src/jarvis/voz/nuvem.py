@@ -180,7 +180,7 @@ def _ler_cancelavel(
 
 @dataclass(slots=True)
 class ClienteHttp:
-    """Um POST com prazo nosso, cabeçalho com a chave e corpo cancelável.
+    """Um POST (ou GET de catálogo) com prazo nosso, cabeçalho com a chave e corpo cancelável.
 
     Não guarda a `Chave`: recebe por chamada. É o que mantém o segredo com tempo de vida curto
     e fora do `repr` de qualquer objeto de longa duração.
@@ -211,6 +211,56 @@ class ClienteHttp:
         prazo_s: float | None = None,
     ) -> Resposta:
         """POST em `base + caminho`. Devolve `Resposta`, ou levanta `ErroDoServico`."""
+        return self._pedir(
+            "POST",
+            caminho,
+            corpo=corpo,
+            tipo_do_corpo=tipo_do_corpo,
+            chave=chave,
+            cabecalho_da_chave=cabecalho_da_chave,
+            prefixo_da_chave=prefixo_da_chave,
+            cabecalhos=cabecalhos,
+            cancelado=cancelado,
+            prazo_s=prazo_s,
+        )
+
+    def obter(
+        self,
+        caminho: str,
+        *,
+        chave: Chave,
+        cabecalho_da_chave: str = "Authorization",
+        prefixo_da_chave: str = "Bearer ",
+        prazo_s: float | None = None,
+    ) -> Resposta:
+        """GET em `base + caminho` — consulta de catálogo (vozes), nunca dado do dono."""
+        return self._pedir(
+            "GET",
+            caminho,
+            corpo=None,
+            tipo_do_corpo="",
+            chave=chave,
+            cabecalho_da_chave=cabecalho_da_chave,
+            prefixo_da_chave=prefixo_da_chave,
+            cabecalhos=None,
+            cancelado=nunca_cancelado,
+            prazo_s=prazo_s,
+        )
+
+    def _pedir(
+        self,
+        metodo: str,
+        caminho: str,
+        *,
+        corpo: bytes | None,
+        tipo_do_corpo: str,
+        chave: Chave,
+        cabecalho_da_chave: str,
+        prefixo_da_chave: str,
+        cabecalhos: Mapping[str, str] | None,
+        cancelado: Cancelado,
+        prazo_s: float | None,
+    ) -> Resposta:
         if cancelado():
             # Antes do socket: epoch morto não paga requisição (regra 6 da §3.3).
             self.nao_enviadas_por_cancelamento += 1
@@ -219,12 +269,13 @@ class ClienteHttp:
         pedido = urllib.request.Request(  # noqa: S310 — esquema conferido abaixo
             url=self.base.rstrip("/") + caminho,
             data=corpo,
-            method="POST",
+            method=metodo,
         )
         if pedido.type not in {"http", "https"}:
             raise ErroDoServico(f"esquema {pedido.type!r} não é http(s)")
-        pedido.add_header("Content-Type", tipo_do_corpo)
-        pedido.add_header("Content-Length", str(len(corpo)))
+        if corpo is not None:
+            pedido.add_header("Content-Type", tipo_do_corpo)
+            pedido.add_header("Content-Length", str(len(corpo)))
         # A chave vai **no cabeçalho**: nunca na URL (fica em log de proxy), nunca no corpo.
         pedido.add_header(cabecalho_da_chave, f"{prefixo_da_chave}{chave.usar()}")
         for nome, valor in (cabecalhos or {}).items():

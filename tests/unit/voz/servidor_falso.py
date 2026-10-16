@@ -72,6 +72,8 @@ class Roteiro:
     pausa_s: float = 0.0
     atraso_antes_do_cabecalho_s: float = 0.0
     """Atraso antes de responder: é assim que se estoura o prazo nosso sem depender da rede."""
+    paginas: list[bytes] = field(default_factory=list)
+    """Respostas de GET em ordem (catálogo paginado). Vazia = o `corpo` de sempre."""
 
 
 @dataclass
@@ -122,6 +124,22 @@ class ServicoFalso:
                         return
                     if roteiro.pausa_s:
                         time.sleep(roteiro.pausa_s)
+
+            def do_GET(self) -> None:  # consulta de catálogo (vozes da conta)
+                dono.pedidos.append(
+                    Pedido(
+                        caminho=self.path,
+                        cabecalhos={chave: valor for chave, valor in self.headers.items()},
+                        corpo=b"",
+                    )
+                )
+                roteiro = dono.roteiro
+                corpo = roteiro.paginas.pop(0) if roteiro.paginas else roteiro.corpo
+                self.send_response(roteiro.status)
+                self.send_header("Content-Type", roteiro.tipo)
+                self.send_header("Content-Length", str(len(corpo)))
+                self.end_headers()
+                self.wfile.write(corpo)
 
             def log_message(self, formato: str, *args: object) -> None:
                 """Silêncio: o log do `http.server` escreveria o pedido no stderr do teste —

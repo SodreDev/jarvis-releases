@@ -58,6 +58,12 @@ nota = """Oráculo do rótulo (F1-06): existe para o CI exercitar o encanamento 
 modelo. WER de oráculo é zero por construção e nenhum relatório pode publicá-lo como WER."""
 
 # --- ASR de nuvem (desligado até o dono ligar) ----------------------------------------
+#
+# Um motor por modelo da Groq, porque o preço é por modelo e o aviso do dono leva o preço.
+# Lista conferida em 2026-10-16 (modelos): https://console.groq.com/docs/speech-to-text e
+# https://console.groq.com/docs/models listam como ASR **só** `whisper-large-v3` e
+# `whisper-large-v3-turbo` (nenhum ASR em prévia). O `distil-whisper-large-v3-en` foi
+# desligado em 2025-08-23 (https://console.groq.com/docs/deprecations) e era só inglês.
 
 [[motor]]
 id = "asr-groq-whisper-large-v3-turbo"
@@ -188,6 +194,18 @@ fonte = "https://elevenlabs.io/terms-of-use"
 fonte_tecnica = "https://elevenlabs.io/docs/api-reference/text-to-speech/convert"
 fonte_retencao = "https://elevenlabs.io/docs/eleven-api/resources/zero-retention-mode"
 data_de_acesso = "2026-10-15"
+modelos = ["eleven_flash_v2_5", "eleven_v3"]
+fonte_dos_modelos = "https://elevenlabs.io/docs/models"
+data_dos_modelos = "2026-10-16"
+nota_dos_modelos = """Só entram modelos que a página de modelos dá com português E pelo \
+endpoint de Text to Speech que este motor usa: `eleven_multilingual_v2` (padrão, \
+"Portuguese (Brazil, Portugal)"), `eleven_flash_v2_5` (~75 ms, "real-time applications") e \
+`eleven_v3` ("can also be used with the Text to Speech API", geração anterior). Fora, com \
+o motivo: `eleven_v4` e `eleven_v4_turbo` (a página os dá pela Text to Dialogue API / \
+WebSocket, não pelo endpoint deste motor), `eleven_v3_conversational` (Text to Dialogue \
+WebSocket), `eleven_turbo_v2_5` e `eleven_turbo_v2` (deprecated), `eleven_flash_v2` (só \
+inglês), `eleven_multilingual_v1` (só na tabela de limites, sem idioma documentado). Mesmo \
+serviço e mesmos termos para todos: trocar de modelo não muda o que sai nem para onde."""
 nota = """Termos \"Last Updated: 09 October 2026\". O produto pede `output_format=pcm_16000`, \
 que casa com o contrato de 16 kHz PCM16 mono do caminho de áudio sem reamostrar. A retenção \
 declarada é o campo que o dono precisa ler **antes** de ligar: no plano dele, o texto falado \

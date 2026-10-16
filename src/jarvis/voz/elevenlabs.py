@@ -21,6 +21,8 @@ non-commercial purposes"*).
 from __future__ import annotations
 
 import json
+import re
+import urllib.parse
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,10 +30,10 @@ from typing import Final
 
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
 from jarvis.rede import AdaptadorRemoto, Sonda, SondaInjetada
-from jarvis.voz.chaves import Chave
+from jarvis.voz.chaves import VARIAVEL_ELEVENLABS, Chave
 from jarvis.voz.interface import Cancelado, Onde, nunca_cancelado
 from jarvis.voz.nuvem import ClienteHttp, ServicoRecusou, proibir_nuvem_real_em_ci
-from jarvis.voz.registro import Motor, MotorRecusado, exigir_motor
+from jarvis.voz.registro import Motor, MotorRecusado, exigir_modelo, exigir_motor
 
 BASE_PADRAO: Final = "https://api.elevenlabs.io"
 CAMINHO_FALA: Final = "/v1/text-to-speech"
@@ -42,6 +44,14 @@ CABECALHO_DA_CHAVE: Final = "xi-api-key"
 PRAZO_PADRAO_S: Final = 10.0
 SERVICO: Final = "ElevenLabs"
 REGISTRADO: Final = "tts-elevenlabs"
+CAMINHO_VOZES: Final = "/v2/voices"
+"""Lista as vozes da conta (https://elevenlabs.io/docs/api-reference/voices/search, lida em
+2026-10-16): `page_size` até 100, paginação por `has_more` + `next_page_token`."""
+VOZES_POR_PAGINA: Final = 100
+PAGINAS_NO_MAXIMO: Final = 5
+"""Teto nosso: 500 vozes é mais do que uma conta pessoal tem, e consulta sem teto é laço na
+mão de um terceiro."""
+FORMA_DO_ID: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 @dataclass(slots=True)
@@ -89,6 +99,12 @@ class MotorTtsElevenLabs:
                 "vem da configuração dele. Nenhum padrão é inventado aqui — voz é escolha de "
                 "ouvido, e a conta é dele"
             )
+        if not FORMA_DO_ID.fullmatch(self.voz):
+            raise MotorRecusado(
+                f"voz {self.voz!r} não tem a forma de um voice_id da ElevenLabs (letras, "
+                "números, _ e -): ele vai no caminho da URL"
+            )
+        self.modelo = exigir_modelo(motor, self.modelo)
         proibir_nuvem_real_em_ci(self.base, self.ambiente)
         self._chave = Chave.do_ambiente(motor.variavel_da_chave, ambiente=self.ambiente)
         self._cliente = ClienteHttp(base=self.base, prazo_s=self.prazo_s, ambiente=self.ambiente)
@@ -168,3 +184,86 @@ def _amostras_de(corpo: bytes) -> bytes:
             f"bytes por amostra): confira o `output_format={FORMATO}` e o plano da conta"
         )
     return corpo
+
+
+@dataclass(frozen=True, slots=True)
+class VozDaConta:
+    """Uma voz que a conta do dono enxerga. Dado de catálogo: nada aqui é segredo."""
+
+    id: str
+    nome: str
+    categoria: str = ""
+    idiomas: tuple[str, ...] = ()
+
+    @property
+    def fala_portugues(self) -> bool:
+        return any(idioma.lower().startswith("pt") for idioma in self.idiomas)
+
+    def para_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "nome": self.nome,
+            "categoria": self.categoria,
+            "idiomas": list(self.idiomas),
+            "portugues": self.fala_portugues,
+        }
+
+
+def listar_vozes(
+    *,
+    ambiente: Mapping[str, str] | None = None,
+    base: str = BASE_PADRAO,
+    prazo_s: float = PRAZO_PADRAO_S,
+    cliente: ClienteHttp | None = None,
+) -> tuple[VozDaConta, ...]:
+    """As vozes da conta do dono, as de português primeiro.
+
+    Só o dono dispara isto (botão ou tela de configuração): é uma consulta de catálogo com a
+    chave dele no cabeçalho — **nenhum texto ou áudio dele sai** —, e por isso não depende do
+    interruptor da nuvem. A chave vem do mesmo caminho do motor (`Chave.do_ambiente`, que a
+    janela alimenta com o chaveiro); a resposta não carrega chave e o erro passa por `redigir`.
+    """
+    proibir_nuvem_real_em_ci(base, ambiente)
+    chave = Chave.do_ambiente(VARIAVEL_ELEVENLABS, ambiente=ambiente)
+    http = cliente or ClienteHttp(base=base, prazo_s=prazo_s, ambiente=ambiente)
+    vozes: list[VozDaConta] = []
+    ficha = ""
+    for _ in range(PAGINAS_NO_MAXIMO):
+        consulta = f"?page_size={VOZES_POR_PAGINA}&include_total_count=false"
+        if ficha:
+            consulta += f"&next_page_token={urllib.parse.quote(ficha, safe='')}"
+        resposta = http.obter(
+            f"{CAMINHO_VOZES}{consulta}",
+            chave=chave,
+            cabecalho_da_chave=CABECALHO_DA_CHAVE,
+            prefixo_da_chave="",
+        )
+        dados = resposta.json()
+        vozes += [v for v in map(_voz_de, dados.get("voices") or []) if v is not None]
+        ficha = str(dados.get("next_page_token") or "")
+        if not dados.get("has_more") or not ficha:
+            break
+    unicas = {voz.id: voz for voz in vozes}
+    return tuple(sorted(unicas.values(), key=lambda v: (not v.fala_portugues, v.nome.lower())))
+
+
+def _voz_de(bruta: object) -> VozDaConta | None:
+    """Uma voz da resposta, ou `None` se ela não serve para ir no caminho da URL."""
+    if not isinstance(bruta, dict):
+        return None
+    identificador = str(bruta.get("voice_id", ""))
+    if not FORMA_DO_ID.fullmatch(identificador):
+        return None
+    idiomas: list[str] = []
+    for verificado in bruta.get("verified_languages") or []:
+        if isinstance(verificado, dict) and verificado.get("language"):
+            idiomas.append(str(verificado["language"]))
+    rotulos = bruta.get("labels")
+    if isinstance(rotulos, dict) and rotulos.get("language"):
+        idiomas.append(str(rotulos["language"]))
+    return VozDaConta(
+        id=identificador,
+        nome=str(bruta.get("name") or identificador)[:80],
+        categoria=str(bruta.get("category") or ""),
+        idiomas=tuple(dict.fromkeys(idiomas)),
+    )
