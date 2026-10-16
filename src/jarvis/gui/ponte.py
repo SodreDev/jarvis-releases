@@ -18,6 +18,7 @@ Duas coisas importam na implementação, e as duas são sobre thread:
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -43,17 +44,21 @@ from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
 from jarvis.gui.nucleo import SessaoDeVoz
 from jarvis.gui.workspace import Workspace
 from jarvis.rede import ErroDeRede
+from jarvis.ui.atalhos import AtalhoIndisponivel
+from jarvis.ui.portal import AtalhoPortal, portal_disponivel
 from jarvis.voz import aferir
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.chaves import VARIAVEIS
 from jarvis.voz.cli import diagnosticar
 from jarvis.voz.config import Configuracao, caminho_padrao, escrever, ler, validar
+from jarvis.voz.escuta import CombinacaoInvalida, Escuta, exigir_combinacao, modo_de
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import Onde
 from jarvis.voz.modelos import ModeloRecusado, baixar, descarga_da_voz
 from jarvis.voz.nuvem import ServicoRecusou
+from jarvis.voz.palavra import PalavraInvalida, exigir_limiar
 from jarvis.voz.provedores import provedores, vozes_da_elevenlabs
-from jarvis.voz.registro import motores_de
+from jarvis.voz.registro import motor_registrado, motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
 PAPEIS: Final = ("asr", "tts")
@@ -168,6 +173,9 @@ class Ponte(QObject):
     conversaMudou = Signal()
     diagnosticoMudou = Signal()
     vozesMudaram = Signal()
+    escutaMudou = Signal()
+    dedoGlobal = Signal(bool)
+    """Apertar/soltar do atalho global. Vem da thread do portal; o Qt entrega na da janela."""
 
     def __init__(
         self,
@@ -190,6 +198,20 @@ class Ponte(QObject):
         """Um laço já montado (teste, medição). `None` monta um na hora de conversar."""
         self._espaco = Workspace()
         self._espaco.ao_mudar = self._publicar
+        # O modo de escuta vivo (ADR-0021): o mesmo objeto para o laço, para o gerente (que
+        # julga o `definirModoDeEscuta` do modelo) e para a tela.
+        self._escuta = Escuta.de(
+            self._configuracao.escuta,
+            palavra=self._configuracao.palavra,
+            limiar=self._configuracao.limiar_palavra,
+            atalho=self._configuracao.atalho,
+        )
+        self._escuta.ao_mudar = self._escuta_mudou
+        self._espaco.escuta = self._escuta
+        self._espaco.asr_na_nuvem = self._asr_na_nuvem
+        self._portal: AtalhoPortal | None = None
+        self._portal_ok, self._portal_frase = portal_disponivel(ambiente=self._ambiente_base)
+        self.dedoGlobal.connect(self._aplicar_dedo)
         self._modelo = ModeloDeModulos(self)
         self._sessao: SessaoDeVoz | None = None
         self._estado = Estado.PARADO
@@ -250,10 +272,20 @@ class Ponte(QObject):
 
     @Property(dict, notify=conversaMudou)
     def microfone(self) -> dict[str, Any]:
+        """A fonte como ela **está** (F1-13) e, ao lado, **quando** o que ela ouve vira pedido.
+
+        As duas coisas vêm de quem as sabe: `aberta` do arquivo que o laço escreve, o modo do
+        estado vivo da escuta. "Microfone aberto" sozinho não diz ao dono se o Jarvis está
+        esperando o nome dele ou transformando tudo em pedido — e é isso que ele cobrou.
+        """
         estado = self._sessao.estado_do_microfone() if self._sessao else None
         aberta = bool(estado and estado.aberta)
         return {
             "aberta": aberta,
+            "modo": str(self._escuta.modo),
+            "modoFrase": self._escuta.modo.frase,
+            "escuta": self._escuta.frase(time.monotonic_ns()),
+            "armado": self._escuta.armado(time.monotonic_ns()),
             "amostras": int(estado.amostras) if estado else 0,
             "frase": (
                 "microfone aberto"
@@ -353,6 +385,35 @@ class Ponte(QObject):
             for papel in PAPEIS
             for motor in motores_de(papel)
         ]
+
+    def estado_da_escuta(self) -> dict[str, Any]:
+        """Modo, palavra, limiar, atalho e se ele é global — tudo do estado vivo. Método
+        normal, para quem não é QML (a captura, o teste)."""
+        dados = self._escuta.para_dict(time.monotonic_ns())
+        dados["asrNaNuvem"] = self._asr_na_nuvem()
+        return dados
+
+    @Property(dict, notify=escutaMudou)
+    def escuta(self) -> dict[str, Any]:
+        return self.estado_da_escuta()
+
+    @Property(bool, notify=escutaMudou)
+    def portalDisponivel(self) -> bool:
+        return self._portal_ok
+
+    @Property(str, notify=escutaMudou)
+    def portalFrase(self) -> str:
+        return self._portal_frase
+
+    @Property(int, notify=escutaMudou)
+    def atalhoTecla(self) -> int:
+        """A tecla da combinação, como `Qt.Key` — a janela compara no `Keys.onPressed`. 0 =
+        barra de espaço (o padrão de antes)."""
+        return self._combinacao()[0]
+
+    @Property(int, notify=escutaMudou)
+    def atalhoModificadores(self) -> int:
+        return self._combinacao()[1]
 
     @Property(list, notify=mudou)
     def provedoresAsr(self) -> list[dict[str, Any]]:
@@ -485,6 +546,7 @@ class Ponte(QObject):
             ao_linha=lambda linha: self.linhaNova.emit("jarvis", linha),
             ao_estado=self._mudar_estado,
             ao_terminar=self._fim_da_conversa,
+            escuta=self._escuta,
         )
         self._sessao.iniciar(self._aplicativo)
         self.conversaMudou.emit()
@@ -600,6 +662,88 @@ class Ponte(QObject):
             self._configuracao = self._configuracao.com(**{campo: valor})
             self._publicar()
 
+    # --- modos de ativação (ADR-0021) -----------------------------------------------------
+    @Slot(str)
+    def definirEscuta(self, modo: str) -> None:
+        """O dono troca o modo. Escolha dele, com o dedo: não passa pela política do modelo,
+        e vale no próximo tique do laço, com a conversa aberta ou não."""
+        try:
+            alvo = modo_de(modo)
+        except ValueError as erro:
+            self._aviso = str(erro)
+        else:
+            self._escuta.trocar(alvo)
+            self._configuracao = self._configuracao.com(escuta=alvo.value)
+        self._publicar()
+
+    @Slot(str, str)
+    def definirPalavra(self, palavra: str, limiar: str) -> None:
+        try:
+            valor = (
+                exigir_limiar(float(limiar.replace(",", ".")))
+                if limiar.strip()
+                else self._escuta.detector.limiar
+            )
+            self._escuta.trocar_palavra(palavra or self._escuta.detector.palavra, valor)
+        except (PalavraInvalida, ValueError) as erro:
+            self._aviso = f"palavra recusada: {erro}"
+        else:
+            detector = self._escuta.detector
+            self._configuracao = self._configuracao.com(
+                palavra=detector.palavra, limiar_palavra=detector.limiar
+            )
+            self._aviso = (
+                f"palavra de ativação: “{detector.palavra}” (limiar {detector.limiar:.2f})"
+            )
+        self._publicar()
+
+    @Slot(int, int)
+    def capturarAtalho(self, tecla: int, modificadores: int) -> None:
+        """A combinação apertada na janela vira texto do Qt e passa pela mesma validação."""
+        from PySide6.QtGui import QKeySequence
+
+        sequencia = QKeySequence(int(modificadores) | int(tecla))
+        bruto = sequencia.toString(QKeySequence.SequenceFormat.PortableText)
+        try:
+            atalho = exigir_combinacao(bruto)
+        except CombinacaoInvalida as erro:
+            self._aviso = f"atalho recusado: {erro}"
+            self._publicar()
+            return
+        self._trocar_atalho(atalho)
+
+    @Slot()
+    def limparAtalho(self) -> None:
+        self._trocar_atalho("")
+
+    @Slot()
+    def ativarAtalhoGlobal(self) -> None:
+        """Pede ao sistema o atalho global. **Abre um diálogo do compositor** — por isso só
+        roda no clique do dono, nunca sozinho, e numa thread (o diálogo espera por ele)."""
+        if self._portal is not None:
+            self._portal.fechar()
+            self._portal = None
+        combinacao = self._escuta.atalho or "Ctrl+Space"
+        self._portal_frase = "pedindo o atalho ao sistema — responda ao diálogo dele…"
+        self.escutaMudou.emit()
+
+        def trabalhar() -> None:
+            portal = AtalhoPortal(
+                combinacao=combinacao, ambiente=self._ambiente_base, ao_mudar=self.dedoGlobal.emit
+            )
+            try:
+                portal.abrir()
+            except AtalhoIndisponivel as erro:
+                self._portal_frase = f"sem atalho global ({erro}): vale só com a janela em foco"
+                self._escuta.trocar_atalho(self._escuta.atalho, global_=False)
+            else:
+                self._portal = portal
+                self._portal_frase = f"atalho global ligado pelo sistema: {portal.gatilho}"
+                self._escuta.trocar_atalho(combinacao, global_=True)
+            self.escutaMudou.emit()
+
+        threading.Thread(target=trabalhar, name="jarvis-portal-ligar", daemon=True).start()
+
     @Slot(result=str)
     def salvarConfiguracao(self) -> str:
         try:
@@ -699,6 +843,44 @@ class Ponte(QObject):
         threading.Thread(target=trabalhar, name="jarvis-voz-teste", daemon=True).start()
 
     # --- encanamento -----------------------------------------------------------------------
+    def _trocar_atalho(self, atalho: str) -> None:
+        # Combinação nova invalida o registro no sistema: o que estava ligado era a outra.
+        if self._portal is not None:
+            self._portal.fechar()
+            self._portal = None
+        self._escuta.trocar_atalho(atalho, global_=False)
+        self._configuracao = self._configuracao.com(atalho=atalho)
+        self._aviso = f"atalho: {atalho or 'barra de espaço'}"
+        self._publicar()
+
+    def _combinacao(self) -> tuple[int, int]:
+        if not self._escuta.atalho:
+            return 0, 0
+        from PySide6.QtGui import QKeySequence
+
+        sequencia = QKeySequence(self._escuta.atalho, QKeySequence.SequenceFormat.PortableText)
+        if sequencia.isEmpty():
+            return 0, 0
+        combinacao = sequencia[0]  # type: ignore[index]  # o stub não declara, o Qt tem
+        return int(combinacao.key().value), int(combinacao.keyboardModifiers().value)
+
+    def _asr_na_nuvem(self) -> bool:
+        motor = motor_registrado(self._configuracao.asr)
+        return motor is not None and motor.onde is Onde.NUVEM
+
+    def _escuta_mudou(self) -> None:
+        """Chamada de qualquer thread (o laço arma e desarma): só emite sinal."""
+        self.escutaMudou.emit()
+        self.conversaMudou.emit()
+
+    def _aplicar_dedo(self, apertado: bool) -> None:
+        if not apertado:
+            self.soltar()
+            return
+        if self._sessao is None or not self._sessao.viva:
+            self.iniciarConversa()
+        self.segurar()
+
     def _mudar_estado(self, estado: Estado) -> None:
         self._estado = estado
         self.conversaMudou.emit()

@@ -272,6 +272,25 @@ def capturar(
         destino = pasta / f"jarvis-{painel}.png"
         janela.grabWindow().save(str(destino))
         salvos.append(destino)
+        if painel == "configuracao":
+            salvos += _capturar_escutas(aplicativo, janela, ponte, pasta)
+    return salvos
+
+
+def _capturar_escutas(
+    aplicativo: QGuiApplication, janela: QQuickView, ponte: Ponte, pasta: Path
+) -> list[Path]:
+    """A caixa de escuta em cada modo (ADR-0021). O modo do dono volta no fim: só se retrata,
+    nada é gravado no arquivo dele."""
+    original = str(ponte.estado_da_escuta()["modo"])
+    salvos: list[Path] = []
+    for modo in ("ptt", "palavra", "vad"):
+        ponte.definirEscuta(modo)
+        _esperar(aplicativo, 400)
+        destino = pasta / f"jarvis-configuracao-escuta-{modo}.png"
+        janela.grabWindow().save(str(destino))
+        salvos.append(destino)
+    ponte.definirEscuta(original)
     return salvos
 
 

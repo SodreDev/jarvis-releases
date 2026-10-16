@@ -302,6 +302,7 @@ Rectangle {
             conversaViva: ponte ? ponte.conversaViva : false
             estado: ponte ? ponte.estado : "parado"
             microfone: ponte ? ponte.microfone : ({})
+            atalho: ponte ? ponte.escuta.atalho : ""
             onEnviou: function (texto) { ponte.enviarTexto(texto) }
             onSegurou: ponte.segurar()
             onSoltou: ponte.soltar()
@@ -317,7 +318,7 @@ Rectangle {
         if (evento.key === Qt.Key_B && (evento.modifiers & Qt.ControlModifier)) {
             lateral.presa = !lateral.presa
             evento.accepted = true
-        } else if (evento.key === Qt.Key_Space) {
+        } else if (ehOAtalho(evento)) {
             if (!ponte.conversaViva)
                 ponte.iniciarConversa()
             ponte.segurar()
@@ -333,8 +334,18 @@ Rectangle {
             ponte.definirModo("execucao")
         }
     }
+    // O atalho de segurar-para-falar com a janela em foco: a combinação que o dono capturou, ou
+    // a barra de espaço. Com a janela fora de foco, só o portal do sistema (ADR-0021).
+    function ehOAtalho(evento) {
+        if (!ponte || ponte.atalhoTecla === 0)
+            return evento.key === Qt.Key_Space
+        var mascara = Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier | Qt.MetaModifier
+        return evento.key === ponte.atalhoTecla
+               && (evento.modifiers & mascara) === ponte.atalhoModificadores
+    }
     Keys.onReleased: function (evento) {
-        if (!evento.isAutoRepeat && evento.key === Qt.Key_Space) {
+        var tecla = ponte && ponte.atalhoTecla !== 0 ? ponte.atalhoTecla : Qt.Key_Space
+        if (!evento.isAutoRepeat && evento.key === tecla) {
             ponte.soltar()
             evento.accepted = true
         }

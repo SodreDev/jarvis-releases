@@ -7,6 +7,7 @@ Item {
     property bool conversaViva: false
     property string estado: "parado"
     property var microfone: ({})
+    property string atalho: ""
     signal enviou(string texto)
     signal segurou()
     signal soltou()
@@ -31,7 +32,9 @@ Item {
         anchors.leftMargin: 18
         anchors.verticalCenter: parent.verticalCenter
         width: 6; height: 6; radius: 3
-        color: barra.microfone.aberta ? Tema.ciano : Tema.linhaForte
+        // Armado (ele disse só o nome) acende em âmbar: o próximo trecho já é pedido.
+        color: barra.microfone.armado ? Tema.alerta
+               : barra.microfone.aberta ? Tema.ciano : Tema.linhaForte
         SequentialAnimation on opacity {
             running: barra.microfone.aberta === true
             loops: Animation.Infinite
@@ -44,7 +47,7 @@ Item {
         id: campo
         anchors.left: marcaDoMicrofone.right
         anchors.leftMargin: 16
-        anchors.right: acoes.left
+        anchors.right: estadoDoMicrofone.left
         anchors.rightMargin: 16
         anchors.verticalCenter: parent.verticalCenter
         color: Tema.texto
@@ -59,13 +62,31 @@ Item {
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: barra.conversaViva ? "segure a barra de espaço para falar, ou escreva aqui"
-                                     : "escreva para começar — ou aperte “falar”"
+            // O que o Jarvis está esperando para ouvir, do estado vivo da escuta (ADR-0021).
+            text: !barra.conversaViva ? "escreva para começar — ou aperte “falar”"
+                  : barra.microfone.modo === "ptt"
+                    ? "segure " + (barra.atalho !== "" ? barra.atalho : "a barra de espaço")
+                      + " para falar, ou escreva aqui"
+                    : (barra.microfone.escuta || "") + " — ou escreva aqui"
             color: Tema.textoFraco
             font.pixelSize: Tema.tamanhoTexto - 1
             visible: campo.text === ""
             renderType: Text.NativeRendering
         }
+    }
+
+    // O indicador por extenso: a fonte como ela está (F1-13) e quando o que ela ouve vira
+    // pedido (ADR-0021). Sempre à vista, com ou sem conversa aberta.
+    Rotulo {
+        id: estadoDoMicrofone
+        anchors.right: acoes.left
+        anchors.rightMargin: 16
+        anchors.verticalCenter: parent.verticalCenter
+        text: (barra.microfone.frase || "microfone fechado")
+              + (barra.microfone.armado ? " · chamado: pode falar"
+                 : barra.microfone.modoFrase ? " · " + barra.microfone.modoFrase : "")
+        color: barra.microfone.armado ? Tema.alerta
+               : barra.microfone.aberta ? Tema.ciano : Tema.textoFraco
     }
 
     Row {

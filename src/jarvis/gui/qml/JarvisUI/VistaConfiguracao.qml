@@ -89,21 +89,196 @@ Item {
                 }
             }
 
+            // Quando o Jarvis sabe que é com ele (ADR-0021). Os três modos trocam com a conversa
+            // aberta; a frase de baixo diz o alcance do atalho sem prometer o que não há.
             Painel {
+                id: caixaEscuta
                 width: parent.width
                 titulo: "escuta"
-                dica: ponte && ponte.configuracao.escuta === "ptt" ? "tecla" : "voz"
-                Row {
+                dica: ponte ? ponte.escuta.modoFrase : ""
+                property string modo: ponte ? ponte.escuta.modo : "ptt"
+                Column {
+                    width: parent.width
                     spacing: 10
-                    Botao {
-                        texto: "segurar para falar"
-                        ativo: ponte && ponte.configuracao.escuta === "ptt"
-                        onApertado: ponte.definirCampo("escuta", "ptt")
+                    Flow {
+                        width: parent.width
+                        spacing: 8
+                        Botao {
+                            texto: "atalho de teclas"
+                            ativo: caixaEscuta.modo === "ptt"
+                            onApertado: ponte.definirEscuta("ptt")
+                        }
+                        Botao {
+                            texto: "palavra de ativação"
+                            ativo: caixaEscuta.modo === "palavra"
+                            onApertado: ponte.definirEscuta("palavra")
+                        }
+                        Botao {
+                            texto: "escuta contínua"
+                            ativo: caixaEscuta.modo === "vad"
+                            onApertado: ponte.definirEscuta("vad")
+                        }
                     }
-                    Botao {
-                        texto: "escuta contínua"
-                        ativo: ponte && ponte.configuracao.escuta === "vad"
-                        onApertado: ponte.definirCampo("escuta", "vad")
+                    Rotulo {
+                        width: parent.width
+                        text: ponte ? ponte.escuta.frase : ""
+                        color: Tema.texto
+                        wrapMode: Text.WordWrap
+                    }
+
+                    // --- atalho ---------------------------------------------------------
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        visible: caixaEscuta.modo === "ptt"
+                        Row {
+                            spacing: 8
+                            Rectangle {
+                                id: capturador
+                                property bool ouvindo: false
+                                width: 190
+                                height: 30
+                                color: "transparent"
+                                radius: Tema.raioModulo
+                                border.width: 1
+                                border.color: ouvindo ? Tema.ciano : Tema.linha
+                                focus: ouvindo
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: capturador.ouvindo
+                                          ? "aperte a combinação…"
+                                          : (ponte && ponte.escuta.atalho !== ""
+                                             ? ponte.escuta.atalho : "barra de espaço")
+                                    color: capturador.ouvindo ? Tema.ciano : Tema.textoForte
+                                    font.family: Tema.fonteDados
+                                    font.pixelSize: Tema.tamanhoTexto - 2
+                                    renderType: Text.NativeRendering
+                                }
+                                Keys.onPressed: function (evento) {
+                                    if (!capturador.ouvindo)
+                                        return
+                                    evento.accepted = true
+                                    if (evento.key === Qt.Key_Escape) {
+                                        capturador.ouvindo = false
+                                        return
+                                    }
+                                    // Modificador sozinho ainda não é combinação: espera a tecla.
+                                    if ([Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta,
+                                         Qt.Key_Super_L, Qt.Key_Super_R].indexOf(evento.key) >= 0)
+                                        return
+                                    ponte.capturarAtalho(evento.key, evento.modifiers)
+                                    capturador.ouvindo = false
+                                }
+                            }
+                            Botao {
+                                texto: capturador.ouvindo ? "cancelar" : "capturar"
+                                onApertado: {
+                                    capturador.ouvindo = !capturador.ouvindo
+                                    if (capturador.ouvindo)
+                                        capturador.forceActiveFocus()
+                                }
+                            }
+                            Botao {
+                                texto: "barra de espaço"
+                                visible: ponte && ponte.escuta.atalho !== ""
+                                onApertado: ponte.limparAtalho()
+                            }
+                        }
+                        Botao {
+                            texto: "usar como atalho global"
+                            visible: ponte && ponte.portalDisponivel && !ponte.escuta.atalhoGlobal
+                            onApertado: ponte.ativarAtalhoGlobal()
+                        }
+                        Rotulo {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            color: ponte && ponte.escuta.atalhoGlobal ? Tema.positivo : Tema.alerta
+                            text: !ponte ? ""
+                                  : ponte.escuta.atalhoGlobal
+                                    ? "global: vale com a janela fora de foco — " + ponte.portalFrase
+                                    : ponte.portalDisponivel
+                                      ? "por enquanto só com a janela em foco. “Usar como atalho "
+                                        + "global” pede ao sistema, que mostra um diálogo seu."
+                                      : "sem portal de atalhos nesta sessão: o atalho vale só "
+                                        + "com a janela em foco (" + ponte.portalFrase + ")"
+                        }
+                    }
+
+                    // --- palavra --------------------------------------------------------
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        visible: caixaEscuta.modo === "palavra"
+                        Row {
+                            spacing: 8
+                            Rectangle {
+                                width: 150
+                                height: 30
+                                color: "transparent"
+                                radius: Tema.raioModulo
+                                border.width: 1
+                                border.color: campoPalavra.activeFocus ? Tema.cianoFraco : Tema.linha
+                                TextInput {
+                                    id: campoPalavra
+                                    anchors.fill: parent
+                                    anchors.margins: 8
+                                    text: ponte ? ponte.escuta.palavra : "jarvis"
+                                    color: Tema.textoForte
+                                    font.family: Tema.fonteDados
+                                    font.pixelSize: Tema.tamanhoTexto - 2
+                                    clip: true
+                                }
+                            }
+                            Rectangle {
+                                width: 70
+                                height: 30
+                                color: "transparent"
+                                radius: Tema.raioModulo
+                                border.width: 1
+                                border.color: campoLimiar.activeFocus ? Tema.cianoFraco : Tema.linha
+                                TextInput {
+                                    id: campoLimiar
+                                    anchors.fill: parent
+                                    anchors.margins: 8
+                                    text: ponte ? ponte.escuta.limiar.toFixed(2) : "0.75"
+                                    color: Tema.textoForte
+                                    font.family: Tema.fonteDados
+                                    font.pixelSize: Tema.tamanhoTexto - 2
+                                    clip: true
+                                }
+                            }
+                            Botao {
+                                texto: "aplicar"
+                                onApertado: ponte.definirPalavra(campoPalavra.text, campoLimiar.text)
+                            }
+                        }
+                        Rotulo {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            text: "reconhecida no computador, sobre o que o ASR transcreve, e "
+                                  + "tolerante a pronúncias parecidas. Limiar de 0,50 a 1,0 — "
+                                  + "mais alto exige pronúncia mais fiel."
+                        }
+                        Rotulo {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            visible: ponte && ponte.escuta.asrNaNuvem
+                            color: Tema.alerta
+                            text: "com o ASR na nuvem, cada trecho que o microfone abrir sai da "
+                                  + "máquina para saber se você chamou"
+                        }
+                    }
+
+                    // --- contínua -------------------------------------------------------
+                    Rotulo {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        visible: caixaEscuta.modo === "vad"
+                        color: ponte && ponte.escuta.asrNaNuvem ? Tema.alerta : Tema.textoFraco
+                        text: ponte && ponte.escuta.asrNaNuvem
+                              ? "com o ASR na nuvem, cada trecho de fala sai da máquina"
+                              : "o VAD abre o trecho e o silêncio fecha; nada sai da máquina com "
+                                + "o ASR local"
                     }
                 }
             }
