@@ -16,6 +16,11 @@ Três coisas que este módulo garante, e que são aceite do cartão:
    começa. É esse mapa que deixa o histórico (F1-12) guardar **só o prefixo tocado** em vez do
    texto que foi enfileirado.
 
+**A interface do motor mora em `jarvis.voz` desde a ADR-0017** e é reexportada aqui; o motor
+passou a declarar `onde` (local) e `registrado` — o id pelo qual o portão de motores decide se
+este caminho (voz + fonemizador + runtime) pode rodar. São **duas** portas, e elas perguntam
+coisas diferentes: `exigir_motor` olha o caminho, `carregar_voz` olha a voz.
+
 **Pendência de licença do caminho de produto, declarada:** as quatro vozes pt-BR do
 `rhasspy/piper-voices` usam fonemas do **espeak-ng** (`phoneme_type: espeak`), que é GPL-3.0 —
 verificado voz por voz no cartão F1-09, incluindo a `edresson`, que não declara o campo e usa o
@@ -29,7 +34,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, Protocol, runtime_checkable
+from typing import Final
 
 from jarvis.audio_io.playback import Pedaco
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
@@ -40,6 +45,25 @@ from jarvis.licencas import (
     estado_registrado,
     licenca_registrada,
 )
+from jarvis.voz.interface import MotorDeTts, Onde
+from jarvis.voz.registro import exigir_motor
+
+__all__ = [
+    "PALAVRAS_DO_PRIMEIRO_PEDACO",
+    "PALAVRAS_POR_PEDACO",
+    "PONTUACAO_DE_CORTE",
+    "Fala",
+    "MotorDeTts",
+    "MotorParametrico",
+    "MotorPiperOnnx",
+    "SintetizadorEmStreaming",
+    "Trecho",
+    "VozRecusada",
+    "amostras_de",
+    "carregar_voz",
+    "falar_para",
+    "fatiar",
+]
 
 PALAVRAS_DO_PRIMEIRO_PEDACO: Final = 3
 """O primeiro pedaço é curto de propósito: ele é o que atrasa o SLO-5 e o que se joga fora."""
@@ -49,17 +73,6 @@ PONTUACAO_DE_CORTE: Final = (",", ";", ":", ".", "!", "?")
 
 class VozRecusada(RuntimeError):
     """A voz não carrega: não está registrada, está barrada ou a licença não é permissiva."""
-
-
-@runtime_checkable
-class MotorDeTts(Protocol):
-    """Sintetiza um trecho de texto em PCM16 16 kHz. Quem fatia é o sintetizador."""
-
-    nome: str
-    voz: str
-    licenca: str
-
-    def sintetizar(self, texto: str) -> bytes: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +274,8 @@ class MotorParametrico:
     nome: str = "parametrico@1"
     voz: str = "parametrico"
     licenca: str = "Apache-2.0"
+    onde: Onde = Onde.LOCAL
+    registrado: str = "tts-parametrico"
     ms_por_silaba: float = 95.0
     semente: int = 0
 
@@ -297,8 +312,25 @@ class MotorPiperOnnx:
     identificador_registrado: str = ""
     nome: str = "piper-onnx"
     licenca: str = ""
+    onde: Onde = Onde.LOCAL
+    registrado: str = "tts-piper-epitran"
+    """Id no `licenses/motores.toml`. O padrão é o caminho **local e permissivo** (ADR-0016,
+    opção B); a linha de base com espeak-ng é `tts-piper-espeak`, que só abre com
+    `permitir_fora_do_produto`."""
+    permitir_fora_do_produto: bool = False
+    """Só `tools/` passa `True`, e só para o motor cujo registro diz `fora_do_produto`."""
     taxa_alvo: int = TAXA_PADRAO
     ritmo: float = 1.0
+    fonemas_descartados: int = 0
+    """Quantos símbolos o fonemizador produziu e o inventário da voz não conhece.
+
+    **Isto é o achado da ADR-0017 virando número.** `sintetizar` descarta o que não está no
+    mapa — a ADR-0016 dizia que isso levantava erro, e não levantava: descartava em silêncio, e
+    foi assim que o `ʷ` do `epitran` sumiu sem ninguém notar. Trocar descarte por erro é emenda
+    da ADR-0016 e decisão do dono; **medir** não é, e `jarvis.voz.fonemizador.conferir_cobertura`
+    mede antes de sintetizar."""
+    simbolos_descartados: dict[str, int] = field(default_factory=dict)
+    """Quais símbolos, e quantas vezes cada um — para o relatório dizer o que falta mapear."""
     _sessao: object | None = field(default=None, repr=False)
     _config: dict[str, object] = field(default_factory=dict, repr=False)
 
@@ -308,6 +340,10 @@ class MotorPiperOnnx:
         import numpy as np
         import onnxruntime as ort
 
+        # Duas portas, e elas perguntam coisas diferentes: `exigir_motor` diz se **este
+        # caminho** (voz + fonemizador + runtime) pode rodar; `carregar_voz` diz se **a voz**
+        # pode entrar no produto. Um motor registrado com voz barrada continua barrado.
+        exigir_motor(self.registrado, permitir_fora_do_produto=self.permitir_fora_do_produto)
         self.licenca = carregar_voz(self.identificador_registrado or self.voz)
         config = self.caminho.with_suffix(".onnx.json")
         if not self.caminho.exists() or not config.exists():
@@ -338,6 +374,9 @@ class MotorPiperOnnx:
         for simbolo in self.fonemizar(texto):
             if simbolo in mapa:
                 ids += [*mapa[simbolo], *mapa["_"]]
+                continue
+            self.fonemas_descartados += 1
+            self.simbolos_descartados[simbolo] = self.simbolos_descartados.get(simbolo, 0) + 1
         ids += [*mapa["$"]]
         sessao = self._sessao
         assert sessao is not None

@@ -67,6 +67,11 @@ def test_ptt_abre_e_fecha_a_fonte_de_outro_processo(supervisor: Supervisor) -> N
         lambda: ler_estado(raiz).modo is Modo.PTT and not ler_estado(raiz).aberta,
         "o audio-io relatar a fonte fechada no modo PTT",
     )
+    # A primeira tela da `ui` é "ainda não recebi notícia do processo de áudio": ela nasce
+    # antes de o `audio-io` publicar estado. Esperar só pelo **arquivo de estado** não garante
+    # que a `ui` já repintou — são dois processos, e capturar a tela aqui pegava a frase
+    # inicial de vez em quando (corrida do teste, não do produto).
+    esperar(lambda: "segure" in tela(raiz).lower(), "a ui repintar com a fonte fechada")
     fechado = tela(raiz)
 
     tecla(raiz, apertada=True)

@@ -120,6 +120,10 @@ def motor_de(nome: str) -> MotorDeTts:
         fonemizar=fonemizar_com_espeak,
         voz=VOZ_PIPER,
         identificador_registrado=ID_REGISTRADO,
+        # Linha de base de medição, não caminho de produto: o registro diz
+        # `estado = "fora_do_produto"` e é `tools/` que pede a liberação, nunca `src/`.
+        registrado="tts-piper-espeak",
+        permitir_fora_do_produto=True,
     )
     motor.abrir()
     return motor

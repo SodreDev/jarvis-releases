@@ -270,3 +270,40 @@ def test_motor_e_dado_imutavel() -> None:
     motor = Motor(id="x", papel="tts", onde=Onde.LOCAL)
     with pytest.raises((AttributeError, TypeError)):
         motor.ligado = True  # type: ignore[misc]
+
+
+# --- a liberação "fora do produto" é só de `tools/` ----------------------------------------
+
+
+def test_so_fora_do_produto_e_liberado_e_so_com_o_parametro() -> None:
+    """`tools/` mede a linha de base com espeak-ng; `src/` nunca liga GPL."""
+    assert exigir_motor("tts-piper-espeak", permitir_fora_do_produto=True).estado == (
+        "fora_do_produto"
+    )
+    with pytest.raises(MotorRecusado, match="não é permissiva"):
+        exigir_motor("tts-piper-espeak")
+
+
+def test_o_parametro_nao_libera_motor_que_nao_se_declara_fora_do_produto(
+    registro: Path,
+) -> None:
+    with pytest.raises(MotorRecusado, match="não é permissiva"):
+        exigir_motor("licenca-copyleft", arquivo=registro, permitir_fora_do_produto=True)
+
+
+def test_nenhum_arquivo_de_src_pede_a_liberacao() -> None:
+    """Varredura estrutural: a decisão de rodar GPL mora em `tools/`, e só lá.
+
+    Um teste de comportamento não pegaria isto — o defeito seria um `True` escrito num
+    `dataclass` de `src/` que ninguém revisita. Por isso a prova é por varredura, como o P2
+    faz com mapa de frase para ação.
+    """
+    from pathlib import Path as Caminho
+
+    raiz = Caminho(__file__).resolve().parents[3] / "src"
+    culpados = [
+        arquivo.relative_to(raiz)
+        for arquivo in raiz.rglob("*.py")
+        if "permitir_fora_do_produto=True" in arquivo.read_text(encoding="utf-8")
+    ]
+    assert not culpados, f"`src/` pedindo liberação de GPL: {culpados}"

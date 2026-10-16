@@ -176,6 +176,7 @@ def exigir_motor(
     *,
     arquivo: Path = ARQUIVO_MOTORES,
     nuvem_ligada: Collection[str] = (),
+    permitir_fora_do_produto: bool = False,
 ) -> Motor:
     """Devolve o motor, ou recusa dizendo qual das quatro regras barrou.
 
@@ -183,6 +184,12 @@ def exigir_motor(
     entra por parâmetro, e não é lida aqui de variável de ambiente, para a origem do
     interruptor ser visível em quem chama: quem liga nuvem é a configuração do dono, lida pelo
     aplicativo, nunca uma variável que qualquer processo pode exportar.
+
+    `permitir_fora_do_produto` libera **só** motor cujo registro diz `estado =
+    "fora_do_produto"` — hoje, o piper com espeak-ng, que é linha de base de medição e não
+    caminho de produto. É a mesma assimetria do registro de ferramentas externas (a porta de
+    licença avisa em vez de bloquear quando a GPL roda fora do produto), e quem passa o
+    parâmetro é `tools/`, onde isso é permitido. `src/` nunca passa, e há teste para isso.
     """
     motor = motor_registrado(identificador, arquivo=arquivo)
     if motor is None:
@@ -191,7 +198,8 @@ def exigir_motor(
             "não roda (ADR-0012, ADR-0017)"
         )
     categoria = motor.categoria_da_licenca
-    if categoria is not Categoria.PERMISSIVA:
+    fora_do_produto = motor.estado == "fora_do_produto" and permitir_fora_do_produto
+    if categoria is not Categoria.PERMISSIVA and not fora_do_produto:
         raise MotorRecusado(
             f"motor {identificador!r} usa cliente {motor.cliente!r} com licença "
             f"{motor.licenca_do_cliente!r} ({categoria}), que não é permissiva (ADR-0011)"

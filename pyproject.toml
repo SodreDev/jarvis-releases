@@ -46,6 +46,13 @@ dev = [
   "types-jsonschema>=4.23,<5",
   "types-pyyaml>=6.0,<7",
 ]
+# Caminho de voz **local** do aplicativo (ADR-0016 opção B, ADR-0017): voz do piper lida pelo
+# onnxruntime (MIT) e fonemização pt-BR por `epitran` (MIT) — sem espeak-ng, sem GPL. NÃO entra
+# no CI: `uv sync --group voz`. O CI roda com o motor paramétrico, que não tem fonema.
+voz = [
+    "epitran>=1.35,<2",
+    "onnxruntime>=1.20,<2",
+]
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
@@ -99,11 +106,22 @@ files = ["src", "tools", "tests"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 
-# onnxruntime não publica stubs e só existe nos grupos opcionais (`medicao`, `corpus`), que
-# o CI não instala. numpy virou dependência do produto na F1-04 e traz os próprios tipos, por
-# isso saiu desta lista.
+# onnxruntime não publica stubs e só existe nos grupos opcionais (`medicao`, `corpus`, `voz`),
+# que o CI não instala. numpy virou dependência do produto na F1-04 e traz os próprios tipos,
+# por isso saiu desta lista. `epitran` e `edge_tts` entram pelo mesmo motivo: extra opcional
+# sem `py.typed`, importado dentro do método que precisa dele.
 [[tool.mypy.overrides]]
-module = ["onnxruntime", "onnxruntime.*", "faster_whisper", "faster_whisper.*"]
+module = [
+  "onnxruntime",
+  "onnxruntime.*",
+  "faster_whisper",
+  "faster_whisper.*",
+  "epitran",
+  "epitran.*",
+  "edge_tts",
+  "edge_tts.*",
+  "sounddevice",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
