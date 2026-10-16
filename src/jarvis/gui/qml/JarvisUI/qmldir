@@ -2,6 +2,7 @@ module JarvisUI
 singleton Tema 1.0 Tema.qml
 Rotulo 1.0 Rotulo.qml
 Moldura 1.0 Moldura.qml
+Painel 1.0 Painel.qml
 Hud 1.0 Hud.qml
 Modulo 1.0 Modulo.qml
 BarraLateral 1.0 BarraLateral.qml
