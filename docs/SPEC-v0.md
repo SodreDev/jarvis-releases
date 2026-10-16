@@ -80,6 +80,8 @@ Sete processos/áreas, cada um reiniciável e testável sozinho. A fronteira é 
 
 **Jev (classificador leve)** não é processo: é uma biblioteca chamada por `agentd`/`s2` (§5.2). Ele filtra, nunca autoriza.
 
+**Emenda proposta (ADR-0025, 2026-10-16; vale quando o dono aceitar a ADR).** O `s2` é **um cérebro**: um processo longo com **uma** conversa por sessão, dono dessa conversa (estado de trabalho da §3.4 + histórico no `memoryd`, ADR-0026). Os motores de conversa (CLI, API, local) são **sem estado** e trocáveis: recebem, a cada pedido, o contexto montado pelo `s2` — com o texto que **tocou**, não o que foi gerado (P4) — e devolvem texto em stream. O `s2` publica a resposta em **pedaços de fala** (`ResponseChunk`, §3.2) para o TTS do `agentd` começar a falar enquanto ainda gera, e cancela o pedido ao motor no `Cancel`. A fila de avisos (tarefa terminou, algo pede decisão) mora no `agentd`, que é quem sabe se o piso está livre. Requisitos do dono: conversa contínua, interrompível, rápida, "pensar" só quando precisa, e aviso que nunca corta fala.
+
 **Cliente MCP** também não é processo novo: é **adaptador do `executor`**, um filho isolado por servidor (§5.6). Tool de servidor MCP não vira capacidade sem promoção para manifesto nosso, e a saída é sempre `trust: third_party`. Nenhum atalho entra no barramento por fora do PDP.
 
 **D1 — linguagem/IPC: decidida (ADR-0014, aceita em 2026-10-15).** O critério era medir o p95 de captura→evento nos dois candidatos na máquina do dono, e o cartão F0-04 mediu: VAD em Rust `std` 0,0003 ms p95, em Python+ONNX 0,110 ms, e o evento no barramento (envelope, validação de borda, IPC e log encadeado) 0,384 ms — total nosso de 0,575 ms p95 em Python, **0,72% do orçamento de 80 ms do SLO-1**. A decisão é **Python 3.12 nos sete processos no v0**, com a fronteira pronta para trocar `audio-io`/`agentd` por Rust sem reescrever contrato, porque o contrato vive em `schemas/`. Lacuna explícita, aceita junto com a decisão: AEC real, ASR incremental, TTS streaming e captura de dispositivo real **não** foram medidos — e o **gatilho de reabertura** está escrito na ADR-0014: se a medição da F1 com esses componentes passar de 80 ms p95 em captura→evento (SLO-1) ou de 150 ms p95 no barge-in (SLO-2), D1 reabre sem precisar de nova autorização.
@@ -128,12 +130,22 @@ frames de PCM do `audio-io` andam por canal dedicado, com cabeçalho próprio (A
 | `StateRevision` | s2 | P2 | estado de trabalho (§3.4) |
 | `Cancel` | agentd | **P0** | `epoch_invalidado`, `reason: barge_in|stop_word|privacy|aec_fail|timeout` |
 
+**Emenda proposta (ADR-0025, 2026-10-16; vale quando o dono aceitar a ADR).** Três tipos novos; os onze acima não mudam.
+
+| Tipo | Origem | Prioridade | Payload essencial |
+|---|---|---|---|
+| `ResponseChunk` | s2 | P1 | `response_id`, `turn_id`, `epoch`, `seq`, `text`, `boundary: frase|virgula|limite`, `last`, `end_reason?: concluido|cancelado|erro|prazo`, `notif_ids?` |
+| `Notification` | tarefas/executor/mcp | P3 | `notif_id`, `origem`, `task_id?`, `tipo: concluida|falhou|precisa_decisao|evento`, `resumo_ref`; nunca emite `Cancel` |
+| `NotificationRelease` | agentd | P3 | `notif_ids`, `motivo: piso_livre|mensagem_do_dono`, `turn_id?` |
+
+Um `ResponseChunk` por **fronteira de fala**, não por token (a mesma razão de orçamento da ADR-0015). A ADR-0022 (proposta) acrescenta `TaskUpdate`.
+
 Prioridade decide **qual computação preempta qual**, nunca qual comando executar (relatório 01, §agenda de eventos).
 
 ### 3.3 Regras de epoch (obrigatórias, derivadas do relatório 01)
 
 1. `speech_started` local → `epoch := epoch + 1` e emissão imediata de `Cancel(epoch_anterior)`. Não esperar ASR, não esperar S2.
-2. `audio-io` esvazia a fila de playback no mesmo tick; `s2` cancela geração; chamadas em voo são marcadas `stale`.
+2. `audio-io` esvazia a fila de playback no mesmo tick; `s2` cancela geração; chamadas em voo são marcadas `stale`. **Emenda proposta (ADR-0025, regra 9):** "cancela geração" quer dizer parar de publicar `ResponseChunk` daquele epoch **e** cancelar o pedido ao motor em até 50 ms; a conversa guarda só o tocado.
 3. Tool **de leitura** `stale` pode terminar; o resultado só entra se `s2` reavaliar que ainda serve no epoch novo. Tool **de efeito** nunca é iniciada por especulação e carrega `idempotency_key` + expiração.
 4. O histórico registra apenas `played_ms` real (P4). Texto/áudio enfileirado e não tocado não existe para o modelo.
 5. "Continua" não ressuscita o plano antigo: o modelo decide a retomada a partir do trecho realmente tocado.
@@ -146,6 +158,8 @@ Prioridade decide **qual computação preempta qual**, nunca qual comando execut
   "incertezas": ["..."], "tarefas": [{"id":"...","estado":"Draft|Planned|AwaitingApproval|Running|Observing|Succeeded|Failed|Cancelled"}],
   "fala_ouvida": "últimos N turnos estáveis", "audio_tocado_ms": 1234, "cenario": {"nome":"trabalho","p":0.81,"ttl_s":300} }
 ```
+
+**Emenda proposta (ADR-0025, 2026-10-16; vale quando o dono aceitar a ADR):** o estado ganha `modo: rapido|pensar` (o turno começa em `rapido`) e `avisos_pendentes: [{notif_id, tipo, liberado: bool}]`; `fala_ouvida` é sempre o texto tocado.
 
 Coalescing obrigatório: 10 parciais em 200 ms substituem a hipótese, não disparam 10 raciocínios.
 
@@ -215,6 +229,8 @@ estado observável + fala estável
                                 └─ pós-condição → observação `untrusted` → auditoria
 ```
 
+**Emenda proposta (ADR-0024 emendada e ADR-0026, 2026-10-16; vale quando o dono aceitar a ADR):** as tools de leitura de memória (`memoria.buscar_historico`, `memoria.ler_mensagem`, `memoria.buscar`) entram no núcleo invariável; a seleção nunca roda em série antes do pedido ao motor; e o harness da F2 mede também o **catálogo inteiro fixo em cache**, porque mudar a lista de tools invalida o cache de prefixo do motor.
+
 Evidência de que recuperar em vez de despejar o catálogo ajuda: RAG-MCP reporta −50% de tokens e seleção de 13,62% → 43,13% (arXiv 2505.03275, relatório 04). É um paper, não garantia para desktop: vira hipótese medida em F2.
 
 ### 5.2 O que o Jev pode e não pode
@@ -239,6 +255,7 @@ Confiança baixa, mudança de cenário ou qualquer escrita/efeito externo **ampl
 | `alto_impacto` | apagar permanente, pagar, instalar, executar baixado, mudar permissão/VPN/sistema | confirmação específica por ação, **uma chamada por vez** |
 | `credencial_barreira` | trocar senha, OTP, CAPTCHA, aviso de HTTPS/paywall | entregar o controle ao usuário; nunca contornar |
 
+- **Emenda proposta (ADR-0026, 2026-10-16; vale quando o dono aceitar a ADR):** `memoria.buscar_historico`, `memoria.ler_mensagem` e `memoria.buscar` são `leitura_local`; `memoria.lembrar`, `memoria.atualizar`, `memoria.criar_no`, `memoria.criar_aresta` e `memoria.esquecer(retratar)` são `escrita_recuperavel`; `memoria.esquecer(apagar)` é `alto_impacto`. Alterar e esquecer sempre confirmam; gravar a partir da fala estável do dono no turno conta como confirmação e deixa desfazer.
 - Confirmação de `alto_impacto`, `egress_representacao` e `credencial_barreira` **exige UI** (ou segundo fator). Voz sozinha não confirma em ambiente ruidoso.
 - "Sempre permitir X" cria um **grant** `{tool_id, destino, classe_de_dado, ttl, escopo}` visível e revogável na UI. Nunca uma permissão global implícita.
 - Conteúdo `third_party` não cria grant, não muda cenário, não pede segredo e não converte confirmação em permissão. Sessão que abriu web/e-mail/documento fica marcada como contaminada e sobe o rigor.
@@ -358,6 +375,8 @@ Pipeline de recuperação (versão completa com grafo em §6.8): `filtro ACL+tem
 
 Caminho crítico só grava episódio + outbox. Worker assíncrono redige, embeda **apenas o delta** e indexa; falha é reexecutável por `content_hash`. Consolidação roda em ociosidade (p.ex. 2 min de silêncio, fim de tarefa ou N episódios) com orçamento, comparando só o lote novo com candidatos do mesmo sujeito/predicado. Ela pode propor assertiva, confirmar, revisar, marcar conflito e resumir. Nunca apaga bruto, nunca aprova procedimento, nunca guarda credencial.
 
+**Emenda proposta (ADR-0026, 2026-10-16; vale quando o dono aceitar a ADR):** cada turno de conversa é um `episode(kind='turno', actor='dono'|'jarvis')`, com o texto cifrado em `raw_cipher_ref`; o turno do Jarvis guarda só o tocado (P4). A cifra vem antes da primeira gravação de conversa.
+
 ### 6.5 Esquecimento
 
 | Classe | Retenção | Esquecimento |
@@ -371,6 +390,8 @@ Caminho crítico só grava episódio + outbox. Worker assíncrono redige, embeda
 ### 6.6 Gates de memória (antes de qualquer escrita autônoma)
 
 1. 100% dos fatos citados trazem episódio fonte. 2. Exclusão remove raw, FTS, vetor, resumo, cache **e grafo** (menção e aresta que só aquele episódio sustentava) — verificado por teste. 3. Nenhum segredo sintético aparece em consulta sem escopo. 4. Conflito temporal não retorna fato vencido como atual. 5. Texto recuperado não vira política nem amplia ferramenta (teste de injeção). 6. **Toda evidência devolvida traz o caminho que a justificou** (acerto denso/léxico direto, ou aresta por aresta) — sem caminho, não entra no prompt nem na UI.
+
+**Emenda proposta (ADR-0026, 2026-10-16; vale quando o dono aceitar a ADR):** as tools `memoria.*` entram por fatias, cada uma depois dos gates que a protegem — M1 histórico (gates 2, 3, 5, 6 e a cifra), M2 memória por pedido do dono (+ 1 e 4), M3 grafo (+ regras da §6.7), M4 escrita por iniciativa do Jarvis, sempre `proposed` (os 6 gates). Só o cérebro chama; tarefa, MCP de entrada e Jev não veem nenhuma.
 
 ---
 
@@ -609,6 +630,6 @@ Aceite: (a) comparação contra a cascata no **mesmo corpus** de F1, reportando 
 
 ## ADRs
 
-`docs/adr/0001` arquitetura C · `0002` epoch/cancelamento · `0003` capacidade e PDP · `0004` papel do Jev · `0005` memória e índice trocável (item 4 emendado pela 0008) · `0006` camadas de atuação no desktop · `0007` processos e barramento · **`0008` memória em grafo e ativação por propagação** · **`0009` níveis de acesso e elevação** · **`0010` catálogo do v1 e clientes MCP** · **`0011` reranker de licença comercial**.
+`docs/adr/0001` arquitetura C · `0002` epoch/cancelamento · `0003` capacidade e PDP · `0004` papel do Jev · `0005` memória e índice trocável (item 4 emendado pela 0008) · `0006` camadas de atuação no desktop · `0007` processos e barramento · **`0008` memória em grafo e ativação por propagação** · **`0009` níveis de acesso e elevação** · **`0010` catálogo do v1 e clientes MCP** · **`0011` reranker de licença comercial** · propostas de 2026-10-16: `0022` subagentes · `0023` MCP nos dois sentidos · `0024` seleção de tools · **`0025` cérebro único, stream e fila de avisos** · **`0026` ferramentas de memória**.
 
 Cartões de tarefa: F0 em `docs/F0-tarefas.md`, F1 em `docs/F1-tarefas.md`.
