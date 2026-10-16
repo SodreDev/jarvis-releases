@@ -64,7 +64,9 @@ ListView {
                 spacing: 8
                 Rotulo {
                     text: lista.nomeDoTipo[modelData.tipo] || modelData.tipo
-                    color: lista.corDoTipo(modelData.tipo)
+                    // A marca pode ser ciano apagado; a palavra, não — 2,7:1 não se lê a 10 px.
+                    color: modelData.tipo === "evento" ? Tema.textoFraco
+                                                       : lista.corDoTipo(modelData.tipo)
                 }
                 Rotulo {
                     visible: modelData.confianca === "terceiros"

@@ -16,7 +16,9 @@ QtObject {
     readonly property color ciano: "#39c7e8"
     readonly property color cianoFraco: "#1a5d76"
     readonly property color texto: "#c6d5e0"
-    readonly property color textoFraco: "#647b8c"
+    // 5,2:1 sobre o fundo dos módulos. Era #647b8c (4,4:1), abaixo do mínimo de 4,5:1 para
+    // texto de 10–12 px — e é a cor de quase todo rótulo da janela.
+    readonly property color textoFraco: "#71879a"
     readonly property color textoForte: "#e8f4fb"
     readonly property color alerta: "#e0a44a"
     readonly property color positivo: "#5fd3a0"
