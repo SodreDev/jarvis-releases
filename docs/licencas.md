@@ -41,3 +41,23 @@ copyleft forte com estado `em_uso` **bloqueia** a porta.
 | ferramenta | licença | categoria | estado | fonte | acesso |
 |---|---|---|---|---|---|
 | `espeak-ng 1.52.0` | GPL-3.0 | copyleft_forte | fora_do_produto | <https://api.github.com/repos/espeak-ng/espeak-ng/license> | 2026-10-15 |
+
+## Motores de voz
+
+Motores de ASR e TTS de `licenses/motores.toml` (ADR-0017). A licença da coluna é a do
+**cliente** (a biblioteca que faz a chamada), não a do peso do modelo — o peso está na tabela
+de modelos. `onde = nuvem` significa que áudio ou texto **sai da máquina do dono**: esses
+nascem desligados, e campo de termo vazio barra o motor em tempo de execução
+(`jarvis.voz.registro`).
+
+| papel | motor | onde | ligado | licença do cliente | categoria | estado | fonte | acesso |
+|---|---|---|---|---|---|---|---|---|
+| asr | `asr-groq-whisper-large-v3` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://console.groq.com/docs/legal/services-agreement> | 2026-10-15 |
+| asr | `asr-groq-whisper-large-v3-turbo` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://console.groq.com/docs/legal/services-agreement> | 2026-10-15 |
+| asr | `asr-oraculo` | local | sim | Apache-2.0 | permissiva | em_uso | <https://github.com/SodreDev/jarvis> | 2026-10-15 |
+| asr | `asr-whisper-local` | local | sim | MIT | permissiva | em_uso | <https://pypi.org/pypi/faster-whisper/json> | 2026-10-15 |
+| tts | `tts-edge` | nuvem | não | LGPL-3.0 | permissiva | extra_opcional | <https://pypi.org/pypi/edge-tts/json> | 2026-10-15 |
+| tts | `tts-elevenlabs` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://elevenlabs.io/terms-of-use> | 2026-10-15 |
+| tts | `tts-parametrico` | local | sim | Apache-2.0 | permissiva | em_uso | <https://github.com/SodreDev/jarvis> | 2026-10-15 |
+| tts | `tts-piper-epitran` | local | sim | MIT | permissiva | em_uso | <https://pypi.org/pypi/epitran/json> | 2026-10-15 |
+| tts | `tts-piper-espeak` | local | não | GPL-3.0 | copyleft_forte | fora_do_produto | <https://api.github.com/repos/espeak-ng/espeak-ng/license> | 2026-10-15 |

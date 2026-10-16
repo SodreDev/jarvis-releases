@@ -1,0 +1,224 @@
+# Registro de motores de voz: licença do cliente, onde roda e — para nuvem — os termos
+# verificados na origem (ADR-0017).
+#
+# Por que existe um terceiro registro, além de `modelos.toml` e `ferramentas-externas.toml`:
+# um motor de nuvem não tem peso para licenciar nem binário para inventariar. O que ele tem é
+# **contrato de serviço**, e é isso que o dono precisa ver antes de o áudio dele sair da
+# máquina. As quatro perguntas são sempre as mesmas, e são campos, não prosa:
+#
+#   uso_comercial · retencao_declarada · treina_com_entrada · dono_da_saida
+#
+# Regras que o portão impõe (`jarvis.voz.registro.exigir_motor`, `tools/license_gate.py`):
+#
+#   - motor não registrado **não carrega** (mesma regra da voz, ADR-0012);
+#   - `onde = "nuvem"` nasce com `ligado = false`: sem interruptor do dono, o produto não abre
+#     socket para transcrever nem para falar (ADR-0017, política 1);
+#   - campo obrigatório vazio **barra** o motor: no v0, "não verificado" não liga nuvem
+#     (ADR-0017, política 4). É o que mantém o `tts-edge` fora até o dono decidir;
+#   - `marca_dagua` é declaração obrigatória: áudio que sai marcado é fato do produto
+#     (ADR-0017, política 5);
+#   - licença não permissiva do **cliente** bloqueia como qualquer dependência (ADR-0011).
+#
+# `fonte` é a página oficial do serviço ou o registro oficial do pacote — nunca agregador.
+
+data_da_verificacao = "2026-10-15"
+verificado_por = "executor"
+
+# --- ASR local (padrão) ---------------------------------------------------------------
+
+[[motor]]
+id = "asr-whisper-local"
+papel = "asr"
+onde = "local"
+ligado = true
+implementacao = "jarvis.agentd.asr:MotorWhisper"
+modelo = "openai/whisper-small"
+licenca_do_cliente = "MIT"
+cliente = "faster-whisper (CTranslate2)"
+marca_dagua = "não"
+fonte = "https://pypi.org/pypi/faster-whisper/json"
+data_de_acesso = "2026-10-15"
+nota = """O peso é Apache-2.0 e está em licenses/modelos.toml; aqui fica o runtime. Tamanho do \
+modelo é escolha do F1-16, de ouvido na máquina do dono — o registro fixa a licença, não a \
+qualidade."""
+
+[[motor]]
+id = "asr-oraculo"
+papel = "asr"
+onde = "local"
+ligado = true
+implementacao = "jarvis.agentd.asr:MotorDeReferencia"
+modelo = "(nenhum)"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório"
+marca_dagua = "não"
+fonte = "https://github.com/SodreDev/jarvis"
+data_de_acesso = "2026-10-15"
+nota = """Oráculo do rótulo (F1-06): existe para o CI exercitar o encanamento sem baixar \
+modelo. WER de oráculo é zero por construção e nenhum relatório pode publicá-lo como WER."""
+
+# --- ASR de nuvem (desligado até o dono ligar) ----------------------------------------
+
+[[motor]]
+id = "asr-groq-whisper-large-v3-turbo"
+papel = "asr"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.voz.groq:MotorAsrGroq"
+modelo = "whisper-large-v3-turbo"
+servico = "Groq"
+endereco = "https://api.groq.com/openai/v1/audio/transcriptions"
+variavel_da_chave = "JARVIS_GROQ_API_KEY"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (urllib da biblioteca padrão)"
+uso_comercial = "permitido (§3.1 embutir em aplicação própria); §6.3 proíbe revender o serviço e o acordo diz \"not for consumer use\""
+retencao_declarada = "até 30 dias, sob \"System reliability and abuse monitoring\"; ZDR é configuração de cliente elegível, não o padrão de quem só pega uma chave"
+treina_com_entrada = "não (§4.2: \"Groq is not permitted to use Inputs or Outputs for training or fine-tuning\")"
+dono_da_saida = "o cliente (§8.1: \"Customer retains all Intellectual Property Rights in Customer Data (including in Inputs and Outputs)\")"
+marca_dagua = "não declarada"
+preco = "US$ 0,04 por hora de áudio; mínimo de 10 s por requisição"
+fonte = "https://console.groq.com/docs/legal/services-agreement"
+fonte_tecnica = "https://console.groq.com/docs/speech-to-text"
+data_de_acesso = "2026-10-15"
+nota = """Services Agreement \"Last Modified: June 22, 2026\". §11.5 manda excluir os dados em \
+até 30 dias depois do fim do contrato. Arquivo até 25 MB no free tier e 100 MB no dev tier; o \
+caminho deste produto manda WAV 16 kHz mono, que é o que a página recomenda."""
+
+[[motor]]
+id = "asr-groq-whisper-large-v3"
+papel = "asr"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.voz.groq:MotorAsrGroq"
+modelo = "whisper-large-v3"
+servico = "Groq"
+endereco = "https://api.groq.com/openai/v1/audio/transcriptions"
+variavel_da_chave = "JARVIS_GROQ_API_KEY"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (urllib da biblioteca padrão)"
+uso_comercial = "permitido (§3.1 embutir em aplicação própria); §6.3 proíbe revender o serviço e o acordo diz \"not for consumer use\""
+retencao_declarada = "até 30 dias, sob \"System reliability and abuse monitoring\"; ZDR é configuração de cliente elegível, não o padrão de quem só pega uma chave"
+treina_com_entrada = "não (§4.2: \"Groq is not permitted to use Inputs or Outputs for training or fine-tuning\")"
+dono_da_saida = "o cliente (§8.1)"
+marca_dagua = "não declarada"
+preco = "US$ 0,111 por hora de áudio; mínimo de 10 s por requisição"
+fonte = "https://console.groq.com/docs/legal/services-agreement"
+fonte_tecnica = "https://console.groq.com/docs/speech-to-text"
+data_de_acesso = "2026-10-15"
+nota = "Mesmo contrato do turbo, 2,8× o preço. Qual dos dois serve é medição do F1-16."
+
+# --- TTS local (padrão) ---------------------------------------------------------------
+
+[[motor]]
+id = "tts-piper-epitran"
+papel = "tts"
+onde = "local"
+ligado = true
+implementacao = "jarvis.agentd.tts:MotorPiperOnnx"
+modelo = "rhasspy/piper-voices"
+voz = "pt_BR-faber-medium"
+licenca_do_cliente = "MIT"
+cliente = "onnxruntime (MIT) + epitran (MIT)"
+marca_dagua = "não"
+fonte = "https://pypi.org/pypi/epitran/json"
+data_de_acesso = "2026-10-15"
+nota = """Caminho local aceito em parte pela ADR-0016: voz do piper com `epitran` no lugar do \
+espeak-ng (GPL-3.0). Pendência medida na ADR-0017: o `epitran` não marca tônica em `por-Latn` \
+(o espeak marcou 14 acentos na mesma frase, o epitran zero) e `ʷ` não está no inventário da \
+voz. A prosódia achatada é o custo conhecido, e `MotorPiperOnnx.fonemas_descartados` deixa a \
+divergência de inventário visível em vez de virar voz torta em silêncio."""
+
+[[motor]]
+id = "tts-piper-espeak"
+papel = "tts"
+onde = "local"
+ligado = false
+implementacao = "jarvis.agentd.tts:MotorPiperOnnx"
+modelo = "rhasspy/piper-voices"
+voz = "pt_BR-faber-medium"
+licenca_do_cliente = "GPL-3.0"
+cliente = "onnxruntime (MIT) + espeak-ng (GPL-3.0, binário do sistema)"
+marca_dagua = "não"
+fonte = "https://api.github.com/repos/espeak-ng/espeak-ng/license"
+data_de_acesso = "2026-10-15"
+estado = "fora_do_produto"
+nota = """Linha de base de medição (F1-02, F1-09) e **não** caminho de produto: distribuir \
+espeak-ng é decisão de licenciamento do dono (ADR-0016, opção A). Fica `ligado = false` e com \
+estado `fora_do_produto` para o portão avisar em vez de bloquear, exatamente como o registro \
+de ferramentas externas faz com o mesmo binário."""
+
+[[motor]]
+id = "tts-parametrico"
+papel = "tts"
+onde = "local"
+ligado = true
+implementacao = "jarvis.agentd.tts:MotorParametrico"
+modelo = "(nenhum)"
+voz = "parametrico"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório"
+marca_dagua = "não"
+fonte = "https://github.com/SodreDev/jarvis"
+data_de_acesso = "2026-10-15"
+nota = """Voz sem modelo, do CI: duração estimada por sílaba e PCM determinístico. Não tem \
+fonema e não serve para julgar naturalidade."""
+
+# --- TTS de nuvem (desligado até o dono ligar) ----------------------------------------
+
+[[motor]]
+id = "tts-elevenlabs"
+papel = "tts"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.voz.elevenlabs:MotorTtsElevenLabs"
+modelo = "eleven_multilingual_v2"
+voz = "(escolhida pelo dono na configuração)"
+servico = "ElevenLabs"
+endereco = "https://api.elevenlabs.io/v1/text-to-speech"
+variavel_da_chave = "JARVIS_ELEVENLABS_API_KEY"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (urllib da biblioteca padrão)"
+uso_comercial = "só em plano pago (§1(c): no gratuito \"you may only use the Services for non-commercial purposes\", e o gratuito exige e-mail pessoal)"
+retencao_declarada = "retém por padrão — \"Customers by default have history preservation enabled\"; o Zero Retention Mode (enable_logging=false) é \"Enterprise customers can use Zero Retention Mode\"; depois de apagar, \"database items are retained in backups for up to 30 days\""
+treina_com_entrada = "não verificado nos termos lidos (nem permissão nem proibição explícita)"
+dono_da_saida = "o cliente (§4: \"you retain all rights in and to your Output\")"
+marca_dagua = "não declarada nos termos lidos"
+preco = "por plano, não por unidade na página de termos"
+fonte = "https://elevenlabs.io/terms-of-use"
+fonte_tecnica = "https://elevenlabs.io/docs/api-reference/text-to-speech/convert"
+fonte_retencao = "https://elevenlabs.io/docs/eleven-api/resources/zero-retention-mode"
+data_de_acesso = "2026-10-15"
+nota = """Termos \"Last Updated: 09 October 2026\". O produto pede `output_format=pcm_16000`, \
+que casa com o contrato de 16 kHz PCM16 mono do caminho de áudio sem reamostrar. A retenção \
+declarada é o campo que o dono precisa ler **antes** de ligar: no plano dele, o texto falado \
+fica no histórico da conta."""
+
+[[motor]]
+id = "tts-edge"
+papel = "tts"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.voz.edge:MotorTtsEdge"
+modelo = "(serviço de read-aloud do Microsoft Edge)"
+voz = "pt-BR-AntonioNeural"
+servico = "Microsoft (endpoint de read-aloud do Edge)"
+endereco = "(WebSocket interno do Edge, sem página de contrato)"
+variavel_da_chave = ""
+licenca_do_cliente = "LGPL-3.0"
+cliente = "edge-tts 7.3.1 (extra opcional, instalado pelo dono)"
+estado = "extra_opcional"
+uso_comercial = ""
+retencao_declarada = ""
+treina_com_entrada = ""
+dono_da_saida = ""
+marca_dagua = "não declarada"
+preco = "não publicado (não é produto contratável)"
+fonte = "https://pypi.org/pypi/edge-tts/json"
+fonte_tecnica = "https://raw.githubusercontent.com/rany2/edge-tts/master/README.md"
+data_de_acesso = "2026-10-15"
+nota = """**Não é local.** O dono acreditava que fosse; o texto vai para um serviço da \
+Microsoft, pela rede, como em qualquer motor de nuvem. Duas barreiras, não uma (ADR-0017): o \
+pacote declara LGPL-3.0 e o endpoint não tem página de termos para ler — o README nem declara \
+vínculo com a Microsoft. Por isso os quatro campos obrigatórios estão **vazios**, e vazio \
+barra: o motor está implementado e o portão o recusa até o dono decidir explicitamente. O \
+caminho oficial com contrato é o Azure Speech, que é outro motor e ainda não existe aqui."""

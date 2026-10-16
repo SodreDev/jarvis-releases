@@ -38,6 +38,7 @@ RAIZ: Final = Path(__file__).resolve().parent.parent
 ARQUIVO_MODELOS: Final = RAIZ / "licenses" / "modelos.toml"
 ARQUIVO_EXCECOES: Final = RAIZ / "licenses" / "dependencias-sem-metadados.toml"
 ARQUIVO_FERRAMENTAS: Final = RAIZ / "licenses" / "ferramentas-externas.toml"
+ARQUIVO_MOTORES: Final = RAIZ / "licenses" / "motores.toml"
 TIPO_FERRAMENTA: Final = "ferramenta externa"
 ARQUIVO_TABELA: Final = RAIZ / "docs" / "licencas.md"
 ARQUIVOS_DE_ATRIBUICAO: Final[tuple[Path, ...]] = (
@@ -176,6 +177,62 @@ def inventariar_ferramentas(arquivo: Path = ARQUIVO_FERRAMENTAS) -> list[Item]:
     return sorted(itens, key=lambda i: i.nome.lower())
 
 
+def inventariar_motores(arquivo: Path = ARQUIVO_MOTORES) -> list[Item]:
+    """Motores de voz (ADR-0017): a licença aqui é a do **cliente**, não a do peso.
+
+    Um motor de nuvem não tem peso para licenciar: o que ele tem é contrato de serviço, e é
+    `jarvis.voz.registro` que barra campo de termo vazio. A porta cuida da parte dela — a
+    licença da biblioteca que faz a chamada — e **avisa** sobre o resto, que é o que o dono
+    precisa ver: quem manda dado para fora, com que retenção, e o que sai marcado.
+    """
+    if not arquivo.exists():
+        return []
+    dados = tomllib.loads(arquivo.read_text(encoding="utf-8"))
+    itens = [
+        Item(
+            tipo=f"motor/{motor['papel']}",
+            nome=str(motor["id"]),
+            licenca=str(motor.get("licenca_do_cliente", "")) or None,
+            origem=str(motor.get("fonte", "")),
+            estado=str(motor.get("estado", "em_uso")),
+            data_de_acesso=str(motor.get("data_de_acesso", "")),
+            nota=str(motor.get("nota", "")),
+        )
+        for motor in dados.get("motor", [])
+    ]
+    return sorted(itens, key=lambda i: (i.tipo, i.nome.lower()))
+
+
+def avisos_de_motores(arquivo: Path = ARQUIVO_MOTORES) -> list[str]:
+    """As frases que a porta imprime sobre motor de voz: nuvem, marca d'água e extra LGPL.
+
+    Não são bloqueios — bloquear nuvem é trabalho do `jarvis.voz.registro`, em tempo de
+    execução, com o interruptor do dono. Aqui é a lista que fica no log do CI para ninguém
+    descobrir depois que o produto ganhou um caminho de saída de dado sem ninguém ler.
+    """
+    from jarvis.voz.registro import ler_motores
+
+    if not arquivo.exists():
+        return []
+    frases: list[str] = []
+    for motor in ler_motores(arquivo):
+        if motor.na_nuvem:
+            vazios = ", ".join(motor.campos_vazios) or "nenhum"
+            frases.append(
+                f"NUVEM: {motor.id} manda {motor.o_que_sai} para {motor.servico} "
+                f"(ligado por padrão: {'sim' if motor.ligado else 'não'}; "
+                f"campos de termo vazios: {vazios})"
+            )
+        if motor.marca_o_audio:
+            frases.append(f"MARCA D'ÁGUA: {motor.id} — {motor.marca_dagua}")
+        if motor.estado == "extra_opcional":
+            frases.append(
+                f"EXTRA OPCIONAL: {motor.id} usa {motor.cliente} ({motor.licenca_do_cliente}) — "
+                "não é dependência do produto e não é distribuído junto; o dono instala"
+            )
+    return frases
+
+
 def conferir_online(
     modelos: Iterable[Item], arquivo: Path = ARQUIVO_MODELOS, *, chave: str = "modelo"
 ) -> list[str]:
@@ -281,6 +338,35 @@ copyleft forte com estado `em_uso` **bloqueia** a porta.
 """
 
 
+SECAO_MOTORES: Final = """
+## Motores de voz
+
+Motores de ASR e TTS de `licenses/motores.toml` (ADR-0017). A licença da coluna é a do
+**cliente** (a biblioteca que faz a chamada), não a do peso do modelo — o peso está na tabela
+de modelos. `onde = nuvem` significa que áudio ou texto **sai da máquina do dono**: esses
+nascem desligados, e campo de termo vazio barra o motor em tempo de execução
+(`jarvis.voz.registro`).
+
+| papel | motor | onde | ligado | licença do cliente | categoria | estado | fonte | acesso |
+|---|---|---|---|---|---|---|---|---|
+"""
+
+
+def tabela_de_motores(arquivo: Path = ARQUIVO_MOTORES) -> str:
+    from jarvis.voz.registro import ler_motores
+
+    if not arquivo.exists():
+        return ""
+    linhas = [
+        f"| {motor.papel} | `{motor.id}` | {motor.onde} "
+        f"| {'sim' if motor.ligado else 'não'} | {motor.licenca_do_cliente} "
+        f"| {motor.categoria_da_licenca} | {motor.estado} | <{motor.fonte}> "
+        f"| {motor.data_de_acesso} |"
+        for motor in sorted(ler_motores(arquivo), key=lambda m: (m.papel, m.id))
+    ]
+    return SECAO_MOTORES + "\n".join(linhas) + "\n"
+
+
 def tabela_de_modelos(modelos: Sequence[Item], ferramentas: Sequence[Item] = ()) -> str:
     """Tabela markdown dos modelos — é o que fica comitado em `docs/licencas.md`."""
     linhas = [
@@ -304,6 +390,7 @@ def tabela_de_modelos(modelos: Sequence[Item], ferramentas: Sequence[Item] = ())
             )
             + "\n"
         )
+    tabela += tabela_de_motores()
     return tabela
 
 
@@ -331,6 +418,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         default=ARQUIVO_FERRAMENTAS,
         help="outro registro de ferramentas externas",
+    )
+    analisador.add_argument(
+        "--motores", type=Path, default=ARQUIVO_MOTORES, help="outro registro de motores de voz"
     )
     analisador.add_argument(
         "--pasta-pacotes",
@@ -363,7 +453,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     modelos = inventariar_modelos(args.modelos)
     dependencias = inventariar_dependencias(args.pasta_pacotes)
     ferramentas = inventariar_ferramentas(args.ferramentas)
-    itens = [*modelos, *dependencias, *ferramentas]
+    motores = inventariar_motores(args.motores)
+    itens = [*modelos, *dependencias, *ferramentas, *motores]
 
     if args.tabela:
         imprimir_tabela(itens)
@@ -412,8 +503,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(
         f"\nporta de licença: {len(modelos)} modelos, {len(dependencias)} dependências, "
-        f"{len(ferramentas)} ferramenta(s) externa(s), {len(barrados)} barrados por registro"
+        f"{len(ferramentas)} ferramenta(s) externa(s), {len(motores)} motor(es) de voz, "
+        f"{len(barrados)} barrados por registro"
     )
+    for frase in avisos_de_motores(args.motores):
+        print(frase)
     for item in atribuicoes:
         if compartilha_igual(item.licenca):
             # ShareAlike não é CC-BY: atribuir não basta, o derivado sai na mesma licença —
