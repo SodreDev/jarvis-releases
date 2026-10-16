@@ -186,3 +186,67 @@ def test_adr_do_canal_de_audio_esta_aceita_e_a_spec_registra_a_emenda() -> None:
     assert "ADR-0015" in secao_3, "a §3.1 ainda diz 'sem exceção' sem citar a emenda"
     desenho = spec.split("## 2. Processos e fronteiras")[1].split("## 3.")[0]
     assert "ADR-0015" in desenho, "o desenho da §2 ainda manda PCM pela seta do barramento"
+
+
+# --- item C do lote: 0016 aceita em parte e 0017 aberta ---------------------------
+ADR_DA_FONEMIZACAO = "0016-fonemizacao-pt-br-do-tts.md"
+ADR_DOS_MOTORES = "0017-motores-de-voz-atras-de-uma-interface.md"
+
+
+def test_adr_da_fonemizacao_registra_aceite_parcial_e_aponta_a_0017() -> None:
+    """O dono aceitou o caminho local (piper + epitran) e quer comparar motores antes de fechar."""
+    texto = (PASTA / ADR_DA_FONEMIZACAO).read_text(encoding="utf-8")
+
+    assert texto.startswith("# ADR-0016")
+    assert "**Estado:** aceita parcialmente" in texto
+    assert "piper" in texto and "epitran" in texto
+    assert "ADR-0017" in texto, "aceite parcial tem de dizer onde o resto se decide"
+    assert conferir_adr(PASTA / ADR_DA_FONEMIZACAO) == []
+
+
+def test_adr_dos_motores_de_voz_e_proposta_com_as_quatro_partes() -> None:
+    """ADR-0017: ASR, TTS, interface + política e o plano de amostra — sem implementar produto."""
+    caminho = PASTA / ADR_DOS_MOTORES
+    texto = caminho.read_text(encoding="utf-8")
+
+    assert "**Estado:** proposta" in texto
+    assert conferir_adr(caminho) == []
+    for motor in (
+        "whisper-large-v3",
+        "whisper-large-v3-turbo",
+        "parakeet-tdt-0.6b-v3",
+        "Kokoro-82M",
+        "epitran",
+        "edge-tts",
+        "Azure",
+        "ElevenLabs",
+        "Chatterbox",
+    ):
+        assert motor in texto, f"{motor} não aparece na comparação"
+    for secao in (
+        "## ASR",
+        "## TTS",
+        "## Interface única e política",
+        "## Plano de amostra",
+        "## O que ficou não verificado",
+    ):
+        assert secao in texto, f"falta a seção {secao}"
+
+
+def test_a_adr_dos_motores_cita_fonte_e_data_em_cada_fato() -> None:
+    """Fato sem fonte é impressão: cada bloco de motor tem de carregar URL e data de leitura."""
+    texto = (PASTA / ADR_DOS_MOTORES).read_text(encoding="utf-8")
+
+    assert texto.count("https://") >= 12, "um fato por motor, cada um com a URL que o sustenta"
+    assert texto.count("2026-10-15") >= 5, "a data da leitura na origem tem de estar nos fatos"
+    assert "não verificado" in texto, "o que não deu para conferir tem de estar dito"
+
+
+def test_a_correcao_do_kokoro_esta_nas_duas_adrs() -> None:
+    """A 0016 dizia que o Kokoro não tem pt-BR; a origem diz outra coisa, e isso se corrige."""
+    dezesseis = (PASTA / ADR_DA_FONEMIZACAO).read_text(encoding="utf-8")
+    dezessete = (PASTA / ADR_DOS_MOTORES).read_text(encoding="utf-8")
+
+    for texto in (dezesseis, dezessete):
+        assert "pf_dora" in texto, "a voz pt-BR do Kokoro tem de aparecer com o id de verdade"
+        assert "EspeakG2P" in texto, "e o motivo de ela não resolver a licença também"

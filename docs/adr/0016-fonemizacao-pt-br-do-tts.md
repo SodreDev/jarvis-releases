@@ -1,6 +1,8 @@
 # ADR-0016 — Fonemização pt-BR do TTS: as três saídas e o que cada uma custa
 
-**Data:** 2026-10-15 · **Estado:** proposta · **Decide:** dono
+**Data:** 2026-10-15 · **Estado:** aceita parcialmente — o caminho **local** (voz do piper +
+`epitran`) está aceito pelo dono em 2026-10-15; **qual** motor de voz entra no v1 fica no
+**ADR-0017** (motores de ASR e TTS atrás de uma interface), que compara os candidatos. · **Decide:** dono
 
 ## Contexto
 
@@ -48,10 +50,14 @@ não de engenharia — e é por isso que esta ADR não decide.
 
 ### Fato 3 — dois candidatos que pareciam saída não são
 
-- `hexgrad/Kokoro-82M`: Apache-2.0, mas o *model card* declara **um** idioma, `en`. **Não é
-  candidato de pt-BR.** (Corrige o que as notas do F1-09 diziam: lá eu escrevi que ele
-  "também depende de fonemizador externo para pt-BR"; o fato mais forte é que ele não declara
-  pt-BR nenhum.)
+- `hexgrad/Kokoro-82M`: Apache-2.0. **Este fato estava errado e foi corrigido em 2026-10-15,
+  na origem** (ver ADR-0017): o metadado do *card* declara só `en`, mas o `VOICES.md` da v1.0
+  lista **três vozes pt-BR** — `pf_dora`, `pm_alex` e `pm_santa`, sob `lang_code='p'` — e o
+  `LANG_CODES` do `kokoro/pipeline.py` mapeia `'p'` para `pt-br`. O que o derruba **não** é
+  idioma: é que esse ramo do pipeline chama `espeak.EspeakG2P(language='pt-br')`, ou seja, o
+  **mesmo espeak-ng GPL-3.0** que esta ADR quer tirar do produto. Trocar piper por Kokoro não
+  resolveria licença nenhuma. (O que as notas do F1-09 diziam — "depende de fonemizador externo
+  para pt-BR" — estava certo; o errado foi eu ter trocado isso por "não tem pt-BR".)
 - `facebook/mms-tts-por`: **CC-BY-NC-4.0**. Barrado pela ADR-0011 — não comercial não entra.
 - `OuteAI/OuteTTS-0.3-500M`: **CC-BY-SA-4.0**. *ShareAlike* numa voz contamina o áudio que o
   produto distribui, e o carregador do F1-09 já recusa licença não permissiva.
@@ -73,11 +79,17 @@ fonemizador no caminho. Em troca, é modelo **autoregressivo de 880M parâmetros
 
 ## Decisão
 
-**Nenhuma ainda: esta ADR é proposta e o que ela decide é a ordem de investigação.** A
-recomendação é **tentar primeiro a opção B (voz do piper + `epitran`)**, porque ela mantém o
-número já medido do F1-09 e tira a GPL do produto; manter a **opção C (Parler-TTS)** registrada
-como candidata a medir quando houver GPU; e tratar a **opção A (distribuir o `espeak-ng`)** como
-saída apenas se o dono aceitar distribuir binário GPL ao lado do produto.
+**Aceita em parte pelo dono, em 2026-10-15:** o **caminho local** é a opção B — voz do piper
+com `epitran` (MIT) no lugar do `espeak-ng` —, porque ela mantém o número já medido do F1-09 e
+tira a GPL do produto. O que **não** está decidido é **qual motor de voz** o v1 usa: o dono
+quer comparar com os outros motores antes de fechar, e essa comparação virou o **ADR-0017**,
+que levanta ASR e TTS (locais e de nuvem) com licença e termos verificados na origem e propõe
+a interface única.
+
+Continuam valendo: a **opção C (Parler-TTS)** como candidata a medir, e a **opção A
+(distribuir o `espeak-ng`)** como saída apenas se o dono aceitar distribuir binário GPL ao
+lado do produto. O que muda com o aceite parcial é a ordem: o mapeamento
+`epitran` → `phoneme_id_map` passa a ser trabalho a fazer, não hipótese.
 
 ## Alternativas descartadas
 
@@ -86,7 +98,7 @@ saída apenas se o dono aceitar distribuir binário GPL ao lado do produto.
 | **A. `espeak-ng` em processo separado, distribuído com o produto** | o que o F1-02 e o F1-09 já usam, movido para o pacote do produto | engenharia **zero** (funciona e está medido); custo de **licenciamento**: obrigações de fonte da GPL §6, aviso ao dono de que aquela parte é GPL, e a comunicação tem de continuar "at arms length" (sem memória compartilhada, sem estrutura interna) | o dono decidir que não quer binário GPL no pacote |
 | **B. voz do piper + `epitran` (MIT)** | troca só o fonemizador; a voz (MIT/CC0) e o `onnxruntime` (MIT) ficam | engenharia **média**: o IPA do `epitran` tem de ser mapeado para o `phoneme_id_map` da voz, que foi treinada com o inventário do espeak. Fonema fora do mapa hoje **levanta erro** (F1-09), então divergência aparece como falha, não como voz torta — mas a **qualidade** precisa de julgamento de ouvido, que é do dono | o mapeamento não cobrir o inventário, ou a voz sair ruim ao ouvido do dono |
 | **C. Parler-TTS multilingual (Apache-2.0)** | TTS sem fonemizador, pt declarado no card | engenharia **média** (outra família de inferência, `transformers` + `torch`), e custo de **execução** alto: 880M parâmetros autoregressivos contra VITS *feed-forward*. **[SUPOSIÇÃO:** em CPU isto não fecha o SLO-5 e precisa de GPU — a confirmar medindo com o harness do F1-09, que já publica primeiro pedaço e RTF por motor**]** | medir e descobrir que roda em CPU dentro do SLO-5; ou o dono ter GPU no desktop |
-| D. `Kokoro-82M` | — | — | não é candidato: o card declara só `en` |
+| D. `Kokoro-82M` | Apache-2.0, **3 vozes pt-BR** (`pf_dora`, `pm_alex`, `pm_santa`) | — | não resolve o problema: o `'p'` do pipeline usa `EspeakG2P(language='pt-br')`, a mesma GPL-3.0 (corrigido na origem em 2026-10-15; ver ADR-0017) |
 | E. `facebook/mms-tts-por` | — | — | CC-BY-NC: barrado pela ADR-0011 |
 | F. `OuteTTS-0.3-500M` | — | — | CC-BY-SA: o carregador do F1-09 recusa licença não permissiva |
 
