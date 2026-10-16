@@ -1,7 +1,8 @@
 # ADR-0014 — D1: linguagem e IPC do núcleo, decidida por medição
 
 **Data:** 2026-10-15 · **Estado:** aceita · **Decide:** orquestrador (diretor, por delegação do dono)
-**Mede:** executor, cartão F0-04 · **Commit da medição:** `85e23a4`
+**Mede:** executor, cartão F0-04 · **Commit da medição:** `5feb551` (republicação com o `n` de verdade; o harness e a primeira publicação entraram em `85e23a4`,
+que o teste de fumaça sobrescreveu)
 **Fecha:** a decisão aberta D1 da SPEC §2 e a pendência Q1 do dono.
 **Gatilho de reabertura:** medição da F1 com AEC + ASR + TTS reais em que o p95 de
 captura→evento passe de **80 ms** (SLO-1) na máquina do dono — ver "Como invalidar".
@@ -21,15 +22,15 @@ Medição do cartão F0-04, em `docs/medicoes/f0-04-captura.{csv,md}`:
 
 | caminho | p50 | p95 | p99 | máximo |
 |---|---:|---:|---:|---:|
-| `rust-std` (VAD barato, só `std`) | 0,0003 ms | **0,0003 ms** | 0,0003 ms | 0,0146 ms |
-| `python-numpy` (mesma aritmética) | 0,0100 ms | **0,0105 ms** | 0,0155 ms | 0,1894 ms |
-| `python-onnx` (silero-vad, 1 thread) | 0,0979 ms | **0,1101 ms** | 0,1204 ms | 0,4670 ms |
-| `evento-no-barramento` (envelope + validação + IPC + log com hash) | 0,3639 ms | **0,3840 ms** | 0,4753 ms | 1,3394 ms |
-| piso de agendamento (laço de 20 ms, sem nosso código) | 0,070 ms | **0,080 ms** | 0,086 ms | — |
+| `rust-std` (VAD barato, só `std`) | 0,0003 ms | **0,0003 ms** | 0,0004 ms | 0,0112 ms |
+| `python-numpy` (mesma aritmética) | 0,0099 ms | **0,0103 ms** | 0,0157 ms | 0,1773 ms |
+| `python-onnx` (silero-vad, 1 thread) | 0,1016 ms | **0,1129 ms** | 0,1232 ms | 0,4852 ms |
+| `evento-no-barramento` (envelope + validação + IPC + log com hash) | 0,3576 ms | **0,3842 ms** | 0,4210 ms | 0,7940 ms |
+| piso de agendamento (laço de 20 ms, sem nosso código) | 0,062 ms | **0,096 ms** | 0,290 ms | — |
 | piso do dispositivo (monitor de saída ociosa) | 1,33 ms | **20,0 ms** | 20,0 ms | — |
 
-Somando o que é nosso (VAD + evento + piso de agendamento): **0,575 ms p95 em Python** e
-0,466 ms em Rust, contra um orçamento de **80 ms p95** (SLO-1) — 0,72% e 0,58%.
+Somando o que é nosso (VAD + evento + piso de agendamento): **0,593 ms p95 em Python** e
+0,481 ms em Rust, contra um orçamento de **80 ms p95** (SLO-1) — 0,74% e 0,60%.
 
 Três leituras diretas desses números:
 
