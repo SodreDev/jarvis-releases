@@ -27,7 +27,16 @@ Medição do cartão F0-04, em `docs/medicoes/f0-04-captura.{csv,md}`:
 | `python-onnx` (silero-vad, 1 thread) | 0,1016 ms | **0,1129 ms** | 0,1232 ms | 0,4852 ms |
 | `evento-no-barramento` (envelope + validação + IPC + log com hash) | 0,3576 ms | **0,3842 ms** | 0,4210 ms | 0,7940 ms |
 | piso de agendamento (laço de 20 ms, sem nosso código) | 0,062 ms | **0,096 ms** | 0,290 ms | — |
-| piso do dispositivo (monitor de saída ociosa) | 1,33 ms | **20,0 ms** | 20,0 ms | — |
+
+**Piso do dispositivo — não medido no caminho real.** Fica em quadro próprio porque **não é
+comparável** com a tabela acima: foi medido no monitor de uma saída ociosa, e não no microfone.
+
+| piso | p50 | p95 | p99 | viés |
+|---|---:|---:|---:|---|
+| piso do dispositivo (monitor de saída ociosa) | 1,33 ms | **20,0 ms** | 20,0 ms | monitor de saída ociosa entrega em rajada: **limite superior grosseiro**, não jitter de captura em uso |
+
+O microfone do dono não foi gravado, por privacidade (F0-04). O número honesto do caminho real
+sai no F1-16, com voz de verdade e consentimento — e é lá que o SLO-1 é cobrado ponta a ponta.
 
 Somando o que é nosso (VAD + evento + piso de agendamento): **0,593 ms p95 em Python** e
 0,481 ms em Rust, contra um orçamento de **80 ms p95** (SLO-1) — 0,74% e 0,60%.
