@@ -1440,3 +1440,34 @@ nuvem (Groq) continuaria funcionando. É decisão do dono, e mexe só em `GRUPOS
   sessão gráfica dele;
 - **as outras distros**: o `.deb` foi exercitado em `debian:stable-slim` e o `.rpm` em
   `fedora:44`. Ubuntu, Arch e derivadas não foram tocadas.
+
+## Rodada de polimento, depois do dono olhar as capturas (2026-10-16)
+
+Quatro apontamentos dele, e o que cada um virou:
+
+1. **"`CREATEWIDGET: FEITO` é log de depuração vazando na UI."** Era. O `Resultado` agora tem
+   duas frases: a técnica (`frase()`, para log e teste) e a do dono (`frase_do_dono()`), que
+   diz o que aconteceu com a tela — "Avisos aberto", "Console espera a sua confirmação", "não
+   abri X: não há espaço livre…". A janela mostra a segunda, discreta, e ela **some em 6 s**.
+2. **"No modo Execução o núcleo virou um aro solto no canto de baixo."** Subiu para o canto
+   de cima, 2×2, com nome e estado — a mesma composição do modo de pesquisa. E a grade perdeu
+   os buracos: visão central de seis colunas (código em cima, console embaixo), coluna da
+   esquerda com as tarefas sob o núcleo, e "Artefatos", "Esta máquina" e "Avisos" empilhados
+   e alinhados à direita.
+3. **"Dê mais vida técnica aos anéis, sem glow e sem rotação permanente."** Duas escalas de
+   marcadores (fina de 3 em 3 graus na borda; maior de 15 em 15 por dentro, com os cardeais
+   longos) e **um** arco colorido — o de estado, com a marca na ponta. As miras que ficavam
+   fora do raio saíram: em tela larga viravam traços soltos longe do orbe.
+4. **"A lista de provedores é uma pilha de linhas de mesmo peso."** Virou caixa por assunto
+   (`Painel.qml`, com a mesma moldura e os mesmos cantos do resto): voz — ouvir, voz — falar,
+   escuta, resposta, voz local, chaves de api e arquivo. O ativo tem barra de 2 px em ciano e
+   uma seta; LOCAL/NUVEM é rótulo discreto à direita.
+
+Duas coisas que a rodada ensinou, e que não estavam na lista:
+
+- **painel do dono não é painel maximizado.** Esticar até o rodapé deixava dois terços de
+  moldura vazia. `Workspace.colocar_em` dá a ele a área do **conteúdo**, e o que estava na
+  tela continua minimizado (não fechado);
+- **retrato de modo com pendência aberta mente por omissão**: a composição ainda não está
+  inteira. O pedido virou imagem própria (`jarvis-execucao-confirmar.png`) e o retrato do modo
+  é o de depois da autorização.
