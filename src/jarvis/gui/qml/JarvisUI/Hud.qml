@@ -173,6 +173,7 @@ Item {
         anchors.centerIn: parent
         spacing: hud.detalhado ? 8 : 5
         Text {
+            textFormat: Text.PlainText
             anchors.horizontalCenter: parent.horizontalCenter
             text: "JARVIS"
             color: Tema.textoForte

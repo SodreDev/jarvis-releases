@@ -38,6 +38,7 @@ Column {
             anchors.centerIn: parent
             spacing: 8
             Text {
+                textFormat: Text.PlainText
                 text: ficha.texto
                 color: ficha.ativo ? Tema.textoForte : Tema.texto
                 font.family: Tema.fonteDados
@@ -45,6 +46,7 @@ Column {
                 renderType: Text.NativeRendering
             }
             Text {
+                textFormat: Text.PlainText
                 visible: ficha.nota !== ""
                 text: ficha.nota
                 color: Tema.textoFraco
@@ -74,6 +76,7 @@ Column {
             color: linha.aberto ? Tema.ciano : "transparent"
         }
         Text {
+            textFormat: Text.PlainText
             anchors.left: parent.left
             anchors.leftMargin: 14
             anchors.verticalCenter: parent.verticalCenter
@@ -83,6 +86,7 @@ Column {
             renderType: Text.NativeRendering
         }
         Text {
+            textFormat: Text.PlainText
             anchors.left: parent.left
             anchors.leftMargin: 28
             anchors.verticalCenter: parent.verticalCenter
@@ -207,6 +211,7 @@ Column {
 
         // O interruptor. Desligado: o aviso inteiro, e só depois o botão.
         Text {
+            textFormat: Text.PlainText
             visible: linha.naNuvem && !linha.provedor.ligado
             width: parent.width
             text: linha.provedor.aviso || ""

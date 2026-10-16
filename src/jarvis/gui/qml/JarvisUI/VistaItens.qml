@@ -53,6 +53,7 @@ Flickable {
                 }
             }
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: vista.itens.length ? (vista.itens[0].titulo || "") : ""
                 color: Tema.textoForte
@@ -63,6 +64,7 @@ Flickable {
                 renderType: Text.NativeRendering
             }
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: vista.itens.length ? (vista.itens[0].detalhe || "") : ""
                 color: Tema.textoFraco
@@ -87,6 +89,7 @@ Flickable {
                 width: coluna.width
                 spacing: 4
                 Text {
+                    textFormat: Text.PlainText
                     width: parent.width
                     text: modelData.titulo || ""
                     color: Tema.texto
@@ -97,6 +100,7 @@ Flickable {
                     renderType: Text.NativeRendering
                 }
                 Text {
+                    textFormat: Text.PlainText
                     width: parent.width
                     text: modelData.detalhe || ""
                     color: Tema.textoFraco

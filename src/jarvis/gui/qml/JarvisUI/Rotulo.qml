@@ -3,6 +3,7 @@ import JarvisUI
 
 // Rótulo técnico: caixa alta, pequeno, espaçado. É a tipografia da referência.
 Text {
+    textFormat: Text.PlainText
     property bool destaque: false
     color: destaque ? Tema.ciano : Tema.textoFraco
     font.pixelSize: Tema.tamanhoRotulo

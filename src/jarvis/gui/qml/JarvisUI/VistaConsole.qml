@@ -15,6 +15,7 @@ ListView {
         width: lista.width
         spacing: 12
         Text {
+            textFormat: Text.PlainText
             text: String(index + 1).padStart(2, "0")
             color: Tema.linhaClara
             font.family: Tema.fonteDados
@@ -23,6 +24,7 @@ ListView {
             renderType: Text.NativeRendering
         }
         Text {
+            textFormat: Text.PlainText
             width: lista.width - (lista.numerar ? 36 : 0)
             text: modelData
             color: index === lista.count - 1 ? Tema.textoForte : Tema.texto

@@ -58,6 +58,7 @@ Rectangle {
                     color: atual ? Tema.ciano : "transparent"
                 }
                 Text {
+                    textFormat: Text.PlainText
                     x: 20
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.glifo

@@ -23,6 +23,7 @@ ListView {
             border.color: estado === "resultado" ? Tema.positivo
                         : estado === "executando" ? Tema.alerta : Tema.linhaForte
             Text {
+                textFormat: Text.PlainText
                 anchors.centerIn: parent
                 text: estado === "resultado" ? "✓" : estado === "executando" ? "›" : ""
                 color: parent.border.color
@@ -43,6 +44,7 @@ ListView {
             anchors.right: parent.right
             spacing: 2
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: modelData.titulo || ""
                 color: estado === "espera" ? Tema.textoFraco : Tema.texto

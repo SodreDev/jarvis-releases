@@ -14,6 +14,7 @@ Flickable {
         width: vista.width
         spacing: 14
         Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: vista.dados.texto || ""
             color: Tema.texto
@@ -35,6 +36,7 @@ Flickable {
                     y: 9
                 }
                 Text {
+                    textFormat: Text.PlainText
                     width: coluna.width - 20
                     text: modelData
                     color: Tema.textoFraco

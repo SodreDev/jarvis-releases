@@ -31,6 +31,7 @@ Column {
                     color: Tema.alerta
                 }
                 Text {
+                    textFormat: Text.PlainText
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 120
                     text: modelData.motivo

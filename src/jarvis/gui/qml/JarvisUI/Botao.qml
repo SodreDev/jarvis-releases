@@ -18,6 +18,7 @@ Rectangle {
     Behavior on border.color { ColorAnimation { duration: 120 } }
 
     Text {
+        textFormat: Text.PlainText
         id: rotulo
         anchors.centerIn: parent
         color: botao.ativo ? Tema.textoForte : Tema.texto

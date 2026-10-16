@@ -35,6 +35,7 @@ ListView {
             anchors.right: parent.right
             spacing: 3
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: modelData.titulo || ""
                 color: Tema.texto
@@ -43,6 +44,7 @@ ListView {
                 renderType: Text.NativeRendering
             }
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: modelData.detalhe || modelData.fonte || ""
                 color: Tema.textoFraco

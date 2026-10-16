@@ -20,6 +20,7 @@ ListView {
             destaque: modelData.quem !== "dono"
         }
         Text {
+            textFormat: Text.PlainText
             width: lista.width - 64
             text: modelData.texto
             color: modelData.quem === "dono" ? Tema.texto : Tema.textoForte

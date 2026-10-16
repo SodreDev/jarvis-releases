@@ -61,6 +61,7 @@ Item {
             }
         }
         Text {
+            textFormat: Text.PlainText
             anchors.verticalCenter: parent.verticalCenter
             // O que o Jarvis está esperando para ouvir, do estado vivo da escuta (ADR-0021).
             text: !barra.conversaViva ? "escreva para começar — ou aperte “falar”"

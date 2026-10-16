@@ -55,6 +55,7 @@ Item {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         Text {
+            textFormat: Text.PlainText
             id: saida
             width: parent.width
             text: ponte && ponte.diagnostico !== "" ? ponte.diagnostico
@@ -68,6 +69,7 @@ Item {
     }
 
     Text {
+        textFormat: Text.PlainText
         id: licenca
         anchors.bottom: parent.bottom
         width: parent.width

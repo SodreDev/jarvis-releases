@@ -107,6 +107,7 @@ Item {
                 hoverEnabled: true
             }
             Text {
+                textFormat: Text.PlainText
                 text: "✛"
                 color: modulo.fixado ? Tema.ciano : Tema.textoFraco
                 font.pixelSize: 12
@@ -118,6 +119,7 @@ Item {
                 }
             }
             Text {
+                textFormat: Text.PlainText
                 text: modulo.maximizado ? "⤡" : "⤢"
                 color: Tema.textoFraco
                 font.pixelSize: 12
@@ -128,6 +130,7 @@ Item {
                 }
             }
             Text {
+                textFormat: Text.PlainText
                 text: "✕"
                 color: Tema.textoFraco
                 font.pixelSize: 11

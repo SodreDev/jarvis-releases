@@ -72,6 +72,7 @@ Rectangle {
         anchors.leftMargin: Tema.margem + 4
         spacing: 2
         Text {
+            textFormat: Text.PlainText
             text: ponte ? ponte.relogio : "--:--"
             color: Tema.textoForte
             font.pixelSize: 30
@@ -126,6 +127,7 @@ Rectangle {
             border.width: 1
             border.color: Tema.linha
             Text {
+                textFormat: Text.PlainText
                 id: lupa
                 anchors.left: parent.left
                 anchors.leftMargin: 16
@@ -143,6 +145,7 @@ Rectangle {
                 text: "organizado por importância"
             }
             Text {
+                textFormat: Text.PlainText
                 anchors.left: lupa.right
                 anchors.leftMargin: 14
                 anchors.right: criterio.left
@@ -191,6 +194,7 @@ Rectangle {
                     border.width: 1
                     border.color: Tema.linha
                     Text {
+                        textFormat: Text.PlainText
                         id: textoDaFala
                         anchors.fill: parent
                         anchors.margins: 11

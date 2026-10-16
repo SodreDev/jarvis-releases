@@ -78,6 +78,7 @@ Item {
                         wrapMode: Text.WordWrap
                     }
                     Text {
+                        textFormat: Text.PlainText
                         width: parent.width
                         text: ponte ? ponte.configuracao.caminho : ""
                         color: Tema.textoFraco
@@ -144,6 +145,7 @@ Item {
                                 border.color: ouvindo ? Tema.ciano : Tema.linha
                                 focus: ouvindo
                                 Text {
+                                    textFormat: Text.PlainText
                                     anchors.centerIn: parent
                                     text: capturador.ouvindo
                                           ? "aperte a combinação…"
@@ -339,6 +341,7 @@ Item {
                                 width: parent.width
                                 spacing: 12
                                 Text {
+                                    textFormat: Text.PlainText
                                     text: modelData.variavel
                                     color: Tema.texto
                                     font.family: Tema.fonteDados
