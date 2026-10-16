@@ -125,6 +125,19 @@ class LogDeEventos:
             )
         return Registro(seq=seq, envelope=envelope, prev_sha256=anterior, sha256=digest)
 
+    def maior_seq(self, *, session_id: str | None = None) -> int:
+        """Maior `seq` persistido (da sessão, se pedida); 0 quando não há registro.
+
+        É o teto da reposição: cursor acima disto é cursor que não existe, e o corretor
+        trata como pedido do começo em vez de entregar nada (achado 6 da revisão F0+F1).
+        """
+        sql = "SELECT COALESCE(MAX(seq), 0) AS maior FROM event_log"
+        parametros: tuple[str, ...] = ()
+        if session_id is not None:
+            sql += " WHERE session_id = ?"
+            parametros = (session_id,)
+        return int(self._con.execute(sql, parametros).fetchone()["maior"])
+
     def ler(self, *, session_id: str | None = None) -> Iterator[Registro]:
         sql = "SELECT * FROM event_log"
         parametros: tuple[str, ...] = ()

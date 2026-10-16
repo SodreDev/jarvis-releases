@@ -54,6 +54,29 @@ class Assinante:
     nome: str
     canal: Canal
     cursor: int = 0
+    cursor_pedido: int | None = None
+    """O `desde_seq` que o cliente pediu no handshake, **antes** da conferência.
+
+    `None` quando veio ilegível. A conferência contra o log acontece na admissão, não aqui:
+    a thread de aceitação não pode tocar o SQLite (conexão de SQLite não atravessa thread).
+    """
+
+
+def _cursor_pedido(primeiro: dict[str, Any]) -> int | None:
+    """`desde_seq` do handshake, sem confiar e sem levantar.
+
+    `int(...)` direto aqui derrubava a **thread de aceitação** quando o campo não era número,
+    e thread de aceitação morta significa que nenhum processo conecta mais ao barramento pelo
+    resto da sessão — o sintoma aparecia como "ninguém conecta", não como handshake inválido.
+    """
+    bruto = primeiro.get("desde_seq", 0)
+    if isinstance(bruto, bool) or not isinstance(bruto, int | float | str):
+        return None
+    try:
+        pedido = int(bruto)
+    except (TypeError, ValueError):
+        return None
+    return max(pedido, 0)
 
 
 @dataclass(slots=True)
@@ -101,14 +124,45 @@ class Corretor:
                 canal.fechar()
                 continue
             nome = str(primeiro["registro"])
-            cursor = int(primeiro.get("desde_seq", 0))
             canal.nome = nome
             canal.enviar(
                 {"ack": nome, "session_id": self.session_id, "epoch": self.dono.epoch_atual}
             )
             # A conexão nasce aqui, mas entra em serviço na thread principal: o log é
             # SQLite e conexão de SQLite não atravessa thread.
-            self._novos.put(Assinante(nome=nome, canal=canal, cursor=cursor))
+            self._novos.put(
+                Assinante(nome=nome, canal=canal, cursor_pedido=_cursor_pedido(primeiro))
+            )
+
+    def _conferir_cursor(self, assinante: Assinante) -> None:
+        """Confere o `desde_seq` do handshake contra o log **desta** sessão (§3.1, F0-03 b).
+
+        O cursor vinha do cliente e era usado como verdade. `_repor` filtra
+        `registro.seq <= cursor`, então um cursor acima de tudo que existe fazia a reposição
+        entregar **nada**, sem erro em lugar nenhum: o `PolicyDecision` que esperava consumo
+        nunca chegava e o `ToolCall` ficava em voo para sempre. Pior no adversário: bastava
+        pedir alto para ficar cego a um tipo específico e estragar a auditoria de quem observa.
+
+        Cursor que não cabe no log é tratado como **pedido do começo** — repor demais é
+        idempotente do lado de quem recebe (o `executor` tem idempotência por `call_id`),
+        repor de menos é evento perdido.
+        """
+        teto = self.log.maior_seq(session_id=self.session_id)
+        pedido = assinante.cursor_pedido
+        if pedido is None:
+            self.recusados.append(
+                f"{assinante.nome}: desde_seq ilegível no handshake; reposição do começo"
+            )
+            assinante.cursor = 0
+            return
+        if pedido > teto:
+            self.recusados.append(
+                f"{assinante.nome}: desde_seq {pedido} passa do maior seq da sessão "
+                f"({teto}); reposição do começo"
+            )
+            assinante.cursor = 0
+            return
+        assinante.cursor = pedido
 
     def _repor(self, assinante: Assinante) -> None:
         """Reenvia do log o que o processo perdeu enquanto estava fora (aceite F0-03 b)."""
@@ -142,6 +196,7 @@ class Corretor:
             except queue.Empty:
                 return
             self.assinantes.append(assinante)
+            self._conferir_cursor(assinante)
             self._repor(assinante)
 
     def _receber_publicacao(self, assinante: Assinante, quadro: dict[str, Any]) -> None:
