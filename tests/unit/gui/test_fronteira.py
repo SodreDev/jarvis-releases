@@ -83,6 +83,7 @@ def test_toda_vista_do_catalogo_tem_arquivo_qml() -> None:
             Vista.CONVERSA: "VistaConversa.qml",
             Vista.CONFIGURACAO: "VistaConfiguracao.qml",
             Vista.DIAGNOSTICO: "VistaDiagnostico.qml",
+            Vista.NOTIFICACOES: "VistaNotificacoes.qml",
         }[componente.vista]
         assert (QML / esperado).exists(), f"{componente.id} aponta para {esperado}, que não existe"
 

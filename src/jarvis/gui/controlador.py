@@ -88,19 +88,33 @@ class RoteiroDeDemonstracao:
             _acao(
                 "createWidget",
                 componente="notificacoes",
-                titulo="Avisos",
                 area={"coluna": 9, "linha": 4, "colunas": 3, "linhas": 2},
+                motivo="avisos que chegaram enquanto o dono falava (ADR-0025)",
                 dados={
-                    "itens": [
+                    "avisos": [
                         {
-                            "titulo": "Nuvem desligada",
-                            "detalhe": "nada sai desta máquina",
-                            "estado": "visto",
+                            "tipo": "precisa_decisao",
+                            "origem": "tarefa · empacotar",
+                            "resumo": "O .rpm está pronto; publicar exige a sua ordem",
+                            "instante": "há 2 min",
+                            "entrega": "so_card",
+                            "confianca": "terceiros",
                         },
                         {
-                            "titulo": "Voz local pronta",
-                            "detalhe": "pt_BR-faber-medium",
-                            "estado": "resultado",
+                            "tipo": "concluida",
+                            "origem": "tarefa · baixar voz",
+                            "resumo": "pt_BR-faber-medium baixada e conferida",
+                            "instante": "há 6 min",
+                            "entrega": "falado",
+                            "confianca": "terceiros",
+                        },
+                        {
+                            "tipo": "evento",
+                            "origem": "jarvis",
+                            "resumo": "Nuvem desligada: nada sai desta máquina",
+                            "instante": "agora",
+                            "entrega": "na_fila",
+                            "confianca": "propria",
                         },
                     ]
                 },
@@ -302,16 +316,22 @@ class RoteiroDeDemonstracao:
                 titulo="Avisos do empacotamento",
                 area={"coluna": 8, "linha": 6, "colunas": 4, "linhas": 2},
                 dados={
-                    "itens": [
+                    "avisos": [
                         {
-                            "titulo": "Modelos ficam fora do pacote",
-                            "detalhe": "baixados no primeiro uso, com tamanho e hash",
-                            "estado": "visto",
+                            "tipo": "evento",
+                            "origem": "empacotar",
+                            "resumo": "Modelos ficam fora do pacote: baixados no primeiro uso",
+                            "instante": "há 1 min",
+                            "entrega": "calado",
+                            "confianca": "propria",
                         },
                         {
-                            "titulo": "Publicar exige ordem do dono",
-                            "detalhe": "nada de release, tag ou push",
-                            "estado": "espera",
+                            "tipo": "precisa_decisao",
+                            "origem": "empacotar",
+                            "resumo": "Publicar exige ordem do dono: nada de release, tag ou push",
+                            "instante": "agora",
+                            "entrega": "so_card",
+                            "confianca": "propria",
                         },
                     ]
                 },

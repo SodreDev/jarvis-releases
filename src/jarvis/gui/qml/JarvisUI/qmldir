@@ -13,6 +13,7 @@ Pendencias 1.0 Pendencias.qml
 Indicadores 1.0 Indicadores.qml
 Botao 1.0 Botao.qml
 VistaLista 1.0 VistaLista.qml
+VistaNotificacoes 1.0 VistaNotificacoes.qml
 VistaTexto 1.0 VistaTexto.qml
 VistaItens 1.0 VistaItens.qml
 VistaConsole 1.0 VistaConsole.qml

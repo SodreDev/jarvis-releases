@@ -163,6 +163,7 @@ Item {
         sourceComponent: {
             switch (modulo.vista) {
             case "lista": return cLista
+            case "notificacoes": return cNotificacoes
             case "itens_com_imagem": return cItens
             case "console": return cConsole
             case "tarefas": return cTarefas
@@ -176,6 +177,7 @@ Item {
     }
 
     Component { id: cLista; VistaLista { dados: modulo.dados } }
+    Component { id: cNotificacoes; VistaNotificacoes { dados: modulo.dados } }
     Component { id: cItens; VistaItens { dados: modulo.dados } }
     Component { id: cTexto; VistaTexto { dados: modulo.dados } }
     Component { id: cConsole; VistaConsole { dados: modulo.dados; numerar: modulo.componenteCodigo } }

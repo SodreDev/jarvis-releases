@@ -47,6 +47,7 @@ class Vista(StrEnum):
     CONVERSA = "conversa"
     CONFIGURACAO = "configuracao"
     DIAGNOSTICO = "diagnostico"
+    NOTIFICACOES = "notificacoes"
 
 
 class Forma(StrEnum):
@@ -56,6 +57,7 @@ class Forma(StrEnum):
     LINHAS = "linhas"
     ITENS = "itens"
     MEDIDAS = "medidas"
+    AVISOS = "avisos"
 
 
 CHAVES_DE_ITEM: Final[frozenset[str]] = frozenset(
@@ -66,6 +68,21 @@ existir — e nenhum componente de imagem nasce sem confirmação do dono."""
 
 ESTADOS_DE_ITEM: Final[frozenset[str]] = frozenset({"visto", "executando", "resultado", "espera"})
 """Distinguir visto × em execução × resultado é pedido do dono, então é campo, não cor solta."""
+
+CHAVES_DE_AVISO: Final[frozenset[str]] = frozenset(
+    {"tipo", "origem", "resumo", "instante", "entrega", "confianca"}
+)
+"""Um aviso do card `notificacoes` (ADR-0025, regra 11): o que o evento `Notification` traz
+de legível. `tipo` e `entrega` são fechados; `resumo` é texto puro, nunca instrução."""
+TIPOS_DE_AVISO: Final[frozenset[str]] = frozenset(
+    {"concluida", "falhou", "precisa_decisao", "evento"}
+)
+ENTREGAS_DE_AVISO: Final[frozenset[str]] = frozenset({"na_fila", "falado", "so_card", "calado"})
+"""O que foi feito do aviso (ADR-0025, regras 13–15): esperando o piso livre, falado (tocou),
+só card (não perturbe ou decisão do modelo) ou calado pelo modelo — que **continua** na lista:
+nada some sem rastro."""
+CONFIANCAS_DE_AVISO: Final[frozenset[str]] = frozenset({"propria", "terceiros"})
+"""`terceiros` é resultado de tarefa ou de MCP (`trust: third_party`): a tela diz isso."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,10 +209,13 @@ CATALOGO: Final[dict[str, Componente]] = {
         ),
         Componente(
             id="notificacoes",
-            titulo="Avisos",
-            vista=Vista.LISTA,
+            titulo="Notificações",
+            vista=Vista.NOTIFICACOES,
             area_padrao=_area(9, 5, 3, 3),
-            campos={"itens": Forma.ITENS},
+            minimo=(3, 2),
+            # Só a forma do card por enquanto (ADR-0025): a fila de verdade mora no `agentd` e
+            # não está ligada aqui — o que aparece é demonstração, e a moldura diz isso.
+            campos={"avisos": Forma.AVISOS},
             demonstracao=True,
         ),
         Componente(
@@ -261,6 +281,38 @@ def _item(bruto: Any, onde: str) -> dict[str, str]:
     return limpo
 
 
+def _aviso(bruto: Any, onde: str) -> dict[str, str]:
+    if not isinstance(bruto, Mapping):
+        raise ComponenteNaoAutorizado(f"{onde}: cada aviso é um mapa, veio {type(bruto).__name__}")
+    estranhos = sorted(set(bruto) - CHAVES_DE_AVISO)
+    if estranhos:
+        raise ComponenteNaoAutorizado(
+            f"{onde}: aviso com campo não autorizado ({', '.join(estranhos)}). Um aviso tem "
+            f"{', '.join(sorted(CHAVES_DE_AVISO))}"
+        )
+    limpo: dict[str, str] = {}
+    for chave, valor in bruto.items():
+        if not isinstance(valor, str):
+            raise ComponenteNaoAutorizado(f"{onde}.{chave}: esperava texto")
+        limpo[str(chave)] = valor[:LIMITE_DE_TEXTO]
+    for chave, validos in (
+        ("tipo", TIPOS_DE_AVISO),
+        ("entrega", ENTREGAS_DE_AVISO),
+        ("confianca", CONFIANCAS_DE_AVISO),
+    ):
+        valor = limpo.get(chave, "")
+        if chave == "tipo" and not valor:
+            raise ComponenteNaoAutorizado(f"{onde}.tipo: todo aviso tem tipo")
+        if valor and valor not in validos:
+            raise ComponenteNaoAutorizado(
+                f"{onde}.{chave}: {valor!r} não existe. Os que existem: "
+                f"{', '.join(sorted(validos))}"
+            )
+    if not limpo.get("resumo"):
+        raise ComponenteNaoAutorizado(f"{onde}.resumo: aviso sem resumo não diz nada")
+    return limpo
+
+
 def _linhas(bruto: Any, onde: str) -> list[str]:
     if not isinstance(bruto, Sequence) or isinstance(bruto, str | bytes):
         raise ComponenteNaoAutorizado(f"{onde}: esperava uma lista de textos")
@@ -321,6 +373,10 @@ def validar_dados(alvo: Componente, dados: Mapping[str, Any]) -> dict[str, Any]:
             if not isinstance(bruto, Sequence) or isinstance(bruto, str | bytes):
                 raise ComponenteNaoAutorizado(f"{onde}: esperava uma lista de itens")
             limpos[campo] = [_item(item, onde) for item in bruto[:LIMITE_DE_ITENS]]
+        elif forma is Forma.AVISOS:
+            if not isinstance(bruto, Sequence) or isinstance(bruto, str | bytes):
+                raise ComponenteNaoAutorizado(f"{onde}: esperava uma lista de avisos")
+            limpos[campo] = [_aviso(aviso, onde) for aviso in bruto[:LIMITE_DE_ITENS]]
         else:
             limpos[campo] = _medidas(bruto, onde)
     return limpos
