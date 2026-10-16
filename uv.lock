@@ -918,6 +918,7 @@ edge = [
     { name = "edge-tts" },
 ]
 gui = [
+    { name = "jeepney", marker = "sys_platform == 'linux'" },
     { name = "keyring" },
     { name = "pyside6-essentials" },
 ]
@@ -949,6 +950,7 @@ dev = [
 dispositivo = [{ name = "sounddevice", specifier = ">=0.5,<1" }]
 edge = [{ name = "edge-tts", specifier = ">=7.3,<8" }]
 gui = [
+    { name = "jeepney", marker = "sys_platform == 'linux'", specifier = ">=0.9,<1" },
     { name = "keyring", specifier = ">=25.6,<26" },
     { name = "pyside6-essentials", specifier = ">=6.9.3,<6.10" },
 ]

@@ -71,6 +71,8 @@ edge = [
 gui = [
     "PySide6-Essentials>=6.9.3,<6.10",
     "keyring>=25.6,<26",
+    # Cliente D-Bus do portal de atalhos globais (ADR-0021). Já vinha por baixo do keyring.
+    "jeepney>=0.9,<1; sys_platform == 'linux'",
 ]
 # Abertura de dispositivo real de áudio no aplicativo de teste (`jarvis-voz`): sounddevice
 # (MIT) sobre PortAudio (MIT com pedidos não vinculantes). No Linux o PortAudio é biblioteca

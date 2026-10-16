@@ -1,7 +1,8 @@
 # ADR-0023 — MCP nos dois sentidos: cliente por servidor isolado, servidor de capacidades atrás do PDP
 
 **Data:** 2026-10-16 · **Estado:** proposta; emendada em 2026-10-16 pelas ADRs 0025 e 0026 (ver
-"Emenda de 2026-10-16") · **Decide:** dono (o que liga, quem conecta, os
+"Emenda de 2026-10-16"); aceita como **proposta de trabalho** pelo diretor em 2026-10-16 (D6), o
+dono pode revisar · **Decide:** dono (o que liga, quem conecta, os
 tetos), arquiteto (o enforcement)
 **Pedido:** ideia do dono de 2026-10-15 (memória `b63298d6`): o Jarvis é **cliente** MCP (usa
 outros servidores e sabe quais estão conectados) e **servidor** MCP (o Orchestrator e outros apps

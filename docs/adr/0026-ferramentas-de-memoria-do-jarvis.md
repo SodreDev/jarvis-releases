@@ -1,6 +1,7 @@
 # ADR-0026 — Ferramentas de memória do Jarvis: histórico e memória por capacidade tipada, com proveniência e confirmação
 
-**Data:** 2026-10-16 · **Estado:** proposta · **Decide:** dono (aceitar; retenção do histórico;
+**Data:** 2026-10-16 · **Estado:** aceita para implementar a fatia mínima — pelo diretor, em
+2026-10-16, em nome do dono; **o dono pode revisar** · **Decide:** dono (aceitar; retenção do histórico;
 memória para motor de nuvem), planejador (o conjunto de tools, as classes de risco e a ordem)
 **Pedido:** resposta do dono de 2026-10-16 (memória `34d72b96`): **DECISÃO DO DONO** — o Jarvis
 tem histórico de conversas e contexto e, como a MCP do Orchestrator, lê mensagens passadas do
@@ -122,6 +123,18 @@ cópia em claro no disco (WAL, backup, lixeira do sistema).
 (a família `memoria` no catálogo do v1, com as de leitura no núcleo invariável da §5.1), §6.4
 (turno como episódio) e §6.6 (a tabela de fatias acima). ADR-0023: a lista do que o servidor nunca
 expõe ganha a leitura de memória e de histórico.
+
+## Decisões do diretor (2026-10-16)
+
+Decisões do diretor de 2026-10-16 (o dono delegou "siga a partir daí"); o dono pode revisar qualquer uma delas.
+
+- **D17 — esta ADR:** aceita para implementar a fatia mínima (M1).
+- **D19 — retenção:** turno que nenhuma memória cita fica 90 dias (`retention_until`); turno
+  citado por memória fica até o dono apagar a memória ou o turno.
+- **D20 — nuvem:** `sensivel` nunca vai a motor de nuvem; `historico` só vai se o dono ligar,
+  **por motor**, e vem desligado (regra 8).
+- **D21 — "lembrar":** gravar com proveniência (`memoria.lembrar`) e recuperar
+  (`memoria.buscar`, que entra no conjunto).
 
 ## Alternativas descartadas
 

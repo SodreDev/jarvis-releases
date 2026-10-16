@@ -2,9 +2,11 @@
 
 **Quem escreveu:** executor (Opus 5), em 2026-10-16, ao ser interrompido pela ordem do dono de
 reduzir para duas CLIs. **Para quem:** a CLI que continuar (b), (c) e (d).
-**Estado honesto:** entregue **um** arquivo, sem teste, sem ligação com o resto e sem medição.
-Nada do laço de voz, da janela ou do vocabulário de ações foi tocado. O resto é desenho e
-leitura — está tudo aqui para não precisar ser refeito.
+**Estado honesto (atualizado em 2026-10-16 pela CLI "voz"):** (b), (c) e (d) foram feitos a
+partir deste handoff — a decisão, a medição, o que ficou não verificado e as perguntas do dono
+(pendentes) estão na **ADR-0021**. Este arquivo fica como registro do desenho de partida; onde
+ele e a ADR divergem, vale a ADR (o limiar padrão passou de 0,82 para 0,75 medido, e a ação
+ficou `definirModoDeEscuta`). Abaixo, o texto original do executor.
 
 ## 1. O que existe no repositório
 

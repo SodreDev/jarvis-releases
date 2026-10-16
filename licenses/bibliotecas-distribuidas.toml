@@ -120,7 +120,7 @@ de `licenses/texto/` para `usr/share/licenses/jarvis/`."""
 [[biblioteca]]
 id = "jeepney"
 versao = "0.9.0"
-papel = "cliente D-Bus puro-Python do SecretStorage (sem libdbus no pacote)"
+papel = "cliente D-Bus puro-Python do SecretStorage e do portal de atalhos globais (ADR-0021), sem libdbus no pacote"
 licenca = "MIT"
 licenca_escolhida = "MIT"
 estado = "em_uso"

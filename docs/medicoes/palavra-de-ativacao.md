@@ -19,8 +19,8 @@
 
 | fonemizador | limiar sugerido | FP corpus | FP vizinhos | FN | tempo p50 | tempo p95 |
 |---|---:|---:|---:|---:|---:|---:|
-| `simples` | 0.75 | 0/340 | 0/72 | 0/492 (0.0%) | 215 µs | 275 µs |
-| `epitran` | 0.75 | 0/340 | 0/72 | 0/492 (0.0%) | 611 µs | 788 µs |
+| `simples` | 0.75 | 0/340 | 0/72 | 0/492 (0.0%) | 204 µs | 264 µs |
+| `epitran` | 0.75 | 0/340 | 0/72 | 0/492 (0.0%) | 599 µs | 764 µs |
 
 Regra: o meio do platô de limiares com **zero** disparo nos dois conjuntos negativos e o menor falso negativo. A curva anda em degraus porque `jarvis` vira seis símbolos e cada edição custa 1/6: entre 0,67 e 0,83 todo limiar é o mesmo corte — **no máximo uma edição** —, e o meio do platô é o que fica mais longe das duas bordas.
 

@@ -1,7 +1,8 @@
 # ADR-0024 — Seleção de tools: a recuperação ordena, o Jev responde perguntas fechadas, e nada disso autoriza
 
 **Data:** 2026-10-16 · **Estado:** proposta; emendada em 2026-10-16 pela ADR-0025 (ver "Emenda de
-2026-10-16") · **Decide:** dono (Jev de nuvem ou não, e a regra
+2026-10-16"); limiares da regra de decisão, inclusive o +50 ms contra o C0, aceitos como
+**proposta de trabalho** pelo diretor em 2026-10-16 (D14), o dono pode revisar · **Decide:** dono (Jev de nuvem ou não, e a regra
 de decisão antes de medir), arquiteto (o desenho e o harness)
 **Pedido:** ideia do dono de 2026-10-15 (memória `b63298d6`): a classificação e a seleção de
 tools passam pelo modelo classificador recente do Jev **antes** de o modelo principal escolher,

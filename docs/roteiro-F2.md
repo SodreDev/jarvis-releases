@@ -1,7 +1,7 @@
 # Roteiro da F2 — ordem sugerida, dependências e o que é do dono
 
 **Data:** 2026-10-16 · **Autor:** planejador · **Estado:** proposta para o dono, **revista em
-2026-10-16** depois das respostas do dono (ver "Histórico" no fim)
+2026-10-16** depois das respostas do dono e com as decisões do diretor (ver "Histórico" no fim)
 **Base:** SPEC §9 (F2); ADRs 0022 (subagentes), 0023 (MCP cliente e servidor), 0024 (seleção de
 tools), todas propostas e emendadas em 2026-10-16; ADRs 0025 (cérebro único, stream e fila de
 avisos) e 0026 (ferramentas de memória), propostas. **DECISÃO DO DONO** marca só o que é dele:
@@ -78,14 +78,19 @@ juntos, depois do 1.
 
 ## O que é do dono
 
+**Decisões do diretor de 2026-10-16** (o dono delegou "siga a partir daí"; o dono pode revisar
+qualquer uma): D1, D6 e D14 aceitas como propostas de trabalho; D16 e D17 aceitas para implementar
+a fatia mínima; D18 a D22 com as respostas escritas na própria linha. As linhas abertas seguem
+abertas.
+
 | # | DECISÃO DO DONO | Opções | Proposta (não é decisão) | Trava |
 |---|---|---|---|---|
-| D1 | Aceitar a ADR-0022 (um oitavo processo, `tarefas`) | aceitar / pedir outro desenho | aceitar | 10, 11, 17 |
+| D1 | Aceitar a ADR-0022 (um oitavo processo, `tarefas`) | aceitar / pedir outro desenho | aceitar | 10, 11, 17  **Diretor, 2026-10-16:** proposta de trabalho. |
 | D2 | ~~Motor de raciocínio das tarefas~~ **respondida em 2026-10-16:** configurável, local ou nuvem por tarefa e cenário, egress mostrado | — | desenho na emenda da ADR-0022: a configuração do dono escolhe, nunca o LLM; local por padrão | — |
 | D3 | ~~Como o Jarvis avisa~~ **respondida em 2026-10-16:** ele decide; fila até o piso livre ou a próxima mensagem; card | — | desenho na ADR-0025, regras 11–15 | — |
 | D4 | Tarefa com efeito no v1 | só leitura / leitura e escrita recuperável | só leitura no v1 | modelos de tarefa do 11 |
 | D5 | Teto de tarefas simultâneas | 1 / 2 / outro | 2, a confirmar pela medição (a) da ADR-0022 | 10 |
-| D6 | Aceitar a ADR-0023 e qual servidor real entra primeiro | qualquer servidor de leitura | o de teste + um de leitura que o dono use | 12 |
+| D6 | Aceitar a ADR-0023 e qual servidor real entra primeiro | qualquer servidor de leitura | o de teste + um de leitura que o dono use | 12  **Diretor, 2026-10-16:** proposta de trabalho. |
 | D7 | Servidor local **sem** caixa de areia | nunca / aceitar por servidor, pelo nome | aceitar por servidor, só sem disco e sem rede | 12 nos sistemas sem caixa |
 | D8 | Teto máximo de um app que chama o Jarvis | `jarvis` / `padrao` / `concedido` / `total` | até `concedido`; `total` por MCP fica de fora | 13 |
 | D9 | Servidor do Jarvis por HTTP local | só `stdio` / também HTTP em 127.0.0.1 com token | só `stdio` na F2 | 13 |
@@ -93,15 +98,15 @@ juntos, depois do 1.
 | D11 | Conta do WhatsApp | WhatsApp Business Platform oficial / não ligar | só a oficial | 16 |
 | D12 | Navegador do `web.capturar` | escolher depois de medir duas opções | medir duas, com licença conferida | 15 |
 | D13 | Jev de nuvem | não / sim só com corpus sintético / sim também com a fala real | não por padrão | 9 e 14 |
-| D14 | Limiares da regra de decisão da ADR-0024 | os propostos ou outros | −1 p.p. de `recall@5` no máximo; −30% de tokens **ou** +5 p.p.; até 50 ms p95 local; **e** (emenda) no máximo +50 ms na mediana até a 1ª fronteira contra o C0 | 9 (fechar antes de medir) |
+| D14 | Limiares da regra de decisão da ADR-0024 | os propostos ou outros | −1 p.p. de `recall@5` no máximo; −30% de tokens **ou** +5 p.p.; até 50 ms p95 local; **e** (emenda) no máximo +50 ms na mediana até a 1ª fronteira contra o C0 | 9 (fechar antes de medir)  **Diretor, 2026-10-16:** proposta de trabalho, com o +50 ms. |
 | D15 | Orçamento do Jev na SPEC §5.1 (menos de 30 ms local) | manter / mudar | manter como alvo | 14 |
-| D16 | Aceitar a ADR-0025 (cérebro único, stream, fila) | aceitar / pedir outro desenho | aceitar | 1, 2, 4, 5 |
-| D17 | Aceitar a ADR-0026 (ferramentas de memória) | aceitar / pedir outro desenho | aceitar | 3, 7 |
-| D18 | Motor padrão do **cérebro** (a conversa) | local / API de nuvem / os dois, escolhidos por cenário como nas tarefas | medir os dois no harness do 2 e escolher pelo número; local por padrão se couber em ~600 ms de p95 até a 1ª fronteira | 5 |
-| D19 | Retenção do histórico de conversa | 30 / 90 dias / até o dono apagar | 90 dias para turno que nenhuma memória cita; o citado vive enquanto a memória viver | 3 |
-| D20 | Histórico e memória podem ir para motor de **nuvem**? | não / só `historico` / também `sensivel` | `sensivel` nunca (ADR-0026 regra 8); `historico` desligado por padrão, o dono liga | 3, 5, 7 |
-| D21 | "Lembrar" no pedido quer dizer **gravar**? | gravar / recuperar | gravar (`memoria.lembrar`); recuperar é `memoria.buscar`, que o planejador acrescentou | 7 |
-| D22 | Limiares de naturalidade da ADR-0025 | os propostos ou outros, depois de ouvir | ponte aos 700 ms sem 1ª fronteira; no máximo 1 aviso falado a cada 2 min; piso livre = 1,5 s sem fala depois do fim do playback | 1, 4 |
+| D16 | Aceitar a ADR-0025 (cérebro único, stream, fila) | aceitar / pedir outro desenho | aceitar | 1, 2, 4, 5  **Diretor, 2026-10-16:** aceita para a fatia mínima. |
+| D17 | Aceitar a ADR-0026 (ferramentas de memória) | aceitar / pedir outro desenho | aceitar | 3, 7  **Diretor, 2026-10-16:** aceita para a fatia mínima (M1). |
+| D18 | Motor padrão do **cérebro** (a conversa) | local / API de nuvem / os dois, escolhidos por cenário como nas tarefas | medir os dois no harness do 2 e escolher pelo número; local por padrão se couber em ~600 ms de p95 até a 1ª fronteira | 5  **Diretor, 2026-10-16:** medir local e API, escolher pelo número; `claude -p` só provisório. |
+| D19 | Retenção do histórico de conversa | 30 / 90 dias / até o dono apagar | 90 dias para turno que nenhuma memória cita; o citado vive enquanto a memória viver | 3  **Diretor, 2026-10-16:** 90 dias sem citação; citado fica até o dono apagar. |
+| D20 | Histórico e memória podem ir para motor de **nuvem**? | não / só `historico` / também `sensivel` | `sensivel` nunca (ADR-0026 regra 8); `historico` desligado por padrão, o dono liga | 3, 5, 7  **Diretor, 2026-10-16:** como proposto; histórico ligado por motor. |
+| D21 | "Lembrar" no pedido quer dizer **gravar**? | gravar / recuperar | gravar (`memoria.lembrar`); recuperar é `memoria.buscar`, que o planejador acrescentou | 7  **Diretor, 2026-10-16:** sim — gravar com proveniência e recuperar com `memoria.buscar`. |
+| D22 | Limiares de naturalidade da ADR-0025 | os propostos ou outros, depois de ouvir | ponte aos 700 ms sem 1ª fronteira; no máximo 1 aviso falado a cada 2 min; piso livre = 1,5 s sem fala depois do fim do playback | 1, 4  **Diretor, 2026-10-16:** os propostos. |
 
 **Pendências antigas da SPEC §11 que também mexem na F2:** Q6 (modo de acesso com que o v1
 começa), Q7 (elevação no v1), Q9 (pastas da lista de negação).
@@ -134,3 +139,5 @@ começa), Q7 (elevação no v1), Q9 (pastas da lista de negação).
   para a frente (passos 1–4), seguidos do motor real do cérebro (5). O SDK de tool continua cedo
   (6), em paralelo. Seleção (0024) foi para depois do motor real, porque passou a medir tempo até
   a fala com cache. Tarefas (0022) e MCP (0023) foram para depois da fila. Acrescentadas D16–D22.
+- **2026-10-16, versão 2.1:** decisões do diretor registradas (D1, D6, D14, D16–D22), sem mudar a
+  ordem.

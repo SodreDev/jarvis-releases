@@ -238,10 +238,14 @@ def escolher(linhas: Sequence[Linha]) -> float | None:
 
 
 def escrever_csv(medicao: Medicao, caminho: Path) -> None:
+    """Dois blocos, separados por linha em branco: a varredura (uma linha por fonemizador e
+    limiar) e o tempo por trecho (uma linha por fonemizador). Assim cada número de tempo que a
+    ADR publica tem **uma** linha no CSV para o `tools/adr.py` conferir."""
     with caminho.open("w", encoding="utf-8", newline="") as arquivo:
         escritor = csv.writer(arquivo)
         escritor.writerow(
             [
+                "caso",
                 "fonemizador",
                 "limiar",
                 "negativos_corpus",
@@ -254,14 +258,12 @@ def escrever_csv(medicao: Medicao, caminho: Path) -> None:
                 "fn",
                 "taxa_fn",
                 "comando_errado",
-                "tempo_por_trecho_p50_us",
-                "tempo_por_trecho_p95_us",
             ]
         )
         for linha in medicao.linhas:
-            tempos = medicao.tempos_us[linha.fonemizador]
             escritor.writerow(
                 [
+                    f"{linha.fonemizador}@{linha.limiar:.2f}",
                     linha.fonemizador,
                     f"{linha.limiar:.2f}",
                     linha.negativos,
@@ -274,10 +276,22 @@ def escrever_csv(medicao: Medicao, caminho: Path) -> None:
                     linha.fn,
                     f"{linha.taxa_fn:.4f}",
                     linha.comando_errado,
-                    f"{percentil(tempos, 50):.1f}",
-                    f"{percentil(tempos, 95):.1f}",
                 ]
             )
+        escritor.writerow([])
+        escritor.writerow(
+            ["fonemizador", "trechos", "tempo_por_trecho_p50_us", "tempo_por_trecho_p95_us"]
+        )
+        for nome, tempos in medicao.tempos_us.items():
+            escritor.writerow(
+                [nome, len(tempos), f"{percentil(tempos, 50):.1f}", f"{percentil(tempos, 95):.1f}"]
+            )
+
+
+def ler_varredura(caminho: Path) -> list[dict[str, str]]:
+    """O primeiro bloco do CSV (a varredura), como dicionários."""
+    texto = caminho.read_text(encoding="utf-8").split("\n\n", 1)[0]
+    return list(csv.DictReader(texto.splitlines()))
 
 
 def escrever_markdown(medicao: Medicao, caminho: Path, nomes: Sequence[str]) -> None:

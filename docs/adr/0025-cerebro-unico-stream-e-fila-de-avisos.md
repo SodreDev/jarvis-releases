@@ -1,6 +1,7 @@
 # ADR-0025 — Cérebro único: conversa contínua, stream S2→TTS interrompível e fila de notificações
 
-**Data:** 2026-10-16 · **Estado:** proposta · **Decide:** dono (os requisitos marcados
+**Data:** 2026-10-16 · **Estado:** aceita para implementar a fatia mínima — pelo diretor, em
+2026-10-16, em nome do dono; **o dono pode revisar** · **Decide:** dono (os requisitos marcados
 **DECISÃO DO DONO**, já dados; aceitar esta ADR), planejador (o contrato, os tetos e a ordem)
 **Pedido:** respostas do dono de 2026-10-16 (memórias `34d72b96` e `c2bb11f8`), dadas sobre as
 ADRs 0022–0024. Emenda a SPEC §2, §3.2, §3.3 e §3.4 e substitui a regra 7 da ADR-0022. Mede o
@@ -206,6 +207,18 @@ regra 2 (o que "`s2` cancela geração" exige) e §3.4 (`modo`, `avisos_pendente
 7 substituída pelas regras 11–15. ADR-0018: a interface `responder(texto) -> str` é substituída
 pela da regra 6 quando a fatia mínima entrar; a ADR-0018 continua valendo até lá para o
 `jarvis-voz`.
+
+## Decisões do diretor (2026-10-16)
+
+Decisões do diretor de 2026-10-16 (o dono delegou "siga a partir daí"); o dono pode revisar qualquer uma delas.
+
+- **D16 — esta ADR:** aceita para implementar a fatia mínima.
+- **D18 — motor do cérebro:** medir um motor local **e** um de API de nuvem no harness da
+  fatia mínima e escolher pelo número: o local, se couber em ~600 ms de p95 até a 1ª fronteira.
+  O `claude -p` fica só como provisório e de teste.
+- **D22 — limiares:** os propostos — ponte aos 700 ms sem 1ª fronteira (regra 8); no máximo 1
+  aviso falado a cada 2 min (regra 14); piso livre depois de 1,5 s sem fala após o fim do
+  playback (regra 12). Ficam em configuração, não no código.
 
 ## Alternativas descartadas
 

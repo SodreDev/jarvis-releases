@@ -1,7 +1,8 @@
 # ADR-0022 — Subagentes assíncronos: a tarefa delegada roda num processo próprio, e cada passo dela passa pelo mesmo PDP
 
 **Data:** 2026-10-16 · **Estado:** proposta; emendada em 2026-10-16 pelas respostas do dono e
-pela ADR-0025 (ver "Emenda de 2026-10-16") · **Decide:** dono
+pela ADR-0025 (ver "Emenda de 2026-10-16"); aceita como **proposta de trabalho** pelo diretor
+em 2026-10-16 (D1), o dono pode revisar · **Decide:** dono
 **Pedido:** ideia do dono de 2026-10-15 (memória `b63298d6`, registrada como ideia, não como
 decisão): ao pedir uma tarefa longa, o Jarvis **delega**, **continua conversando**, **avisa
 quando termina** e deixa o dono **acompanhar**, como um Orchestrator mínimo.

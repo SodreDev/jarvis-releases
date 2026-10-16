@@ -6,10 +6,9 @@ grupo `voz`, e o relatório de `docs/medicoes` não é reescrito pela suíte.
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
-from tools.harness_palavra import Linha, escolher, main
+from tools.harness_palavra import Linha, escolher, ler_varredura, main
 
 from jarvis.voz.palavra import LIMIAR_PADRAO
 
@@ -48,8 +47,7 @@ def test_sem_limiar_seguro_nao_inventa_um() -> None:
 
 def test_harness_roda_e_o_padrao_do_codigo_e_o_que_ele_sugere(tmp_path: Path) -> None:
     assert main(["--saida", str(tmp_path), "--sem-epitran"]) == 0
-    with (tmp_path / "palavra-de-ativacao.csv").open(encoding="utf-8") as arquivo:
-        linhas = list(csv.DictReader(arquivo))
+    linhas = ler_varredura(tmp_path / "palavra-de-ativacao.csv")
     no_padrao = next(
         linha
         for linha in linhas
@@ -63,6 +61,5 @@ def test_harness_roda_e_o_padrao_do_codigo_e_o_que_ele_sugere(tmp_path: Path) ->
 
 
 def test_o_csv_publicado_existe_e_tem_os_dois_fonemizadores() -> None:
-    with PUBLICADO.open(encoding="utf-8") as arquivo:
-        nomes = {linha["fonemizador"] for linha in csv.DictReader(arquivo)}
+    nomes = {linha["fonemizador"] for linha in ler_varredura(PUBLICADO)}
     assert nomes == {"simples", "epitran"}
