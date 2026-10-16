@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Callable, Iterator
 
 import pytest
@@ -160,3 +162,46 @@ def test_o_canal_do_ambiente_entrega_o_escolhido_pela_adr() -> None:
 
 def test_a_capacidade_padrao_da_folga_de_mais_de_um_segundo() -> None:
     assert CAPACIDADE_PADRAO * 20 >= 1000
+
+
+QUADROS_ACIMA_DE_QUALQUER_BUFFER = 2000
+"""2 000 quadros = 1,3 MB: passa do pipe do kernel (64 KiB) e até do teto de 1 MiB."""
+
+
+def test_a_conexao_nao_bloqueia_quando_o_buffer_do_sistema_enche() -> None:
+    """Achado 1 da revisão F0+F1: enviar sem perguntar por espaço trava o laço de 20 ms.
+
+    O pipe do kernel tem ~64 KiB (≈100 quadros de 20 ms). Com o `agentd` atrasado por GC ou
+    por um pico de AEC + ASR, o pipe enche e o `send_bytes` fica **pendurado dentro do tique**
+    da captura: o quadro seguinte de 20 ms se perde, o SLO-1 estoura e `descartados` não acusa
+    nada, porque o único descarte contado era o de pipe quebrado.
+    """
+    canal = CanalDeConexao.par()
+    terminou = threading.Event()
+
+    def produzir() -> None:
+        for i in range(QUADROS_ACIMA_DE_QUALQUER_BUFFER):
+            canal.enviar(quadro(i), epoch=1)
+        terminou.set()
+
+    linha = threading.Thread(target=produzir, name="produtor-de-quadros", daemon=True)
+    linha.start()
+    try:
+        assert terminou.wait(timeout=5.0), "enviar bloqueou com o buffer do sistema cheio"
+        assert canal.descartados > 0, "descarte por fila cheia tem de ser contado"
+
+        seqs = []
+        while (recebido := canal.receber()) is not None:
+            cabecalho, recebido_quadro = recebido
+            assert len(recebido_quadro.amostras) == BYTES_POR_QUADRO, "quadro cortado pela metade"
+            seqs.append(cabecalho.seq)
+        assert seqs, "o que couber antes de encher tem de chegar"
+        assert seqs == sorted(seqs), "o que sobra está em ordem"
+    finally:
+        # Se bloqueou, drenar é o que solta a linha presa antes de fechar o canal.
+        limite = time.monotonic() + 10.0
+        while not terminou.is_set() and time.monotonic() < limite:
+            if canal.receber() is None:
+                time.sleep(0.01)
+        linha.join(timeout=5.0)
+        canal.fechar()

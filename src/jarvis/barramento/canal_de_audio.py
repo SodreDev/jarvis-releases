@@ -24,15 +24,19 @@ a ADR-0014 previu).
 - `CanalDeConexao` — `multiprocessing.Connection`, que é o que o barramento já usa na F0-03:
   preserva fronteira de mensagem e é **portátil** (canal nomeado no Windows, socket no Unix).
 
-**Áudio atrasado é áudio inútil:** os dois canais **descartam o mais velho** quando enchem, e
-contam o descarte. Bloquear o produtor para não perder quadro seria travar a captura, que é o
-oposto do que o SLO-1 quer.
+**Áudio atrasado é áudio inútil:** nenhum dos três bloqueia o produtor quando enche — o anel
+passa por cima do mais velho, o *socket* e a `Connection` recusam o quadro novo — e o descarte é
+contado em `descartados`. Travar a captura para não perder quadro seria o oposto do que o SLO-1
+quer. No Windows a `Connection` é canal nomeado e não existe pergunta de espaço (`select` só
+aceita *socket* lá): o envio pode bloquear, e isso é a mesma lacuna de P11 que a ADR-0015 declara.
 """
 
 from __future__ import annotations
 
+import select
 import socket
 import struct
+import sys
 import threading
 import time
 from contextlib import suppress
@@ -328,8 +332,10 @@ class CanalDeConexao:
     datagrama nem o nome da memória compartilhada entregam de graça.
 
     O preço: a `Connection` **bloqueia** quando o buffer do sistema enche, e áudio atrasado é
-    áudio inútil. Por isso o envio só acontece quando `poll` diz que há espaço, e o resto é
-    descarte contado — a mesma política dos outros dois.
+    áudio inútil. Por isso o envio só acontece quando `ha_espaco_para_enviar` diz que há espaço,
+    e o resto é descarte contado — a mesma política dos outros dois. No Windows essa pergunta
+    não tem resposta (ver `ha_espaco_para_enviar`) e o envio volta a poder bloquear: lacuna de
+    P11 da ADR-0015, não política.
     """
 
     envio: Any
@@ -397,16 +403,44 @@ class CanalDeConexao:
         except OSError:  # pragma: no cover — ouvinte fechado antes de alguém conectar
             self.recepcao = None
 
+    def ha_espaco_para_enviar(self) -> bool:
+        """Cabe um quadro inteiro agora, sem o envio ficar pendurado?
+
+        No Linux a pergunta é `select` de escrita no descritor, e ela também é o que impede
+        mensagem partida pela metade: o pipe só aparece pronto quando cabem `PIPE_BUF` bytes
+        (4 KiB) e o `AF_UNIX` em fluxo só quando três quartos do buffer estão livres — os dois
+        com folga sobre os 664 bytes de um quadro. No Windows a `Connection` é canal nomeado e
+        o `select` de lá só aceita *socket*: sem resposta, respondemos `True` e o envio pode
+        bloquear (lacuna de P11, declarada na ADR-0015 e no docstring da classe).
+        """
+        if sys.platform == "win32":  # pragma: no cover — P11: o CI do Windows ainda não rodou
+            return True
+        try:
+            descritor = self.envio.fileno()
+        except (OSError, ValueError):  # pragma: no cover — ponta já fechada
+            return True
+        return bool(select.select([], [descritor], [], 0)[1])
+
     def enviar(self, quadro: Quadro, *, epoch: int) -> bool:
         if self.envio is None:
             self.descartados += 1
             return False
         self._seq += 1
+        if not self.ha_espaco_para_enviar():
+            # Buffer do sistema cheio: o consumidor não acompanha. Bloquear aqui seria travar o
+            # laço de 20 ms da captura e queimar o SLO-1 em silêncio; descartar e contar é a
+            # política. O `seq` já foi gasto de propósito: o buraco na contagem é o que deixa
+            # o consumidor ver que houve perda (é o que o `CanalDeSocket` já fazia).
+            self.descartados += 1
+            return False
         cabecalho = Cabecalho(
             epoch=epoch, seq=self._seq, ts_mono_ns=quadro.ts_mono_ns, amostras=quadro.n_amostras
         )
         try:
             self.envio.send_bytes(cabecalho.empacotar() + quadro.amostras)
+        except BlockingIOError:  # pragma: no cover — corrida: encheu entre a pergunta e o envio
+            self.descartados += 1
+            return False
         except (BrokenPipeError, OSError):
             self.descartados += 1
             return False
