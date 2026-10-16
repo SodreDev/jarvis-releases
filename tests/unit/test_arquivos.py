@@ -22,7 +22,14 @@ from jarvis.arquivos import (
     ler_texto,
     tranca_exclusiva,
 )
-from jarvis.microfone import ARQUIVO_ESTADO, Modo, Pedido, escrever_pedido, ler_pedido
+from jarvis.microfone import (
+    ARQUIVO_ESTADO,
+    Modo,
+    Pedido,
+    PedidoCorrompido,
+    escrever_pedido,
+    ler_pedido,
+)
 from jarvis.ui.painel import PainelDoMicrofone
 
 
@@ -107,10 +114,15 @@ def test_ler_texto_separa_ausente_de_ocupado(
         ler_texto(alvo)
 
 
-def test_pedido_ocupado_mantem_o_anterior_e_corrompido_desliga(
+def test_pedido_ocupado_e_pedido_corrompido_nao_sao_ordem_de_desligar(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A distinção que importa: ruído de um instante não pode virar ordem de desligar."""
+    """A distinção que importa: ruído de um instante não pode virar ordem de desligar.
+
+    "Ocupado" devolve `None` (siga com o que tinha) e "corrompido" levanta — os dois deixam a
+    decisão para quem chama, que é o `ControleDoMicrofone`. Era aqui que o achado 12 morava:
+    corrompido devolvia `DESLIGADO` e um tique de byte estragado desligava o microfone do dono.
+    """
     escrever_pedido(tmp_path, Pedido(modo=Modo.ESCUTA))
     original = Path.read_text
 
@@ -124,10 +136,10 @@ def test_pedido_ocupado_mantem_o_anterior_e_corrompido_desliga(
     monkeypatch.undo()
 
     (tmp_path / "microfone-pedido.json").write_text("{não é json", encoding="utf-8")
-    corrompido_devolve = ler_pedido(tmp_path)
 
     assert ocupado_devolve is None, "None = siga com o que tinha, não = desligue"
-    assert corrompido_devolve == Pedido(modo=Modo.DESLIGADO)
+    with pytest.raises(PedidoCorrompido):
+        ler_pedido(tmp_path)
 
 
 def test_o_indicador_nao_pisca_quando_o_arquivo_esta_ocupado(

@@ -27,9 +27,20 @@ from jarvis.audio_io import (
     TipoDeTrecho,
     Trecho,
 )
-from jarvis.audio_io.controle import TICKS_ENTRE_ESCRITAS, ControleDoMicrofone
+from jarvis.audio_io.controle import (
+    CORROMPIDOS_PARA_DESLIGAR,
+    TICKS_ENTRE_ESCRITAS,
+    ControleDoMicrofone,
+)
 from jarvis.audio_io.erros import DispositivoIndisponivel
-from jarvis.microfone import ARQUIVO_PEDIDO, Modo, Pedido, escrever_pedido, ler_pedido
+from jarvis.microfone import (
+    ARQUIVO_PEDIDO,
+    Modo,
+    Pedido,
+    PedidoCorrompido,
+    escrever_pedido,
+    ler_pedido,
+)
 from jarvis.relogio import RelogioFalso
 from jarvis.ui.atalhos import (
     VARIAVEL_ARQUIVO,
@@ -274,24 +285,32 @@ def test_estado_velho_nao_acende_o_indicador(tmp_path: Path) -> None:
 
 
 def test_pedido_ilegivel_nao_abre_o_microfone(tmp_path: Path) -> None:
-    """Na dúvida, fechado. Arquivo corrompido não pode virar microfone aberto."""
+    """Na dúvida, fechado. Arquivo ilegível não pode virar microfone aberto — em caso nenhum.
+
+    O contrato mudou com o achado 12 da revisão F0+F1, e a invariante não: **corrompido** não
+    devolve pedido nenhum (levanta, e quem chama decide), e **modo inventado** devolve
+    `DESLIGADO`. Nenhum dos dois devolve um modo que abre a fonte.
+    """
     escrever_pedido(tmp_path, Pedido(modo=Modo.ESCUTA))
     assert ler_pedido(tmp_path) == Pedido(modo=Modo.ESCUTA)
 
     (tmp_path / ARQUIVO_PEDIDO).write_text("{isto não é json", encoding="utf-8")
-    assert ler_pedido(tmp_path) == Pedido(modo=Modo.DESLIGADO)
+    with pytest.raises(PedidoCorrompido):
+        ler_pedido(tmp_path)
 
     (tmp_path / ARQUIVO_PEDIDO).write_text(json.dumps({"modo": "inventado"}), encoding="utf-8")
     assert ler_pedido(tmp_path) == Pedido(modo=Modo.DESLIGADO)
 
 
-def test_pedido_ilegivel_fecha_a_fonte_aberta(tmp_path: Path) -> None:
+def test_pedido_ilegivel_que_insiste_fecha_a_fonte_aberta(tmp_path: Path) -> None:
+    """Fechar continua obrigatório; o que mudou é que não acontece no primeiro tique."""
     bancada = montar(tmp_path, modo=Modo.ESCUTA)
     bancada.volta(quadros=2)
     assert bancada.painel.ouvindo
 
     (tmp_path / ARQUIVO_PEDIDO).write_text("", encoding="utf-8")
-    bancada.controle.tick()
+    for _ in range(CORROMPIDOS_PARA_DESLIGAR):
+        bancada.controle.tick()
 
     assert bancada.captura.aberta is False
     assert bancada.fonte.aberta is False
@@ -382,3 +401,43 @@ def test_painel_sem_atalho_nunca_aperta(tmp_path: Path) -> None:
 
     assert painel.tick() == Pedido(modo=Modo.PTT, pressionado=False)
     assert ler_pedido(tmp_path) == Pedido(modo=Modo.PTT, pressionado=False)
+
+
+def test_uma_leitura_corrompida_nao_desliga_o_microfone_do_dono(tmp_path: Path) -> None:
+    """Achado 12 da revisão F0+F1: um glitch de I/O virava *kill switch* silencioso.
+
+    `ler_pedido` devolvia `DESLIGADO` para qualquer JSON inválido e o `tick` só preservava o
+    pedido anterior quando a leitura voltava `None`. Então **uma** leitura corrompida — meia
+    escrita pega antes do `replace`, cache invalidado em VM ou overlayfs — sobrescrevia o
+    pedido do dono: a fonte fechava, o indicador apagava e, se ele estivesse falando, o começo
+    da fala se perdia. A próxima escrita da `ui` restaurava, e ninguém entendia a piscada.
+
+    A regra "na dúvida, fechado" continua valendo; o que mudou é o que conta como dúvida:
+    corrupção que **persiste** é falha de verdade, um tique de byte estragado não é.
+    """
+    bancada = montar(tmp_path, modo=Modo.ESCUTA)
+    bancada.volta(quadros=2)
+    no_comeco = bancada.captura.aberta
+    assert no_comeco
+
+    (tmp_path / ARQUIVO_PEDIDO).write_text('{"modo":"pt', encoding="utf-8")
+    bancada.controle.tick()
+    depois_do_glitch = bancada.captura.aberta
+
+    assert depois_do_glitch, "uma leitura corrompida não é ordem de desligar"
+    assert bancada.controle.pedido == Pedido(modo=Modo.ESCUTA)
+    assert bancada.controle.pedidos_corrompidos == 1
+
+    for _ in range(CORROMPIDOS_PARA_DESLIGAR):
+        bancada.controle.tick()
+    com_a_corrupcao_insistindo = bancada.captura.aberta
+
+    assert bancada.controle.pedido == Pedido(modo=Modo.DESLIGADO), "a que insiste desliga"
+    assert com_a_corrupcao_insistindo is False
+
+    escrever_pedido(tmp_path, Pedido(modo=Modo.ESCUTA))
+    bancada.controle.tick()
+    depois_da_escrita_boa = bancada.captura.aberta
+
+    assert depois_da_escrita_boa, "escrita boa da `ui` volta a valer na hora"
+    assert bancada.controle.corrompidos_seguidos == 0

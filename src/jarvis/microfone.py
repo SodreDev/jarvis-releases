@@ -31,10 +31,19 @@ from jarvis.arquivos import LeituraOcupada, escrever_atomico, ler_texto
 
 CORROMPIDO: Final[dict[str, Any]] = {}
 """Marcador de "o arquivo existe, deu para ler e o conteúdo não presta" — diferente de
-ausente e diferente de ocupado. Só este caso vira `DESLIGADO`."""
+ausente e diferente de ocupado."""
 
 ARQUIVO_PEDIDO: Final = "microfone-pedido.json"
 ARQUIVO_ESTADO: Final = "microfone-estado.json"
+
+
+class PedidoCorrompido(ValueError):
+    """O arquivo de pedido existe, deu para ler e não é um pedido.
+
+    Não é ausência ("a `ui` não pediu nada"), não é disputa ("não deu para ler agora") e não é
+    pichação ("modo que não existe", que é JSON válido). É byte estragado, e quem chama decide
+    o que fazer com um tique de byte estragado — ver `ler_pedido`.
+    """
 
 
 class Modo(StrEnum):
@@ -125,13 +134,19 @@ def escrever_pedido(raiz: Path, pedido: Pedido) -> None:
 def ler_pedido(raiz: Path) -> Pedido | None:
     """O pedido do dono, ou `None` quando não há pedido novo para aplicar.
 
-    Três casos, e eles **não** são o mesmo:
+    **Quatro** casos, e eles não são o mesmo:
 
     - **ausente**: a `ui` ainda não pediu nada → `None`, e quem chama segue com o que tinha;
     - **ocupado** (disputa de arquivo no Windows): também `None` — ruído de um instante não é
       ordem, e desligar o microfone por isso seria piscar na cara do dono;
-    - **corrompido**: conteúdo que não é JSON, ou modo que não existe → `DESLIGADO`. Aí sim é
-      falha de verdade, e o padrão tem de ser o mais silencioso, não o mais útil.
+    - **corrompido** (não é JSON, ou não é um mapa): levanta `PedidoCorrompido`, e **quem
+      chama decide**. Byte estragado num tique é a mesma família do "ocupado", não uma ordem:
+      meia escrita pega antes do `replace`, cache invalidado em VM ou overlayfs. O `audio-io`
+      decide por teimosia (`ControleDoMicrofone`): mantém o pedido anterior e só desliga se a
+      corrupção insistir;
+    - **modo que não existe**, com JSON válido: `DESLIGADO` na primeira leitura. Isso não é
+      glitch, é pichação — alguém escreveu um pedido inteiro e inválido —, e aí o padrão tem
+      de ser o mais silencioso, não o mais útil.
     """
     try:
         dados = _ler(raiz / ARQUIVO_PEDIDO)
@@ -140,7 +155,7 @@ def ler_pedido(raiz: Path) -> Pedido | None:
     if dados is None:
         return None
     if dados is CORROMPIDO:
-        return Pedido(modo=Modo.DESLIGADO)
+        raise PedidoCorrompido(f"{raiz / ARQUIVO_PEDIDO} não é um pedido legível")
     try:
         modo = Modo(str(dados["modo"]))
     except (KeyError, ValueError):
