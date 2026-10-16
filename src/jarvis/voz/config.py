@@ -22,6 +22,7 @@ O arquivo fica no diretório de configuração do usuário (`$XDG_CONFIG_HOME/ja
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -31,7 +32,7 @@ from typing import Any, Final
 from jarvis.ambiente import ambiente_ou_os
 from jarvis.voz.chaves import proibir_segredo_na_configuracao
 from jarvis.voz.interface import Onde
-from jarvis.voz.registro import Motor, ler_motores, motor_registrado
+from jarvis.voz.registro import Motor, MotorRecusado, exigir_modelo, ler_motores, motor_registrado
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
 ARQUIVO: Final = "jarvis-voz.toml"
@@ -45,6 +46,12 @@ S2_PADRAO: Final = "eco"
 VOZ_PADRAO: Final = "pt_BR-faber-medium"
 MODELO_DO_ASR_PADRAO: Final = "small"
 ESCUTAS: Final[tuple[str, ...]] = ("ptt", "vad")
+TTS_ELEVENLABS: Final = "tts-elevenlabs"
+FORMA_DO_ID_DE_VOZ: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_-]{1,64}")
+"""O `voice_id` vai **no caminho** da URL (`/v1/text-to-speech/{voice_id}`): barra, `?`, `#`
+ou espaço mudariam o pedido. Os ids da ElevenLabs são alfanuméricos; o resto recusa."""
+FORMA_DA_VOZ_DO_PIPER: Final[re.Pattern[str]] = re.compile(r"[a-z]{2,3}_[A-Z]{2}-.+")
+"""`pt_BR-faber-medium`: idioma_PAÍS-nome-qualidade, como o rhasspy/piper-voices nomeia."""
 
 
 class ConfiguracaoInvalida(ValueError):
@@ -75,7 +82,11 @@ class Configuracao:
     tts: str = TTS_PADRAO
     s2: str = S2_PADRAO
     voz: str = VOZ_PADRAO
-    """Voz do TTS: a voz do piper no caminho local, ou o `voice_id` da conta na ElevenLabs."""
+    """Voz do piper, no caminho local. A da ElevenLabs tem campo próprio (`voz_elevenlabs`)."""
+    voz_elevenlabs: str = ""
+    """O `voice_id` da conta do dono na ElevenLabs. Vazio = não escolhida (o motor recusa)."""
+    modelo_elevenlabs: str = ""
+    """Modelo da ElevenLabs, da lista do registro. Vazio = o padrão do registro."""
     modelo_do_asr: str = MODELO_DO_ASR_PADRAO
     """Tamanho do whisper local. Na nuvem, o modelo é o do próprio motor registrado."""
     modelo_do_s2: str = ""
@@ -94,6 +105,8 @@ class Configuracao:
             "tts": self.tts,
             "s2": self.s2,
             "voz": self.voz,
+            "voz_elevenlabs": self.voz_elevenlabs,
+            "modelo_elevenlabs": self.modelo_elevenlabs,
             "modelo_do_asr": self.modelo_do_asr,
             "modelo_do_s2": self.modelo_do_s2,
             "entrada": self.entrada,
@@ -125,7 +138,7 @@ class Configuracao:
 
 
 def _texto_toml(configuracao: Configuracao) -> str:
-    """TOML escrito à mão: são onze campos e nenhuma dependência nova por isso."""
+    """TOML escrito à mão: são treze campos e nenhuma dependência nova por isso."""
 
     def aspas(valor: str) -> str:
         return '"' + valor.replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -148,6 +161,8 @@ asr = {aspas(configuracao.asr)}
 tts = {aspas(configuracao.tts)}
 s2 = {aspas(configuracao.s2)}
 voz = {aspas(configuracao.voz)}
+voz_elevenlabs = {aspas(configuracao.voz_elevenlabs)}
+modelo_elevenlabs = {aspas(configuracao.modelo_elevenlabs)}
 modelo_do_asr = {aspas(configuracao.modelo_do_asr)}
 modelo_do_s2 = {aspas(configuracao.modelo_do_s2)}
 entrada = {aspas(configuracao.entrada)}
@@ -196,6 +211,22 @@ def validar(configuracao: Configuracao) -> Configuracao:
     exigir("asr", configuracao.asr, "asr")
     exigir("tts", configuracao.tts, "tts")
 
+    if configuracao.voz_elevenlabs and not FORMA_DO_ID_DE_VOZ.fullmatch(
+        configuracao.voz_elevenlabs
+    ):
+        raise ConfiguracaoInvalida(
+            f"voz_elevenlabs = {configuracao.voz_elevenlabs!r} não tem a forma de um voice_id "
+            "(letras, números, _ e -, até 64): ele vai no caminho da URL do serviço"
+        )
+    elevenlabs = motores.get(TTS_ELEVENLABS)
+    if configuracao.modelo_elevenlabs:
+        if elevenlabs is None:
+            raise ConfiguracaoInvalida(f"modelo_elevenlabs sem o motor {TTS_ELEVENLABS!r}")
+        try:
+            exigir_modelo(elevenlabs, configuracao.modelo_elevenlabs)
+        except MotorRecusado as erro:
+            raise ConfiguracaoInvalida(f"modelo_elevenlabs: {erro}") from None
+
     if configuracao.s2 not in nomes_de_gerador():
         raise ConfiguracaoInvalida(
             f"s2 = {configuracao.s2!r} não existe. Válidos: {', '.join(nomes_de_gerador())}"
@@ -237,11 +268,21 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
     except (tomllib.TOMLDecodeError, OSError) as erro:
         raise ConfiguracaoInvalida(f"{alvo} não deu para ler: {erro}") from None
     proibir_segredo_na_configuracao(dados, arquivo=str(alvo))
+    tts = _texto(dados, "tts", TTS_PADRAO)
+    voz = _texto(dados, "voz", VOZ_PADRAO)
+    voz_elevenlabs = _texto(dados, "voz_elevenlabs", "")
+    # Arquivo de antes do campo próprio: a tela de então mandava pôr o `voice_id` em `voz`.
+    # Se o que está lá não tem forma de voz do piper, é o id da ElevenLabs.
+    antigo = "voz_elevenlabs" not in dados and tts == TTS_ELEVENLABS
+    if antigo and voz and not FORMA_DA_VOZ_DO_PIPER.fullmatch(voz):
+        voz_elevenlabs, voz = voz, VOZ_PADRAO
     configuracao = Configuracao(
         asr=_texto(dados, "asr", ASR_PADRAO),
-        tts=_texto(dados, "tts", TTS_PADRAO),
+        tts=tts,
         s2=_texto(dados, "s2", S2_PADRAO),
-        voz=_texto(dados, "voz", VOZ_PADRAO),
+        voz=voz,
+        voz_elevenlabs=voz_elevenlabs,
+        modelo_elevenlabs=_texto(dados, "modelo_elevenlabs", ""),
         modelo_do_asr=_texto(dados, "modelo_do_asr", MODELO_DO_ASR_PADRAO),
         modelo_do_s2=_texto(dados, "modelo_do_s2", ""),
         entrada=_texto(dados, "entrada", ""),

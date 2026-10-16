@@ -134,7 +134,7 @@ def test_nuvem_sem_chave_vira_frase_e_nao_traceback(tmp_path: Path) -> None:
     app = aplicativo_de(tmp_path)
     app.ambiente = {}
     app.configuracao = app.configuracao.com(
-        tts="tts-elevenlabs", voz="voz-do-dono", nuvem_ligada=("tts-elevenlabs",)
+        tts="tts-elevenlabs", voz_elevenlabs="voz-do-dono", nuvem_ligada=("tts-elevenlabs",)
     )
 
     with pytest.raises(AplicativoIndisponivel) as erro:
@@ -148,7 +148,7 @@ def test_sob_ci_a_nuvem_de_verdade_nem_e_tentada(tmp_path: Path) -> None:
     app = aplicativo_de(tmp_path)
     app.ambiente = {"CI": "1", "JARVIS_ELEVENLABS_API_KEY": "sk_chave_de_teste_1234567890"}
     app.configuracao = app.configuracao.com(
-        tts="tts-elevenlabs", voz="voz-do-dono", nuvem_ligada=("tts-elevenlabs",)
+        tts="tts-elevenlabs", voz_elevenlabs="voz-do-dono", nuvem_ligada=("tts-elevenlabs",)
     )
 
     with pytest.raises(AplicativoIndisponivel, match="não é local"):
@@ -158,7 +158,7 @@ def test_sob_ci_a_nuvem_de_verdade_nem_e_tentada(tmp_path: Path) -> None:
 def test_nuvem_desligada_recusa_citando_a_configuracao(tmp_path: Path) -> None:
     app = aplicativo_de(tmp_path)
     app.ambiente = {"CI": "1"}
-    app.configuracao = app.configuracao.com(tts="tts-elevenlabs", voz="voz-do-dono")
+    app.configuracao = app.configuracao.com(tts="tts-elevenlabs", voz_elevenlabs="voz-do-dono")
 
     with pytest.raises(AplicativoIndisponivel, match="desligado"):
         app.rodar_texto(["oi"])

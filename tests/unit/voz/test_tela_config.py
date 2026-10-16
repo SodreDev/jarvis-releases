@@ -213,7 +213,7 @@ def test_s_abreviado_nao_confirma_nuvem(tmp_path: Path) -> None:
 def test_o_arquivo_gravado_e_relido_sem_perder_nada(tmp_path: Path) -> None:
     config, _ = tela(tmp_path, [])
     escolha = _indice_de(config, "tts", "tts-elevenlabs")
-    config.entrada = Digitado(["2", escolha, CONFIRMACAO, "3", "voz-do-dono", "s"])
+    config.entrada = Digitado(["2", escolha, CONFIRMACAO, "10", "voz-do-dono", "11", "2", "s"])
     config.rodar()
 
     gravado = ler(tmp_path / "jarvis-voz.toml")
@@ -221,7 +221,8 @@ def test_o_arquivo_gravado_e_relido_sem_perder_nada(tmp_path: Path) -> None:
         asr="asr-whisper-local",
         tts="tts-elevenlabs",
         s2="eco",
-        voz="voz-do-dono",
+        voz_elevenlabs="voz-do-dono",
+        modelo_elevenlabs="eleven_flash_v2_5",
         nuvem_ligada=("tts-elevenlabs",),
     )
 

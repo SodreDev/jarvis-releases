@@ -158,7 +158,8 @@ def motor_de_tts(
 
         nuvem = MotorTtsElevenLabs(
             raiz=raiz,
-            voz=configuracao.voz,
+            voz=configuracao.voz_elevenlabs,
+            modelo=configuracao.modelo_elevenlabs or registro.modelo,
             nuvem_ligada=configuracao.nuvem_ligada,
             cancelado=cancelado,
             ambiente=ambiente,

@@ -30,18 +30,30 @@ from jarvis.audio_io.erros import ErroDeAudio
 from jarvis.voz.chaves import Chave
 from jarvis.voz.config import (
     ESCUTAS,
+    FORMA_DO_ID_DE_VOZ,
+    TTS_ELEVENLABS,
     Configuracao,
     caminho_padrao,
     escrever,
     ler,
     validar,
 )
+from jarvis.voz.elevenlabs import VozDaConta
 from jarvis.voz.interface import Onde
-from jarvis.voz.registro import Motor, motores_de
+from jarvis.voz.registro import Motor, motor_registrado, motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
 Entrada = Callable[[str], str]
 Saida = Callable[[str], None]
+ListarVozes = Callable[[], Sequence[VozDaConta]]
+
+
+def _listar_vozes_da_conta() -> Sequence[VozDaConta]:
+    """A lista de verdade: a chave vem do ambiente, pelo mesmo caminho do motor."""
+    from jarvis.voz.elevenlabs import listar_vozes
+
+    return listar_vozes()
+
 
 CONFIRMACAO: Final = "sim"
 """Digitado por extenso. "s" seria fácil demais para o que esta confirmação significa."""
@@ -61,6 +73,8 @@ class TelaDeConfiguracao:
     entrada: Entrada = input
     saida: Saida = print
     configuracao: Configuracao = field(default_factory=Configuracao)
+    listar_vozes: ListarVozes = _listar_vozes_da_conta
+    """Injetável: o teste lista vozes de um serviço falso, nunca da conta do dono."""
     salvou: bool = False
     mudou: bool = False
 
@@ -95,13 +109,17 @@ class TelaDeConfiguracao:
         self.saida("")
         self.saida(f"  1. Ouvir (ASR) ........ {self._linha_de_motor(configuracao.asr, 'asr')}")
         self.saida(f"  2. Falar (TTS) ........ {self._linha_de_motor(configuracao.tts, 'tts')}")
-        self.saida(f"  3. Voz ................ {configuracao.voz or '(nenhuma)'}")
+        self.saida(f"  3. Voz local (piper) .. {configuracao.voz or '(nenhuma)'}")
         self.saida(f"  4. Modelo do ASR local  {configuracao.modelo_do_asr}")
         self.saida(f"  5. Resposta (S2) ...... {configuracao.s2}  [provisório até a F2, ADR-0018]")
         self.saida(f"  6. Microfone .......... {configuracao.entrada or PADRAO_DO_SISTEMA}")
         self.saida(f"  7. Alto-falante ....... {configuracao.saida or PADRAO_DO_SISTEMA}")
         self.saida(f"  8. Escuta ............. {configuracao.escuta}  (ptt = tecla, vad = voz)")
         self.saida(f"  9. Chaves de API ...... {self._linha_de_chaves()}")
+        self.saida(
+            f" 10. Voz da ElevenLabs .. {configuracao.voz_elevenlabs or '(nenhuma: escolha uma)'}"
+        )
+        self.saida(f" 11. Modelo ElevenLabs .. {self._modelo_elevenlabs()}")
         self.saida("")
         self.saida("  s. salvar e sair      q. sair sem salvar")
 
@@ -161,7 +179,9 @@ class TelaDeConfiguracao:
     def _trocar_motor(self, papel: str) -> None:
         opcoes = [m.id for m in motores_de(papel)]
         atual = self.configuracao.asr if papel == "asr" else self.configuracao.tts
-        rotulos = [f"{m.id}  [{_onde(m)}]" for m in motores_de(papel)]
+        rotulos = [
+            f"{m.id}  [{_onde(m)}]" + (f"  {m.preco}" if m.preco else "") for m in motores_de(papel)
+        ]
         escolhido = self._escolher_da_lista(f"Motores de {papel.upper()}:", rotulos, "")
         if escolhido is None:
             return
@@ -174,6 +194,56 @@ class TelaDeConfiguracao:
         self.mudou = self.mudou or identificador != atual
         if motor.onde is Onde.NUVEM and identificador not in self.configuracao.nuvem_ligada:
             self._confirmar_nuvem(motor)
+
+    def _modelo_elevenlabs(self) -> str:
+        motor = motor_registrado(TTS_ELEVENLABS)
+        padrao = motor.modelo if motor else "?"
+        return self.configuracao.modelo_elevenlabs or f"{padrao} (padrão)"
+
+    def _trocar_modelo_elevenlabs(self) -> None:
+        motor = motor_registrado(TTS_ELEVENLABS)
+        if motor is None:
+            self.saida("  o motor da ElevenLabs não está no registro.")
+            return
+        atual = self.configuracao.modelo_elevenlabs or motor.modelo
+        escolhido = self._escolher_da_lista(
+            f"Modelos da ElevenLabs (conferidos em {motor.data_dos_modelos}):",
+            list(motor.modelos_permitidos),
+            atual,
+        )
+        if escolhido is None:
+            return
+        valor = "" if escolhido == motor.modelo else escolhido
+        self.configuracao = self.configuracao.com(modelo_elevenlabs=valor)
+        self.mudou = True
+
+    def _trocar_voz_elevenlabs(self) -> None:
+        """O `voice_id` digitado, ou escolhido da lista que a conta devolve ("l")."""
+        resposta = self._perguntar(
+            "  voice_id ('l' lista as vozes da conta — manda só a chave; '-' apaga): "
+        )
+        if not resposta:
+            return
+        if resposta.lower() == "l":
+            try:
+                vozes = list(self.listar_vozes())
+            except Exception as erro:  # rede, chave ausente ou recusada: dizer, não cair
+                self.saida(f"  não deu para listar: {erro}")
+                return
+            if not vozes:
+                self.saida("  a conta não devolveu voz nenhuma.")
+                return
+            rotulos = [f"{v.nome}  ({v.id}{', pt' if v.fala_portugues else ''})" for v in vozes]
+            escolhido = self._escolher_da_lista("Vozes da conta:", rotulos, "")
+            if escolhido is None:
+                return
+            resposta = vozes[rotulos.index(escolhido)].id
+        valor = "" if resposta == "-" else resposta
+        if valor and not FORMA_DO_ID_DE_VOZ.fullmatch(valor):
+            self.saida("  isso não tem a forma de um voice_id (letras, números, _ e -).")
+            return
+        self.configuracao = self.configuracao.com(voz_elevenlabs=valor)
+        self.mudou = True
 
     def _trocar_texto(self, campo: str, pergunta: str) -> None:
         atual = getattr(self.configuracao, campo)
@@ -229,7 +299,7 @@ class TelaDeConfiguracao:
         elif escolha == "2":
             self._trocar_motor("tts")
         elif escolha == "3":
-            self._trocar_texto("voz", "Voz (nome da voz local, ou voice_id da ElevenLabs)")
+            self._trocar_texto("voz", "Voz local do piper (ex.: pt_BR-faber-medium)")
         elif escolha == "4":
             self._trocar_texto("modelo_do_asr", "Modelo do whisper local (tiny/base/small/…)")
         elif escolha == "5":
@@ -254,6 +324,10 @@ class TelaDeConfiguracao:
                 self.mudou = True
         elif escolha == "9":
             self._mostrar_chaves()
+        elif escolha == "10":
+            self._trocar_voz_elevenlabs()
+        elif escolha == "11":
+            self._trocar_modelo_elevenlabs()
         elif escolha == "s":
             return not self._salvar()
         elif escolha == "q":
