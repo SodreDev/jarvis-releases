@@ -182,9 +182,17 @@ def motor_de_tts(
 
     caminho = _caminho_da_voz(configuracao.voz)
     if not caminho.exists():
+        from jarvis.voz.modelos import descarga_da_voz
+
+        descarga = descarga_da_voz(configuracao.voz)
+        como = (
+            f"`jarvis-voz --baixar-voz` ({descarga.tamanho}) ou o botão na aba de diagnóstico"
+            if descarga is not None
+            else "ver docs/COMO-TESTAR.md"
+        )
         raise AplicativoIndisponivel(
-            f"a voz {configuracao.voz} não está em {caminho.parent}. Baixe-a (ver "
-            "docs/COMO-TESTAR.md) ou use `tts-parametrico` para testar o encanamento"
+            f"a voz {configuracao.voz} não está em {caminho.parent}. Baixe-a com {como}, "
+            "ou use `tts-parametrico` para testar o encanamento"
         )
     piper = MotorPiperOnnx(
         caminho=caminho,

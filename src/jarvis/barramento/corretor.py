@@ -25,8 +25,9 @@ from jarvis.barramento.epoch import TIPOS_DE_AUDITORIA, DonoDoEpoch, Veredito
 from jarvis.barramento.fila import FilaCheia, FilaDePrioridade
 from jarvis.barramento.ipc import Canal, ServidorDoBarramento
 from jarvis.barramento.log import LogDeEventos
+from jarvis.dados import caminho
 
-ARQUIVO_ROTEAMENTO: Final = Path(__file__).resolve().parents[3] / "schemas" / "roteamento.v1.json"
+ARQUIVO_ROTEAMENTO: Final = caminho("schemas/roteamento.v1.json")
 
 
 def _carregar_roteamento() -> tuple[dict[str, tuple[str, ...]], tuple[str, ...]]:

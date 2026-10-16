@@ -31,10 +31,11 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Final
 
+from jarvis.dados import caminho
 from jarvis.licencas import Categoria, classificar
 from jarvis.voz.interface import Onde
 
-ARQUIVO_MOTORES: Final = Path(__file__).resolve().parents[3] / "licenses" / "motores.toml"
+ARQUIVO_MOTORES: Final = caminho("licenses/motores.toml")
 
 CAMPOS_DE_NUVEM: Final[tuple[str, ...]] = (
     "uso_comercial",

@@ -173,12 +173,29 @@ estado = "em_uso"
 fonte = "https://huggingface.co/api/models/rhasspy/piper-voices"
 revisao = "c10ece1aade4"
 data_de_acesso = "2026-10-15"
+# Peso NÃO vai dentro do pacote (ADR-0020): 63,2 MB baixados no primeiro uso, com o tamanho
+# dito ao dono antes e o sha256 conferido depois. O hash do `.onnx` é o `lfs.oid` que a API do
+# Hugging Face publica (lido em 2026-10-16 e igual ao do arquivo nesta máquina); o do `.json`
+# foi calculado do arquivo baixado, porque esse não é LFS e a API não publica hash dele.
+baixar_de = "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade4/pt/pt_BR/faber/medium/"
+destino = "vozes/pt_BR-faber-medium"
+
 nota = """Voz do corpus sintético (cartão F1-02), verificada VOZ POR VOZ no MODEL_CARD: \
 pt/pt_BR/faber/medium tem dataset CC0 (github.com/OHF-Voice/voice-datasets) sob repositório \
 MIT, então não carrega obrigação de atribuição. As outras pt-BR foram verificadas também: \
 cadu e jeff são CC0; edresson é CC BY 4.0 (atribuição) e por isso não foi escolhida. A \
 inferência é onnxruntime (MIT) lendo o .onnx; o pacote piper-tts do PyPI é GPL-3.0-or-later e \
 ficou fora (ver licenses/ferramentas-externas.toml)."""
+
+[[modelo.arquivo]]
+nome = "pt_BR-faber-medium.onnx"
+bytes = 63201294
+sha256 = "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7"
+
+[[modelo.arquivo]]
+nome = "pt_BR-faber-medium.onnx.json"
+bytes = 4855
+sha256 = "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f"
 
 [[modelo]]
 id = "parler-tts/parler-tts-mini-multilingual-v1.1"

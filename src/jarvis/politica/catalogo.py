@@ -15,9 +15,10 @@ from typing import Any, Final
 
 import yaml
 
+from jarvis.dados import caminho
 from jarvis.politica.modos import Modo
 
-PASTA_CATALOGO: Final = Path(__file__).resolve().parents[3] / "catalogo"
+PASTA_CATALOGO: Final = caminho("catalogo")
 
 PADROES_DE_CANIVETE: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"\.run_command$"),

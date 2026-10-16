@@ -30,8 +30,9 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.audio_io.trilha import EventoDeTrilha
+from jarvis.dados import caminho
 
-ARQUIVO_TABELA: Final = Path(__file__).resolve().parents[3] / "tabelas" / "s1.v1.json"
+ARQUIVO_TABELA: Final = caminho("tabelas/s1.v1.json")
 TETO_MS: Final = 100.0
 """Teto do orçamento da §2 (20–100 ms). Passar daqui cai em `ouvir`."""
 SUFIXOS_NUMERICOS: Final[tuple[str, ...]] = ("_min", "_max")

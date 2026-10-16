@@ -42,6 +42,7 @@ from jarvis.gui.componentes import CATALOGO
 from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
 from jarvis.gui.nucleo import SessaoDeVoz
 from jarvis.gui.workspace import Workspace
+from jarvis.rede import ErroDeRede
 from jarvis.voz import aferir
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.chaves import VARIAVEIS
@@ -49,6 +50,7 @@ from jarvis.voz.cli import diagnosticar
 from jarvis.voz.config import Configuracao, caminho_padrao, escrever, ler, validar
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import Onde
+from jarvis.voz.modelos import ModeloRecusado, baixar, descarga_da_voz
 from jarvis.voz.registro import motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
@@ -353,6 +355,14 @@ class Ponte(QObject):
     def nivel(self) -> float:
         return self._nivel
 
+    @Property(str, notify=diagnosticoMudou)
+    def vozFaltando(self) -> str:
+        """A frase do que falta baixar, ou vazio. O peso não vem no pacote (ADR-0020)."""
+        descarga = descarga_da_voz(self._configuracao.voz)
+        if descarga is None or descarga.completa:
+            return ""
+        return descarga.frase()
+
     # --- o que o QML manda fazer ------------------------------------------------------------
     @Slot(str)
     def demonstrar(self, modo: str) -> None:
@@ -558,6 +568,35 @@ class Ponte(QObject):
             self.diagnosticoMudou.emit()
 
         threading.Thread(target=trabalhar, name="jarvis-microfone", daemon=True).start()
+
+    @Slot()
+    def baixarVoz(self) -> None:
+        """Baixa a voz local, com o tamanho dito antes e o sha256 conferido depois."""
+
+        def trabalhar() -> None:
+            descarga = descarga_da_voz(self._configuracao.voz)
+            if descarga is None:
+                self._diagnostico = f"a voz {self._configuracao.voz!r} não está no registro"
+                self.diagnosticoMudou.emit()
+                return
+
+            def progresso(nome: str, lidos: int, total: int) -> None:
+                self._nivel = lidos / total if total else 1.0
+                self.diagnosticoMudou.emit()
+
+            try:
+                escritos = baixar(descarga, ao_progresso=progresso)
+            except (ModeloRecusado, ErroDeRede) as erro:
+                self._diagnostico = f"não deu para baixar a voz: {erro}\n\n{self._diagnostico}"
+            else:
+                self._diagnostico = (
+                    f"voz baixada e conferida: {', '.join(c.name for c in escritos)}"
+                    f"\n\n{self._diagnostico}"
+                )
+            self._nivel = 0.0
+            self.diagnosticoMudou.emit()
+
+        threading.Thread(target=trabalhar, name="jarvis-baixar-voz", daemon=True).start()
 
     @Slot()
     def testarVoz(self) -> None:

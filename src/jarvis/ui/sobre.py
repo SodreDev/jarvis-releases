@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-ARQUIVO_MODELOS: Final = Path(__file__).resolve().parents[3] / "licenses" / "modelos.toml"
+from jarvis.dados import caminho
+
+ARQUIVO_MODELOS: Final = caminho("licenses/modelos.toml")
 LICENCAS_COM_ATRIBUICAO: Final[frozenset[str]] = frozenset(
     {"cc-by-4.0", "cc-by-3.0", "cc-by-sa-4.0", "bsd-4-clause", "openrail", "cdla-permissive-2.0"}
 )

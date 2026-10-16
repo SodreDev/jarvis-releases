@@ -15,7 +15,9 @@ from enum import StrEnum, auto
 from pathlib import Path
 from typing import Final
 
-ARQUIVO_MODELOS: Final = Path(__file__).resolve().parents[2] / "licenses" / "modelos.toml"
+from jarvis.dados import caminho
+
+ARQUIVO_MODELOS: Final = caminho("licenses/modelos.toml")
 
 
 class Categoria(StrEnum):

@@ -17,9 +17,10 @@ from pathlib import Path
 from typing import Any, Final, Self
 
 from jarvis.barramento.envelope import agora_wall, uuid7
+from jarvis.dados import caminho
 
 GENESE: Final = "0" * 64
-ARQUIVO_ESQUEMA: Final = Path(__file__).resolve().parents[3] / "schemas" / "audit_log.sql"
+ARQUIVO_ESQUEMA: Final = caminho("schemas/audit_log.sql")
 
 CAMPOS_DA_DECISAO: Final = (
     "seq",

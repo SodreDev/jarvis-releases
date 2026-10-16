@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -25,6 +25,7 @@ from typing import Final
 from jarvis.ambiente import ambiente_ou_os
 from jarvis.audio_io.ambiente import VARIAVEL_BACKEND, Backend
 from jarvis.audio_io.erros import ErroDeAudio
+from jarvis.rede import ErroDeRede
 from jarvis.voz.app import Aplicativo, AplicativoIndisponivel
 from jarvis.voz.chaves import (
     Chave,
@@ -195,7 +196,41 @@ def _analisador() -> argparse.ArgumentParser:
     analisador.add_argument(
         "--turnos", type=int, default=None, help="para depois de N turnos (teste)"
     )
+    analisador.add_argument(
+        "--baixar-voz",
+        action="store_true",
+        help="baixa a voz local escolhida (diz o tamanho antes e confere o sha256 depois)",
+    )
     return analisador
+
+
+def baixar_voz(configuracao: Configuracao, escrever: Callable[[str], None] = print) -> int:
+    """O peso não vem no pacote (ADR-0020): aqui ele é baixado, dito e conferido."""
+    from jarvis.voz.modelos import ModeloRecusado, baixar, descarga_da_voz
+
+    descarga = descarga_da_voz(configuracao.voz)
+    if descarga is None:
+        escrever(f"a voz {configuracao.voz!r} não está no registro de modelos")
+        return 2
+    escrever(descarga.frase())
+    if descarga.completa:
+        return 0
+    ultimo = -1
+
+    def progresso(nome: str, lidos: int, total: int) -> None:
+        nonlocal ultimo
+        porcento = int(100 * lidos / total) if total else 100
+        if porcento != ultimo and porcento % 5 == 0:
+            ultimo = porcento
+            escrever(f"  {nome}: {porcento}%")
+
+    try:
+        for caminho in baixar(descarga, ao_progresso=progresso):
+            escrever(f"  pronto: {caminho}")
+    except (ModeloRecusado, ErroDeRede) as erro:
+        escrever(f"não deu: {erro}")
+        return 1
+    return 0
 
 
 def main(argv: Sequence[str] | None = None, *, ambiente: Mapping[str, str] | None = None) -> int:
@@ -212,6 +247,14 @@ def main(argv: Sequence[str] | None = None, *, ambiente: Mapping[str, str] | Non
 
     if args.diagnostico:
         return diagnosticar(print, caminho=caminho, ambiente=ambiente)
+
+    if args.baixar_voz:
+        try:
+            configuracao = ler(caminho, ambiente=ambiente)
+        except (ConfiguracaoInvalida, SegredoNaConfiguracao) as erro:
+            print(f"configuração recusada: {erro}", file=sys.stderr)
+            return 2
+        return baixar_voz(configuracao)
 
     if args.comando == "config":
         return TelaDeConfiguracao(caminho=caminho).rodar()

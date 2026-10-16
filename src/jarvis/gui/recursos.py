@@ -10,38 +10,18 @@ não a tela do dono no meio de uma conversa.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Final
+
+from jarvis.dados import pasta_de_dados
 
 ID_DO_APLICATIVO: Final = "dev.sodredev.Jarvis"
 """O mesmo nome no `.desktop`, no ícone e no `setDesktopFileName` — é o que faz o KDE casar a
 janela com o lançador (ícone na barra de tarefas, "fixar", notificação com o nome certo)."""
 NOME: Final = "Jarvis"
-VARIAVEL_DADOS: Final = "JARVIS_DADOS"
-"""Aponta para a pasta de dados instalada. O empacotador define; ninguém mais precisa."""
-
 PASTA: Final = Path(__file__).resolve().parent / "recursos"
 ICONE_SVG: Final = PASTA / "jarvis.svg"
-
-
-def raiz_do_repositorio() -> Path | None:
-    """A raiz da árvore de código, quando o Jarvis roda de dentro dela."""
-    candidato = Path(__file__).resolve().parents[3]
-    return candidato if (candidato / "pyproject.toml").exists() else None
-
-
-def pasta_de_dados() -> Path | None:
-    """Onde ficam `licenses/` e `NOTICE` nesta instalação, na ordem: ambiente, árvore, prefixo."""
-    declarada = os.environ.get(VARIAVEL_DADOS, "").strip()
-    if declarada and Path(declarada).is_dir():
-        return Path(declarada)
-    raiz = raiz_do_repositorio()
-    if raiz is not None:
-        return raiz
-    instalada = Path(sys.prefix) / "share" / "jarvis"
-    return instalada if instalada.is_dir() else None
 
 
 def pasta_de_licencas() -> Path | None:

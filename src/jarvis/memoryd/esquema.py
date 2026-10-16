@@ -6,7 +6,9 @@ import sqlite3
 from pathlib import Path
 from typing import Final
 
-ARQUIVO_ESQUEMA: Final = Path(__file__).resolve().parents[3] / "schemas" / "memoria.sql"
+from jarvis.dados import caminho
+
+ARQUIVO_ESQUEMA: Final = caminho("schemas/memoria.sql")
 
 
 def abrir(caminho: Path | str = ":memory:", *, somente_leitura: bool = False) -> sqlite3.Connection:
