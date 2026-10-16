@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -16,6 +17,7 @@ from jarvis.politica.catalogo import (
     carregar,
     carregar_catalogo,
 )
+from jarvis.politica.descritor import AberturaRecusada
 from jarvis.politica.modos import Modo, Raiz, motivo_de_negacao, raizes_do_modo
 from jarvis.politica.pdp import Pdp, Pedido, Veredito
 
@@ -337,3 +339,158 @@ def test_grant_expira_e_nao_atravessa_policy_epoch(pdp: Pdp) -> None:
     assert grant.valido(policy_epoch=pdp.policy_epoch)
     assert not grant.valido(policy_epoch=pdp.policy_epoch + 1)
     assert not grant.valido(policy_epoch=pdp.policy_epoch, agora=grant.expira_em + 1)
+
+
+# --- (§5.5) a raiz é aberta NO grant ----------------------------------------------
+def _pdp_com_raiz_real(raiz: Path, auditoria: LogDeAuditoria) -> Pdp:
+    """PDP cujo `concedido` aponta para uma pasta que existe de verdade no disco."""
+    manifesto = raiz.parent / "files.read.text.yaml"
+    manifesto.write_text(
+        "id: files.read.text\n"
+        "title: Ler arquivo de texto da raiz autorizada\n"
+        "description: Devolve o texto de um arquivo dentro da raiz autorizada.\n"
+        "capability: files.read.text\n"
+        "risk_class: leitura\n"
+        "confirmation: never\n"
+        "access_level_min: padrao\n"
+        "requires_elevation: false\n"
+        "side_effect: none\n"
+        "roots: [workspace_root]\n",
+        encoding="utf-8",
+    )
+    capacidade = carregar(manifesto)
+    return Pdp(
+        catalogo={capacidade.id: capacidade},
+        lar=raiz.parent,
+        auditoria=auditoria,
+        modo=Modo.CONCEDIDO,
+        session_id="01a14079-bebc-7e23-8521-d6ad00000002",
+        concedidas=(
+            Raiz(
+                nome="projeto",
+                caminho=canonicalizar(str(raiz), Sistema.POSIX),
+                pode_escrever=True,
+            ),
+        ),
+    )
+
+
+def test_o_grant_carrega_a_raiz_aberta_no_instante_da_decisao(
+    tmp_path: Path, auditoria: LogDeAuditoria
+) -> None:
+    """Achado 2 da revisão F0+F1: o grant era sobre o TEXTO do caminho, não sobre o objeto.
+
+    A §5.5 diz "a raiz é aberta no grant". O grant nascia com `identidade=None` e `abrir_para`
+    reabria pelo texto, conferindo a identidade recém-capturada contra ela mesma — uma
+    comparação que nunca pode falhar.
+    """
+    projeto = tmp_path / "projeto"
+    projeto.mkdir()
+    (projeto / "nota.txt").write_text("oi", encoding="utf-8")
+    pdp = _pdp_com_raiz_real(projeto, auditoria)
+    autorizado = projeto.stat()
+
+    decisao = pdp.decidir(
+        Pedido(
+            tool_id="files.read.text",
+            args={"path": "nota.txt"},
+            caminho=str(projeto / "nota.txt"),
+        )
+    )
+
+    assert decisao.veredito is Veredito.ALLOW
+    grant = decisao.grant
+    assert grant is not None
+    assert grant.identidade is not None, "grant sem identidade não amarra nada"
+    assert (grant.identidade.device, grant.identidade.inode) == (
+        autorizado.st_dev,
+        autorizado.st_ino,
+    )
+    assert grant.fd is not None, "a §5.5 manda abrir a raiz NO grant, não no uso"
+    registro = next(iter(auditoria.decisoes()))
+    assert registro.identidade == str(grant.identidade), (
+        "a auditoria tem de dizer QUAL objeto foi autorizado, não só o texto do caminho"
+    )
+
+    aberta = pdp.abrir_para(grant, "nota.txt")
+
+    assert aberta.fd == grant.fd, "abrir_para tem de usar o fd do grant, não reabrir pelo texto"
+
+
+def test_raiz_trocada_entre_a_decisao_e_o_uso_recusa_a_abertura(
+    tmp_path: Path, auditoria: LogDeAuditoria
+) -> None:
+    """O cenário do achado 2: `mv projeto projeto.bak && mkdir projeto` entre T0 e T1."""
+    projeto = tmp_path / "projeto"
+    projeto.mkdir()
+    (projeto / "nota.txt").write_text("oi", encoding="utf-8")
+    pdp = _pdp_com_raiz_real(projeto, auditoria)
+    decisao = pdp.decidir(
+        Pedido(
+            tool_id="files.read.text",
+            args={"path": "nota.txt"},
+            caminho=str(projeto / "nota.txt"),
+        )
+    )
+    grant = decisao.grant
+    assert grant is not None
+
+    projeto.rename(tmp_path / "projeto.bak")
+    (tmp_path / "projeto").mkdir()
+    (tmp_path / "projeto" / "nota.txt").write_text("do atacante", encoding="utf-8")
+
+    with pytest.raises(AberturaRecusada, match="mudou de identidade"):
+        pdp.abrir_para(grant, "nota.txt")
+
+
+def test_o_descritor_do_grant_fecha_quando_o_nivel_reduz(
+    tmp_path: Path, auditoria: LogDeAuditoria
+) -> None:
+    """Aceite (g) com fd: reduzir cancela o que está em voo, e o descritor não pode vazar."""
+    projeto = tmp_path / "projeto"
+    projeto.mkdir()
+    pdp = _pdp_com_raiz_real(projeto, auditoria)
+    decisao = pdp.decidir(
+        Pedido(
+            tool_id="files.read.text",
+            args={"path": "nota.txt"},
+            caminho=str(projeto / "nota.txt"),
+            call_id="c-fd",
+        )
+    )
+    grant = decisao.grant
+    assert grant is not None and grant.fd is not None
+    os.fstat(grant.fd)  # vivo enquanto o grant vale
+
+    assert pdp.reduzir(Modo.JARVIS) == ["c-fd"]
+
+    with pytest.raises(OSError):
+        os.fstat(grant.fd)
+
+
+def test_o_descritor_do_grant_fecha_quando_o_ttl_expira(
+    tmp_path: Path, auditoria: LogDeAuditoria
+) -> None:
+    """TTL vencido não guarda descritor aberto, e toda decisão nova varre o que morreu."""
+    projeto = tmp_path / "projeto"
+    projeto.mkdir()
+    pdp = _pdp_com_raiz_real(projeto, auditoria)
+    pdp.ttl_s = 0.0
+    pedido = Pedido(
+        tool_id="files.read.text",
+        args={"path": "nota.txt"},
+        caminho=str(projeto / "nota.txt"),
+    )
+    grant = pdp.decidir(pedido).grant
+    assert grant is not None and grant.fd is not None
+
+    assert pdp.expirar() == [grant.grant_id]
+
+    assert grant.grant_id not in pdp.grants
+    with pytest.raises(OSError):
+        os.fstat(grant.fd)
+    # A varredura também é automática: uma decisão nova não deixa o vencido para trás.
+    primeiro = pdp.decidir(pedido).grant
+    segundo = pdp.decidir(pedido).grant
+    assert primeiro is not None and segundo is not None
+    assert list(pdp.grants) == [segundo.grant_id]

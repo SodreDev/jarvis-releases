@@ -10,7 +10,10 @@ Regras que este módulo materializa:
   modo cresce — o mesmo pedido que pede confirmação no `jarvis` pede no `total`;
 * **nível e elevação só mudam pela UI, com o dono presente** (P12): reduzir vale na hora e
   cancela o que está em voo; ampliar exige confirmação explícita;
-* **auditoria antes do efeito**: o grant só existe depois de a decisão estar no log.
+* **auditoria antes do efeito**: o grant só existe depois de a decisão estar no log;
+* **a raiz é aberta no grant** (§5.5): o grant guarda o descritor e a identidade
+  (`device:inode`) do instante da decisão, e o uso acontece sobre esse descritor. Decidir sobre
+  o texto do caminho e abrir depois seria autorizar um nome, não um objeto.
 """
 
 from __future__ import annotations
@@ -56,6 +59,14 @@ RISCOS_QUE_SEMPRE_CONFIRMAM: Final[frozenset[str]] = frozenset(
 )
 """O que continua exigindo confirmação **mesmo no `total`** (§5.5, P13)."""
 
+TETO_DE_RAIZES_ABERTAS: Final = 128
+"""Cada grant com raiz segura um descritor até expirar: o teto é o orçamento de `fd`.
+
+Com TTL de 60 s, 128 é mais do que a mão do dono produz num minuto, e bater no teto **nega**
+(falha fechada) em vez de vazar descritor em silêncio. A varredura dos vencidos acontece antes,
+em toda decisão, então chegar aqui significa 128 grants vivos ao mesmo tempo.
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class Pedido:
@@ -70,7 +81,12 @@ class Pedido:
 
 @dataclass(frozen=True, slots=True)
 class Grant:
-    """Autorização com TTL e escopo, amarrada à raiz aberta e à identidade do arquivo."""
+    """Autorização com TTL e escopo, amarrada à raiz aberta e à identidade do arquivo.
+
+    `fd` e `identidade` vêm do instante da decisão. Quem fecha o `fd` é o `Pdp` (expiração,
+    redução de modo, ampliação confirmada e mudança de elevação), e o dono do descritor é o
+    `Pdp.abrir_para` — não o chamador, que recebe a raiz já aberta e conferida.
+    """
 
     grant_id: str
     tool_id: str
@@ -80,6 +96,7 @@ class Grant:
     identidade: Identidade | None
     expira_em: float
     elevacao: bool = False
+    fd: int | None = None
 
     def valido(self, *, policy_epoch: int, agora: float | None = None) -> bool:
         instante = time.monotonic() if agora is None else agora
@@ -113,6 +130,8 @@ class Pdp:
     em_voo: dict[str, Grant] = field(default_factory=dict)
     cancelados: list[str] = field(default_factory=list)
     ampliacao_pendente: Modo | None = None
+    _raizes: dict[str, RaizAberta] = field(default_factory=dict, repr=False)
+    """Raiz aberta de cada grant vivo, por `grant_id`. É aqui que o descritor tem dono."""
 
     # --- catálogo -----------------------------------------------------------------
     def allowlist(self) -> tuple[str, ...]:
@@ -208,6 +227,21 @@ class Pdp:
     ) -> Decisao:
         """Escreve a decisão **antes** de devolver o grant (§5.5)."""
         raiz = self._raiz_de(canonico) if canonico is not None else None
+        aberta: RaizAberta | None = None
+        if veredito is Veredito.ALLOW and raiz is not None:
+            # §5.5: a raiz é aberta AQUI, no instante da decisão, e é este descritor que o uso
+            # recebe. Abrir só na hora do uso deixaria o grant valendo sobre o texto do caminho:
+            # trocar a pasta entre a decisão e o uso passaria sem ninguém notar.
+            self.expirar()
+            if len(self._raizes) >= TETO_DE_RAIZES_ABERTAS:
+                veredito = Veredito.DENY
+                motivo = f"teto de {TETO_DE_RAIZES_ABERTAS} raízes abertas ao mesmo tempo"
+            else:
+                try:
+                    aberta = abrir_raiz(Path(raiz.caminho.texto))
+                except (AberturaRecusada, OSError) as erro:
+                    veredito = Veredito.DENY
+                    motivo = f"raiz {raiz.nome} não abriu no grant: {erro}"
         registro = self.auditoria.registrar_decisao(
             session_id=pedido.session_id or self.session_id,
             policy_epoch=self.policy_epoch,
@@ -215,7 +249,7 @@ class Pdp:
             tool_id=pedido.tool_id,
             raiz=raiz.caminho.texto if raiz else "",
             caminho=canonico.texto if canonico else "",
-            identidade="",
+            identidade=str(aberta.identidade) if aberta is not None else "",
             argv=pedido.args,
             elevacao=bool(capacidade and capacidade.requires_elevation and self.elevacao_ligada),
             grant_id="",
@@ -230,27 +264,74 @@ class Pdp:
                 policy_epoch=self.policy_epoch,
                 modo=self.modo,
                 raiz=raiz.caminho.texto if raiz else "",
-                identidade=None,
+                identidade=aberta.identidade if aberta is not None else None,
                 expira_em=time.monotonic() + self.ttl_s,
                 elevacao=bool(capacidade and capacidade.requires_elevation),
+                fd=aberta.fd if aberta is not None else None,
             )
             self.grants[grant.grant_id] = grant
+            if aberta is not None:
+                self._raizes[grant.grant_id] = aberta
             if pedido.call_id:
                 self.em_voo[pedido.call_id] = grant
+        elif aberta is not None:  # pragma: no cover — só se o veredito virar DENY depois de abrir
+            aberta.fechar()
         return Decisao(
             veredito=veredito, motivo=motivo, grant=grant, decision_id=registro.decision_id
         )
 
     # --- abertura sob a raiz do grant ---------------------------------------------
     def abrir_para(self, grant: Grant, relativo: str, *, escrever: bool = False) -> RaizAberta:
-        """Abre a raiz do grant e confere identidade antes de qualquer operação."""
+        """Devolve a raiz **aberta no grant**, conferida; o alvo abre relativo a ela.
+
+        Nada é reaberto pelo texto do caminho: o descritor é o do instante da decisão, guardado
+        em `_raizes`. A conferência de `relativo` e de `escrever` é do `RaizAberta.abrir`, que
+        atravessa sob este mesmo descritor (`RESOLVE_BENEATH`).
+        """
         if not grant.valido(policy_epoch=self.policy_epoch):
+            self._fechar_raiz(grant.grant_id)
+            self.grants.pop(grant.grant_id, None)
             raise AberturaRecusada("grant expirado ou de outro policy_epoch")
-        aberta = abrir_raiz(Path(grant.raiz))
+        aberta = self._raizes.get(grant.grant_id)
+        if aberta is None or grant.identidade is None:
+            raise AberturaRecusada(
+                f"grant {grant.grant_id} não tem raiz aberta: decisão sem caminho, "
+                "raiz já fechada ou grant de outra sessão"
+            )
         if not aberta.ainda_e_a_mesma():
-            aberta.fechar()
+            # O descritor continua apontando para o que foi autorizado; é o CAMINHO que passou a
+            # ser outro objeto. Seguir seria usar o grant sobre conteúdo que a auditoria não viu.
             raise AberturaRecusada(f"raiz {grant.raiz} mudou de identidade depois do grant")
         return aberta
+
+    def expirar(self, *, agora: float | None = None) -> list[str]:
+        """Fecha a raiz dos grants vencidos e os esquece. Toda decisão varre antes de conceder."""
+        instante = time.monotonic() if agora is None else agora
+        mortos = [
+            g.grant_id
+            for g in self.grants.values()
+            if not g.valido(policy_epoch=self.policy_epoch, agora=instante)
+        ]
+        for grant_id in mortos:
+            self._fechar_raiz(grant_id)
+            self.grants.pop(grant_id, None)
+        return mortos
+
+    def _fechar_raiz(self, grant_id: str) -> None:
+        """Fecha o descritor de um grant **uma vez**: quem sai do dicionário não volta.
+
+        Fechar duas vezes é pior do que não fechar: o número do descritor é reaproveitado pelo
+        sistema, e um grant velho passaria a apontar para um objeto novo.
+        """
+        aberta = self._raizes.pop(grant_id, None)
+        if aberta is not None:
+            aberta.fechar()
+
+    def _descartar_grants(self) -> None:
+        """Mudou o `policy_epoch`: todo grant morreu e nenhum descritor pode sobreviver."""
+        for grant_id in list(self._raizes):
+            self._fechar_raiz(grant_id)
+        self.grants.clear()
 
     # --- mudança de modo e de elevação (só pela UI, P12) --------------------------
     def reduzir(self, novo: Modo) -> list[str]:
@@ -262,7 +343,7 @@ class Pdp:
         cancelados = list(self.em_voo)
         self.cancelados += cancelados
         self.em_voo.clear()
-        self.grants.clear()
+        self._descartar_grants()
         return cancelados
 
     def pedir_ampliacao(self, novo: Modo) -> Modo:
@@ -280,7 +361,7 @@ class Pdp:
         self.modo = self.ampliacao_pendente
         self.ampliacao_pendente = None
         self.policy_epoch += 1
-        self.grants.clear()
+        self._descartar_grants()
         return self.modo
 
     def ligar_elevacao(self, *, dono_presente: bool) -> None:
@@ -288,8 +369,10 @@ class Pdp:
             raise PermissionError("elevação só liga com o dono presente na UI (P12)")
         self.elevacao_ligada = True
         self.policy_epoch += 1
+        self._descartar_grants()
 
     def desligar_elevacao(self) -> None:
         """Desligar é sempre permitido, e vale na hora."""
         self.elevacao_ligada = False
         self.policy_epoch += 1
+        self._descartar_grants()
