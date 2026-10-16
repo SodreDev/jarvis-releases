@@ -15,8 +15,8 @@ de edição entre os dois diz o quanto se parecem, de 0 a 1.
 **Dois fonemizadores, e o padrão é o que roda em qualquer lugar.** `fonetica_simples` é uma
 redução pt-BR escrita aqui, sem dependência, que roda em qualquer lugar; quem tiver o `epitran`
 (MIT, o mesmo do TTS, grupo `voz`) passa `FonemizadorEpitran()` e ganha o IPA de verdade. **Os
-dois ainda não foram medidos no corpus**, e é essa medição que escolhe o limiar: o estado deste
-arquivo, o que falta e as armadilhas estão em `docs/notas-wake-word.md`.
+dois foram medidos sobre texto** (corpus sintético, vizinhos e grafias escritos à mão) e
+escolheram o mesmo limiar; a medição e o que ela não cobre estão na ADR-0021.
 
 **O que este módulo não faz:** não ouve, não abre dispositivo, não transcreve e não fala com
 a rede. Ele recebe texto e devolve "era comigo, e o pedido é este". Quem garante que o ASR só
@@ -32,11 +32,13 @@ from dataclasses import dataclass, field
 from typing import Final
 
 PALAVRA_PADRAO: Final = "jarvis"
-LIMIAR_PADRAO: Final = 0.82
-"""**Provisório, e ainda não medido.** Veio de uma conferência de mão nas variantes que o dono
-citou (`jarvis`, `járvis`, `jarvas`, `djarvis` passam com `fonetica_simples`; `jarbas`,
-`marvin`, `charles`, `carlos` não) — não de corpus. A taxa de falso positivo sobre o corpus
-sintético é a medição que falta, e é ela que fecha este número (ver docs/notas-wake-word.md)."""
+LIMIAR_PADRAO: Final = 0.75
+"""**Medido** (`tools/harness_palavra.py`, `docs/medicoes/palavra-de-ativacao.csv`): com
+`jarvis`, as grafias de ASR dão 0,833 ou mais e os vizinhos (`jarbas`, `marvin`, `davis`,
+`jardim`, "já vi") dão 0,667 ou menos, nos dois fonemizadores; nenhuma das 340 frases do corpus
+passa de 0,50. Como cada edição custa 1/6 de um alvo de seis símbolos, 0,75 quer dizer "no
+máximo uma edição" — o meio do degrau, longe das duas bordas. É medição sobre **texto**: o
+quanto o ASR erra o nome na voz do dono não foi medido (ADR-0021)."""
 LIMIAR_MINIMO: Final = 0.50
 LIMIAR_MAXIMO: Final = 1.0
 JANELA_MAXIMA: Final = 2
