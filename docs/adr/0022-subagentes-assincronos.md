@@ -1,6 +1,7 @@
 # ADR-0022 — Subagentes assíncronos: a tarefa delegada roda num processo próprio, e cada passo dela passa pelo mesmo PDP
 
-**Data:** 2026-10-16 · **Estado:** proposta · **Decide:** dono
+**Data:** 2026-10-16 · **Estado:** proposta; emendada em 2026-10-16 pelas respostas do dono e
+pela ADR-0025 (ver "Emenda de 2026-10-16") · **Decide:** dono
 **Pedido:** ideia do dono de 2026-10-15 (memória `b63298d6`, registrada como ideia, não como
 decisão): ao pedir uma tarefa longa, o Jarvis **delega**, **continua conversando**, **avisa
 quando termina** e deixa o dono **acompanhar**, como um Orchestrator mínimo.
@@ -95,7 +96,8 @@ Regras:
    `evidencia[]` (os `call_id`s que o sustentam). Entra no estado de trabalho da §3.4; o texto é
    `third_party` e passa pela mesma neutralização de conteúdo que imita chamada de ferramenta que
    a saída de MCP já tem (ADR-0010 item 7). Não vira memória durável sozinho (§6.6).
-7. **Avisar é na fronteira de turno, e a fala do dono vence.** Um tipo de evento novo,
+7. **[Substituída em 2026-10-16 pelas regras 11–15 da ADR-0025, por decisão do dono; o texto
+   original fica abaixo como histórico.]** **Avisar é na fronteira de turno, e a fala do dono vence.** Um tipo de evento novo,
    `TaskUpdate` (P3), sai **só nas transições de estado**. O `s2` anuncia a conclusão em uma frase
    quando nem o dono nem o Jarvis estão falando; `AwaitingApproval` aparece na UI na hora e é
    falado na próxima fronteira. Com "não perturbe", só a UI.
@@ -105,13 +107,49 @@ Regras:
 9. **Acompanhar sem laço cego.** O `s2` não consulta o estado em polling: quem publica é o
    processo `tarefas`, na transição. A UI ganha uma lista de tarefas com estado, passos e as
    entradas de auditoria de cada uma; por voz, "como está a tarefa?" é `tarefas.estado`.
-10. **Egress da tarefa é a união** do egress das tools da allowlist com o do motor. Motor de nuvem
+10. **[Completada em 2026-10-16: o motor é configurável, ver a emenda.]** **Egress da tarefa é a união** do egress das tools da allowlist com o do motor. Motor de nuvem
     faz o objetivo e o que a tarefa lê saírem da máquina: isso é mostrado ao dono na delegação,
     como qualquer egress da §5.3.
 
 **Emendas que esta ADR pede quando aceita:** SPEC §2 (oitavo processo, `tarefas`), §3.2 (tipo
 `TaskUpdate`; `ToolCallRequested` ganha `task_id?`), §3.4 (`tarefas[]` ganha `modelo` e
 `origem`) e §4 (três capacidades novas no núcleo).
+
+## Emenda de 2026-10-16 (respostas do dono)
+
+O dono respondeu duas das decisões que o roteiro da F2 deixava abertas (D2 e D3) e deu os
+requisitos do cérebro (memória `34d72b96`). O que muda aqui, regra por regra:
+
+- **Aviso (regra 7 → ADR-0025, regras 11–15). DECISÃO DO DONO:** o Jarvis recebe a notificação e
+  decide sozinho se avisa e como; nunca corta fala; o aviso espera o TTS parar ou a próxima
+  mensagem do dono e vai junto com ela; pode virar card. Nesta ADR fica só a parte do produtor:
+  o processo `tarefas` publica `Notification` (ADR-0025, regra 11) nas transições `Succeeded`,
+  `Failed` e `AwaitingApproval`, além do `TaskUpdate` de estado. A fila, a fronteira e o
+  julgamento são da ADR-0025. O "não perturbe" da regra 7 original continua, agora na regra 14 de
+  lá.
+- **Motor da tarefa (regra 10 e decisão D2 do roteiro). DECISÃO DO DONO:** configurável — local
+  ou nuvem, por tarefa e por cenário, com o egress mostrado —, não fixo. Desenho (do planejador):
+  1. O motor da tarefa é um motor de conversa da ADR-0025 (regra 6: `gerar(contexto, modo,
+     cancelado)`, com `PedidoDeTool`), registrado no mesmo portão dos motores de voz (ADR-0017):
+     licença, termos, `onde` e "nuvem só se o dono ligou".
+  2. Quem escolhe é a configuração do dono, não o LLM. Ordem de resolução: escolha do dono na
+     própria delegação (na UI) → regra do dono por cenário → regra do dono por modelo de tarefa →
+     o `motor_padrao` do modelo de tarefa, que é **local** quando existir um motor local
+     registrado. O LLM que delega não passa motor; se passar, o PDP ignora e audita.
+  3. Motor de nuvem para um modelo de tarefa só se o dono o ligou **para aquele modelo ou
+     cenário**; ligar a nuvem para a conversa não liga para as tarefas.
+  4. Na delegação, o card mostra o motor, `onde` e o que sai da máquina (o objetivo e o que a
+     allowlist deixa a tarefa ler). Trocar o motor de uma tarefa em andamento não existe: é
+     cancelar e delegar de novo.
+- **Cérebro único (ADR-0025, regra 1):** a tarefa não é outro cérebro conversando com o dono. O
+  resultado volta ao cérebro como aviso e evidência (regra 6 desta ADR, sem mudança).
+- **Memória (ADR-0026, regra 1):** nenhuma tool `memoria.*` entra em allowlist de tarefa no v1.
+- **Ordem:** a fatia mínima desta ADR passa para depois das fatias da ADR-0025 e da M1 da
+  ADR-0026 no roteiro da F2 — sem stream e sem fila, a tarefa não tem como avisar do jeito que o
+  dono decidiu.
+
+O que **não** mudou: Desenho A, regras 1–6, 8 e 9, a fatia mínima e os testes (a)–(c), (e)–(h).
+O teste (d) passa a ser o teste (d) da ADR-0025.
 
 ## Alternativas descartadas
 
@@ -141,12 +179,12 @@ Regras:
 
 | Risco | Controle |
 |---|---|
-| Aviso fora de hora (fala por cima, interrompe) | regra 7 + teste de aceite (d) |
+| Aviso fora de hora (fala por cima, interrompe) | ADR-0025 regras 11–15 + teste de aceite (d) de lá |
 | Conteúdo lido pela tarefa sequestra o motor | allowlist fixa na criação (regra 2), efeito confirmado (regra 3), resultado é dado (regra 6) |
 | Confirmação no automático ("sim, sim") | a confirmação mostra o passo concreto e o destino, como na §5.3; lote só com grant estreito |
 | Contenção de CPU piora a voz | teto da regra 8; teste (a) mede SLO-2 e SLO-5 com tarefa rodando |
 | Duas tarefas escrevendo no mesmo arquivo | fatia mínima só de leitura; tarefa com escrita fica para depois e precisa de trava por arquivo |
-| Motor de nuvem vaza o que a tarefa leu | regra 10; motor local por padrão quando existir |
+| Motor de nuvem vaza o que a tarefa leu | regra 10 e a emenda: nuvem só ligada pelo dono por modelo ou cenário, egress no card; local por padrão quando existir |
 
 ## Fatia mínima (implementar primeiro)
 
@@ -167,7 +205,7 @@ Regras:
   epoch morto toca.
 - **(c)** `tarefas.cancelar`: estado `Cancelled` em até 1 s em 20/20; 0 `ToolResult` posterior
   entra no estado de trabalho (a auditoria registra todos).
-- **(d)** 50 conclusões disparadas em instantes aleatórios, com fala do dono simulada: 0 avisos
+- **(d)** [Passa a ser o (d) da ADR-0025, na emenda de 2026-10-16.] 50 conclusões disparadas em instantes aleatórios, com fala do dono simulada: 0 avisos
   sobrepostos à fala do dono; o aviso sai até 2 s depois da fronteira de turno seguinte.
 - **(e)** Passo fora da allowlist injetado no plano do stub: negado pelo PDP em 100% dos casos e
   auditado com `task_id`.
