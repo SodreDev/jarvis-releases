@@ -17,6 +17,7 @@ from jarvis.barramento.canal_de_audio import (
     CanalDeAudio,
     CanalDeConexao,
     CanalDeSocket,
+    ErroDeCanal,
     canal_do_ambiente,
     descrever_formato,
 )
@@ -205,3 +206,17 @@ def test_a_conexao_nao_bloqueia_quando_o_buffer_do_sistema_enche() -> None:
                 time.sleep(0.01)
         linha.join(timeout=5.0)
         canal.fechar()
+
+
+def test_o_canal_de_socket_recusa_windows_na_origem() -> None:
+    """Achado 7 da revisão F0+F1: a lacuna de P11 era convenção de docstring, não erro.
+
+    `AF_UNIX` em datagrama não existe no Python do Windows, e o docstring da classe já dizia
+    isso. Mas `par()` tentava do mesmo jeito, então quem chamasse num Windows receberia um erro
+    críptico do stdlib em vez da frase que diz o que usar. O sistema entra por parâmetro, como
+    na canonicalização (F0-06), para a recusa ser provada **rodando em Linux**.
+    """
+    with pytest.raises(ErroDeCanal, match="Windows"):
+        CanalDeSocket.par(sistema="win32")
+
+    assert CanalDeSocket.par(sistema="linux").nome == "socket-unix-datagrama"

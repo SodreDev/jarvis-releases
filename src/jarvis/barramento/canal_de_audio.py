@@ -16,7 +16,8 @@ a ADR-0014 previu).
 
 - `CanalDeSocket` — *socket* de domínio Unix em modo datagrama: a fronteira do quadro é a do
   datagrama, então não existe enquadramento para errar. **Não existe no Windows** (o Python de
-  lá não tem `AF_UNIX` em datagrama), e isso é uma falha de P11;
+  lá não tem `AF_UNIX` em datagrama), e isso é uma falha de P11— por isso `par()` **recusa**
+  lá, em vez de deixar o stdlib falhar com erro críptico;
 - `CanalDeAnel` — anel em memória compartilhada, um produtor e um consumidor, com número de
   sequência no **começo e no fim** de cada posição. Escrita em `memoryview` não é atômica em
   Python; a sequência repetida nas duas pontas é o que deixa o leitor **detectar** quadro
@@ -109,7 +110,8 @@ class CanalDeSocket:
 
     Em Windows não existe `AF_UNIX` em modo datagrama no Python, e a alternativa é *named pipe*
     (o que o `multiprocessing.Connection` já usa no barramento). Isso está **declarado** na
-    ADR-0015 como lacuna de P11 desta implementação.
+    ADR-0015 como lacuna de P11 desta implementação, e `par()` recusa executar lá: lacuna
+    declarada que ninguém consegue usar por engano é melhor que lacuna só comentada.
     """
 
     envio: socket.socket
@@ -120,8 +122,24 @@ class CanalDeSocket:
     _seq: int = 0
 
     @classmethod
-    def par(cls, *, taxa: int = TAXA_PADRAO, folga: int = CAPACIDADE_PADRAO) -> CanalDeSocket:
-        """Par conectado, para o produtor e o consumidor que já compartilham o processo pai."""
+    def par(
+        cls,
+        *,
+        taxa: int = TAXA_PADRAO,
+        folga: int = CAPACIDADE_PADRAO,
+        sistema: str = sys.platform,
+    ) -> CanalDeSocket:
+        """Par conectado, para o produtor e o consumidor que já compartilham o processo pai.
+
+        Recusa no Windows **na origem**: lá não existe `AF_UNIX` em datagrama no Python, e um
+        erro críptico do stdlib não diz o que fazer. O sistema entra por parâmetro, como na
+        canonicalização do F0-06, para a recusa ser testável rodando em Linux.
+        """
+        if sistema == "win32":
+            raise ErroDeCanal(
+                "CanalDeSocket não existe no Windows: o Python de lá não tem AF_UNIX em "
+                "datagrama (lacuna de P11 declarada na ADR-0015). Use CanalDeConexao."
+            )
         esquerda, direita = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
         tamanho = folga * (TAMANHO_CABECALHO + BYTES_POR_QUADRO)
         for lado in (esquerda, direita):
