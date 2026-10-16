@@ -27,6 +27,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final
 
+from jarvis.arquivos import LeituraOcupada, escrever_atomico, ler_texto
+
+CORROMPIDO: Final[dict[str, Any]] = {}
+"""Marcador de "o arquivo existe, deu para ler e o conteúdo não presta" — diferente de
+ausente e diferente de ocupado. Só este caso vira `DESLIGADO`."""
+
 ARQUIVO_PEDIDO: Final = "microfone-pedido.json"
 ARQUIVO_ESTADO: Final = "microfone-estado.json"
 
@@ -92,24 +98,24 @@ class EstadoDaFonte:
 
 
 def _escrever(caminho: Path, dados: dict[str, Any]) -> None:
-    """Grava inteiro ou não grava: temporário no mesmo diretório e `os.replace`.
+    """Grava inteiro ou não grava (ver `jarvis.arquivos`).
 
-    Sem isto, o leitor pega JSON pela metade exatamente quando o estado está mudando — que é
-    o único momento em que ele é interessante.
+    Sem a troca atômica, o leitor pega JSON pela metade exatamente quando o estado está
+    mudando — que é o único momento em que ele é interessante.
     """
-    temporario = caminho.with_name(caminho.name + ".tmp")
-    temporario.write_text(json.dumps(dados, ensure_ascii=False), encoding="utf-8")
-    temporario.replace(caminho)
+    escrever_atomico(caminho, json.dumps(dados, ensure_ascii=False))
 
 
 def _ler(caminho: Path) -> dict[str, Any] | None:
-    if not caminho.exists():
+    """`None` para ausente **ou** corrompido; `LeituraOcupada` sobe para quem chama decidir."""
+    bruto = ler_texto(caminho)
+    if bruto is None:
         return None
     try:
-        dados = json.loads(caminho.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return dados if isinstance(dados, dict) else None
+        dados = json.loads(bruto)
+    except json.JSONDecodeError:
+        return CORROMPIDO
+    return dados if isinstance(dados, dict) else CORROMPIDO
 
 
 def escrever_pedido(raiz: Path, pedido: Pedido) -> None:
@@ -117,16 +123,23 @@ def escrever_pedido(raiz: Path, pedido: Pedido) -> None:
 
 
 def ler_pedido(raiz: Path) -> Pedido | None:
-    """O pedido do dono, ou `None` quando a `ui` ainda não pediu nada.
+    """O pedido do dono, ou `None` quando não há pedido novo para aplicar.
 
-    Arquivo ilegível **não** vira microfone aberto: vira `DESLIGADO`. Falha de leitura é o
-    caso em que o padrão tem de ser o mais silencioso, não o mais útil.
+    Três casos, e eles **não** são o mesmo:
+
+    - **ausente**: a `ui` ainda não pediu nada → `None`, e quem chama segue com o que tinha;
+    - **ocupado** (disputa de arquivo no Windows): também `None` — ruído de um instante não é
+      ordem, e desligar o microfone por isso seria piscar na cara do dono;
+    - **corrompido**: conteúdo que não é JSON, ou modo que não existe → `DESLIGADO`. Aí sim é
+      falha de verdade, e o padrão tem de ser o mais silencioso, não o mais útil.
     """
-    caminho = raiz / ARQUIVO_PEDIDO
-    if not caminho.exists():
+    try:
+        dados = _ler(raiz / ARQUIVO_PEDIDO)
+    except LeituraOcupada:
         return None
-    dados = _ler(caminho)
     if dados is None:
+        return None
+    if dados is CORROMPIDO:
         return Pedido(modo=Modo.DESLIGADO)
     try:
         modo = Modo(str(dados["modo"]))
@@ -140,13 +153,14 @@ def escrever_estado(raiz: Path, estado: EstadoDaFonte) -> None:
 
 
 def ler_estado(raiz: Path) -> EstadoDaFonte:
-    """O estado da fonte. Sem arquivo (ou ilegível), o indicador fica **apagado**.
+    """O estado da fonte. Sem arquivo (ou corrompido), o indicador fica **apagado**.
 
-    É a mesma escolha do `ler_pedido`: na dúvida, o indicador não acende. Indicador que
-    acende por falta de informação é exatamente o indicador que mente.
+    Na dúvida, o indicador não acende: indicador que acende por falta de informação é
+    exatamente o indicador que mente. Arquivo **ocupado** levanta `LeituraOcupada` para o
+    painel reaproveitar o último estado em vez de piscar.
     """
     dados = _ler(raiz / ARQUIVO_ESTADO)
-    if dados is None:
+    if dados is None or dados is CORROMPIDO:
         return EstadoDaFonte()
     try:
         modo = Modo(str(dados.get("modo", Modo.ESCUTA)))

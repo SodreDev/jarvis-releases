@@ -1093,3 +1093,31 @@ sem isso a `ui` ficaria dizendo que está tudo bem enquanto a rede caiu e ningu�
   de som é o F1-16;
 - **serviço remoto de verdade**: não existe nenhum no v0. O adaptador está no caminho do `s2`
   com a sonda injetada; o `s2` com LLM é a F2.
+
+## Arquivo pequeno trocado entre processos: o risco de P11 que isso trouxe
+
+Os contratos novos do F1-13 e do F1-14 (`microfone-pedido.json`, `microfone-estado.json`,
+`degradacao.json`, `ui-microfone.txt`, a tecla do backend falso) são arquivinhos na pasta de
+sessão trocados por `Path.replace`. Parece trivial e tem duas armadilhas, as duas de **P11**:
+
+1. **No Windows, `os.replace` falha se o destino está aberto por outro processo**
+   (`ERROR_SHARING_VIOLATION`): o CPython abre arquivo sem `FILE_SHARE_DELETE`. Um leitor no
+   instante errado faria o **escritor** levantar `PermissionError` — e o escritor é o laço de
+   20 ms do `audio-io`. Agora a escrita (`jarvis.arquivos.escrever_atomico`) tenta 5 vezes de
+   5 ms e, no limite, **desiste em silêncio**: o próximo tick reescreve. Derrubar o áudio porque
+   alguém estava lendo o indicador seria o pior negócio possível.
+2. **"Não deu para ler agora" ≠ "não existe".** Ausente é informação ("a `ui` não pediu nada
+   ainda"); erro de leitura é ruído de um instante. Se o ruído virasse resposta, um leitor
+   azarado **desligaria o microfone** por um tick, ou faria o indicador **piscar**. Então
+   `ler_texto` devolve `None` só para ausente e levanta `LeituraOcupada` no resto, e quem chama
+   decide: `ler_pedido` mantém o pedido anterior, o painel reaproveita o último estado (um tick
+   de idade), e só **conteúdo corrompido de verdade** vira `DESLIGADO`.
+
+O temporário leva o **pid** no nome: `degradacao.json` tem dois escritores (o `s2` e o `agentd`),
+e dois processos escrevendo no mesmo `.tmp` intercalariam bytes antes do `replace`.
+
+### Não verificado
+
+Não há Windows aqui: a disputa de arquivo é **simulada** levantando `PermissionError` no lugar
+certo (`tests/unit/test_arquivos.py`), e isso está dito no arquivo de teste. O que confirma de
+verdade é o CI nos dois sistemas; o que os testes garantem é que o **nosso** lado se comporta.

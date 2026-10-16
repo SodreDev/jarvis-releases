@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Final, Protocol, TypeVar, runtime_checkable
 
 from jarvis.ambiente import VARIAVEL_CI, ambiente_ou_os, em_ci, verdadeiro
+from jarvis.arquivos import LeituraOcupada, escrever_atomico, ler_texto
 
 ARQUIVO_DEGRADACAO: Final = "degradacao.json"
 PRAZO_PADRAO_S: Final = 2.0
@@ -89,9 +90,9 @@ class SondaInjetada:
         if self.arquivo is None:
             return self.ligada
         try:
-            return verdadeiro(self.arquivo.read_text(encoding="utf-8"))
-        except OSError:
-            return False
+            return verdadeiro(ler_texto(self.arquivo))
+        except LeituraOcupada:
+            return self.ligada  # disputa de arquivo não é queda de rede
 
 
 @dataclass(slots=True)
@@ -189,20 +190,27 @@ def frase_de_volta(servico: str) -> str:
 
 
 def escrever_degradacao(raiz: Path, degradacao: Degradacao) -> None:
-    caminho = raiz / ARQUIVO_DEGRADACAO
-    temporario = caminho.with_name(caminho.name + ".tmp")
-    temporario.write_text(json.dumps(degradacao.para_dict(), ensure_ascii=False), encoding="utf-8")
-    temporario.replace(caminho)
+    """Troca atômica, com o pid no temporário: este arquivo tem **dois** escritores."""
+    escrever_atomico(
+        raiz / ARQUIVO_DEGRADACAO, json.dumps(degradacao.para_dict(), ensure_ascii=False)
+    )
 
 
 def ler_degradacao(raiz: Path) -> Degradacao:
-    """Sem arquivo (ou ilegível), nada está degradado: a `ui` não inventa aviso."""
-    caminho = raiz / ARQUIVO_DEGRADACAO
-    if not caminho.exists():
+    """Sem arquivo (ou ilegível), nada está degradado: a `ui` não inventa aviso.
+
+    Arquivo **ocupado** (disputa no Windows) também conta como "nada a dizer agora": quem
+    chama mantém o que tinha, em vez de anunciar uma queda que ninguém observou.
+    """
+    try:
+        bruto = ler_texto(raiz / ARQUIVO_DEGRADACAO)
+    except LeituraOcupada:
+        return Degradacao()
+    if bruto is None:
         return Degradacao()
     try:
-        dados = json.loads(caminho.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        dados = json.loads(bruto)
+    except json.JSONDecodeError:
         return Degradacao()
     if not isinstance(dados, dict):
         return Degradacao()

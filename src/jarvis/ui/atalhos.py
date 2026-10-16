@@ -22,6 +22,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
+from jarvis.arquivos import LeituraOcupada, escrever_atomico, ler_texto
+
 VARIAVEL_BACKEND: Final = "JARVIS_HOTKEYS_BACKEND"
 VARIAVEL_ARQUIVO: Final = "JARVIS_HOTKEYS_ARQUIVO"
 COMBINACAO_PADRAO: Final = "Super+Espaço"
@@ -87,18 +89,20 @@ class AtalhoFalso:
     def _gravar(self, *, valor: bool) -> None:
         self._apertado = valor
         if self.arquivo is not None:
-            temporario = self.arquivo.with_name(self.arquivo.name + ".tmp")
-            temporario.write_text("1" if valor else "0", encoding="utf-8")
-            temporario.replace(self.arquivo)
+            escrever_atomico(self.arquivo, "1" if valor else "0")
 
     def pressionado(self) -> bool:
+        """Tecla solta por omissão: arquivo ausente ou ocupado **não** abre microfone."""
         if self.arquivo is None:
             return self._apertado
         try:
-            bruto = self.arquivo.read_text(encoding="utf-8").strip().lower()
-        except OSError:
+            bruto = ler_texto(self.arquivo)
+        except LeituraOcupada:
+            return self._apertado
+        if bruto is None:
             return False
-        return bruto in VERDADEIROS
+        self._apertado = bruto.strip().lower() in VERDADEIROS
+        return self._apertado
 
     def fechar(self) -> None:
         return None

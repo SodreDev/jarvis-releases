@@ -19,10 +19,12 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from jarvis.arquivos import LeituraOcupada
 from jarvis.microfone import (
     ARQUIVO_ESTADO,
     EstadoDaFonte,
@@ -57,6 +59,7 @@ class PainelDoMicrofone:
     """Cartão F1-14: a rede caiu e a escuta contínua está desligada por causa disso."""
     _modo_antes_de_desligar: Modo = Modo.PTT
     _modo_antes_da_degradacao: Modo | None = None
+    _ultimo_estado: EstadoDaFonte = field(default_factory=EstadoDaFonte)
 
     def abrir(self) -> None:
         """Registra o atalho; recusa do sistema **não** derruba a `ui`, vira aviso na tela.
@@ -124,10 +127,18 @@ class PainelDoMicrofone:
 
     @property
     def estado(self) -> EstadoDaFonte:
-        """O estado **relatado pela fonte**; fresco, ou apagado por falta de contato."""
+        """O estado **relatado pela fonte**; fresco, ou apagado por falta de contato.
+
+        Leitura que não deu agora (disputa de arquivo no Windows) reaproveita o último estado
+        conhecido, que tem no máximo um tick de idade: o indicador não pode **piscar** porque
+        alguém estava escrevendo o arquivo. Quem protege contra estado velho de verdade é o
+        `em_contato`, pelo mtime.
+        """
         if not self.em_contato:
             return EstadoDaFonte(modo=self.modo)
-        return ler_estado(self.raiz)
+        with suppress(LeituraOcupada):
+            self._ultimo_estado = ler_estado(self.raiz)
+        return self._ultimo_estado
 
     @property
     def nunca_relatou(self) -> bool:
