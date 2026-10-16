@@ -14,6 +14,14 @@ sintetizador consulta `cancelado`), a fila de playback descarta o que não tocou
 nuvem (se houver) abandona o corpo da resposta em voo. Nenhuma dessas três precisa saber das
 outras: todas consultam a mesma pergunta.
 
+**As três portas da janela (ADR-0019).** A interface gráfica não reimplementa nada disto: ela
+liga três funções e fica sabendo o resto pelo que já existe. `ao_mudar_estado` é o laço
+**dizendo** o que está fazendo (nunca a tela adivinhando); `pressionado` é o PTT de verdade,
+que o terminal não tem como oferecer porque não há evento de tecla solta; e `texto_digitado` é
+uma linha digitada entrando como turno no **mesmo** laço e no **mesmo** epoch — e não num
+caminho paralelo, que seria o jeito mais fácil de perder o cancelamento. Com as três em
+`None`, este arquivo se comporta exatamente como antes da janela existir.
+
 **O indicador é o do F1-13, e pelo mesmo motivo.** O que a tela mostra vem de
 `microfone-estado.json`, escrito por quem está com a fonte na mão — não da intenção de quem
 desenhou a tela. Fonte fechada é zero amostra, e é por isso que o indicador não tem como
@@ -42,6 +50,7 @@ from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import Configuracao
+from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde
 from jarvis.voz.registro import MotorRecusado, motor_registrado
 from jarvis.voz.s2_provisorio import (
@@ -222,7 +231,32 @@ class Aplicativo:
     caminho_de_saida: Path | None = None
     """E o WAV onde o que o Jarvis fala é gravado, no lugar do alto-falante."""
 
+    ao_mudar_estado: Callable[[Estado], None] | None = None
+    """Chamada a cada mudança de estado (ADR-0019). A janela liga aqui; o terminal não liga.
+
+    **Só é chamada quando o estado muda de verdade**, e o laço não a protege: um observador
+    que levanta exceção derruba o turno, e é assim de propósito — tela que quebra calada é
+    tela que mente. Quem liga aqui emite sinal e volta; não faz trabalho."""
+    pressionado: Callable[[], bool] | None = None
+    """O PTT de verdade: "o dono está com o botão apertado agora?" (ADR-0019).
+
+    Com ela ligada, quem decide que o dono está falando é o **dedo dele**, não o VAD, e soltar
+    fecha o turno no mesmo tique — sem esperar os 700 ms de silêncio. O terminal não liga isto
+    porque não recebe evento de tecla solta (`jarvis.voz.teclado`).
+
+    **Limite honesto, e está na tela:** aqui a fonte continua **aberta** enquanto o laço roda;
+    o que o botão controla é o que vira turno. Fechar e reabrir o dispositivo a cada aperto é
+    trabalho do `audio-io` com o arquivo de pedido do F1-13, na F2 — e o indicador continua
+    mostrando a fonte como ela está, não como a tela gostaria que estivesse."""
+    texto_digitado: Callable[[], str | None] | None = None
+    """Uma linha que o dono digitou, se houver. É consultada entre os quadros do laço de áudio.
+
+    Digitar no meio do laço de voz é um turno como outro qualquer: mesmo epoch, mesma fila de
+    playback, mesma interrupção. Fazer isso por fora (uma segunda thread chamando `responder`)
+    daria dois donos do epoch — e dois donos do epoch é a origem do barge-in que não cancela."""
+
     epoch: int = 1
+    estado: Estado = Estado.PARADO
     session_id: str = field(default_factory=lambda: str(uuid7()))
     turnos: list[Turno] = field(default_factory=list)
     _asr: MotorDeAsr | None = field(default=None, repr=False)
@@ -240,6 +274,19 @@ class Aplicativo:
 
     def _cancelado_agora(self) -> bool:
         return self.cancelado_de(self.epoch)()
+
+    def _mudar(self, estado: Estado) -> None:
+        """Muda o estado e avisa quem pediu para ser avisado. Sem mudança, sem aviso."""
+        if estado is self.estado:
+            return
+        self.estado = estado
+        if self.ao_mudar_estado is not None:
+            self.ao_mudar_estado(estado)
+
+    @property
+    def _repouso(self) -> Estado:
+        """Para onde o estado volta depois de um turno: ouvindo, se a fonte está aberta."""
+        return Estado.OUVINDO if self._escutando else Estado.PARADO
 
     def abrir(self, *, com_asr: bool = True) -> None:
         """Monta os motores necessários. Falha aqui, com frase, não no meio do primeiro turno.
@@ -306,6 +353,8 @@ class Aplicativo:
         return self._turno_cancelado
 
     _turno_cancelado: bool = False
+    _escutando: bool = False
+    """Verdadeiro enquanto o laço de áudio está com a fonte aberta (define o repouso)."""
 
     # --- um turno -----------------------------------------------------------------------
     def responder(self, texto: str, *, fila: FilaDePlayback | None = None) -> Turno:
@@ -317,18 +366,22 @@ class Aplicativo:
 
         epoch = self.epoch
         self._turno_cancelado = False
+        self._mudar(Estado.PENSANDO)
         comeco = time.monotonic()
         try:
             resposta = self._s2.responder(texto)
         except RespostaIndisponivel as erro:
             self.escrever_na_tela(f"  (sem resposta: {erro})")
+            self._mudar(self._repouso)
             return Turno(falou=texto, respondeu="", epoch=epoch)
         resposta_ms = (time.monotonic() - comeco) * 1000.0
         if not resposta:
+            self._mudar(self._repouso)
             return Turno(
                 falou=texto, respondeu="", resposta_ms=resposta_ms, cancelado=True, epoch=epoch
             )
         turno = self.falar(resposta, epoch=epoch, fila=fila)
+        self._mudar(self._repouso)
         return Turno(
             falou=texto,
             respondeu=resposta,
@@ -343,6 +396,7 @@ class Aplicativo:
     def falar(self, texto: str, *, epoch: int, fila: FilaDePlayback | None = None) -> Turno:
         """Sintetiza e entrega, parando no cancelamento (contrato do F1-09)."""
         assert self._tts is not None
+        self._mudar(Estado.FALANDO)
         sintetizador = SintetizadorEmStreaming(
             motor=self._tts,
             session_id=self.session_id,
@@ -389,6 +443,7 @@ class Aplicativo:
         """O dono falou por cima (ou apertou a barra): o epoch morre e tudo cai junto."""
         self.epoch += 1
         self._turno_cancelado = True
+        self._mudar(self._repouso)
         self.escrever_na_tela(f"  ⟂ interrompido ({motivo})")
         return self.epoch
 
@@ -422,6 +477,7 @@ class Aplicativo:
             if turno.respondeu:
                 self.escrever_na_tela(f"Jarvis: {turno.respondeu}")
             self.escrever_na_tela(turno.resumo())
+        self._mudar(Estado.PARADO)
         return 0
 
     # --- modo áudio ----------------------------------------------------------------------
@@ -449,6 +505,8 @@ class Aplicativo:
                 f"{erro}\n  Sem dispositivo, use `jarvis-voz --texto` para testar o resto do "
                 "laço (resposta e voz saem em arquivo ou no alto-falante quando houver)."
             ) from None
+        self._escutando = True
+        self._mudar(Estado.OUVINDO)
         fila = FilaDePlayback(
             sumidouro=sumidouro, session_id=self.session_id, epoch_atual=self.epoch
         )
@@ -464,11 +522,23 @@ class Aplicativo:
                 self._publicar_estado(captura, aberta=True)
                 if self._olhar_o_teclado() in TECLAS_DE_SAIDA:
                     break
+                digitado = self.texto_digitado() if self.texto_digitado is not None else None
+                if digitado:
+                    turnos += 1
+                    self._turno_digitado(digitado, fila)
+                    falando, silencio_ms, audio = False, 0.0, bytearray()
+                    continue
+                quadros_antes = captura.quadros
                 eventos = captura.tick()
                 quadro = captura.ultimo_quadro
-                if quadro is None:
+                # A fonte acabou (o WAV terminou, o dispositivo fechou) quando o tique não
+                # trouxe quadro novo. Olhar só `ultimo_quadro` não serve: ele guarda o
+                # **último** quadro, e continua preenchido depois do fim — era assim que este
+                # laço girava a 100% de CPU sem ter mais nada para ouvir. Achado pelo teste do
+                # PTT, onde nenhum turno fecha e a saída tinha de vir do fim da fonte.
+                if quadro is None or captura.quadros == quadros_antes:
                     break
-                if captura.detector.falando:
+                if self._quer_falar(captura):
                     if not falando:
                         falando = True
                         audio = bytearray()
@@ -480,7 +550,12 @@ class Aplicativo:
                 elif falando:
                     silencio_ms += 20.0
                     audio.extend(quadro.amostras)
-                    if silencio_ms >= SILENCIO_PARA_FECHAR_O_TURNO_MS:
+                    # No PTT o fim do turno é o dedo saindo do botão: esperar 700 ms de
+                    # silêncio ali seria cobrar do dono um silêncio que ele já declarou.
+                    fechou = self.pressionado is not None or (
+                        silencio_ms >= SILENCIO_PARA_FECHAR_O_TURNO_MS
+                    )
+                    if fechou:
                         falando = False
                         turnos += 1
                         self._turno_de_audio(bytes(audio), transcritor, fila)
@@ -495,18 +570,37 @@ class Aplicativo:
             self._publicar_estado(captura, aberta=False)
             captura.fechar()
             sumidouro.fechar()
+            self._escutando = False
+            self._mudar(Estado.PARADO)
         return 0
+
+    def _quer_falar(self, captura: Captura) -> bool:
+        """Quem diz que o dono está falando: o dedo dele (PTT da janela) ou o VAD."""
+        if self.pressionado is not None:
+            return self.pressionado()
+        return bool(captura.detector.falando)
+
+    def _turno_digitado(self, texto: str, fila: FilaDePlayback) -> None:
+        """Uma linha digitada no meio do laço de voz. Mesmo turno, mesmo epoch, mesma fila."""
+        self.escrever_na_tela(f"Você (digitado): {texto}")
+        turno = self.responder(texto, fila=fila)
+        self.turnos.append(turno)
+        if turno.respondeu:
+            self.escrever_na_tela(f"Jarvis: {turno.respondeu}")
+        self.escrever_na_tela(turno.resumo())
 
     def _turno_de_audio(
         self, amostras: bytes, transcritor: TranscritorIncremental, fila: FilaDePlayback
     ) -> None:
         assert self._asr is not None
+        self._mudar(Estado.PENSANDO)
         comeco = time.monotonic()
         hipotese = self._asr.transcrever(amostras)
         asr_ms = (time.monotonic() - comeco) * 1000.0
         ouvido_ms = 1000.0 * (len(amostras) // BYTES_POR_AMOSTRA) / TAXA_PADRAO
         if not hipotese.texto.strip():
             self.escrever_na_tela("  (não entendi nada nesse trecho)")
+            self._mudar(self._repouso)
             return
         self.escrever_na_tela(f"Você: {hipotese.texto}")
         turno = self.responder(hipotese.texto, fila=fila)

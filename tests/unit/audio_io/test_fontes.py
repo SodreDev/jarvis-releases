@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import wave
 from pathlib import Path
 
@@ -110,26 +111,44 @@ def test_dispositivo_real_e_proibido_quando_ci_esta_ligado() -> None:
         fonte.abrir()
 
 
+@pytest.mark.parametrize(
+    ("falha", "pista"),
+    [
+        (ImportError("No module named 'sounddevice'"), "uv sync --group dispositivo"),
+        (OSError("PortAudio library not found"), "install portaudio"),
+    ],
+)
 def test_fora_do_ci_a_recusa_do_dispositivo_diz_o_que_falta_na_maquina(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, falha: Exception, pista: str
 ) -> None:
     """Sem CI, a recusa deixou de ser "não existe backend" e passou a ser sobre a máquina.
 
-    Desde que `jarvis.audio_io.dispositivo` existe (sounddevice/PortAudio), a tentativa é de
-    verdade: nesta máquina falta o PortAudio, no CI do dono pode faltar o extra, e com placa
-    de som não falta nada. Em qualquer um dos casos, a frase diz **o que fazer** — é isso que
-    o teste cobra, não o motivo específico desta máquina.
+    As duas faltas são **diferentes** e a frase tem de dizer qual é: extra Python ausente
+    (`uv sync --group dispositivo`) e biblioteca do sistema ausente (`install portaudio`).
+
+    **Por que a falta é injetada em vez de acontecer.** Este teste tentava abrir o dispositivo
+    de verdade, contando com a máquina não ter PortAudio. Na máquina do dono ela tem — e aí o
+    teste **abria o microfone real dele** e ainda falhava por conseguir abrir. Teste de suíte
+    não liga microfone de ninguém: a importação é trocada, as duas recusas são exercitadas, e
+    o caminho com placa de som de verdade continua sendo o do dono (F1-16).
     """
     monkeypatch.delenv(VARIAVEL_CI, raising=False)
+    importar_de_verdade = builtins.__import__
+
+    def importar(nome: str, *resto: object, **nomeados: object) -> object:
+        if nome == "sounddevice":
+            raise falha
+        return importar_de_verdade(nome, *resto, **nomeados)  # type: ignore[arg-type]
+
+    # A falta entra na importação, não na função que a traduz: o que este teste cobra é
+    # justamente a tradução (`importar_sounddevice`), e trocá-la seria conferir a frase que o
+    # próprio teste escreveu.
+    monkeypatch.setattr(builtins, "__import__", importar)
     fonte = FonteDeDispositivo(relogio=RelogioFalso())
 
     with pytest.raises(DispositivoIndisponivel) as erro:
         fonte.abrir()
-    mensagem = str(erro.value)
-    assert any(
-        pista in mensagem
-        for pista in ("uv sync --group dispositivo", "install portaudio", "--diagnostico")
-    ), mensagem
+    assert pista in str(erro.value), str(erro.value)
 
 
 def test_sumidouro_de_arquivo_grava_wav_que_a_fonte_de_arquivo_le(tmp_path: Path) -> None:
