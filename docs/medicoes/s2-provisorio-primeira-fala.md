@@ -81,26 +81,44 @@ Rodado de uma pasta fora do repositório com `python3 -I medir.py <avulso|contin
 
 ```python
 def base(modelo, effort):
-    a = ["claude", "--print", "--verbose", "--output-format", "stream-json",
-         "--include-partial-messages", "--system-prompt", PROMPT, "--tools", "",
-         "--permission-mode", "manual", "--no-session-persistence",
-         "--strict-mcp-config", "--disable-slash-commands"]
+    a = [
+        "claude",
+        "--print",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--system-prompt",
+        PROMPT,
+        "--tools",
+        "",
+        "--permission-mode",
+        "manual",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+    ]
     return a + (["--model", modelo] if modelo else []) + (["--effort", effort] if effort else [])
 
-def ler_turno(saida, t0):          # lê eventos até o `result`
-    ttft = tfrase = None; texto = ""
+
+def ler_turno(saida, t0):  # lê eventos até o `result`
+    ttft = tfrase = None
+    texto = ""
     for linha in saida:
         ev = json.loads(linha)
         if ev.get("type") == "stream_event":
             e = ev["event"]
             if e.get("type") == "content_block_delta" and e["delta"].get("type") == "text_delta":
-                agora = time.monotonic(); texto += e["delta"]["text"]
+                agora = time.monotonic()
+                texto += e["delta"]["text"]
                 ttft = ttft or agora - t0
-                if tfrase is None and (len(texto.split()) >= 3
-                                       or any(p.endswith(CORTE) for p in texto.split())):
+                if tfrase is None and (
+                    len(texto.split()) >= 3 or any(p.endswith(CORTE) for p in texto.split())
+                ):
                     tfrase = agora - t0
         elif ev.get("type") == "result":
             return ttft, tfrase, time.monotonic() - t0, texto
+
 
 # contínuo: + ["--input-format", "stream-json"], e cada turno é
 # {"type":"user","message":{"role":"user","content":[{"type":"text","text": pergunta}]}}
