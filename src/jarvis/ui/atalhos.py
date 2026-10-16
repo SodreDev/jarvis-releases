@@ -6,11 +6,11 @@ do `JARVIS_AUDIO_BACKEND`: o caminho do atalho **global** depende da sessão gr�
 verificado no CI — então o teste injeta um backend falso e o resto do PTT fica provado sem
 máquina nenhuma.
 
-Os dois backends de sistema estão aqui **declarados e não implementados**, e isso é escolha:
-pôr um cliente D-Bus que ninguém pode exercitar no CI seria código de produto sem teste no
-caminho mais sensível da tela. Eles levantam `AtalhoIndisponivel` dizendo o que falta, a `ui`
-cai no botão da tela e o cartão F1-16 (máquina do dono) fecha o assunto — inclusive a pergunta
-que só se responde lá: se **outro aplicativo** já tomou a combinação.
+O do portal (`jarvis.ui.portal.AtalhoPortal`) existe desde a ADR-0021, provado contra um
+portal falso num barramento privado; o do Windows continua **declarado e não implementado**:
+levanta `AtalhoIndisponivel` dizendo o que falta, e a `ui` cai no botão da tela. O que só se
+responde na máquina do dono — o diálogo do Plasma de verdade, e se **outro aplicativo** já
+tomou a combinação — continua com o cartão F1-16.
 """
 
 from __future__ import annotations
@@ -171,10 +171,11 @@ def atalho_do_ambiente(
             return AtalhoFalso(arquivo=Path(bruto))
         return AtalhoFalso(arquivo=None if raiz is None else raiz / "atalho-falso")
     if backend is Backend.PORTAL:
-        return AtalhoDeSistema(
-            nome="portal",
-            detalhe="org.freedesktop.portal.GlobalShortcuts exige sessão gráfica e consentimento",
-        )
+        # O de verdade desde a ADR-0021. Montar não toca o barramento: só `abrir` toca, e sob CI
+        # ele recusa antes de abrir diálogo na tela de alguém.
+        from jarvis.ui.portal import AtalhoPortal
+
+        return AtalhoPortal(ambiente=ambiente)
     if backend is Backend.WINDOWS:
         return AtalhoDeSistema(
             nome="windows", detalhe="RegisterHotKey exige laço de mensagens de janela"

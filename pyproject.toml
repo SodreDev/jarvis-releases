@@ -141,7 +141,8 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 # onnxruntime não publica stubs e só existe nos grupos opcionais (`medicao`, `corpus`, `voz`),
 # que o CI não instala. numpy virou dependência do produto na F1-04 e traz os próprios tipos,
 # por isso saiu desta lista. `epitran` e `edge_tts` entram pelo mesmo motivo: extra opcional
-# sem `py.typed`, importado dentro do método que precisa dele.
+# sem `py.typed`, importado dentro do método que precisa dele. `jeepney` (portal de atalhos,
+# ADR-0021) também não publica tipos.
 [[tool.mypy.overrides]]
 module = [
   "onnxruntime",
@@ -153,6 +154,8 @@ module = [
   "edge_tts",
   "edge_tts.*",
   "sounddevice",
+  "jeepney",
+  "jeepney.*",
 ]
 ignore_missing_imports = true
 
