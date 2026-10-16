@@ -13,6 +13,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -60,8 +61,13 @@ CORPO_QUE_DEMORA = (
 CORPO_QUE_FALHA = "sys.stderr.write('deu ruim aqui\\n')\nsys.exit(3)\n"
 
 
-def recebido(tmp_path: Path) -> dict[str, object]:
-    return json.loads((tmp_path / "recebido.json").read_text(encoding="utf-8"))
+def recebido(tmp_path: Path) -> dict[str, Any]:
+    dados: dict[str, Any] = json.loads((tmp_path / "recebido.json").read_text(encoding="utf-8"))
+    return dados
+
+
+def argv_recebido(tmp_path: Path) -> list[str]:
+    return [str(pedaco) for pedaco in recebido(tmp_path)["argv"]]
 
 
 @pytest.fixture
@@ -92,9 +98,8 @@ def test_responde_e_a_fala_vai_por_stdin_nunca_no_argv(tmp_path: Path, pasta_vaz
 
     assert gerador.responder(FALA) == "São quinze e trinta."
 
-    visto = recebido(tmp_path)
-    assert visto["stdin"] == FALA
-    assert all(FALA not in str(pedaco) for pedaco in visto["argv"])  # type: ignore[union-attr]
+    assert recebido(tmp_path)["stdin"] == FALA
+    assert all(FALA not in pedaco for pedaco in argv_recebido(tmp_path))
     assert gerador.respostas == 1
     assert gerador.ultimo_ms > 0
 
@@ -107,7 +112,7 @@ def test_o_argv_desliga_ferramenta_e_aprovacao_automatica(
     )
     gerador.responder(FALA)
 
-    argv = [str(pedaco) for pedaco in recebido(tmp_path)["argv"]]  # type: ignore[union-attr]
+    argv = argv_recebido(tmp_path)
     assert "--print" in argv
     assert "--permission-mode" in argv and "manual" in argv
     proibidas = argv[argv.index("--disallowed-tools") + 1]
