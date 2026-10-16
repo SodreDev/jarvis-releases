@@ -13,76 +13,19 @@ Item {
     id: vista
     property var dados: ({})
 
-    readonly property var motoresDeAsr: ponte
-        ? ponte.motores.filter(function (m) { return m.papel === "asr" }) : []
-    readonly property var motoresDeTts: ponte
-        ? ponte.motores.filter(function (m) { return m.papel === "tts" }) : []
-
-    // --- uma linha de motor -----------------------------------------------------------------
-    component LinhaDeMotor: Rectangle {
-        id: linha
-        property var motor: ({})
-        width: parent ? parent.width : 0
-        height: 32
-        color: motor.escolhido ? Qt.rgba(0.22, 0.78, 0.91, 0.06) : "transparent"
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            width: 2
-            height: parent.height - 8
-            color: linha.motor.escolhido ? Tema.ciano : "transparent"
-        }
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 14
-            anchors.verticalCenter: parent.verticalCenter
-            text: linha.motor.escolhido ? "▸" : ""
-            color: Tema.ciano
-            font.pixelSize: 10
-            renderType: Text.NativeRendering
-        }
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 28
-            anchors.verticalCenter: parent.verticalCenter
-            text: linha.motor.id || ""
-            color: linha.motor.escolhido ? Tema.textoForte : Tema.texto
-            font.family: Tema.fonteDados
-            font.pixelSize: Tema.tamanhoTexto - 2
-            renderType: Text.NativeRendering
-        }
-        Row {
-            anchors.right: parent.right
-            anchors.rightMargin: 10
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 12
-            Rotulo {
-                anchors.verticalCenter: parent.verticalCenter
-                text: linha.motor.onde === "nuvem" && !linha.motor.ligado ? "desligado" : ""
-            }
-            Rotulo {
-                anchors.verticalCenter: parent.verticalCenter
-                text: linha.motor.onde || ""
-                color: Tema.textoFraco
-                opacity: linha.motor.onde === "nuvem" ? 0.95 : 0.7
-            }
-        }
-        Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width; height: 1
-            color: Tema.linha
-            opacity: 0.6
-        }
-        MouseArea {
-            anchors.fill: parent
-            onClicked: ponte.escolherMotor(linha.motor.papel, linha.motor.id)
-        }
-    }
-
     // --- as caixas -----------------------------------------------------------------------
-    Row {
+    // Rola quando o conteúdo passa da altura: o provedor escolhido abre modelo, aviso e voz.
+    Flickable {
+        id: rolagem
         anchors.fill: parent
+        contentWidth: width
+        contentHeight: caixas.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+
+    Row {
+        id: caixas
+        width: rolagem.width
         spacing: Tema.espacamento
 
         Column {
@@ -96,8 +39,8 @@ Item {
                 Column {
                     width: parent.width
                     Repeater {
-                        model: vista.motoresDeAsr
-                        LinhaDeMotor { motor: modelData }
+                        model: ponte ? ponte.provedoresAsr : []
+                        LinhaDeProvedor { provedor: modelData }
                     }
                 }
             }
@@ -109,22 +52,8 @@ Item {
                 Column {
                     width: parent.width
                     Repeater {
-                        model: vista.motoresDeTts
-                        LinhaDeMotor { motor: modelData }
-                    }
-                }
-            }
-
-            Painel {
-                width: parent.width
-                titulo: "arquivo"
-                dica: ponte ? ponte.configuracao.caminho : ""
-                Row {
-                    spacing: 12
-                    Botao { texto: "salvar configuração"; onApertado: ponte.salvarConfiguracao() }
-                    Rotulo {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "escolher não liga nuvem nenhuma: ligar é outra confirmação"
+                        model: ponte ? ponte.provedoresTts : []
+                        LinhaDeProvedor { provedor: modelData }
                     }
                 }
             }
@@ -133,6 +62,32 @@ Item {
         Column {
             width: (parent.width - Tema.espacamento) * 0.44
             spacing: Tema.espacamento
+
+            // No alto da coluna da direita: com um provedor aberto a da esquerda rola, e o
+            // botão de salvar não pode sumir junto.
+            Painel {
+                width: parent.width
+                titulo: "arquivo"
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Botao { texto: "salvar configuração"; onApertado: ponte.salvarConfiguracao() }
+                    Rotulo {
+                        width: parent.width
+                        text: "escolher não liga nuvem nenhuma: ligar é outra confirmação"
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        width: parent.width
+                        text: ponte ? ponte.configuracao.caminho : ""
+                        color: Tema.textoFraco
+                        font.family: Tema.fonteDados
+                        font.pixelSize: Tema.tamanhoTexto - 4
+                        wrapMode: Text.WrapAnywhere
+                        renderType: Text.NativeRendering
+                    }
+                }
+            }
 
             Painel {
                 width: parent.width
@@ -272,5 +227,6 @@ Item {
             }
 
         }
+    }
     }
 }

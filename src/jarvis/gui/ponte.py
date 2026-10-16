@@ -51,16 +51,19 @@ from jarvis.voz.config import Configuracao, caminho_padrao, escrever, ler, valid
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import Onde
 from jarvis.voz.modelos import ModeloRecusado, baixar, descarga_da_voz
+from jarvis.voz.nuvem import ServicoRecusou
+from jarvis.voz.provedores import provedores, vozes_da_elevenlabs
 from jarvis.voz.registro import motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
 PAPEIS: Final = ("asr", "tts")
 AREA_DOS_PAINEIS: Final[dict[str, Area]] = {
-    "configuracao": Area(coluna=1, linha=0, colunas=10, linhas=6),
+    "configuracao": Area(coluna=1, linha=0, colunas=10, linhas=8),
     "diagnostico": Area(coluna=1, linha=0, colunas=10, linhas=7),
 }
-"""Onde cada painel do dono abre. O de diagnóstico é mais alto porque o que ele mostra é
-texto corrido do `--diagnostico`; o de provedores tem altura de conteúdo."""
+"""Onde cada painel do dono abre. O de provedores ocupa a altura toda desde que o provedor
+escolhido abre o que se escolhe dentro dele (modelo, aviso, voz da conta) — e rola quando
+nem assim cabe; o de diagnóstico é texto corrido do `--diagnostico`."""
 MAXIMO_DE_LINHAS: Final = 400
 
 
@@ -164,6 +167,7 @@ class Ponte(QObject):
     linhaNova = Signal(str, str)
     conversaMudou = Signal()
     diagnosticoMudou = Signal()
+    vozesMudaram = Signal()
 
     def __init__(
         self,
@@ -196,6 +200,8 @@ class Ponte(QObject):
         self._consulta = ""
         self._relogio = ""
         self._medidas: list[dict[str, Any]] = []
+        self._vozes: list[dict[str, Any]] = []
+        self._vozes_frase = ""
         self._tique = QTimer(self)
         self._tique.setInterval(1000)
         self._tique.timeout.connect(self._bater_o_relogio)
@@ -347,6 +353,24 @@ class Ponte(QObject):
             for papel in PAPEIS
             for motor in motores_de(papel)
         ]
+
+    @Property(list, notify=mudou)
+    def provedoresAsr(self) -> list[dict[str, Any]]:
+        """Quem ouve, por provedor — com os modelos de cada um (`jarvis.voz.provedores`)."""
+        return [p.para_dict() for p in provedores(self._configuracao, "asr")]
+
+    @Property(list, notify=mudou)
+    def provedoresTts(self) -> list[dict[str, Any]]:
+        return [p.para_dict() for p in provedores(self._configuracao, "tts")]
+
+    @Property(list, notify=vozesMudaram)
+    def vozesDaConta(self) -> list[dict[str, Any]]:
+        """As vozes que a conta da ElevenLabs enxerga, depois que o dono pediu a lista."""
+        return self._vozes
+
+    @Property(str, notify=vozesMudaram)
+    def vozesFrase(self) -> str:
+        return self._vozes_frase
 
     @Property(list, notify=mudou)
     def geradores(self) -> list[str]:
@@ -527,6 +551,39 @@ class Ponte(QObject):
     def escolherMotor(self, papel: str, identificador: str) -> None:
         self._configuracao = self._configuracao.com(**{papel: identificador})
         self._publicar()
+
+    @Slot(str, str)
+    def escolherProvedor(self, papel: str, chave: str) -> None:
+        """Escolher o provedor escolhe o motor vigente dele — e não liga nuvem nenhuma."""
+        for provedor in provedores(self._configuracao, papel):
+            if provedor.chave == chave:
+                self.escolherMotor(papel, provedor.motor)
+                return
+
+    @Slot()
+    def buscarVozes(self) -> None:
+        """Lista as vozes da conta da ElevenLabs, numa thread (é rede).
+
+        A chave vem pelo mesmo caminho do laço — o ambiente mais o chaveiro, em memória — e
+        não volta para a tela: o que volta é id, nome, categoria e idioma de cada voz.
+        """
+        self._vozes_frase = "consultando a ElevenLabs…"
+        self.vozesMudaram.emit()
+
+        def trabalhar() -> None:
+            try:
+                achadas = vozes_da_elevenlabs(chaveiro.ambiente_com_chaves(self._ambiente_base))
+            except (chaveiro.SegredoAusente, ServicoRecusou, ErroDeRede) as erro:
+                self._vozes_frase = f"não deu para listar: {erro}"
+            else:
+                self._vozes = achadas
+                em_pt = sum(1 for voz in achadas if voz["portugues"])
+                self._vozes_frase = (
+                    f"{len(achadas)} voz(es) na conta, {em_pt} com português declarado"
+                )
+            self.vozesMudaram.emit()
+
+        threading.Thread(target=trabalhar, name="jarvis-vozes", daemon=True).start()
 
     @Slot(str, bool)
     def ligarNuvem(self, identificador: str, ligado: bool) -> None:
