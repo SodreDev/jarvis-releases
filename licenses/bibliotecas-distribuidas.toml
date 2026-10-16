@@ -1,0 +1,133 @@
+# Bibliotecas que o **produto distribui** dentro do pacote, com licença verificada na origem
+# (ADR-0011, ADR-0012, ADR-0019, ADR-0020).
+#
+# Por que mais um registro, além de `modelos.toml` e `ferramentas-externas.toml`: até a
+# ADR-0019 nenhuma dependência saía desta máquina. Com AppImage, .deb e .rpm, o Jarvis passa a
+# **redistribuir** binários de terceiros — e aí a pergunta deixa de ser só "esta licença
+# permite uso comercial?" e passa a incluir "o que ela me obriga a entregar junto?".
+#
+# O portão (`tools/license_gate.py`) cobra, por item em uso:
+#   - a licença escolhida tem de estar na expressão publicada pela origem;
+#   - copyleft forte em uso bloqueia, como já bloqueia em ferramenta externa;
+#   - ligação estática ou biblioteca modificada em item copyleft (LGPL incluído) bloqueia:
+#     as duas destroem o direito de re-ligar, que é a obrigação central do LGPL;
+#   - o texto da licença tem de existir no repositório (`licenses/texto/`), porque é ele que
+#     o `tools/empacotar.py` copia para dentro do artefato;
+#   - a licença que o pacote instalado declara nos metadados tem de bater com a registrada
+#     aqui — se o item não estiver instalado nesta máquina, a conferência **diz isso** em vez
+#     de passar calada;
+#   - o `NOTICE` tem de citar o item e a licença escolhida.
+
+data_da_verificacao = "2026-10-16"
+verificado_por = "executor"
+
+[[biblioteca]]
+id = "PySide6-Essentials"
+versao = "6.9.3"
+papel = "a janela do aplicativo: Qt 6 (QtCore, QtGui, QtWidgets, QtSvg) — ADR-0019"
+licenca = "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+licenca_escolhida = "LGPL-3.0-only"
+estado = "em_uso"
+ligacao = "dinamica"
+modificada = false
+distribuida = true
+fonte = "https://pypi.org/pypi/PySide6-Essentials/6.9.3/json"
+fonte_obrigacoes = "https://www.qt.io/licensing/open-source-lgpl-obligations"
+data_de_acesso = "2026-10-16"
+textos_de_licenca = ["licenses/texto/LGPL-3.0.txt", "licenses/texto/GPL-3.0.txt"]
+nota_de_verificacao = """A roda oficial do PyPI **não traz** o texto da licença: conferido \
+nesta máquina em 2026-10-16 (`PySide6-Essentials 6.9.3`, nenhum arquivo `LICENSE*` no pacote \
+nem no `.dist-info`; só a expressão nos metadados). Por isso os textos vêm do próprio \
+detentor da licença (gnu.org) e ficam versionados em `licenses/texto/`. O LGPL-3.0 é um \
+conjunto de permissões **sobre** o GPL-3.0, então os dois textos vão juntos — entregar só o \
+do LGPL deixaria o artefato sem metade da licença."""
+obrigacoes = [
+  "ligação dinâmica: o Qt entra como .so separados, nunca embutido no executável",
+  "direito de re-ligar: as bibliotecas do Qt ficam em arquivos próprios e substituíveis, em pasta documentada",
+  "texto da licença junto do artefato e aviso visível de que o Qt é LGPL-3.0",
+  "fonte correspondente completa do Qt, ou oferta escrita de onde obtê-la",
+  "não restringir os direitos do LGPL em nenhuma condição de distribuição",
+]
+como_cumprimos = """As rodas oficiais trazem o Qt em `.so`; não compilamos, não alteramos e \
+não ligamos nada estaticamente. Nos três artefatos da ADR-0020 as bibliotecas ficam em \
+`opt/jarvis/lib/python3.12/site-packages/PySide6/Qt/lib/`, substituíveis — o AppImage se abre \
+com `--appimage-extract` e volta a empacotar com o `appimagetool`. Os textos do LGPL-3.0 e do \
+GPL-3.0 são copiados para `usr/share/licenses/jarvis/` em cada pacote, o `NOTICE` traz o aviso \
+e a oferta escrita do código do Qt, e a aba de diagnóstico mostra isso na tela."""
+
+[[biblioteca]]
+id = "shiboken6"
+versao = "6.9.3"
+papel = "a ponte C++↔Python que o PySide6 usa; vai junto por ser dependência dele"
+licenca = "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+licenca_escolhida = "LGPL-3.0-only"
+estado = "em_uso"
+ligacao = "dinamica"
+modificada = false
+distribuida = true
+fonte = "https://pypi.org/pypi/shiboken6/6.9.3/json"
+fonte_obrigacoes = "https://www.qt.io/licensing/open-source-lgpl-obligations"
+data_de_acesso = "2026-10-16"
+textos_de_licenca = ["licenses/texto/LGPL-3.0.txt", "licenses/texto/GPL-3.0.txt"]
+obrigacoes = [
+  "ligação dinâmica: libshiboken6 é .so separado",
+  "direito de re-ligar: o .so fica em arquivo próprio e substituível",
+  "texto da licença junto do artefato",
+  "fonte correspondente completa, ou oferta escrita",
+]
+como_cumprimos = """Mesma roda oficial, mesmo tratamento do PySide6: `.so` separado, sem \
+alteração, com os mesmos dois textos copiados para `usr/share/licenses/jarvis/`."""
+
+[[biblioteca]]
+id = "keyring"
+versao = "25.7.0"
+papel = "guarda a chave de API no chaveiro do SO (Secret Service / libsecret) — ADR-0019"
+licenca = "MIT"
+licenca_escolhida = "MIT"
+estado = "em_uso"
+ligacao = "python"
+modificada = false
+distribuida = true
+fonte = "https://pypi.org/pypi/keyring/25.7.0/json"
+data_de_acesso = "2026-10-16"
+arquivos_no_pacote = ["keyring-25.7.0.dist-info/licenses/LICENSE"]
+obrigacoes = ["manter o aviso de copyright e a licença junto da distribuição"]
+como_cumprimos = """O pacote inteiro vai dentro do artefato com o seu `.dist-info`, que \
+contém o `LICENSE` — nada é recompilado nem reempacotado."""
+
+[[biblioteca]]
+id = "SecretStorage"
+versao = "3.5.0"
+papel = "back-end do Secret Service usado pelo keyring no Linux"
+licenca = "BSD-3-Clause"
+licenca_escolhida = "BSD-3-Clause"
+estado = "em_uso"
+ligacao = "python"
+modificada = false
+distribuida = true
+fonte = "https://pypi.org/pypi/SecretStorage/3.5.0/json"
+data_de_acesso = "2026-10-16"
+textos_de_licenca = ["licenses/texto/SecretStorage-BSD-3-Clause.txt"]
+obrigacoes = ["manter o aviso de copyright, a lista de condições e o aviso de isenção"]
+nota_de_verificacao = """A roda do SecretStorage 3.5.0 **não traz** o `LICENSE` no \
+`.dist-info` (conferido nesta máquina em 2026-10-16), e a BSD-3 exige reproduzir o aviso na \
+redistribuição binária. Por isso o texto foi copiado do repositório de origem para \
+`licenses/texto/` e vai no artefato por ali."""
+como_cumprimos = """Vai dentro do artefato com o `.dist-info`, e o texto da licença é copiado \
+de `licenses/texto/` para `usr/share/licenses/jarvis/`."""
+
+[[biblioteca]]
+id = "jeepney"
+versao = "0.9.0"
+papel = "cliente D-Bus puro-Python do SecretStorage (sem libdbus no pacote)"
+licenca = "MIT"
+licenca_escolhida = "MIT"
+estado = "em_uso"
+ligacao = "python"
+modificada = false
+distribuida = true
+fonte = "https://pypi.org/pypi/jeepney/0.9.0/json"
+data_de_acesso = "2026-10-16"
+arquivos_no_pacote = ["jeepney-0.9.0.dist-info/licenses/LICENSE"]
+obrigacoes = ["manter o aviso de copyright e a licença junto da distribuição"]
+como_cumprimos = """Vai dentro do artefato com o `.dist-info` e o texto da licença."""

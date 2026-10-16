@@ -39,7 +39,9 @@ ARQUIVO_MODELOS: Final = RAIZ / "licenses" / "modelos.toml"
 ARQUIVO_EXCECOES: Final = RAIZ / "licenses" / "dependencias-sem-metadados.toml"
 ARQUIVO_FERRAMENTAS: Final = RAIZ / "licenses" / "ferramentas-externas.toml"
 ARQUIVO_MOTORES: Final = RAIZ / "licenses" / "motores.toml"
+ARQUIVO_BIBLIOTECAS: Final = RAIZ / "licenses" / "bibliotecas-distribuidas.toml"
 TIPO_FERRAMENTA: Final = "ferramenta externa"
+TIPO_BIBLIOTECA: Final = "biblioteca distribuída"
 ARQUIVO_TABELA: Final = RAIZ / "docs" / "licencas.md"
 ARQUIVOS_DE_ATRIBUICAO: Final[tuple[Path, ...]] = (
     RAIZ / "NOTICE",
@@ -68,7 +70,8 @@ class Item:
     def bloqueia(self) -> bool:
         """Falha a porta? Não comercial sempre; copyleft forte quando entra no produto.
 
-        Ferramenta externa (binário do sistema) com GPL/AGPL/SSPL e estado `em_uso` **bloqueia**:
+        Ferramenta externa (binário do sistema) e biblioteca distribuída dentro do pacote
+        (ADR-0019/0020) com GPL/AGPL/SSPL e estado `em_uso` **bloqueiam**:
         abrir o derivado é decisão do dono, não de uma dependência que entrou de lado. A mesma
         ferramenta com estado `fora_do_produto` (geração de dado, em processo separado) só gera
         aviso — é o caso do espeak-ng no cartão F1-02.
@@ -78,7 +81,7 @@ class Item:
         if self.categoria is Categoria.NAO_COMERCIAL:
             return True
         if (
-            self.tipo == TIPO_FERRAMENTA
+            self.tipo in {TIPO_FERRAMENTA, TIPO_BIBLIOTECA}
             and self.categoria is Categoria.COPYLEFT_FORTE
             and self.estado == "em_uso"
         ):
@@ -201,6 +204,133 @@ def inventariar_motores(arquivo: Path = ARQUIVO_MOTORES) -> list[Item]:
         for motor in dados.get("motor", [])
     ]
     return sorted(itens, key=lambda i: (i.tipo, i.nome.lower()))
+
+
+def inventariar_bibliotecas(arquivo: Path = ARQUIVO_BIBLIOTECAS) -> list[Item]:
+    """Bibliotecas de terceiros que o **produto distribui** dentro do pacote (ADR-0019/0020).
+
+    Elas também aparecem no inventário de dependências instaladas, e isso não é redundância: lá
+    a pergunta é "esta licença permite uso comercial?", e o CI responde com o que o ambiente
+    tem hoje. Aqui a pergunta é a da redistribuição — "o que esta licença me obriga a entregar
+    junto?" — e a resposta é um registro comitado, que não depende do que está instalado.
+    """
+    if not arquivo.exists():
+        return []
+    dados = tomllib.loads(arquivo.read_text(encoding="utf-8"))
+    itens = [
+        Item(
+            tipo=TIPO_BIBLIOTECA,
+            nome=f"{biblioteca['id']} {biblioteca.get('versao', '')}".strip(),
+            licenca=str(biblioteca.get("licenca_escolhida") or biblioteca["licenca"]),
+            origem=str(biblioteca["fonte"]),
+            estado=str(biblioteca.get("estado", "em_uso")),
+            data_de_acesso=str(biblioteca.get("data_de_acesso", "")),
+            nota=str(biblioteca.get("papel", "")),
+        )
+        for biblioteca in dados.get("biblioteca", [])
+    ]
+    return sorted(itens, key=lambda i: i.nome.lower())
+
+
+def _no_pacote_instalado(pacote: str, relativo: str) -> bool | None:
+    """O arquivo está dentro do pacote instalado? `None` = o pacote não está instalado aqui.
+
+    Distinguir "não cumpre" de "não dá para conferir" é o ponto: o CI roda sem o grupo `gui`,
+    e uma conferência que passa calada quando o pacote falta não confere nada.
+    """
+    try:
+        distribuicao = metadata.distribution(pacote)
+    except metadata.PackageNotFoundError:
+        return None
+    pasta = distribuicao.locate_file("")
+    return (Path(str(pasta)) / relativo).exists()
+
+
+def _licenca_instalada(pacote: str) -> str | None:
+    """A licença que o pacote instalado declara. `None` = não está instalado aqui."""
+    try:
+        return _licenca_de_metadados(metadata.distribution(pacote).metadata)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def conferir_bibliotecas(arquivo: Path = ARQUIVO_BIBLIOTECAS) -> tuple[list[str], list[str]]:
+    """As obrigações de redistribuição, conferidas por máquina. Devolve (falhas, avisos).
+
+    Quatro perguntas, e cada uma existe por uma obrigação concreta do LGPL (ADR-0019):
+
+    1. a licença escolhida é mesmo uma das que a origem publica, e o pacote instalado declara
+       a mesma expressão? (escolher "LGPL" de uma expressão que só tem GPL seria inventar
+       permissão; e metadados que mudaram de uma versão para outra têm de aparecer aqui);
+    2. a ligação é dinâmica e a biblioteca não foi modificada? — ligar estaticamente ou alterar
+       o Qt mata o direito de **re-ligar**, que é a obrigação central;
+    3. o texto da licença existe no repositório (é ele que o empacotador copia) e, quando o
+       registro aponta para um arquivo que vem dentro da roda, ele existe lá?
+    4. o `NOTICE` cita o item?
+    """
+    if not arquivo.exists():
+        return [], []
+    dados = tomllib.loads(arquivo.read_text(encoding="utf-8"))
+    aviso_legal = (
+        (RAIZ / "NOTICE").read_text(encoding="utf-8") if (RAIZ / "NOTICE").exists() else ""
+    )
+    falhas: list[str] = []
+    avisos: list[str] = []
+    for biblioteca in dados.get("biblioteca", []):
+        identificador = str(biblioteca["id"])
+        if str(biblioteca.get("estado", "em_uso")) != "em_uso":
+            continue
+        publicada = str(biblioteca["licenca"])
+        escolhida = str(biblioteca.get("licenca_escolhida") or publicada)
+        if escolhida.casefold() not in publicada.casefold():
+            falhas.append(
+                f"{identificador}: licenca_escolhida {escolhida!r} não está na expressão "
+                f"publicada pela origem ({publicada!r})"
+            )
+        copyleft = "gpl" in escolhida.casefold()
+        if copyleft and str(biblioteca.get("ligacao", "")) not in {"dinamica", "python"}:
+            falhas.append(
+                f"{identificador}: {escolhida} com ligação "
+                f"{biblioteca.get('ligacao', '(não declarada)')!r} — ligar estaticamente tira do "
+                "dono o direito de re-ligar a biblioteca"
+            )
+        if copyleft and bool(biblioteca.get("modificada", False)):
+            falhas.append(
+                f"{identificador}: {escolhida} e biblioteca modificada — aí a fonte modificada "
+                "tem de ser entregue, e este registro não declara como"
+            )
+        for relativo in biblioteca.get("textos_de_licenca", []):
+            if not (RAIZ / str(relativo)).exists():
+                falhas.append(
+                    f"{identificador}: o texto da licença {relativo} não está no repositório, "
+                    "e é ele que o empacotador copia para dentro do artefato"
+                )
+        for relativo in biblioteca.get("arquivos_no_pacote", []):
+            existe = _no_pacote_instalado(identificador, str(relativo))
+            if existe is None:
+                avisos.append(
+                    f"{identificador}: não está instalado aqui, então {relativo} não foi "
+                    "conferido (instale o grupo `gui` para conferir)"
+                )
+            elif not existe:
+                falhas.append(
+                    f"{identificador}: {relativo} não existe dentro do pacote instalado, e é "
+                    "ele que leva a licença para dentro do artefato"
+                )
+        instalada = _licenca_instalada(identificador)
+        if instalada is None:
+            avisos.append(
+                f"{identificador}: não está instalado aqui, então a licença registrada "
+                f"({publicada}) não foi comparada com a dos metadados"
+            )
+        elif instalada.casefold() != publicada.casefold():
+            falhas.append(
+                f"{identificador}: o registro diz {publicada!r} e o pacote instalado declara "
+                f"{instalada!r} — um dos dois envelheceu"
+            )
+        if identificador not in aviso_legal:
+            falhas.append(f"{identificador}: não aparece no NOTICE, e a licença exige o aviso")
+    return falhas, avisos
 
 
 def avisos_de_motores(arquivo: Path = ARQUIVO_MOTORES) -> list[str]:
@@ -352,6 +482,39 @@ nascem desligados, e campo de termo vazio barra o motor em tempo de execução
 """
 
 
+SECAO_BIBLIOTECAS: Final = """
+## Bibliotecas distribuídas dentro do pacote
+
+De `licenses/bibliotecas-distribuidas.toml` (ADR-0019, ADR-0020). São as bibliotecas de
+terceiros que **saem desta máquina** dentro do AppImage, do `.deb` e do `.rpm` — por isso a
+coluna que importa não é só a licença, é a obrigação que ela impõe a quem redistribui. A
+licença mostrada é a **escolhida** dentro da expressão publicada pela origem; a conferência
+das obrigações (ligação dinâmica, direito de re-ligar, texto junto, aviso no NOTICE) roda em
+`tools/license_gate.py`.
+
+| biblioteca | licença escolhida | categoria | ligação | modificada | estado | fonte | acesso |
+|---|---|---|---|---|---|---|---|
+"""
+
+
+def tabela_de_bibliotecas(arquivo: Path = ARQUIVO_BIBLIOTECAS) -> str:
+    if not arquivo.exists():
+        return ""
+    dados = tomllib.loads(arquivo.read_text(encoding="utf-8"))
+    linhas = []
+    for biblioteca in sorted(dados.get("biblioteca", []), key=lambda b: str(b["id"]).lower()):
+        escolhida = str(biblioteca.get("licenca_escolhida") or biblioteca["licenca"])
+        linhas.append(
+            f"| `{biblioteca['id']} {biblioteca.get('versao', '')}`".rstrip()
+            + f" | {escolhida} | {classificar(escolhida)} "
+            f"| {biblioteca.get('ligacao', '?')} "
+            f"| {'sim' if biblioteca.get('modificada', False) else 'não'} "
+            f"| {biblioteca.get('estado', 'em_uso')} | <{biblioteca['fonte']}> "
+            f"| {biblioteca.get('data_de_acesso', '')} |"
+        )
+    return SECAO_BIBLIOTECAS + "\n".join(linhas) + "\n"
+
+
 def tabela_de_motores(arquivo: Path = ARQUIVO_MOTORES) -> str:
     from jarvis.voz.registro import ler_motores
 
@@ -390,6 +553,7 @@ def tabela_de_modelos(modelos: Sequence[Item], ferramentas: Sequence[Item] = ())
             )
             + "\n"
         )
+    tabela += tabela_de_bibliotecas()
     tabela += tabela_de_motores()
     return tabela
 
@@ -423,6 +587,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--motores", type=Path, default=ARQUIVO_MOTORES, help="outro registro de motores de voz"
     )
     analisador.add_argument(
+        "--bibliotecas",
+        type=Path,
+        default=ARQUIVO_BIBLIOTECAS,
+        help="outro registro de bibliotecas distribuídas dentro do pacote",
+    )
+    analisador.add_argument(
         "--pasta-pacotes",
         action="append",
         default=None,
@@ -454,7 +624,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     dependencias = inventariar_dependencias(args.pasta_pacotes)
     ferramentas = inventariar_ferramentas(args.ferramentas)
     motores = inventariar_motores(args.motores)
-    itens = [*modelos, *dependencias, *ferramentas, *motores]
+    bibliotecas = inventariar_bibliotecas(args.bibliotecas)
+    itens = [*modelos, *dependencias, *ferramentas, *motores, *bibliotecas]
 
     if args.tabela:
         imprimir_tabela(itens)
@@ -484,6 +655,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 4
 
+    falhas_de_distribuicao, avisos_de_distribuicao = conferir_bibliotecas(args.bibliotecas)
+    for aviso in avisos_de_distribuicao:
+        print(f"NÃO CONFERIDO: {aviso}")
+    for falha in falhas_de_distribuicao:
+        print(f"OBRIGAÇÃO DE DISTRIBUIÇÃO: {falha}")
+    if falhas_de_distribuicao:
+        print(
+            f"\nFALHOU: {len(falhas_de_distribuicao)} obrigação(ões) de redistribuição não "
+            "cumprida(s) (ADR-0019; ver licenses/bibliotecas-distribuidas.toml)"
+        )
+        return 5
+
     if args.online:
         print("\nconferindo os model cards na origem:")
         divergencias = conferir_online(modelos, args.modelos)
@@ -504,6 +687,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"\nporta de licença: {len(modelos)} modelos, {len(dependencias)} dependências, "
         f"{len(ferramentas)} ferramenta(s) externa(s), {len(motores)} motor(es) de voz, "
+        f"{len(bibliotecas)} biblioteca(s) distribuída(s), "
         f"{len(barrados)} barrados por registro"
     )
     for frase in avisos_de_motores(args.motores):

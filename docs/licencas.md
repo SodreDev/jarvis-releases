@@ -43,6 +43,23 @@ copyleft forte com estado `em_uso` **bloqueia** a porta.
 | `espeak-ng 1.52.0` | GPL-3.0 | copyleft_forte | fora_do_produto | <https://api.github.com/repos/espeak-ng/espeak-ng/license> | 2026-10-15 |
 | `ffmpeg (a do sistema do dono)` | LGPL-2.1-or-later | permissiva | extra_opcional | <https://www.ffmpeg.org/legal.html> | 2026-10-15 |
 
+## Bibliotecas distribuídas dentro do pacote
+
+De `licenses/bibliotecas-distribuidas.toml` (ADR-0019, ADR-0020). São as bibliotecas de
+terceiros que **saem desta máquina** dentro do AppImage, do `.deb` e do `.rpm` — por isso a
+coluna que importa não é só a licença, é a obrigação que ela impõe a quem redistribui. A
+licença mostrada é a **escolhida** dentro da expressão publicada pela origem; a conferência
+das obrigações (ligação dinâmica, direito de re-ligar, texto junto, aviso no NOTICE) roda em
+`tools/license_gate.py`.
+
+| biblioteca | licença escolhida | categoria | ligação | modificada | estado | fonte | acesso |
+|---|---|---|---|---|---|---|---|
+| `jeepney 0.9.0` | MIT | permissiva | python | não | em_uso | <https://pypi.org/pypi/jeepney/0.9.0/json> | 2026-10-16 |
+| `keyring 25.7.0` | MIT | permissiva | python | não | em_uso | <https://pypi.org/pypi/keyring/25.7.0/json> | 2026-10-16 |
+| `PySide6-Essentials 6.9.3` | LGPL-3.0-only | permissiva | dinamica | não | em_uso | <https://pypi.org/pypi/PySide6-Essentials/6.9.3/json> | 2026-10-16 |
+| `SecretStorage 3.5.0` | BSD-3-Clause | permissiva | python | não | em_uso | <https://pypi.org/pypi/SecretStorage/3.5.0/json> | 2026-10-16 |
+| `shiboken6 6.9.3` | LGPL-3.0-only | permissiva | dinamica | não | em_uso | <https://pypi.org/pypi/shiboken6/6.9.3/json> | 2026-10-16 |
+
 ## Motores de voz
 
 Motores de ASR e TTS de `licenses/motores.toml` (ADR-0017). A licença da coluna é a do

@@ -17,6 +17,32 @@ J.A.R.V.I.S © SodreDev. Licença do projeto: Apache-2.0 (ver LICENSE).
   [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Reconhecimento de fala multilíngue
   (25 idiomas, português incluído).
 
+## Bibliotecas redistribuídas dentro do pacote (ADR-0019, ADR-0020)
+
+O AppImage, o `.deb` e o `.rpm` do Jarvis **levam junto** bibliotecas de terceiros. Estas são
+as obrigações que vêm com elas, e como o pacote as cumpre. O registro por máquina está em
+`licenses/bibliotecas-distribuidas.toml`, e `tools/license_gate.py` falha se esta seção parar
+de citar um item que o produto distribui.
+
+- **Qt 6 / PySide6 (`PySide6-Essentials` 6.9.3) e `shiboken6` 6.9.3** — © The Qt Company Ltd e
+  colaboradores, usados sob a **GNU LGPL versão 3** (a origem publica
+  `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only`; escolhemos a primeira).
+  O Jarvis **não modifica o Qt** e **não o liga estaticamente**: as bibliotecas vêm das rodas
+  oficiais, como arquivos `.so` separados em
+  `opt/jarvis/lib/python3.12/site-packages/PySide6/Qt/lib/` (no AppImage, dentro de
+  `usr/`), e podem ser substituídas por outra compilação compatível — o AppImage se abre com
+  `--appimage-extract` e volta a empacotar com o `appimagetool`. Os textos da
+  [LGPL-3.0](licenses/texto/LGPL-3.0.txt) e da [GPL-3.0](licenses/texto/GPL-3.0.txt), que a
+  LGPLv3 incorpora, acompanham cada artefato em `usr/share/licenses/jarvis/`.
+  **Oferta escrita de fonte correspondente:** o código do Qt 6.9.3 e do PySide6 6.9.3 é o
+  publicado pelo projeto Qt em <https://download.qt.io/official_releases/qt/6.9/6.9.3/single/>
+  e <https://download.qt.io/official_releases/QtForPython/pyside6/>; quem receber um pacote
+  pode pedir a cópia correspondente pelo repositório do projeto.
+- **`keyring` 25.7.0** (MIT), **`SecretStorage` 3.5.0** (BSD-3-Clause) e **`jeepney` 0.9.0**
+  (MIT) — guardam a chave de API no chaveiro do sistema. Vão no pacote como instalados, com o
+  `.dist-info` e o aviso de copyright; o texto da BSD-3 do SecretStorage está em
+  `licenses/texto/SecretStorage-BSD-3-Clause.txt`, porque a roda dele não o traz.
+
 ## Outros componentes de terceiros (sem obrigação de atribuição, registrados por clareza)
 
 - `openai/whisper-small` e `openai/whisper-large-v3` — Apache-2.0.
