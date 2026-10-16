@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import secrets
+import stat
 import sys
 import tempfile
 import time
@@ -31,6 +32,9 @@ from typing import Any, Final, Self
 
 ARQUIVO_CHAVE: Final = "authkey"
 ARQUIVO_SOCKET: Final = "barramento.sock"
+ARQUIVO_ENDERECO: Final = "endereco-do-barramento.txt"
+"""Onde o servidor anota o endereço quando ele não cabe na pasta de sessão (ver `endereco`)."""
+PREFIXO_DA_PASTA_CURTA: Final = "jarvis-sock-"
 TAMANHO_MAXIMO: Final = 4 * 1024 * 1024
 """Teto do quadro. Payload grande vai por referência (`payload_ref`), não pelo barramento."""
 
@@ -48,19 +52,113 @@ def _digest(raiz: Path) -> str:
 
 
 def endereco(raiz: Path) -> tuple[str, str]:
-    """Endereço e família do barramento para esta máquina.
+    """Endereço e família do barramento **para quem conecta**.
 
-    Linux: socket na pasta de execução. Quando o caminho dela é comprido (pasta temporária
-    de teste, por exemplo), o socket vai para a pasta temporária do sistema com nome derivado
-    por hash — é o limite de `sun_path`, não escolha nossa.
+    Linux: socket na pasta de execução, que já é 0700. Quando o caminho dela não cabe em
+    `sun_path` (pasta temporária de teste, por exemplo), o socket mora numa pasta privada
+    criada pelo servidor, e o endereço dela está anotado em `ARQUIVO_ENDERECO` na raiz —
+    ler o ponteiro é o único jeito, porque o nome da pasta é **aleatório** de propósito
+    (ver `criar_endereco`). Sem ponteiro, o barramento não subiu, e isso é erro, não palpite.
     Windows: named pipe com nome derivado da pasta, porque pipe não vive no sistema de arquivos.
     """
     if sys.platform == "win32":
         return rf"\\.\pipe\jarvis-{_digest(raiz)}", "AF_PIPE"
     caminho = raiz / ARQUIVO_SOCKET
-    if len(str(caminho)) > LIMITE_SUN_PATH:
-        caminho = Path(tempfile.gettempdir()) / f"jarvis-{_digest(raiz)}.sock"
-    return str(caminho), "AF_UNIX"
+    if len(str(caminho)) <= LIMITE_SUN_PATH:
+        return str(caminho), "AF_UNIX"
+    ponteiro = raiz / ARQUIVO_ENDERECO
+    try:
+        anotado = ponteiro.read_text(encoding="utf-8").strip()
+    except OSError as erro:
+        raise ErroDeIPC(
+            f"barramento não iniciado: o caminho de {raiz} não cabe em sun_path e falta "
+            f"{ponteiro.name} com o endereço da pasta privada"
+        ) from erro
+    if not anotado:
+        raise ErroDeIPC(f"barramento não iniciado: {ponteiro.name} está vazio")
+    return anotado, "AF_UNIX"
+
+
+def criar_endereco(raiz: Path) -> tuple[str, str]:
+    """Endereço do barramento **para quem escuta**, criando a pasta privada se precisar.
+
+    Por que não `gettempdir()/jarvis-<hash do caminho>.sock`, que era o que estava aqui:
+
+    * o nome era **previsível** — um usuário local calculava o hash e pré-criava o arquivo,
+      e o `bind` do servidor falhava com `EADDRINUSE`: negação de serviço na subida;
+    * o arquivo nascia **fora** de qualquer pasta 0700, então entre `unlink` e `bind` havia
+      corrida na pasta temporária (que tem *sticky bit*, mas é escrita por todos), e entre
+      `bind` e `chmod` o socket existia com a umask do processo (0022 por padrão).
+
+    `mkdtemp` resolve as três coisas de uma vez: cria a pasta **atomicamente**, com nome
+    aleatório e modo 0700 **independente da umask**. O socket nasce dentro dela, então a
+    proteção é da pasta e não da janela de `chmod`; o `chmod 0600` do socket continua, como
+    segunda linha. O endereço escolhido fica anotado na raiz para quem conecta (`endereco`).
+    """
+    if sys.platform == "win32":  # pragma: no cover - named pipe não tem caminho de arquivo
+        return endereco(raiz)
+    caminho = raiz / ARQUIVO_SOCKET
+    if len(str(caminho)) <= LIMITE_SUN_PATH:
+        return str(caminho), "AF_UNIX"
+    ponteiro = raiz / ARQUIVO_ENDERECO
+    anterior = _pasta_privada_reutilizavel(ponteiro)
+    if anterior is not None:
+        return str(anterior), "AF_UNIX"
+    pasta = Path(tempfile.mkdtemp(prefix=PREFIXO_DA_PASTA_CURTA))
+    alvo = pasta / ARQUIVO_SOCKET
+    if len(str(alvo)) > LIMITE_SUN_PATH:  # pragma: no cover - TMPDIR exótico
+        pasta.rmdir()
+        raise ErroDeIPC(
+            f"nem a pasta temporária cabe em sun_path ({len(str(alvo))} bytes): "
+            "aponte TMPDIR para um caminho curto"
+        )
+    ponteiro.write_text(str(alvo), encoding="utf-8")
+    if sys.platform != "win32":
+        ponteiro.chmod(0o600)
+    return str(alvo), "AF_UNIX"
+
+
+def _pasta_privada_reutilizavel(ponteiro: Path) -> Path | None:
+    """O desvio anotado ainda serve? Só se a pasta for nossa, 0700 e nossa dona.
+
+    Reiniciar o `agentd` na mesma sessão tem de reaproveitar o endereço (os outros processos
+    guardaram o ponteiro), mas reaproveitar o que outro usuário criou no lugar seria aceitar
+    exatamente o ataque que o nome aleatório evita.
+    """
+    try:
+        anotado = Path(ponteiro.read_text(encoding="utf-8").strip())
+    except OSError:
+        return None
+    pasta = anotado.parent
+    if anotado.name != ARQUIVO_SOCKET or not pasta.name.startswith(PREFIXO_DA_PASTA_CURTA):
+        return None
+    try:
+        info = pasta.stat()
+    except OSError:
+        return None
+    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        return None
+    return anotado
+
+
+def remover_endereco(raiz: Path) -> None:
+    """Desfaz o desvio: apaga os sockets da pasta privada, a pasta e o ponteiro.
+
+    A pasta privada guarda o socket do barramento e o do canal de áudio (ADR-0015), que
+    mora ao lado. Só os `.sock` de dentro dela são removidos, um por um, e só depois de
+    `_pasta_privada_reutilizavel` confirmar que a pasta é nossa — nada de remoção recursiva.
+    """
+    ponteiro = raiz / ARQUIVO_ENDERECO
+    anotado = _pasta_privada_reutilizavel(ponteiro)
+    if anotado is not None:
+        with suppress(OSError):
+            for dentro in anotado.parent.iterdir():
+                if dentro.is_socket() or dentro.suffix == ".sock":
+                    dentro.unlink(missing_ok=True)
+        with suppress(OSError):
+            anotado.parent.rmdir()  # falha de propósito se sobrou algo que não é nosso
+    with suppress(OSError):
+        ponteiro.unlink(missing_ok=True)
 
 
 def preparar_raiz(raiz: Path) -> bytes:
@@ -126,7 +224,7 @@ class ServidorDoBarramento:
     def __init__(self, raiz: Path) -> None:
         self.raiz = raiz
         chave = preparar_raiz(raiz)
-        alvo, familia = endereco(raiz)
+        alvo, familia = criar_endereco(raiz)
         if familia == "AF_UNIX":
             Path(str(alvo)).unlink(missing_ok=True)
         self._listener = Listener(alvo, family=familia, authkey=chave)
@@ -141,6 +239,7 @@ class ServidorDoBarramento:
         with suppress(OSError):
             self._listener.close()
         (self.raiz / "pronto").unlink(missing_ok=True)
+        remover_endereco(self.raiz)
 
     def __enter__(self) -> Self:
         return self
@@ -151,13 +250,15 @@ class ServidorDoBarramento:
 
 def conectar(raiz: Path, nome: str, *, tentativas: int = 50, espera: float = 0.1) -> Canal:
     """Conecta ao barramento e se registra. Espera o corretor subir, sem laço cego."""
-    alvo, familia = endereco(raiz)
     chave = ler_chave(raiz)
     ultimo: Exception | None = None
     for _ in range(tentativas):
         try:
+            # O endereço é resolvido a cada tentativa: com raiz comprida ele vem do ponteiro
+            # que o servidor escreve, e esperar por ele é a mesma espera de esperar o socket.
+            alvo, familia = endereco(raiz)
             canal = Canal(Client(alvo, family=familia, authkey=chave), nome=nome)
-        except OSError as erro:
+        except (OSError, ErroDeIPC) as erro:
             ultimo = erro
             time.sleep(espera)
             continue
