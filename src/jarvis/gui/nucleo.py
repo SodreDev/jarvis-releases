@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.microfone import EstadoDaFonte, ler_estado
-from jarvis.voz.app import Aplicativo, AplicativoIndisponivel
+from jarvis.voz.app import Aplicativo, AplicativoIndisponivel, OuvidoIndisponivel
 from jarvis.voz.config import Configuracao
 from jarvis.voz.escuta import Escuta
 from jarvis.voz.estado import Estado
@@ -245,6 +245,18 @@ class SessaoDeVoz:
             if self._parando:
                 raise
             self.modo_texto = True
-            self.ao_linha(f"sem áudio: {erro}")
+            if isinstance(erro, OuvidoIndisponivel):
+                # Bug do dono (2026-10-16): com o ASR da nuvem desligado, a janela caía no modo
+                # texto dizendo "sem áudio", e a voz dele "não saía". O que falta é o ouvido,
+                # e o caminho tem de estar na frase — e no card, que não rola para fora.
+                frase = (
+                    f"não estou ouvindo: {erro}. Para falar comigo, ligue esse ASR em "
+                    "Configuração → Voz — ouvir (e salve), ou escolha asr-whisper-local, que "
+                    "roda na máquina."
+                )
+                self.ao_linha(frase)
+                self.aplicativo.registrar_aviso("falhou", "ouvir", frase)
+            else:
+                self.ao_linha(f"sem áudio: {erro}")
             self.ao_linha("Continuo por escrito: digite abaixo e tecle Enter.")
             self.aplicativo.rodar_texto(self._linhas_digitadas())

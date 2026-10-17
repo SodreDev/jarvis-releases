@@ -191,3 +191,27 @@ def test_a_sessao_liga_o_dedo_sempre_e_entrega_a_escuta_viva(tmp_path: Path) -> 
     assert app.escuta is escuta
     escuta.trocar(ModoDeEscuta.ATALHO)
     assert app.modo_de_escuta.modo is ModoDeEscuta.ATALHO
+
+
+def test_asr_da_nuvem_desligado_diz_que_nao_ouve_e_o_caminho(
+    sessao: SessaoDeVoz, tmp_path: Path
+) -> None:
+    """Bug do dono (2026-10-16): ASR = Groq fora de `nuvem_ligada` caía calado no texto ("sem
+    áudio"). Agora a frase diz que o ouvido é o problema e como resolver, e o card guarda."""
+    linhas: list[str] = []
+    sessao.ao_linha = linhas.append
+    sessao.configuracao = Configuracao(
+        asr="asr-groq-whisper-large-v3-turbo", tts="tts-parametrico", s2="eco"
+    )
+    sessao.ambiente = {"JARVIS_AUDIO_BACKEND": "sintetico", "CI": "1"}
+
+    sessao.iniciar()
+
+    assert esperar_ate(lambda: any("não estou ouvindo" in linha for linha in linhas)), linhas
+    frase = next(linha for linha in linhas if "não estou ouvindo" in linha)
+    assert "asr-groq-whisper-large-v3-turbo" in frase and "desligado" in frase
+    assert "asr-whisper-local" in frase
+    assert sessao.modo_texto
+    assert any("ouvir" in a["origem"] for a in sessao.dados_dos_avisos()["avisos"])
+    sessao.parar()
+    assert sessao.esperar()

@@ -25,6 +25,7 @@ from typing import Any, Final
 
 from jarvis.voz.config import TTS_ELEVENLABS, Configuracao
 from jarvis.voz.interface import Onde
+from jarvis.voz.prontidao import o_que_falta
 from jarvis.voz.registro import Motor, motores_de
 
 CAMPO_DO_MODELO: Final[dict[str, str]] = {TTS_ELEVENLABS: "modelo_elevenlabs"}
@@ -66,6 +67,9 @@ class Provedor:
     aviso: str
     variavel_da_chave: str
     modelos: tuple[OpcaoDeModelo, ...]
+    falta: str = ""
+    """O que falta para o motor vigente rodar agora (`jarvis.voz.prontidao`) — o mesmo que o
+    laço usaria para recusar. Vazio = roda."""
 
     @property
     def na_nuvem(self) -> bool:
@@ -83,6 +87,7 @@ class Provedor:
             "aviso": self.aviso,
             "variavelDaChave": self.variavel_da_chave,
             "modelos": [opcao.para_dict() for opcao in self.modelos],
+            "falta": self.falta,
         }
 
 
@@ -100,7 +105,9 @@ def _preco_curto(motor: Motor) -> str:
     return motor.preco.split(";")[0].strip()
 
 
-def provedores(configuracao: Configuracao, papel: str) -> tuple[Provedor, ...]:
+def provedores(
+    configuracao: Configuracao, papel: str, *, ambiente: Mapping[str, str] | None = None
+) -> tuple[Provedor, ...]:
     """Os provedores de um papel (`asr` ou `tts`), na ordem do registro."""
     atual = configuracao.asr if papel == "asr" else configuracao.tts
     grupos: dict[str, list[Motor]] = {}
@@ -153,6 +160,7 @@ def provedores(configuracao: Configuracao, papel: str) -> tuple[Provedor, ...]:
                 aviso=motor.frase_de_aviso,
                 variavel_da_chave=motor.variavel_da_chave,
                 modelos=opcoes,
+                falta=o_que_falta(vigente, configuracao, ambiente=ambiente),
             )
         )
     return tuple(saida)

@@ -17,6 +17,9 @@ Column {
     readonly property bool naNuvem: provedor.onde === "nuvem"
     readonly property bool daElevenLabs: provedor.chave === "nuvem:ElevenLabs"
     readonly property var modelos: provedor.modelos || []
+    // O que falta para este motor rodar agora — a mesma frase com que o laço recusaria
+    // (`jarvis.voz.prontidao`). Vazio = roda.
+    readonly property string falta: provedor.falta || ""
     width: parent ? parent.width : 0
 
     // Uma ficha sem caixa alta: nome de modelo e de voz são dados, e "WHISPER-LARGE-V3"
@@ -102,10 +105,13 @@ Column {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 12
             Rotulo {
+                objectName: "estadoDoProvedor"
                 anchors.verticalCenter: parent.verticalCenter
-                visible: linha.naNuvem
-                text: linha.provedor.ligado ? "ligado" : "desligado"
-                color: linha.provedor.ligado ? Tema.positivo : Tema.textoFraco
+                visible: linha.naNuvem || linha.falta !== ""
+                text: !linha.provedor.ligado ? "desligado"
+                      : linha.falta !== "" ? "não roda" : "ligado"
+                color: !linha.provedor.ligado ? Tema.textoFraco
+                       : linha.falta !== "" ? Tema.alerta : Tema.positivo
             }
             Rotulo {
                 anchors.verticalCenter: parent.verticalCenter
@@ -127,12 +133,24 @@ Column {
 
     // --- o que se escolhe dentro dele ---------------------------------------------------------
     Column {
-        visible: linha.aberto && (linha.modelos.length > 0 || linha.naNuvem)
+        visible: linha.aberto && (linha.modelos.length > 0 || linha.naNuvem || linha.falta !== "")
         x: 28
         width: parent.width - 38
         topPadding: 10
         bottomPadding: 12
         spacing: 10
+
+        Text {
+            objectName: "faltaDoProvedor"
+            visible: linha.falta !== "" && linha.provedor.ligado
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            text: "não roda agora: " + linha.falta
+            color: Tema.alerta
+            font.pixelSize: Tema.tamanhoTexto - 2
+            renderType: Text.NativeRendering
+        }
 
         Flow {
             width: parent.width
@@ -333,9 +351,13 @@ Column {
             }
             Rotulo {
                 anchors.verticalCenter: parent.verticalCenter
+                objectName: "efeitoDoInterruptor"
                 text: linha.provedor.ligado
                       ? "ligado: " + linha.provedor.motor + " — salvar guarda no arquivo"
-                      : "escolhido e desligado: nada sai daqui"
+                      : linha.provedor.papel === "asr"
+                        ? "escolhido e desligado: nada sai daqui, e o Jarvis NÃO te ouve — ligue, ou escolha asr-whisper-local"
+                        : "escolhido e desligado: nada sai daqui"
+                color: !linha.provedor.ligado && linha.provedor.papel === "asr" ? Tema.alerta : Tema.textoFraco
             }
         }
     }

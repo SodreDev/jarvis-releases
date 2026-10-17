@@ -78,6 +78,7 @@ from jarvis.voz.config import Configuracao
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde
+from jarvis.voz.prontidao import o_que_falta
 from jarvis.voz.registro import MotorRecusado, motor_registrado
 from jarvis.voz.s2_provisorio import RespostaDeEco
 from jarvis.voz.teclado import ESPACO, TECLAS_DE_SAIDA, Teclado, TecladoMudo
@@ -95,6 +96,11 @@ o motor já parou de gerar (regra 9 da ADR-0025, ≤ 50 ms); isto é só o fim d
 
 class AplicativoIndisponivel(RuntimeError):
     """O laço não tem como rodar com esta configuração. A frase diz o que falta."""
+
+
+class OuvidoIndisponivel(AplicativoIndisponivel):
+    """O que falta é o ASR: a fala do dono não vira texto. A janela diz isso com o caminho
+    (ligar o da nuvem ou usar o local), em vez de cair calada no modo texto."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,9 +144,14 @@ def motor_de_asr(
     ambiente: Mapping[str, str] | None = None,
 ) -> MotorDeAsr:
     """O motor de ASR que a configuração pediu, já pelo portão (ADR-0017)."""
+    falta = o_que_falta(
+        configuracao.asr, configuracao, ambiente=ambiente, pasta_de_vozes=PASTA_DE_VOZES
+    )
+    if falta:
+        raise OuvidoIndisponivel(f"o ASR escolhido ({configuracao.asr}) não roda: {falta}")
     registro = motor_registrado(configuracao.asr)
     if registro is None:
-        raise AplicativoIndisponivel(f"motor de ASR {configuracao.asr!r} não está no registro")
+        raise OuvidoIndisponivel(f"motor de ASR {configuracao.asr!r} não está no registro")
     if registro.onde is Onde.NUVEM:
         from jarvis.voz.groq import MotorAsrGroq
 
@@ -172,6 +183,11 @@ def motor_de_tts(
     ambiente: Mapping[str, str] | None = None,
 ) -> MotorDeTts:
     """O motor de TTS que a configuração pediu, já pelo portão (ADR-0017)."""
+    falta = o_que_falta(
+        configuracao.tts, configuracao, ambiente=ambiente, pasta_de_vozes=PASTA_DE_VOZES
+    )
+    if falta:
+        raise AplicativoIndisponivel(f"a voz escolhida ({configuracao.tts}) não roda: {falta}")
     registro = motor_registrado(configuracao.tts)
     if registro is None:
         raise AplicativoIndisponivel(f"motor de TTS {configuracao.tts!r} não está no registro")
@@ -410,9 +426,17 @@ class Aplicativo:
         self.raiz.mkdir(parents=True, exist_ok=True)
         try:
             if com_asr and self._asr is None:
-                self._asr = motor_de_asr(
-                    self.configuracao, raiz=self.raiz, cancelado=cancelado, ambiente=self.ambiente
-                )
+                try:
+                    self._asr = motor_de_asr(
+                        self.configuracao,
+                        raiz=self.raiz,
+                        cancelado=cancelado,
+                        ambiente=self.ambiente,
+                    )
+                except (MotorRecusado, SegredoAusente, ErroDeRede, ImportError) as erro:
+                    raise OuvidoIndisponivel(
+                        f"o ASR escolhido ({self.configuracao.asr}) não abriu: {erro}"
+                    ) from None
             if self._tts is None:
                 self._tts = motor_de_tts(
                     self.configuracao, raiz=self.raiz, cancelado=cancelado, ambiente=self.ambiente
@@ -972,5 +996,12 @@ class Aplicativo:
             )
         for motor in self.configuracao.motores_de_nuvem_escolhidos():
             self.escrever_na_tela("")
-            self.escrever_na_tela(f"  {motor.frase_de_aviso}")
+            if motor.id in self.configuracao.nuvem_ligada:
+                self.escrever_na_tela(f"  {motor.frase_de_aviso}")
+            else:
+                # Escolhido e desligado não manda nada para fora: dizer "o seu áudio sai"
+                # aqui era mentira (bug do dono, 2026-10-16).
+                self.escrever_na_tela(
+                    f"  {motor.id} está escolhido e DESLIGADO: nada sai daqui, e ele não roda."
+                )
         self.escrever_na_tela("")
