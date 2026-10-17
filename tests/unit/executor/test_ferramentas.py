@@ -275,6 +275,103 @@ def test_app_marcado_chamado_por_nome_parcial_abre_sem_confirmar(
     assert [a.id for a in lancados] == ["brave-browser"] * 4
 
 
+def _executor_de_navegadores(
+    casa: Path, auditoria: LogDeAuditoria, tmp_path: Path, *, principal: str
+) -> tuple[ExecutorDeFerramentas, list[tuple[str, ...]]]:
+    from jarvis.executor.navegadores import AbridorDeNavegador
+
+    binarios = tmp_path / "bin"
+    binarios.mkdir(exist_ok=True)
+    for nome in ("brave-stable", "firefox"):
+        (binarios / nome).write_text("#!/bin/true\n")
+        (binarios / nome).chmod(0o755)
+    abertos: list[tuple[str, ...]] = []
+
+    def lancar(argv: Any, **_: Any) -> int:
+        abertos.append(tuple(argv))
+        return 77
+
+    navegadores = {"brave": str(binarios / "brave-stable"), "firefox": str(binarios / "firefox")}
+    pdp = Pdp(
+        catalogo=carregar_catalogo(),
+        lar=casa,
+        auditoria=auditoria,
+        modo=Modo.PADRAO,
+        pasta_do_jarvis=casa.parent / "area",
+        session_id="01a1c000-0000-7000-8000-000000000007",
+        navegadores=frozenset(navegadores),
+        navegador_principal=principal,
+    )
+    executor = ExecutorDeFerramentas(
+        pdp=pdp,
+        lar=casa,
+        navegadores=AbridorDeNavegador(navegadores=navegadores, principal=principal, lancar=lancar),
+    )
+    executor.preparar()
+    return executor, abertos
+
+
+def _sem_confirmar(_c: Confirmacao) -> bool:
+    raise AssertionError("navegador configurado não pede confirmação")
+
+
+def test_abrir_so_o_navegador_principal_sem_url_e_sem_confirmar(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    executor, abertos = _executor_de_navegadores(casa, auditoria, tmp_path, principal="brave")
+
+    r = executor.executar("browser.launch", {}, cancelado=NUNCA, confirmar=_sem_confirmar)
+
+    assert r.status == "ok" and r.dados == {"navegador": "brave", "pid": 77}
+    assert [a[1:] for a in abertos] == [()], "sem URL: só o programa"
+    assert Path(abertos[0][0]).name == "brave-stable"
+
+
+def test_abrir_o_navegador_pelo_nome_resolve_entre_os_configurados(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    executor, abertos = _executor_de_navegadores(casa, auditoria, tmp_path, principal="brave")
+
+    for dito in ("firefox", "Firefox"):
+        r = executor.executar(
+            "browser.launch", {"navegador": dito}, cancelado=NUNCA, confirmar=_sem_confirmar
+        )
+        assert r.status == "ok" and r.dados is not None and r.dados["navegador"] == "firefox"
+    assert {Path(a[0]).name for a in abertos} == {"firefox"}
+
+
+def test_navegador_que_o_dono_nao_configurou_e_negado(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    executor, abertos = _executor_de_navegadores(casa, auditoria, tmp_path, principal="brave")
+
+    r = executor.executar(
+        "browser.launch", {"navegador": "chrome"}, cancelado=NUNCA, confirmar=_sem_confirmar
+    )
+
+    assert r.status == "negado" and abertos == []
+
+
+def test_sem_principal_configurado_nao_abre_e_diz_onde_escolher(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    executor, abertos = _executor_de_navegadores(casa, auditoria, tmp_path, principal="")
+
+    r = executor.executar("browser.launch", {}, cancelado=NUNCA, confirmar=_sem_confirmar)
+
+    assert r.status == "negado" and "Configuração → Navegadores" in r.motivo and abertos == []
+
+
+def test_o_modelo_ve_os_navegadores_configurados(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    executor, _ = _executor_de_navegadores(casa, auditoria, tmp_path, principal="brave")
+    descricao = next(
+        t["descricao"] for t in executor.catalogo_para_o_modelo() if t["id"] == "browser.launch"
+    )
+    assert str(descricao).endswith("Configurados agora: brave (principal), firefox.")
+
+
 def test_site_so_http_e_dominio_liberado_abre_sem_perguntar(
     casa: Path, auditoria: LogDeAuditoria
 ) -> None:
@@ -332,5 +429,6 @@ def test_o_catalogo_do_modelo_so_tem_o_que_tem_corpo(casa: Path, auditoria: LogD
         "calendar.create_draft_event",
         "apps.launch",
         "sites.open",
+        "browser.launch",
     }
     assert not any(i.startswith("memoria.") for i in ids)

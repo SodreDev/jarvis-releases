@@ -140,6 +140,9 @@ class Pdp:
     """Nomes normalizados dos apps que o dono pôs no registro: o grant estreito de `apps.launch`."""
     sites_sem_confirmar: frozenset[str] = frozenset()
     """Domínios que o dono liberou para `sites.open` abrir sem perguntar (com subdomínios)."""
+    navegadores: frozenset[str] = frozenset()
+    """As famílias de navegador que o dono configurou: o grant estreito de `browser.launch`."""
+    navegador_principal: str = ""
     """ADR-0026, M4: só vira verdade quando os seis gates da §6.6 passarem (aceite (a) da F3)."""
     _raizes: dict[str, RaizAberta] = field(default_factory=dict, repr=False)
     """Raiz aberta de cada grant vivo, por `grant_id`. É aqui que o descritor tem dono."""
@@ -193,6 +196,8 @@ class Pdp:
                 pedido.args,
                 apps_autorizados=self.apps_autorizados,
                 sites_sem_confirmar=self.sites_sem_confirmar,
+                navegadores=self.navegadores,
+                navegador_principal=self.navegador_principal,
             )
         if regra is not None:
             # ADR-0026: a política de memória decide antes da matriz comum — nega o que não tem

@@ -540,6 +540,8 @@ class Aplicativo:
                 nome_de_app(n) for app in registro.autorizados.values() for n in app.nomes
             ),
             sites_sem_confirmar=frozenset(self.configuracao.sites_sem_confirmar),
+            navegadores=frozenset(separar(self.configuracao.navegadores)),
+            navegador_principal=self.configuracao.navegador_principal,
         )
         executor = ExecutorDeFerramentas(
             pdp=pdp,

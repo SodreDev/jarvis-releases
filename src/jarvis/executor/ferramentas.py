@@ -45,6 +45,7 @@ FERRAMENTAS_LIGADAS: Final = frozenset(
         "calendar.create_draft_event",
         "apps.launch",
         "sites.open",
+        "browser.launch",
     }
 )
 """As que têm corpo aqui. Manifesto sem corpo (memória, lixeira) não aparece para o modelo."""
@@ -136,6 +137,12 @@ class ExecutorDeFerramentas:
 
     def _descricao(self, tool_id: str) -> str:
         texto = " ".join(str(self.manifestos[tool_id]["description"]).split())
+        if tool_id == "browser.launch" and self.navegadores is not None:
+            feitos = ", ".join(
+                f"{f} (principal)" if f == self.navegadores.principal else f
+                for f in self.navegadores.familias()
+            )
+            return f"{texto} Configurados agora: {feitos or 'nenhum'}."
         if tool_id != "apps.launch":
             return texto
         nomes = ", ".join(a.nome for a in self.registro_de_apps.autorizados.values())
@@ -182,6 +189,11 @@ class ExecutorDeFerramentas:
             # Fora do registro, o nome fica como veio: o PDP nega e a sugestão sai abaixo.
             with contextlib.suppress(AppRecusado):
                 argumentos["nome"] = self.registro_de_apps.resolver(str(argumentos["nome"])).nome
+        if tool_id == "browser.launch" and self.navegadores is not None:
+            dito = str(argumentos.get("navegador", "")).strip()
+            familia = self.navegadores.resolver(dito) if dito else None
+            if familia is not None:  # «Brave» → a família configurada, que é o que o PDP conhece
+                argumentos["navegador"] = familia
         pedido = Pedido(
             tool_id=tool_id,
             args=argumentos,
@@ -254,6 +266,14 @@ class ExecutorDeFerramentas:
         if tool_id == "apps.launch":
             app = self.registro_de_apps.resolver(str(args["nome"]))
             return {"app": app.nome, "pid": self.lancar_app(app)}
+        if tool_id == "browser.launch":
+            if self.navegadores is None or not self.navegadores.navegadores:
+                raise AppRecusado(
+                    "nenhum navegador configurado: escolha o principal em Configuração → "
+                    "Navegadores"
+                )
+            familia, pid = self.navegadores.abrir_sozinho(str(args.get("navegador", "")).strip())
+            return {"navegador": familia, "pid": pid}
         if tool_id == "sites.open":
             url = validar_url(str(args["url"]))
             pedido = str(args.get("navegador", "")).strip()
@@ -342,6 +362,8 @@ class ExecutorDeFerramentas:
             )
         if tool_id == "apps.launch":
             return f"abrir o aplicativo «{args['nome']}»"
+        if tool_id == "browser.launch":
+            return f"abrir o navegador «{args.get('navegador') or 'principal'}»"
         return f"{tool_id} com {json.dumps(dict(args), ensure_ascii=False)[:160]}"
 
     def _sugestao_de_app(self, nome: str, motivo: str) -> str:

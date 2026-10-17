@@ -193,6 +193,26 @@ class AbridorDeNavegador:
         self.lancar((*argv, url), ambiente=self.ambiente)
         return familia
 
+    def abrir_sozinho(self, navegador: str = "") -> tuple[str, int]:
+        """Abre só o navegador, sem URL. Devolve a família usada e o pid."""
+        familia = self.escolher(navegador)
+        argv = argv_da_entrada(self.navegadores[familia])
+        if not argv:
+            raise AppRecusado(
+                f"o navegador {familia} ({self.navegadores[familia]}) não está mais lá: "
+                "escolha o binário de novo em Configuração → Navegadores"
+            )
+        return familia, self.lancar(argv, ambiente=self.ambiente)
+
+    def resolver(self, pedido: str) -> str | None:
+        """A família configurada que o dono quis dizer («Brave», «brave-browser»), ou `None`."""
+        alvo = _simples(pedido)
+        if alvo in self.navegadores:
+            return alvo
+        return next(
+            (f for f in self.navegadores if f == familia_de(pedido) or _simples(f) == alvo), None
+        )
+
 
 def existe(caminho: str) -> bool:
     return Path(caminho).expanduser().exists()

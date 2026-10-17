@@ -6,6 +6,8 @@ com destino), só que configurado pelo dono antes, e não clicado na hora:
 
 - `apps.launch`: o nome tem de resolver para um app que o dono pôs no registro autorizado
   (`apps_autorizados`); dentro, `allow`; fora, `deny` — o executor acrescenta as sugestões.
+- `browser.launch`: abrir só o navegador (sem endereço); o principal ou um que o dono nomeou
+  entre os que ele configurou é `allow`, o resto é `deny`;
 - `sites.open`: URL que não é `http`/`https` limpa é `deny`; domínio que o dono liberou
   (`sites_sem_confirmar`, com subdomínios) é `allow`; qualquer outro segue a matriz comum, que
   para `egress` é `confirm` na janela.
@@ -70,6 +72,8 @@ def decidir_abertura(
     *,
     apps_autorizados: frozenset[str],
     sites_sem_confirmar: frozenset[str],
+    navegadores: frozenset[str] = frozenset(),
+    navegador_principal: str = "",
 ) -> RegraDeMemoria | None:
     """O que a regra decide antes da matriz comum. `None` = siga o comum (`confirm`)."""
     if tool_id == "apps.launch":
@@ -77,6 +81,19 @@ def decidir_abertura(
             return RegraDeMemoria("allow", "app no registro que o dono autorizou")
         return RegraDeMemoria(
             "deny", "fora do registro de aplicativos que o dono autorizou (apps_autorizados)"
+        )
+    if tool_id == "browser.launch":
+        pedido = nome_de_app(str(args.get("navegador", "")))
+        if pedido:
+            if pedido in navegadores:
+                return RegraDeMemoria("allow", "navegador que o dono configurou")
+            return RegraDeMemoria(
+                "deny", "fora dos navegadores que o dono configurou (Configuração → Navegadores)"
+            )
+        if navegador_principal in navegadores and navegador_principal:
+            return RegraDeMemoria("allow", "navegador principal que o dono configurou")
+        return RegraDeMemoria(
+            "deny", "nenhum navegador principal configurado (Configuração → Navegadores)"
         )
     if tool_id == "sites.open":
         try:

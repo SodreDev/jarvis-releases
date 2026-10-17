@@ -1,0 +1,48 @@
+# Ferramenta real do catálogo v1 (SPEC §5.6; pedido do dono de 2026-10-17: "abrir o navegador"
+# sem endereço). Irmã de apps.launch: o navegador vem da Configuração → Navegadores.
+id: browser.launch
+title: Abrir o navegador
+description: Abre só o navegador (sem endereço) — o principal que o dono configurou, ou o que ele nomear entre os
+  configurados. Use quando o dono pedir para abrir o navegador, sem dizer um site. Para abrir uma página use sites.open.
+  Não aceita comando, argumento nem caminho, e nunca roda shell.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    navegador:
+      type: string
+      maxLength: 40
+output_schema:
+  type: object
+  required:
+  - navegador
+  - pid
+preconditions:
+- navegador entre os configurados pelo dono (Configuração → Navegadores)
+postcondition: processo do navegador iniciado numa sessão própria, sem URL
+capability: browser.launch
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: true
+undo: apps.quit_app
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: once_per_batch
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-apps
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1
