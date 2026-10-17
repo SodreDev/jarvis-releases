@@ -11,6 +11,7 @@ import contextlib
 import hashlib
 import json
 import sqlite3
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,7 +84,11 @@ class LogDeAuditoria:
 
     def __init__(self, caminho: Path) -> None:
         self.caminho = caminho
-        self._con = sqlite3.connect(caminho, isolation_level=None)
+        # A conexão atravessa thread de propósito: no aplicativo, o log nasce na thread do laço
+        # e a decisão é registrada na do cérebro (ADR-0028). Quem garante uma escrita por vez —
+        # e a cadeia de hash sem buraco — é a trava, não o `sqlite3`.
+        self._trava = threading.RLock()
+        self._con = sqlite3.connect(caminho, isolation_level=None, check_same_thread=False)
         self._con.row_factory = sqlite3.Row
         self._con.executescript(ARQUIVO_ESQUEMA.read_text(encoding="utf-8"))
 
@@ -124,7 +129,7 @@ class LogDeAuditoria:
         sessao_contaminada: bool = False,
     ) -> RegistroDeAuditoria:
         """Grava a decisão. Chamada **antes** de qualquer efeito acontecer."""
-        with self._con:
+        with self._trava, self._con:
             proximo = int(
                 self._con.execute(
                     "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM audit_log"
@@ -170,7 +175,7 @@ class LogDeAuditoria:
 
     def anexar_resultado(self, decision_id: str, resultado: str, detalhe: str = "") -> str:
         """Anexa o resultado numa cadeia própria — a decisão permanece imutável."""
-        with self._con:
+        with self._trava, self._con:
             proximo = int(
                 self._con.execute(
                     "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM audit_result"
@@ -194,7 +199,9 @@ class LogDeAuditoria:
         return digest
 
     def decisoes(self) -> Iterator[RegistroDeAuditoria]:
-        for linha in self._con.execute("SELECT * FROM audit_log ORDER BY seq"):
+        with self._trava:
+            linhas = self._con.execute("SELECT * FROM audit_log ORDER BY seq").fetchall()
+        for linha in linhas:
             yield RegistroDeAuditoria(
                 seq=int(linha["seq"]),
                 decision_id=str(linha["decision_id"]),
@@ -215,7 +222,9 @@ class LogDeAuditoria:
         )
         for tabela, campos, consulta in tabelas:
             esperado = GENESE
-            for esperado_seq, linha in enumerate(self._con.execute(consulta), start=1):
+            with self._trava:
+                linhas = self._con.execute(consulta).fetchall()
+            for esperado_seq, linha in enumerate(linhas, start=1):
                 if int(linha["seq"]) != esperado_seq:
                     raise CadeiaDeAuditoriaRompida(
                         f"{tabela}: seq {linha['seq']} fora de ordem (esperado {esperado_seq})"
