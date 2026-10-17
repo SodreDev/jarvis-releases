@@ -542,6 +542,8 @@ O dono pediu grafo; medir se o grafo paga o próprio custo **no corpus dele** é
 
 Este experimento roda em **F3**, depois que o harness da **F0-05** já disse se 2 saltos cabem no orçamento. Se F0-05 mostrar que não cabem, o braço C entra com 1 salto e isso é registrado antes de medir.
 
+**Emenda (ADR-0008, item 7, 2026-10-16; corpus sintético, provisória até o C2 real):** primeira rodada em `docs/medicoes/f3-02-grafo.md` — inconclusiva pela regra (C ganhou 8,3 pontos de recall@20 em C2b+C2c e piorou a abstinência correta em 10 pontos, uma negativa em dez); no caminho da voz fica o B, com os parâmetros em `src/jarvis/memoryd/parametros.toml`. "Evidência nova do grafo" (passo 5 da §6.8) passou a ser só a que vem de entidade nomeada na pergunta.
+
 ## 9. Fases e critérios de aceitação
 
 Cada fase só fecha com os testes **automatizados** passando nos dois sistemas operacionais.

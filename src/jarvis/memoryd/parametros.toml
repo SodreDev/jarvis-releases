@@ -1,0 +1,17 @@
+# Parâmetros da recuperação da memória (SPEC §6.8). GERADO por
+# `tools/harness_recuperacao.py` — mudar é rodar a medição de novo e commitar, nunca
+# editar à mão ("nada de parâmetro mágico"). Calibrado em 123 consultas do C2
+# sintético `688097187be8340a`; números nas 52 retidas em
+# docs/medicoes/f3-02-grafo.md.
+data = "2026-10-16"
+commit = "9d615ef"
+corpus = "688097187be8340a"
+regra = "inconclusivo: C ganha 8.3 pontos, mas a abstinência correta cai 10 pontos (> 2), então a regra 2 não se cumpre, e a regra 3 só cobre ganho de 2 a 5 — fica o mais simples, B, e o grafo fora do caminho da voz"
+
+[recuperacao]
+braco = "B"
+k_lista = 40
+limiar = 0.8545
+saltos = 1
+acumular = false
+orcamento_ms = 40.0
