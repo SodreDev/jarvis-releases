@@ -32,7 +32,7 @@ class ErroDeContrato(ValueError):
 
 
 class TipoDesconhecido(ErroDeContrato):
-    """Tipo fora dos doze da §3.2 — recusado, nunca ignorado (aceite F0-02 a)."""
+    """Tipo fora dos catorze da §3.2 — recusado, nunca ignorado (aceite F0-02 a)."""
 
 
 def _carregar() -> dict[str, Any]:

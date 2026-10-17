@@ -64,6 +64,13 @@ PAYLOADS: dict[Tipo, dict[str, Any]] = {
         "boundary": "limite",
         "last": False,
     },
+    Tipo.NOTIFICATION: {
+        "notif_id": "n-1",
+        "origem": "tarefa · pesquisa",
+        "tipo": "concluida",
+        "resumo": "a pesquisa terminou",
+    },
+    Tipo.NOTIFICATION_RELEASE: {"notif_ids": ["n-1"], "motivo": "piso_livre"},
 }
 
 FONTE_PADRAO: dict[Tipo, str] = {
@@ -79,6 +86,8 @@ FONTE_PADRAO: dict[Tipo, str] = {
     Tipo.STATE_REVISION: "s2",
     Tipo.CANCEL: "agentd",
     Tipo.RESPONSE_CHUNK: "s2",
+    Tipo.NOTIFICATION: "executor",
+    Tipo.NOTIFICATION_RELEASE: "agentd",
 }
 
 TRUST_PADRAO: dict[Tipo, Trust] = {

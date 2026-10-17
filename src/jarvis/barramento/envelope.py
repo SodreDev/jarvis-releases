@@ -38,7 +38,7 @@ class Trust(StrEnum):
 
 
 class Tipo(StrEnum):
-    """Os doze tipos fechados da §3.2 (o 12º pela ADR-0025). Tipo fora desta lista é recusado."""
+    """Os catorze tipos fechados da §3.2 (os três últimos pela ADR-0025). Fora deles: recusa."""
 
     AUDIO_ACTIVITY = "AudioActivity"
     PARTIAL_TRANSCRIPT = "PartialTranscript"
@@ -52,6 +52,8 @@ class Tipo(StrEnum):
     STATE_REVISION = "StateRevision"
     CANCEL = "Cancel"
     RESPONSE_CHUNK = "ResponseChunk"
+    NOTIFICATION = "Notification"
+    NOTIFICATION_RELEASE = "NotificationRelease"
 
 
 class Fonte(StrEnum):
