@@ -1,0 +1,50 @@
+# Ferramenta real do catálogo v1 (SPEC §5.6, fatia 6 da F2). Corpo em jarvis.executor.
+id: files.read_text
+title: Ler um arquivo de texto
+description: Lê um arquivo de texto (UTF-8) dentro das raízes do modo de acesso, até 64 KiB. Use quando
+  o dono pedir para ver ou resumir o que um arquivo diz. Não lê binário, não segue link simbólico, não
+  sai das raízes e nunca lê chave, cofre ou arquivo de segredo.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - path
+  properties:
+    path:
+      type: string
+      minLength: 1
+      maxLength: 1024
+output_schema:
+  type: object
+  required:
+  - texto
+  - truncado
+preconditions:
+- path dentro de uma raiz do modo
+- arquivo de texto
+postcondition: texto é o conteúdo do arquivo aberto sob a raiz do grant
+capability: files.read.text
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: content
+confirmation: never
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 2000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-files
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

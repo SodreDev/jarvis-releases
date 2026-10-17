@@ -1,0 +1,62 @@
+# Ferramenta real do catálogo v1 (SPEC §5.6, fatia 6 da F2). Corpo em jarvis.executor.
+id: calendar.create_draft_event
+title: Rascunho de evento
+description: Cria um evento de agenda como rascunho local (.ics) na pasta do Jarvis, para o dono abrir
+  no calendário dele. Use quando o dono pedir para marcar algo. Não envia convite, não toca em conta de
+  calendário nem na nuvem e sempre pede a confirmação do dono.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - titulo
+  - inicio
+  properties:
+    titulo:
+      type: string
+      minLength: 1
+      maxLength: 120
+    inicio:
+      type: string
+      minLength: 16
+      maxLength: 25
+    duracao_min:
+      type: integer
+      minimum: 5
+      maximum: 1440
+    local:
+      type: string
+      maxLength: 120
+output_schema:
+  type: object
+  required:
+  - caminho
+preconditions:
+- inicio em ISO 8601 (AAAA-MM-DDTHH:MM)
+postcondition: arquivo .ics novo na pasta de rascunhos de agenda, sem convidados
+capability: calendar.write.draft
+risk_class: escrita_recuperavel
+side_effect: persistent
+reversible: true
+undo: files.move_to_trash
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: content
+confirmation: per_action
+access_level_min: jarvis
+roots:
+- jarvis_root
+requires_elevation: false
+timeout_ms: 2000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-calendar
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

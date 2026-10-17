@@ -1,0 +1,56 @@
+# Ferramenta real do catálogo v1 (SPEC §5.6, fatia 6 da F2). Corpo em jarvis.executor.
+id: files.write_draft
+title: Gravar um rascunho
+description: 'Grava um texto novo como rascunho na pasta de rascunhos do Jarvis, e só lá. Use quando o
+  dono pedir para anotar, redigir ou guardar um texto. Nunca sobrescreve: se o nome existir, grava com
+  outro. Não escreve fora da pasta do Jarvis e sempre pede a confirmação do dono.'
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - nome
+  - texto
+  properties:
+    nome:
+      type: string
+      minLength: 1
+      maxLength: 80
+    texto:
+      type: string
+      minLength: 1
+      maxLength: 20000
+output_schema:
+  type: object
+  required:
+  - caminho
+  - bytes
+preconditions:
+- pasta de rascunhos do Jarvis existe
+postcondition: arquivo novo existe na pasta de rascunhos com o texto pedido
+capability: files.write.draft
+risk_class: escrita_recuperavel
+side_effect: persistent
+reversible: true
+undo: files.move_to_trash
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: content
+confirmation: per_action
+access_level_min: jarvis
+roots:
+- jarvis_root
+requires_elevation: false
+timeout_ms: 2000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-files
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

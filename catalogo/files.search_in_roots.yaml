@@ -1,0 +1,49 @@
+# Ferramenta real do catálogo v1 (SPEC §5.6, fatia 6 da F2). Corpo em jarvis.executor.
+id: files.search_in_roots
+title: Procurar arquivo pelo nome
+description: Procura arquivos e pastas cujo nome contenha o texto pedido, em todas as raízes do modo de
+  acesso, até 50 achados. Use quando o dono não souber onde está um arquivo. Não procura dentro do conteúdo,
+  não segue link simbólico, não entra em pasta negada e para quando o dono interrompe.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - consulta
+  properties:
+    consulta:
+      type: string
+      minLength: 2
+      maxLength: 120
+output_schema:
+  type: object
+  required:
+  - achados
+  - truncado
+preconditions:
+- modo de acesso com pelo menos uma raiz
+postcondition: todo achado está dentro de uma raiz do modo e fora da lista de negação
+capability: files.read.search
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: path_only
+confirmation: never
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 2000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-files
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1
