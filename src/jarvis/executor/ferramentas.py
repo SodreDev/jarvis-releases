@@ -14,6 +14,7 @@ O modelo **propõe** (`tool_id` + argumentos nomeados); daqui para baixo, só c�
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -125,13 +126,21 @@ class ExecutorDeFerramentas:
             {
                 "id": tool_id,
                 "titulo": str(self.manifestos[tool_id]["title"]),
-                "descricao": " ".join(str(self.manifestos[tool_id]["description"]).split()),
+                "descricao": self._descricao(tool_id),
                 "argumentos": self.manifestos[tool_id]["input_schema"].get("properties", {}),
                 "obrigatorios": self.manifestos[tool_id]["input_schema"].get("required", []),
             }
             for tool_id in self.pdp.allowlist()
             if tool_id in FERRAMENTAS_LIGADAS and tool_id in self.manifestos
         )
+
+    def _descricao(self, tool_id: str) -> str:
+        texto = " ".join(str(self.manifestos[tool_id]["description"]).split())
+        if tool_id != "apps.launch":
+            return texto
+        nomes = ", ".join(a.nome for a in self.registro_de_apps.autorizados.values())
+        # O modelo não adivinha o que está instalado: sem a lista, ele chuta "Dolphin".
+        return f"{texto} Autorizados agora: {nomes or 'nenhum'}."
 
     # --- a chamada --------------------------------------------------------------------------
     def executar(
@@ -166,6 +175,13 @@ class ExecutorDeFerramentas:
         except (ValueError, CaminhoRecusado) as erro:
             return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
 
+        if tool_id == "apps.launch":
+            # O PDP compara o nome com o registro do dono; o executor aceita "Brave" para
+            # "Brave Web Browser". Sem alinhar, app marcado chamado por nome parcial era negado
+            # (com a mensagem errada). Resolvido, o nome que a política vê é o do app marcado.
+            # Fora do registro, o nome fica como veio: o PDP nega e a sugestão sai abaixo.
+            with contextlib.suppress(AppRecusado):
+                argumentos["nome"] = self.registro_de_apps.resolver(str(argumentos["nome"])).nome
         pedido = Pedido(
             tool_id=tool_id,
             args=argumentos,

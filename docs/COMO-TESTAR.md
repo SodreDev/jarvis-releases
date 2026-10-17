@@ -111,6 +111,34 @@ aparece acima da barra de conversa, com o motivo.
    Limite honesto: acesso é por **pasta** (arquivo solto é recusado), e "escrita" fica guardada mas
    nenhuma ferramenta grava fora da pasta do Jarvis ainda.
 
+### 0.0c Os consertos de 2026-10-17 (madrugada): ASR da Groq e abrir app marcado
+
+1. **ASR da Groq dava "o serviço recusou o pedido (403): error code: 1010".** A causa **não** era
+   o modelo: o `urllib` se anuncia `Python-urllib/3.x`, e o Cloudflare da Groq barra essa
+   assinatura antes de olhar chave ou modelo. O cliente de nuvem agora manda `User-Agent:
+   jarvis/<versão>`. Provado ao vivo: áudio sintético do piper → `whisper-large-v3-turbo` →
+   texto devolvido (qualidade de voz sintética, não de microfone). O modelo da Groq **já era**
+   próprio: cada modelo é um motor do registro (`asr-groq-whisper-large-v3-turbo`, o padrão, e
+   `asr-groq-whisper-large-v3`); `modelo_do_asr` ("small") é só do whisper **local** e nunca vai
+   à Groq (teste cobra). Para trocar de modelo: Configuração → Voz — ouvir → Groq → escolher o
+   modelo → **ligar** (cada modelo tem o seu interruptor, porque o preço difere) → salvar. Se um
+   dia aparecer o 1010 de novo, a mensagem agora diz que é o Cloudflare, e não manda conferir a
+   chave.
+2. **Abrir app que você marcou não pede confirmação.** Marque em Configuração → Aplicativos e
+   diga "abre o discord": abre direto, sem a faixa. App **não** marcado é negado com os parecidos
+   que estão autorizados; **site** fora de `sites_sem_confirmar` continua pedindo o seu sim.
+   Não consegui reproduzir a faixa para app marcado no código atual (política e config do dono
+   dão `allow`); achei e corrigi o caso vizinho: o nome **parcial** ("brave" para "Brave Web
+   Browser") era aceito pelo executor mas negado pela política, e o modelo não sabia quais apps
+   existem — agora o executor alinha o nome ao app marcado antes da política, e o catálogo que o
+   modelo vê termina com "Autorizados agora: …". Se a faixa ainda aparecer para um app marcado,
+   mande a frase que você disse e a linha da faixa (o motivo vem escrito nela).
+3. **Como conferir sem tocar na sua máquina:**
+   `uv run pytest tests/unit/gui/test_janela_abrir_apps.py tests/unit/voz/test_groq.py -q` —
+   janela offscreen com motor roteirizado: app marcado pela aba abre sem faixa, nome parcial
+   também, não marcado é negado com sugestão, site fora da lista confirma e só abre depois do
+   sim. O lançador e o abridor de site são falsos nesses testes: nada abre de verdade.
+
 ### 0.1 Pedir para o Jarvis fazer coisas (ferramentas, fatia 6)
 
 O Jarvis não monta comando: ele **propõe** uma ferramenta tipada (listar pasta, ler arquivo,
@@ -382,7 +410,10 @@ sudo dnf remove jarvis
 5. **ferramentas com o `claude -p` de verdade, e abrir app/site de verdade** (ver o fim da
    seção 0.1);
 6. **chamada real à nuvem.** Toda a suíte fala com um servidor falso em porta efêmera; sob
-   `CI=1` o código **recusa** falar com serviço de verdade. A primeira chamada real é sua.
+   `CI=1` o código **recusa** falar com serviço de verdade. Uma chamada real à Groq (ASR, turbo)
+   foi feita em 2026-10-17 com áudio sintético e funcionou; **ElevenLabs e Edge** e o
+   `whisper-large-v3` ainda não foram exercitados ao vivo por este código, nem a Groq com a sua
+   voz no microfone.
 
 ## 4. Como reportar
 

@@ -239,6 +239,42 @@ def test_app_fora_do_registro_e_negado_e_sugere(
     assert [a.argv for a in lancados] == [("kcalc",)]
 
 
+def test_app_marcado_chamado_por_nome_parcial_abre_sem_confirmar(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    """O executor sempre resolveu "brave" para "Brave Web Browser"; a política exigia o nome
+    inteiro e negava. Agora o nome que o PDP vê já é o do app marcado."""
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    _desktop(apps, "brave-browser", "brave-browser %U", "Brave Web Browser")
+    registro = RegistroDeApps.montar(["brave-browser"], pastas=[str(apps)])
+    lancados: list[App] = []
+
+    def lancar(app: App) -> int:
+        lancados.append(app)
+        return 1
+
+    executor = _executor(
+        casa,
+        auditoria,
+        registro_de_apps=registro,
+        apps_autorizados=frozenset(
+            nome_de_app(n) for a in registro.autorizados.values() for n in a.nomes
+        ),
+        lancar_app=lancar,
+    )
+
+    def nunca_confirma(_c: Confirmacao) -> bool:
+        raise AssertionError("app marcado não pode pedir confirmação")
+
+    for dito in ("brave", "Brave", "brave-browser", "Brave Web Browser"):
+        resultado = executor.executar(
+            "apps.launch", {"nome": dito}, cancelado=NUNCA, confirmar=nunca_confirma
+        )
+        assert resultado.status == "ok", (dito, resultado.motivo)
+    assert [a.id for a in lancados] == ["brave-browser"] * 4
+
+
 def test_site_so_http_e_dominio_liberado_abre_sem_perguntar(
     casa: Path, auditoria: LogDeAuditoria
 ) -> None:
