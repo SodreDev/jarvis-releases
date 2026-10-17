@@ -5,10 +5,10 @@ não desenha tela, não escreve HTML, não manda script: ela emite **ações est
 conjunto fechado, e quem decide se cada uma acontece é o `Workspace` (`jarvis.gui.workspace`),
 com as regras do dono em cima.
 
-Por isso este módulo não tem nada de Qt e nada de desenho. Ele é o **contrato**: nove tipos de
-ação (o nono, `definirModoDeEscuta`, é da ADR-0021), uma área em unidades de grade, e uma
-leitura que recusa o que não entende — porque tudo que vem da IA é `untrusted` (P6), inclusive
-quando a IA é a nossa.
+Por isso este módulo não tem nada de Qt e nada de desenho. Ele é o **contrato**: dez tipos de
+ação (o nono, `definirModoDeEscuta`, é da ADR-0021; o décimo, `updateWidget`, da emenda de
+2026-10-17 da ADR-0019), uma área em unidades de grade, e uma leitura que recusa o que não
+entende — porque tudo que vem da IA é `untrusted` (P6), inclusive quando a IA é a nossa.
 
 A recusa é sempre **com motivo**: ação recusada em silêncio vira IA insistindo no mesmo erro,
 e dono sem saber por que a tela não mudou.
@@ -36,7 +36,7 @@ class AcaoInvalida(ValueError):
 
 
 class Tipo(StrEnum):
-    """As nove ações. Mais nenhuma — acrescentar é emenda de ADR, não detalhe de tela."""
+    """As dez ações. Mais nenhuma — acrescentar é emenda de ADR, não detalhe de tela."""
 
     CRIAR = "createWidget"
     REMOVER = "removeWidget"
@@ -49,6 +49,9 @@ class Tipo(StrEnum):
     ESCUTA = "definirModoDeEscuta"
     """ADR-0021: trocar atalho ↔ palavra ↔ contínua. Não mexe na tela, mexe em **quando o
     Jarvis escuta** — por isso a política de confirmação é a de `jarvis.voz.escuta`."""
+    ATUALIZAR = "updateWidget"
+    """ADR-0019, emenda de 2026-10-17: troca os **dados** de um módulo que já está na tela —
+    só os campos que o componente declara, validados como na criação. Não move nada."""
 
 
 class Modo(StrEnum):

@@ -244,3 +244,73 @@ def test_toda_proposta_deixa_rastro_no_historico() -> None:
     assert len(espaco.historico) == 2
     assert espaco.historico[0].frase().startswith("createWidget: recusada")
     assert espaco.historico[1].frase() == "createWidget: feito"
+
+
+# --- updateWidget (ADR-0019, emenda de 2026-10-17) -------------------------------------------
+def _card_de_avisos(espaco: Workspace) -> str:
+    resultado = espaco.aplicar(criar("notificacoes", dados={"avisos": []}))
+    assert resultado.aceita, resultado.motivo
+    return resultado.widget
+
+
+AVISO = {"tipo": "concluida", "resumo": "a pesquisa terminou", "entrega": "na_fila"}
+
+
+def test_atualizar_troca_os_dados_sem_mexer_no_lugar() -> None:
+    espaco = Workspace()
+    card = _card_de_avisos(espaco)
+    antes = espaco.widgets[card]
+    espaco.fixar(card)
+
+    resultado = espaco.propor(
+        {"tipo": "updateWidget", "widget": card, "dados": {"avisos": [AVISO]}}
+    )
+
+    assert resultado.aceita, resultado.motivo
+    depois = espaco.widgets[card]
+    assert depois.dados == {"avisos": [AVISO]}
+    assert (depois.area, depois.titulo, depois.fixado) == (antes.area, antes.titulo, True)
+    assert len([w for w in espaco.widgets.values() if w.componente == "notificacoes"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("dados", "motivo"),
+    [
+        ({"itens": []}, "não tem"),
+        ({"avisos": [{"tipo": "inventado", "resumo": "x"}]}, "não existe"),
+        ({"avisos": [{"tipo": "evento", "resumo": "x", "html": "<b>"}]}, "não autorizado"),
+        ({}, "sem dados"),
+    ],
+)
+def test_atualizar_so_aceita_os_campos_do_registro(dados: dict[str, object], motivo: str) -> None:
+    espaco = Workspace()
+    card = _card_de_avisos(espaco)
+    resultado = espaco.propor({"tipo": "updateWidget", "widget": card, "dados": dados})
+    assert not resultado.aceita
+    assert motivo in resultado.motivo
+    assert espaco.widgets[card].dados == {"avisos": []}
+
+
+def test_atualizar_modulo_que_nao_esta_na_tela_e_recusado() -> None:
+    resultado = Workspace().propor(
+        {"tipo": "updateWidget", "widget": "notificacoes-9", "dados": {"avisos": []}}
+    )
+    assert not resultado.aceita
+    assert "não há módulo" in resultado.motivo
+
+
+def test_o_selo_de_demonstracao_so_sai_com_dados_reais_do_codigo() -> None:
+    """A IA não consegue declarar real o que inventou: só o parâmetro do código tira o selo."""
+    espaco = Workspace()
+    card = _card_de_avisos(espaco)
+    assert espaco.widgets[card].demonstracao, "o componente ainda nasce como demonstração"
+
+    espaco.propor({"tipo": "updateWidget", "widget": card, "dados": {"avisos": [AVISO]}})
+    assert espaco.widgets[card].demonstracao
+    with pytest.raises(AcaoInvalida):
+        ler_acao({"tipo": "updateWidget", "widget": card, "dados": {}, "real": True})
+
+    espaco.aplicar(
+        Acao(tipo=Tipo.ATUALIZAR, widget=card, dados={"avisos": [AVISO]}), dados_reais=True
+    )
+    assert not espaco.widgets[card].demonstracao

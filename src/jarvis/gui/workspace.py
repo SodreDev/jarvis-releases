@@ -238,15 +238,21 @@ class Workspace:
         }
 
     # --- a porta por onde a IA fala -------------------------------------------------------
-    def aplicar(self, acao: Acao, *, confirmada: bool = False) -> Resultado:
+    def aplicar(
+        self, acao: Acao, *, confirmada: bool = False, dados_reais: bool = False
+    ) -> Resultado:
         """Uma proposta. Devolve o que aconteceu, e **nunca** levanta por proposta ruim.
 
         `confirmada` é **só** de `confirmar` — o sim do dono. Não existe campo da proposta que
         diga "já confirmado": antes, um `widget` começando com `confirmado:` fazia esse papel,
         e a própria IA podia escrevê-lo e pular a confirmação.
+
+        `dados_reais` segue a mesma lógica (ADR-0019, emenda de 2026-10-17): só o **código** que
+        tem a fonte real (a fila de avisos, por exemplo) passa verdadeiro, e só então o selo de
+        demonstração sai do módulo. A proposta crua (`propor`) nunca chega aqui com ele.
         """
         try:
-            resultado = self._aplicar(acao, confirmada=confirmada)
+            resultado = self._aplicar(acao, confirmada=confirmada, dados_reais=dados_reais)
         except (AcaoInvalida, ComponenteNaoAutorizado) as erro:
             resultado = Resultado(aceita=False, acao=acao, motivo=str(erro))
         self.historico.append(resultado)
@@ -272,9 +278,11 @@ class Workspace:
     def aplicar_todas(self, acoes: Iterator[Acao] | list[Acao]) -> list[Resultado]:
         return [self.aplicar(acao) for acao in acoes]
 
-    def _aplicar(self, acao: Acao, *, confirmada: bool = False) -> Resultado:
+    def _aplicar(
+        self, acao: Acao, *, confirmada: bool = False, dados_reais: bool = False
+    ) -> Resultado:
         if acao.tipo is Tipo.CRIAR:
-            return self._criar(acao, confirmada=confirmada)
+            return self._criar(acao, confirmada=confirmada, dados_reais=dados_reais)
         if acao.tipo is Tipo.ESCUTA:
             return self._definir_escuta(acao, confirmada=confirmada)
         if acao.tipo is Tipo.MODO:
@@ -299,6 +307,9 @@ class Workspace:
                 acao=acao,
                 motivo=f"o dono fixou {alvo.titulo!r}: só ele move, minimiza ou fecha este módulo",
             )
+        if acao.tipo is Tipo.ATUALIZAR:
+            # Antes da regra do fixado: trocar os dados não tira o módulo do lugar.
+            return self._atualizar(acao, alvo, dados_reais=dados_reais)
         if acao.tipo is Tipo.REMOVER:
             return self._remover(acao, alvo)
         if acao.tipo is Tipo.FOCAR:
@@ -309,7 +320,9 @@ class Workspace:
         return self._mover_ou_redimensionar(acao, alvo)
 
     # --- cada ação -----------------------------------------------------------------------
-    def _criar(self, acao: Acao, *, confirmada: bool = False) -> Resultado:
+    def _criar(
+        self, acao: Acao, *, confirmada: bool = False, dados_reais: bool = False
+    ) -> Resultado:
         alvo = componente(acao.componente)
         dados = validar_dados(alvo, acao.dados)
         if alvo.sensivel and not confirmada:
@@ -343,11 +356,31 @@ class Workspace:
                 titulo=acao.titulo or alvo.titulo,
                 area=area,
                 dados=dados,
-                demonstracao=alvo.demonstracao,
+                demonstracao=alvo.demonstracao and not dados_reais,
                 estado=EstadoDoWidget.RESULTADO if dados else EstadoDoWidget.VISTO,
             )
         )
         return Resultado(aceita=True, acao=acao, widget=identificador, ajuste=ajuste)
+
+    def _atualizar(self, acao: Acao, alvo: Widget, *, dados_reais: bool) -> Resultado:
+        """`updateWidget`: os campos enviados substituem os de mesmo nome, validados pelo
+        registro como na criação; área, foco, título e fixação não mudam."""
+        if not acao.dados:
+            return Resultado(
+                aceita=False,
+                acao=acao,
+                motivo="updateWidget sem dados: não há o que atualizar",
+            )
+        limpos = validar_dados(componente(alvo.componente), acao.dados)
+        self._guardar(
+            replace(
+                alvo,
+                dados={**alvo.dados, **limpos},
+                demonstracao=alvo.demonstracao and not dados_reais,
+                estado=EstadoDoWidget.RESULTADO,
+            )
+        )
+        return Resultado(aceita=True, acao=acao, widget=alvo.id)
 
     def _definir_escuta(self, acao: Acao, *, confirmada: bool = False) -> Resultado:
         """O modelo propõe o modo; a política de `jarvis.voz.escuta` decide se espera o dono."""

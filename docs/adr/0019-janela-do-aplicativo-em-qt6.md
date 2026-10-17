@@ -1,6 +1,6 @@
 # ADR-0019 — A janela do Jarvis: Qt 6 por PySide6, e só apresentação
 
-**Data:** 2026-10-16 · **Estado:** aceita; emendada em 2026-10-16 (ver a emenda no fim) · **Decide:** dono
+**Data:** 2026-10-16 · **Estado:** aceita; emendada em 2026-10-16 e em 2026-10-17 (ver as emendas no fim) · **Decide:** dono
 **Pedido:** o dono testou o `jarvis-voz` no terminal e quer **abrir o Jarvis como aplicativo
 de verdade** — janela, ícone, menu de aplicativos — no Linux (Nobara/Fedora, KDE Plasma) e
 instalável em Debian/Ubuntu.
@@ -226,3 +226,40 @@ microfone (F1-13), a configuração de provedores, o chaveiro e o diagnóstico.
   para uma tela fixa, porque quem decide layout é o gerente, não o QML.
 - O QML custar caro demais no empacotamento (tamanho, tempo de carga): a medida está na
   ADR-0020, e trocar a camada visual não mexe nas quatro camadas de baixo.
+
+## Emenda de 2026-10-17 — a ação `updateWidget`
+
+**Decide:** planejador, por pedido do diretor (fatia 5 do roteiro da F2); o dono pode revisar.
+
+**Por que.** O vocabulário fechado tinha criar, remover, mover, redimensionar, focar,
+minimizar, trocar de modo, restaurar layout e (ADR-0021) trocar o modo de escuta — e nenhuma
+ação para **mudar os dados** de um módulo que já está na tela. `createWidget` de novo cria um
+segundo módulo. O card `notificacoes` (ADR-0025) e, adiante, as tarefas e os resultados mudam
+de conteúdo sem mudar de lugar: sem a ação, ou a tela pisca (remover e criar), ou a ponte
+escreve no modelo por fora do gerente — que é exatamente a porta que esta ADR fecha.
+
+**A ação.** `{"tipo": "updateWidget", "widget": "<id na tela>", "dados": {...}}`. O gerente
+(`Workspace`) decide, como em todas as outras:
+
+1. **só módulo que está na tela**, pelo id que o gerente deu; módulo fechado pelo dono não volta
+   por atualização;
+2. **só os campos que o componente declara no registro**, com a forma declarada — a mesma
+   `validar_dados` do `createWidget`. Campo a mais é recusa com motivo, não tolerância;
+3. **sem dados, recusa**: atualizar com nada não é ação;
+4. os campos enviados **substituem** os de mesmo nome; os outros ficam como estavam;
+5. **não mexe em área, foco, título, fixação nem confirmação**: módulo fixado pelo dono pode ter
+   os dados atualizados, porque isso não o tira do lugar — e componente sensível continua
+   exigindo a confirmação na criação, que a atualização não pula;
+6. **texto sempre como texto**: os valores chegam ao QML como dado, e todo `Text` da janela é
+   `PlainText` (o teste `test_texto_puro.py` cobra arquivo por arquivo).
+
+**Demonstração.** O selo **DEMONSTRAÇÃO** passa a sair do módulo quando — e só quando — os dados
+vêm de uma fonte real, e quem diz isso é o **código** que tem a fonte (a ponte, com a fila de
+avisos do `agentd`), por um parâmetro de `Workspace.aplicar` que a proposta crua não tem: a IA
+não consegue declarar que o que ela inventou é real. O roteiro de demonstração continua com o
+selo.
+
+**Como invalidar.** Se uma vista precisar de atualização incremental (acrescentar um item sem
+reenviar a lista), a ação ganha uma forma de "acrescentar" — com o mesmo teto de itens do
+componente — por nova emenda.
+
