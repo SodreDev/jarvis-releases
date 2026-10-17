@@ -1,6 +1,7 @@
 """Stub gerado de `system.read.status` — NÃO EDITE À MÃO.
 
-Gerado por `jarvis.manifesto.codegen` a partir de `catalogo/system.read.status.yaml` (SPEC §4).
+Gerado por `jarvis.manifesto.codegen` a partir de
+`catalogo/system.read.status.yaml` (SPEC §4).
 Para mudar a assinatura, mude o manifesto e gere de novo:
 
     uv run --frozen python tools/manifesto.py codegen
