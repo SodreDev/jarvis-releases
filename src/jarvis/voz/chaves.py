@@ -1,4 +1,11 @@
-"""Chave de API: vem do ambiente, não aparece em lugar nenhum (ADR-0017).
+"""Chave de API: vem do ambiente ou do chaveiro do sistema, não aparece em lugar nenhum (ADR-0017).
+
+**Um ponto só de leitura** (`Chave.do_ambiente`, `Chave.presente`, `Chave.origem`), na mesma
+ordem para o TTS, o ASR, o diagnóstico e a janela: primeiro a variável exportada no shell
+(o caminho mais explícito, que ganha sempre), depois o chaveiro do sistema, onde a janela guarda
+(`jarvis.gui.chaveiro`, sem Qt). Antes disto o laço lia o chaveiro e o resto não: a janela dizia
+"definida (chaveiro do sistema)" e o "testar voz", o diagnóstico e o `jarvis-voz` diziam que a
+chave não existia. Sob `CI` o chaveiro não é consultado — a suíte nunca conversa com o do dono.
 
 Quatro proibições do dono, e como cada uma é **estrutural** em vez de disciplina:
 
@@ -31,7 +38,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from jarvis.ambiente import ambiente_ou_os
+from jarvis.ambiente import ambiente_ou_os, em_ci
 
 VARIAVEL_GROQ: Final = "JARVIS_GROQ_API_KEY"
 VARIAVEL_ELEVENLABS: Final = "JARVIS_ELEVENLABS_API_KEY"
@@ -47,7 +54,22 @@ voltaria 401 com o segredo pela metade em algum log de terceiro."""
 
 
 class SegredoAusente(RuntimeError):
-    """A variável não está no ambiente (ou está vazia). A mensagem diz **o nome**, nunca valor."""
+    """A chave não está no ambiente nem no chaveiro. A mensagem diz **o nome**, nunca valor."""
+
+
+def _do_chaveiro(variavel: str, ambiente: Mapping[str, str] | None) -> str:
+    """O valor guardado pela janela no chaveiro do sistema, ou vazio. Nunca sob CI."""
+    if em_ci(ambiente) or em_ci(None):
+        return ""
+    try:
+        from jarvis.gui import chaveiro  # sem Qt (tests/unit/gui/test_fronteira.py)
+    except ImportError:  # pragma: no cover — sem o grupo `gui`
+        return ""
+    return chaveiro.valor(variavel) or ""
+
+
+def _do_shell(variavel: str, ambiente: Mapping[str, str] | None) -> str:
+    return ambiente_ou_os(ambiente).get(variavel, "").strip()
 
 
 class SegredoNaLinhaDeComando(RuntimeError):
@@ -81,20 +103,28 @@ class Chave:
 
     @classmethod
     def do_ambiente(cls, variavel: str, *, ambiente: Mapping[str, str] | None = None) -> Chave:
-        """A chave, ou `SegredoAusente` dizendo ao dono o que exportar."""
-        bruto = ambiente_ou_os(ambiente).get(variavel, "")
-        if not bruto.strip():
+        """A chave — do ambiente, senão do chaveiro —, ou `SegredoAusente` dizendo o que fazer."""
+        bruto = _do_shell(variavel, ambiente) or _do_chaveiro(variavel, ambiente)
+        if not bruto:
             raise SegredoAusente(
-                f"{variavel} não está no ambiente. Exporte a chave no seu shell "
-                f"(`export {variavel}=...`) — ela não entra no repositório, na configuração "
-                "nem na linha de comando"
+                f"{variavel} não está no ambiente nem no chaveiro do sistema. Guarde a chave "
+                "na janela (Configuração → Chaves de API → Guardar, ela vai para o chaveiro) ou "
+                f"exporte no shell antes de abrir (`export {variavel}=...`). Ela não entra no "
+                "repositório, na configuração nem na linha de comando"
             )
         return cls(variavel=variavel, valor=bruto.strip())
 
     @classmethod
     def presente(cls, variavel: str, *, ambiente: Mapping[str, str] | None = None) -> bool:
-        """ "Dá para usar este motor?" — sem ler o valor para dentro de nada."""
-        return bool(ambiente_ou_os(ambiente).get(variavel, "").strip())
+        """ "Dá para usar este motor?" — o valor não sai daqui."""
+        return bool(cls.origem(variavel, ambiente=ambiente))
+
+    @classmethod
+    def origem(cls, variavel: str, *, ambiente: Mapping[str, str] | None = None) -> str:
+        """`"ambiente"`, `"chaveiro"` ou `""` — de onde a chave viria agora."""
+        if _do_shell(variavel, ambiente):
+            return "ambiente"
+        return "chaveiro" if _do_chaveiro(variavel, ambiente) else ""
 
     def usar(self) -> str:
         """O valor. Único acesso, e de propósito fácil de procurar no código."""

@@ -295,7 +295,8 @@ def conferir(
 ) -> tuple[Falta, ...]:
     """Varredura do registro: o que está pronto e o que falta, sem carregar nada.
 
-    `ambiente` são os **nomes** das variáveis presentes no ambiente — nomes, nunca valores.
+    `ambiente` são os **nomes** das chaves presentes (no ambiente ou no chaveiro) — nomes, nunca
+    valores.
     É o que deixa o diagnóstico dizer "falta a chave" sem ler, imprimir ou guardar a chave.
     """
     faltas: list[Falta] = []
@@ -309,7 +310,10 @@ def conferir(
             faltas.append(
                 Falta(
                     motor=motor.id,
-                    motivo=f"a variável {motor.variavel_da_chave} não está no ambiente",
+                    motivo=(
+                        f"a chave {motor.variavel_da_chave} não está no ambiente nem no chaveiro"
+                        " do sistema (guarde na janela, em Chaves de API, ou exporte no shell)"
+                    ),
                 )
             )
     return tuple(faltas)

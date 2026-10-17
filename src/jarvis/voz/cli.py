@@ -28,6 +28,7 @@ from jarvis.audio_io.erros import ErroDeAudio
 from jarvis.rede import ErroDeRede
 from jarvis.voz.app import Aplicativo, AplicativoIndisponivel
 from jarvis.voz.chaves import (
+    VARIAVEIS,
     Chave,
     SegredoNaConfiguracao,
     SegredoNaLinhaDeComando,
@@ -111,7 +112,11 @@ def diagnosticar(
     for variavel in dict.fromkeys(
         m.variavel_da_chave for m in motores_de(onde=Onde.NUVEM) if m.variavel_da_chave
     ):
-        estado = "definida" if Chave.presente(variavel, ambiente=ambiente) else "AUSENTE"
+        origem = Chave.origem(variavel, ambiente=ambiente)
+        estado = {
+            "ambiente": "definida (variável de ambiente)",
+            "chaveiro": "definida (chaveiro do sistema)",
+        }.get(origem, "AUSENTE — guarde na janela (Configuração → Chaves de API) ou exporte")
         linha(f"  {variavel}: {estado}")
 
     linha("")
@@ -119,7 +124,10 @@ def diagnosticar(
     fonte = ambiente_ou_os(ambiente)
     faltas = conferir(
         nuvem_ligada=configuracao.nuvem_ligada,
-        ambiente=tuple(fonte.keys()),
+        ambiente=(
+            *fonte.keys(),
+            *(v for v in VARIAVEIS if Chave.origem(v, ambiente=ambiente) == "chaveiro"),
+        ),
     )
     if not faltas:
         linha("  nada: todos os motores registrados estão prontos")

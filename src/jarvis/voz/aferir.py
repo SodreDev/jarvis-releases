@@ -29,9 +29,12 @@ from jarvis.audio_io.backend import fonte_do_ambiente, sumidouro_do_ambiente
 from jarvis.audio_io.captura import SEGUNDOS_POR_QUADRO
 from jarvis.audio_io.erros import ErroDeAudio
 from jarvis.audio_io.quadro import TAXA_PADRAO
+from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
+from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import Configuracao
 from jarvis.voz.interface import Onde
+from jarvis.voz.registro import MotorRecusado
 
 FRASE_DE_TESTE: Final = "Olá. Sou o Jarvis, e esta é a minha voz."
 SEGUNDOS_PADRAO: Final = 3.0
@@ -181,8 +184,13 @@ def provar_voz(
     parar = cancelado or (lambda: False)
     try:
         motor = motor_de_tts(configuracao, raiz=raiz, cancelado=parar, ambiente=ambiente)
-    except (AplicativoIndisponivel, ErroDeAudio) as erro:
-        return ProvaDeVoz(erro=str(erro))
+    except (AplicativoIndisponivel, ErroDeAudio, SegredoAusente, MotorRecusado, ErroDeRede) as erro:
+        return ProvaDeVoz(erro=f"{configuracao.tts}: {erro}")
+    except ImportError as erro:  # falta o grupo da voz local (epitran, onnxruntime)
+        return ProvaDeVoz(
+            erro=f"{configuracao.tts}: falta a biblioteca {erro.name or erro} — `uv sync "
+            "--group voz` (a voz local) ou escolha outro motor de fala"
+        )
     try:
         sumidouro = sumidouro_do_ambiente(caminho=caminho_de_saida, ambiente=ambiente)
         sumidouro.abrir()

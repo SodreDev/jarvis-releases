@@ -133,7 +133,7 @@ def valor(variavel: str) -> str | None:
 
 def fonte_da_chave(variavel: str, *, ambiente: Mapping[str, str] | None = None) -> Fonte:
     """De onde esta chave viria agora. Lê presença, nunca conteúdo."""
-    if Chave.presente(variavel, ambiente=ambiente):
+    if ambiente_ou_os(ambiente).get(variavel, "").strip():
         return Fonte.AMBIENTE
     return Fonte.CHAVEIRO if valor(variavel) else Fonte.AUSENTE
 
