@@ -136,6 +136,69 @@ Decisões do diretor de 2026-10-16 (o dono delegou "siga a partir daí"); o dono
 - **D21 — "lembrar":** gravar com proveniência (`memoria.lembrar`) e recuperar
   (`memoria.buscar`, que entra no conjunto).
 
+## Ajustes da implementação (2026-10-16, fatias M1 e M2)
+
+O que o código mostrou e mudou nesta ADR. Cada ajuste mantém a regra e muda a forma.
+
+1. **`esquecer` virou duas tools: `memoria.retratar` e `memoria.apagar`.** A classe de risco é por
+   manifesto (SPEC §4), e uma tool cujo risco depende de um argumento obrigaria o PDP a ler o
+   argumento para saber o risco. `retratar` é `escrita_recuperavel`; `apagar` é
+   `apagar_permanente`, que já está em `RISCOS_QUE_SEMPRE_CONFIRMAM`. São nove tools, dentro do
+   teto de 10 por namespace.
+2. **A regra 3 ficou verificável sem mapa de frase.** "O dono pediu" não se decide por código sem
+   virar regex de intenção (P2). O que o código confere (`jarvis.politica.memoria`) é a
+   **proveniência do conteúdo**: nasce `active` só o que é **fala literal do dono neste turno** —
+   o texto (`lembrar`, duas palavras ou mais), o nome (`criar_no`) ou os dois nomes
+   (`criar_aresta`), comparados sem acento e sem pontuação. Paráfrase, inferência e conteúdo de
+   terceiro nascem `proposed`. O modelo continua julgando **se** o dono quis que lembrasse.
+3. **O "pedido é a confirmação" virou grant de turno no PDP.** O validador do repositório recusa
+   efeito persistente com `confirmation: never`; por isso `lembrar`, `criar_no` e `criar_aresta`
+   declaram `once_per_batch`, e a política de memória, antes da matriz comum, devolve `allow` só
+   no caso do item 2. Fora dele: `deny` (escrita autônoma, até os gates) ou o `confirm` comum.
+4. **Índice:** nem ChromaDB nem LanceDB estão nas dependências do produto. A interface
+   `MemoryIndex` da §6.3 existe (`jarvis.memoryd.indice`) com um índice **falso** de teste
+   (sobreposição de termos, sem modelo): prova o contrato e a exclusão em cascata, **não mede
+   qualidade**. A lista léxica é o FTS5 do SQLite. A escolha do índice continua sendo a medição
+   da §8.1.
+5. **Cifra:** `cryptography` virou dependência direta (Fernet; `Apache-2.0 OR BSD-3-Clause`,
+   conferido no PyPI em 2026-10-16; commit `3eaed14`). A chave fica no chaveiro do SO; banco em
+   disco sem cofre **não abre**. Ver a pergunta 1: **só o bruto está cifrado**.
+6. **Proveniência vem do cérebro.** `Cerebro.proveniencia` monta o turno de origem a partir do
+   episódio que ele mesmo gravou; o `Pedido` do PDP carrega isso, e o modelo não tem como
+   escrever esse campo.
+
+**Gates da §6.6 nesta fatia** (o que tem teste, em `tests/unit/memoria/`):
+
+| Gate | Situação |
+|---|---|
+| 1 — fato com episódio fonte | toda escrita exige episódio; sem origem, o PDP nega e audita |
+| 2 — exclusão em cascata | apagar a sessão: bruto, `memory_unit`, FTS, assertiva, índice, menção, aresta e entidade sem suporte zerados |
+| 3 — segredo sintético | a chave dita na conversa não volta em `buscar_historico` nem em `ler_mensagem` e não vai para o disco em claro |
+| 4 — fato vencido | depois de `atualizar`, `buscar` só devolve a nova |
+| 5 — texto recuperado não vira política | conteúdo `third_party` nasce `proposed`; argumento fora do schema é recusado antes do efeito. **Falta** a suíte de injeção da F2 com histórico envenenado |
+| 6 — caminho da evidência | todo achado de `buscar` e de `buscar_historico` traz o caminho |
+
+`escrita_autonoma_liberada` continua **falso**: a escrita por iniciativa do Jarvis (M4) espera o
+aceite (a) da F3, com os seis gates medidos no corpus, não só testados.
+
+**Não feito nesta fatia:** o processo `executor` chamando as tools pelo barramento (elas rodam
+em biblioteca); o laço `tool_call` do cérebro (depende do motor real, passo 5 do roteiro); o
+card "lembrei: … [desfazer]" na UI; a tela de alcances (os padrões estão no código: histórico
+ligado, sensível desligado, nenhum motor de nuvem com histórico); a precisão de aresta amostrada
+do aceite (f) da F3.
+
+**Perguntas ao dono** (registradas aqui; o trabalho seguiu com a proposta):
+
+1. **Cifrar o livro inteiro?** Hoje o bruto vai cifrado, mas o texto redigido (`memory_unit`) e o
+   FTS5 ficam **em claro** no SQLite — a redação tira segredo, não tira a conversa. Opções: (a)
+   SQLCipher para o banco todo (dependência nativa, licença e Windows a conferir); (b) aceitar o
+   índice em claro e exigir disco cifrado pelo SO; (c) não indexar texto de turno (sem busca
+   léxica no histórico). **Proposta:** (a), medida antes; até lá vale (b), dito na tela.
+2. **Classe sensível:** hoje "sensível" é o que a redação e o `classe_de_pii` pegam (segredo,
+   caminho de cofre). Saúde, finanças e íntimo (§6.5) não têm classificador. Marcar na UI, por
+   turno, ou esperar um classificador medido? **Proposta:** marcar na UI agora; classificador
+   depois, medido.
+
 ## Alternativas descartadas
 
 - **Acesso direto do `s2` ao `memoryd`, sem tool** — mais rápido de escrever e invisível ao PDP e
