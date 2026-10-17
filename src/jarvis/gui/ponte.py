@@ -184,6 +184,7 @@ class Ponte(QObject):
     vozesMudaram = Signal()
     escutaMudou = Signal()
     dedoGlobal = Signal(bool)
+    avisoDoAtalho = Signal(str)
     avisosMudaram = Signal()
     respostaParcial = Signal(str)
     confirmacaoPedida = Signal(str, str)
@@ -228,6 +229,7 @@ class Ponte(QObject):
         self._portal: AtalhoPortal | None = None
         self._portal_ok, self._portal_frase = portal_disponivel(ambiente=self._ambiente_base)
         self.dedoGlobal.connect(self._aplicar_dedo)
+        self.avisoDoAtalho.connect(self._avisar_do_atalho)
         self.avisosMudaram.connect(self._ligar_card_de_avisos)
         self.respostaParcial.connect(self._guardar_parcial)
         self.confirmacaoPedida.connect(self._mostrar_confirmacao)
@@ -259,6 +261,11 @@ class Ponte(QObject):
         self._bater_o_relogio()
         self.linhaNova.connect(self._guardar_linha)
         self.demonstrar(str(Modo.ASSISTENTE))
+        # O dono já tinha pedido o atalho global e salvo: pede de novo ao sistema ao abrir
+        # (bug do dono, 2026-10-16 — antes ele sumia a cada reinício e ninguém dizia).
+        if self._configuracao.atalho_global and self._portal_ok:
+            self._portal_frase = "religando o atalho global que você salvou…"
+            self.ativarAtalhoGlobal(religando=True)
 
     # --- o que o QML lê -------------------------------------------------------------------
     @Property(QObject, constant=True)
@@ -769,9 +776,10 @@ class Ponte(QObject):
         self._trocar_atalho("")
 
     @Slot()
-    def ativarAtalhoGlobal(self) -> None:
-        """Pede ao sistema o atalho global. **Abre um diálogo do compositor** — por isso só
-        roda no clique do dono, nunca sozinho, e numa thread (o diálogo espera por ele)."""
+    def ativarAtalhoGlobal(self, religando: bool = False) -> None:
+        """Pede ao sistema o atalho global. **Pode abrir um diálogo do compositor** — por isso
+        roda no clique do dono, ou ao abrir a janela quando ele já tinha pedido e salvo
+        (`atalho_global`), e sempre numa thread (o diálogo espera por ele)."""
         if self._portal is not None:
             self._portal.fechar()
             self._portal = None
@@ -788,10 +796,15 @@ class Ponte(QObject):
             except AtalhoIndisponivel as erro:
                 self._portal_frase = f"sem atalho global ({erro}): vale só com a janela em foco"
                 self._escuta.trocar_atalho(self._escuta.atalho, global_=False)
+                if religando:
+                    self.avisoDoAtalho.emit(self._portal_frase)
             else:
                 self._portal = portal
                 self._portal_frase = f"atalho global ligado pelo sistema: {portal.gatilho}"
                 self._escuta.trocar_atalho(combinacao, global_=True)
+                if not self._configuracao.atalho_global:
+                    self._configuracao = self._configuracao.com(atalho_global=True)
+                    self._portal_frase += " — salve a configuração para ele voltar ao abrir"
             self.escutaMudou.emit()
 
         threading.Thread(target=trabalhar, name="jarvis-portal-ligar", daemon=True).start()
@@ -901,7 +914,7 @@ class Ponte(QObject):
             self._portal.fechar()
             self._portal = None
         self._escuta.trocar_atalho(atalho, global_=False)
-        self._configuracao = self._configuracao.com(atalho=atalho)
+        self._configuracao = self._configuracao.com(atalho=atalho, atalho_global=False)
         self._aviso = f"atalho: {atalho or 'barra de espaço'}"
         self._publicar()
 
@@ -924,6 +937,10 @@ class Ponte(QObject):
         """Chamada de qualquer thread (o laço arma e desarma): só emite sinal."""
         self.escutaMudou.emit()
         self.conversaMudou.emit()
+
+    def _avisar_do_atalho(self, frase: str) -> None:
+        self._aviso = frase
+        self._publicar()
 
     def _aplicar_dedo(self, apertado: bool) -> None:
         if not apertado:

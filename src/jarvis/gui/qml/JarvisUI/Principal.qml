@@ -333,7 +333,9 @@ Rectangle {
             estado: ponte ? ponte.estado : "parado"
             microfone: ponte ? ponte.microfone : ({})
             atalho: ponte ? ponte.escuta.atalho : ""
-            onEnviou: function (texto) { ponte.enviarTexto(texto) }
+            onEnviou: function (texto) { ponte.enviarTexto(texto); tela.forceActiveFocus() }
+            onDevolveuOFoco: tela.forceActiveFocus()
+            ehOAtalho: function (evento) { return tela.ehOAtalho(evento) }
             onSegurou: ponte.segurar()
             onSoltou: ponte.soltar()
             onParou: ponte.pararConversa()

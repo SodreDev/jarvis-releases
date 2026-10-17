@@ -7,7 +7,7 @@ janela em foco" — que é exatamente a frase que a tela tem de mostrar quando n
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -103,3 +103,62 @@ def test_o_modelo_pedindo_escuta_continua_vira_pendencia_na_janela(ponte: Ponte)
     ponte.responderPendencia(pendentes[0]["id"], True)
     assert ponte.estado_da_escuta()["modo"] == "vad"
     assert ponte._escuta.modo is ModoDeEscuta.CONTINUA
+
+
+class PortalQueAceita:
+    """No lugar do `AtalhoPortal`: o sistema "aceitou" a combinação, sem diálogo nenhum."""
+
+    abertos: ClassVar[list[str]] = []
+
+    def __init__(self, *, combinacao: str, ambiente: Any, ao_mudar: Any) -> None:
+        self.combinacao = combinacao
+        self.gatilho = combinacao
+
+    def abrir(self) -> None:
+        PortalQueAceita.abertos.append(self.combinacao)
+
+    def fechar(self) -> None:
+        return None
+
+
+def test_atalho_global_salvo_volta_sozinho_ao_abrir_a_janela(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bug do dono (2026-10-16): o atalho global sumia a cada reinício — não era guardado."""
+    import time
+
+    from jarvis.gui import ponte as modulo
+
+    if not isinstance(QGuiApplication.instance(), QGuiApplication):
+        QGuiApplication([])
+    monkeypatch.setattr(chaveiro, "_modulo", base.ChaveiroFalso)
+    monkeypatch.setattr(modulo, "portal_disponivel", lambda **_: (True, "portal falso"))
+    monkeypatch.setattr(modulo, "AtalhoPortal", PortalQueAceita)
+    PortalQueAceita.abertos = []
+    caminho = tmp_path / "jarvis-voz.toml"
+
+    primeira = Ponte(raiz=tmp_path / "s1", caminho_da_configuracao=caminho)
+    primeira.capturarAtalho(
+        int(Qt.Key.Key_Space.value), int(Qt.KeyboardModifier.ControlModifier.value)
+    )
+    primeira.ativarAtalhoGlobal()
+    limite = time.monotonic() + 5
+    while not primeira.estado_da_escuta()["atalhoGlobal"] and time.monotonic() < limite:
+        time.sleep(0.02)
+    assert primeira.estado_da_escuta()["atalhoGlobal"] is True
+    assert "salve a configuração" in lido(primeira, "portalFrase")
+    primeira.salvarConfiguracao()
+    assert ler(caminho).atalho_global is True
+
+    segunda = Ponte(raiz=tmp_path / "s2", caminho_da_configuracao=caminho)
+    limite = time.monotonic() + 5
+    while not segunda.estado_da_escuta()["atalhoGlobal"] and time.monotonic() < limite:
+        time.sleep(0.02)
+    assert PortalQueAceita.abertos == ["Ctrl+Space", "Ctrl+Space"]
+    assert "atalho global ligado pelo sistema" in lido(segunda, "portalFrase")
+
+
+def test_trocar_a_combinacao_desliga_o_global_guardado(ponte: Ponte) -> None:
+    ponte._configuracao = ponte._configuracao.com(atalho_global=True)
+    ponte.capturarAtalho(int(Qt.Key.Key_J.value), int(Qt.KeyboardModifier.ControlModifier.value))
+    assert ponte._configuracao.atalho_global is False

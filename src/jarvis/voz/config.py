@@ -116,6 +116,9 @@ class Configuracao:
     """O quanto a transcrição tem de soar como a palavra, de 0,50 a 1,0."""
     atalho: str = ""
     """A combinação de teclas do modo `ptt`, na grafia do Qt. Vazio = barra de espaço."""
+    atalho_global: bool = False
+    """O dono pediu o atalho **global** (portal do sistema) e o sistema aceitou: a janela pede
+    de novo ao abrir. Antes isto não era guardado, e o atalho global sumia a cada reinício."""
     nuvem_ligada: tuple[str, ...] = ()
     """Os motores de nuvem que o dono ligou. Vazio = nada sai da máquina."""
     nuvem_sem_termos: tuple[str, ...] = ()
@@ -145,6 +148,7 @@ class Configuracao:
             "palavra": self.palavra,
             "limiar_palavra": self.limiar_palavra,
             "atalho": self.atalho,
+            "atalho_global": self.atalho_global,
             "nuvem_ligada": list(self.nuvem_ligada),
             "nuvem_sem_termos": list(self.nuvem_sem_termos),
             "acesso": self.acesso,
@@ -208,6 +212,7 @@ escuta = {aspas(configuracao.escuta)}
 palavra = {aspas(configuracao.palavra)}
 limiar_palavra = {configuracao.limiar_palavra!r}
 atalho = {aspas(configuracao.atalho)}
+atalho_global = {"true" if configuracao.atalho_global else "false"}
 nuvem_ligada = {lista(configuracao.nuvem_ligada)}
 nuvem_sem_termos = {lista(configuracao.nuvem_sem_termos)}
 
@@ -243,6 +248,13 @@ def _numero(dados: Mapping[str, Any], chave: str, padrao: float) -> float:
     if isinstance(valor, bool) or not isinstance(valor, int | float):
         raise ConfiguracaoInvalida(f"{chave}: esperava número, veio {type(valor).__name__}")
     return float(valor)
+
+
+def _logico(dados: Mapping[str, Any], chave: str) -> bool:
+    valor = dados.get(chave, False)
+    if not isinstance(valor, bool):
+        raise ConfiguracaoInvalida(f"{chave}: esperava true ou false, veio {type(valor).__name__}")
+    return valor
 
 
 def _lista(dados: Mapping[str, Any], chave: str) -> tuple[str, ...]:
@@ -372,6 +384,7 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         palavra=_texto(dados, "palavra", PALAVRA_PADRAO),
         limiar_palavra=_numero(dados, "limiar_palavra", LIMIAR_PADRAO),
         atalho=_texto(dados, "atalho", ""),
+        atalho_global=_logico(dados, "atalho_global"),
         nuvem_ligada=_lista(dados, "nuvem_ligada"),
         nuvem_sem_termos=_lista(dados, "nuvem_sem_termos"),
         acesso=_texto(dados, "acesso", ACESSO_PADRAO),

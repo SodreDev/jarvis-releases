@@ -163,6 +163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from PySide6.QtGui import QGuiApplication, QIcon
     from PySide6.QtQuick import QQuickView
 
+    from jarvis.gui import foco
     from jarvis.gui.ponte import Ponte
 
     aplicativo = QGuiApplication(sys.argv[:1])
@@ -188,6 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"QML: {erro}", file=sys.stderr)
         return 3
     janela.resize(*TAMANHO)
+    foco.ligar(janela)
     ponte.definirModo(args.modo)
 
     if args.capturar is not None:

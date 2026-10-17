@@ -13,6 +13,10 @@ Item {
     signal soltou()
     signal parou()
     signal comecou()
+    signal devolveuOFoco()
+    // A regra do atalho mora na tela (`Principal.ehOAtalho`); o campo só pergunta.
+    property var ehOAtalho: function (evento) { return false }
+    property bool segurandoPeloCampo: false
 
     implicitHeight: 54
 
@@ -54,6 +58,28 @@ Item {
         font.pixelSize: Tema.tamanhoTexto
         selectByMouse: true
         clip: true
+        objectName: "campoDaConversa"
+        // Com o campo vazio, o atalho de falar continua sendo o atalho de falar (a barra de
+        // espaço não começa frase); com texto, ela digita. Esc devolve o foco à tela.
+        Keys.onPressed: function (evento) {
+            if (evento.key === Qt.Key_Escape) {
+                barra.devolveuOFoco()
+                evento.accepted = true
+            } else if (!evento.isAutoRepeat && campo.text === "" && barra.ehOAtalho(evento)) {
+                if (!barra.conversaViva)
+                    barra.comecou()
+                barra.segurandoPeloCampo = true
+                barra.segurou()
+                evento.accepted = true
+            }
+        }
+        Keys.onReleased: function (evento) {
+            if (!evento.isAutoRepeat && barra.segurandoPeloCampo) {
+                barra.segurandoPeloCampo = false
+                barra.soltou()
+                evento.accepted = true
+            }
+        }
         onAccepted: {
             if (text.trim() !== "") {
                 barra.enviou(text)
