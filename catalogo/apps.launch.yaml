@@ -1,0 +1,50 @@
+# Ferramenta real do catálogo v1 (SPEC §5.6, fatia 6 da F2; pedido do dono de 2026-10-17).
+id: apps.launch
+title: Abrir um aplicativo
+description: Abre um aplicativo que o dono autorizou, chamado pelo nome (por exemplo "Dolphin" ou "calculadora").
+  Use quando o dono pedir para abrir um programa. O nome é resolvido contra o registro de apps autorizados;
+  nome fora dele é negado com sugestões. Não aceita comando, argumento nem caminho, e nunca roda shell.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - nome
+  properties:
+    nome:
+      type: string
+      minLength: 2
+      maxLength: 80
+output_schema:
+  type: object
+  required:
+  - app
+  - pid
+preconditions:
+- app no registro autorizado pelo dono
+postcondition: processo do app iniciado numa sessão própria, com o argv do .desktop
+capability: apps.launch
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: true
+undo: apps.quit_app
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: once_per_batch
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-apps
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

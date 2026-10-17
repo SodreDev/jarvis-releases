@@ -36,7 +36,7 @@
     "capability": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" },
     "risk_class": {
       "enum": [
-        "leitura", "escrita_recuperavel", "apagar_permanente", "sobrescrita_sem_desfazer",
+        "leitura", "transitorio_reversivel", "escrita_recuperavel", "apagar_permanente", "sobrescrita_sem_desfazer",
         "lote_acima_do_teto", "renomear_em_massa", "egress", "representacao_do_dono",
         "instalar_ou_executar_baixado", "mudanca_de_sistema", "elevacao",
         "fora_do_diretorio_do_dono"

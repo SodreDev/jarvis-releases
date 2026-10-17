@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.barramento.envelope import uuid7
+from jarvis.politica.abertura import decidir_abertura
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.canonicalizacao import (
     CaminhoCanonico,
@@ -135,6 +136,10 @@ class Pdp:
     ampliacao_pendente: Modo | None = None
     alcance_de_memoria: AlcanceDeMemoria = field(default_factory=AlcanceDeMemoria)
     escrita_autonoma_liberada: bool = False
+    apps_autorizados: frozenset[str] = frozenset()
+    """Nomes normalizados dos apps que o dono pôs no registro: o grant estreito de `apps.launch`."""
+    sites_sem_confirmar: frozenset[str] = frozenset()
+    """Domínios que o dono liberou para `sites.open` abrir sem perguntar (com subdomínios)."""
     """ADR-0026, M4: só vira verdade quando os seis gates da §6.6 passarem (aceite (a) da F3)."""
     _raizes: dict[str, RaizAberta] = field(default_factory=dict, repr=False)
     """Raiz aberta de cada grant vivo, por `grant_id`. É aqui que o descritor tem dono."""
@@ -156,7 +161,14 @@ class Pdp:
         )
 
     # --- decisão ------------------------------------------------------------------
-    def decidir(self, pedido: Pedido) -> Decisao:
+    def decidir(self, pedido: Pedido, *, confirmado_pelo_dono: bool = False) -> Decisao:
+        """`allow | confirm | deny` para o pedido, registrado antes de devolver.
+
+        `confirmado_pelo_dono` só é verdadeiro quando o **dono** respondeu "sim" na janela a uma
+        decisão `confirm` desta mesma chamada (ADR-0027). Não existe campo do pedido, argumento
+        do modelo ou ação do vocabulário que o liguem: quem o passa é o executor, e só depois da
+        resposta da UI. Ele troca `confirm` por `allow` — **nunca** troca `deny` por nada.
+        """
         capacidade = self.catalogo.get(pedido.tool_id)
         if capacidade is None:
             return self._registrar(pedido, Veredito.DENY, "tool fora do catálogo", None, None)
@@ -175,6 +187,13 @@ class Pdp:
             alcance=self.alcance_de_memoria,
             escrita_autonoma_liberada=self.escrita_autonoma_liberada,
         )
+        if regra is None:
+            regra = decidir_abertura(
+                pedido.tool_id,
+                pedido.args,
+                apps_autorizados=self.apps_autorizados,
+                sites_sem_confirmar=self.sites_sem_confirmar,
+            )
         if regra is not None:
             # ADR-0026: a política de memória decide antes da matriz comum — nega o que não tem
             # origem, e o grant de turno libera só o que é fala literal do dono neste turno.
@@ -209,22 +228,21 @@ class Pdp:
                     capacidade,
                 )
 
+        confirmar: str | None = None
         if capacidade.risk_class in RISCOS_QUE_SEMPRE_CONFIRMAM:
-            return self._registrar(
-                pedido,
-                Veredito.CONFIRM,
-                f"risco {capacidade.risk_class} confirma em qualquer modo",
-                canonico,
-                capacidade,
-            )
-        if capacidade.confirmation != "never":
-            return self._registrar(
-                pedido,
-                Veredito.CONFIRM,
-                f"manifesto pede confirmação ({capacidade.confirmation})",
-                canonico,
-                capacidade,
-            )
+            confirmar = f"risco {capacidade.risk_class} confirma em qualquer modo"
+        elif capacidade.confirmation != "never":
+            confirmar = f"manifesto pede confirmação ({capacidade.confirmation})"
+        if confirmar is not None:
+            if confirmado_pelo_dono:
+                return self._registrar(
+                    pedido,
+                    Veredito.ALLOW,
+                    f"confirmado pelo dono na janela — {confirmar}",
+                    canonico,
+                    capacidade,
+                )
+            return self._registrar(pedido, Veredito.CONFIRM, confirmar, canonico, capacidade)
         return self._registrar(
             pedido, Veredito.ALLOW, "dentro do catálogo e da raiz", canonico, capacidade
         )

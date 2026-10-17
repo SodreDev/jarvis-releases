@@ -1,0 +1,49 @@
+# Ferramenta real do catálogo v1 (SPEC §5.6, fatia 6 da F2; pedido do dono de 2026-10-17).
+id: sites.open
+title: Abrir um site
+description: Abre um endereço http ou https no navegador padrão do dono. Use quando o dono pedir para
+  abrir uma página. Domínio fora da lista que o dono liberou pede confirmação na tela. Não lê a página,
+  não controla o navegador, não abre outro esquema (arquivo, javascript, dados) e não aceita URL com senha.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - url
+  properties:
+    url:
+      type: string
+      minLength: 8
+      maxLength: 2048
+output_schema:
+  type: object
+  required:
+  - url
+  - dominio
+preconditions:
+- url http(s) com host e sem credencial
+postcondition: o portal do desktop aceitou abrir a URL no navegador padrão
+capability: sites.open
+risk_class: egress
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: network:navegador
+pii_touch: metadata
+confirmation: per_action
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-portal
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1
