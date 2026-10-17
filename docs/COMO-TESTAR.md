@@ -139,6 +139,41 @@ aparece acima da barra de conversa, com o motivo.
    também, não marcado é negado com sugestão, site fora da lista confirma e só abre depois do
    sim. O lançador e o abridor de site são falsos nesses testes: nada abre de verdade.
 
+### 0.0d Os consertos de 2026-10-17 (madrugada, 2ª leva): abrir app, protocolo, navegador, tela e "é comigo?"
+
+1. **Abrir app de verdade.** O erro `NotImplementedError: posix_spawn: setsid unavailable on this
+   platform` era do lançador: agora ele usa `subprocess.Popen(start_new_session=True)`, que existe
+   em todo Python POSIX. Prova feita: `apps.launch` abriu o **KCalc** de verdade, sem
+   confirmação, em sessão própria (`getsid(pid) == pid`), e foi encerrado pelo PID conferido
+   (`comm == kcalc`). Na sua máquina: marque o KCalc em Configuração → Aplicativos e diga "abre
+   a calculadora". O teste automático usa um `sleep`, não um aplicativo gráfico.
+2. **Proposta de ferramenta ("às vezes dá erro ou demora").** Medido com o `claude -p` (haiku) em
+   "abre o discord": a proposta só saía no fim da geração e o encerramento ainda esperava
+   ~0,5 s de "cortesia" — **2,0–2,6 s → 1,3–1,9 s** do pedido até a proposta em mãos. O leitor
+   do protocolo `<<ferramenta>>` agora aceita a marca em qualquer ponto da linha, JSON em várias
+   linhas, com cerca ```` ```json ````, com texto depois, `tool`/`arguments` no lugar de
+   `tool_id`/`args`, e emite a proposta **quando o objeto fecha**; JSON que nunca fecha vira
+   "malformado" (4 000 caracteres) em vez de segurar a fala. Limite honesto: o 2º turno (o modelo
+   ler o resultado e dizer "abri") ainda é outro processo do `claude -p`, ~1,5–2 s.
+3. **"Abre o navegador" sem site.** Ferramenta nova `browser.launch`: abre só o navegador
+   principal (ou o que você nomear entre os configurados em Configuração → Navegadores), **sem
+   confirmar**; sem principal configurado, nega e diz onde escolher. Sites continuam em
+   `sites.open`, com a regra de `sites_sem_confirmar`.
+4. **Os blocos "um por segundo".** A causa: o texto da resposta só ia à janela quando o tocador
+   puxava o próximo pedaço, e ele só puxa depois de **tocar** o anterior — a tela andava na
+   velocidade da fala. Agora sai na linha do cérebro, no instante em que o pedaço nasce. Medido
+   (12 frases, "alto-falante" simulado de 0,5 s por pedaço): intervalo entre pedaços **572 ms →
+   47 ms** (p50), último pedaço na tela em **6,9 s → 0,6 s**. O áudio continua no ritmo da fala;
+   o que você ouve não mudou.
+5. **"É comigo?" (escuta contínua).** Configuração → Voz e escuta → painel **é comigo?**: escolha
+   "OpenRouter → TypeSafe", leia o aviso, **ligue** e salve; precisa de `OPENROUTER_API_KEY` (em
+   Chaves de API ou exportada). Com a escuta em **contínua**, cada trecho transcrito é
+   classificado pelo Jev: fala alheia é descartada sem aparecer na tela; fala para o Jarvis vira
+   pedido e a linha `(endereçamento: acao · p=0.97 · 716 ms)` diz o quê. Se o serviço cair, **não
+   age** e o card de avisos diz uma vez. Medição: `uv run python tools/medir_enderecamento.py
+   --regras` (baseline local: falso-aceite 23,3 %) e `--openrouter` (**58 chamadas** reais,
+   ≈ US$ 0,001; ainda não rodei — pedi só uma). ADR-0029 tem as fontes e o plano.
+
 ### 0.1 Pedir para o Jarvis fazer coisas (ferramentas, fatia 6)
 
 O Jarvis não monta comando: ele **propõe** uma ferramenta tipada (listar pasta, ler arquivo,
@@ -407,8 +442,8 @@ sudo dnf remove jarvis
    não marcava nenhuma) e cobre todo o inventário da voz — mas se **soa bem** é o seu ouvido
    que diz;
 4. **WER do ASR em pt-BR**, local ou na Groq: nenhum model card publica, e ninguém mediu aqui;
-5. **ferramentas com o `claude -p` de verdade, e abrir app/site de verdade** (ver o fim da
-   seção 0.1);
+5. **ferramentas com o `claude -p` de verdade, e abrir site de verdade** (ver o fim da seção
+   0.1; abrir **app** de verdade foi feito com o KCalc, seção 0.0d);
 6. **chamada real à nuvem.** Toda a suíte fala com um servidor falso em porta efêmera; sob
    `CI=1` o código **recusa** falar com serviço de verdade. Uma chamada real à Groq (ASR, turbo)
    foi feita em 2026-10-17 com áudio sintético e funcionou; **ElevenLabs e Edge** e o
