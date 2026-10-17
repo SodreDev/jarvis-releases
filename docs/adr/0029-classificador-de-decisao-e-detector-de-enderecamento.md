@@ -60,7 +60,7 @@ Motor `decisao-jev-openrouter` no registro (`licenses/motores.toml`), `papel = "
 
 ### 6. Plano de medição (a decisão de limiar e de manter a nuvem depende dele)
 
-Corpus `corpus/enderecamento/falas.jsonl` (58 falas sintéticas pt-BR, 28 com o Jarvis e 30 alheias, com casos difíceis de propósito) e `tools/medir_enderecamento.py`. Métricas: **falso-aceite** (alheia que virou pedido — o erro caro), **falso-rejeito**, acerto da intenção entre as aceitas, **latência p50/p95**, falhas do classificador. Antes de fixar limiar de produto: ampliar para 200–500 falas por cenário (como a ADR-0024 exige), incluindo ruído de TV real transcrito pelo ASR (com erros de transcrição) e fala do próprio dono gravada com consentimento. Critério para **manter a nuvem**: falso-aceite < 5 % e falso-rejeito < 15 % no corpus ampliado, com p95 ≤ 1,0 s; senão, ou o limiar sobe, ou cai-se para a palavra de ativação.
+Corpus `medicao/enderecamento/falas.jsonl` (58 falas sintéticas pt-BR, 28 com o Jarvis e 30 alheias, com casos difíceis de propósito) e `tools/medir_enderecamento.py`. Métricas: **falso-aceite** (alheia que virou pedido — o erro caro), **falso-rejeito**, acerto da intenção entre as aceitas, **latência p50/p95**, falhas do classificador. Antes de fixar limiar de produto: ampliar para 200–500 falas por cenário (como a ADR-0024 exige), incluindo ruído de TV real transcrito pelo ASR (com erros de transcrição) e fala do próprio dono gravada com consentimento. Critério para **manter a nuvem**: falso-aceite < 5 % e falso-rejeito < 15 % no corpus ampliado, com p95 ≤ 1,0 s; senão, ou o limiar sobe, ou cai-se para a palavra de ativação.
 
 ## O que foi medido hoje (2026-10-17)
 

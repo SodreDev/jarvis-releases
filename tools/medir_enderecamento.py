@@ -28,7 +28,7 @@ from jarvis.decisao.enderecamento import DetectorDeEnderecamento, Intencao, Limi
 from jarvis.decisao.fake import ClassificadorFalso, Roteiro, endereco
 from jarvis.decisao.interface import ClassificadorDeDecisao, Pergunta, Resposta
 
-CORPUS = Path(__file__).resolve().parent.parent / "corpus" / "enderecamento" / "falas.jsonl"
+CORPUS = Path(__file__).resolve().parent.parent / "medicao" / "enderecamento" / "falas.jsonl"
 
 IMPERATIVOS = (
     "abre", "abrir", "anota", "cria", "procura", "toca", "fecha", "agenda", "liga", "para ",
