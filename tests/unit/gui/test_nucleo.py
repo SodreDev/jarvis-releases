@@ -194,10 +194,21 @@ def test_a_sessao_liga_o_dedo_sempre_e_entrega_a_escuta_viva(tmp_path: Path) -> 
 
 
 def test_asr_da_nuvem_desligado_diz_que_nao_ouve_e_o_caminho(
-    sessao: SessaoDeVoz, tmp_path: Path
+    sessao: SessaoDeVoz, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Bug do dono (2026-10-16): ASR = Groq fora de `nuvem_ligada` caía calado no texto ("sem
-    áudio"). Agora a frase diz que o ouvido é o problema e como resolver, e o card guarda."""
+    áudio"). Agora a frase diz que o ouvido é o problema e como resolver, e o card guarda.
+
+    Desde 2026-10-17 o laço tenta o ASR local antes de desistir; aqui nenhum ASR abre (nem o
+    local), que é o caso em que a frase continua valendo."""
+    from jarvis.voz import app as modulo_app
+
+    def nenhum(configuracao: Configuracao, **_: object) -> None:
+        raise modulo_app.OuvidoIndisponivel(
+            f"o ASR escolhido ({configuracao.asr}) não roda: motor desligado"
+        )
+
+    monkeypatch.setattr(modulo_app, "motor_de_asr", nenhum)
     linhas: list[str] = []
     sessao.ao_linha = linhas.append
     sessao.configuracao = Configuracao(

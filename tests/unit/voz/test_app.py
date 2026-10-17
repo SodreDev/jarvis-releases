@@ -310,3 +310,38 @@ def test_o_resumo_do_turno_mostra_cada_trecho_desde_o_enviado() -> None:
         "  [enviado → contexto 3 ms · 1º token 1411 ms · 1ª fronteira 1412 ms · "
         "1º áudio 1587 ms · fala inteira 1749 ms]"
     )
+
+
+# --- ASR de nuvem desligado: o ouvido não some (bug do dono, 2026-10-17) ------------------------
+
+
+def test_com_a_groq_desligada_o_laco_ouve_pelo_asr_local_e_diz_numa_linha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jarvis.voz import app as modulo_app
+
+    abertos: list[str] = []
+
+    def montar(configuracao: Configuracao, **_: object) -> MotorDeAsrFalso:
+        abertos.append(configuracao.asr)
+        if configuracao.asr != "asr-whisper-local":
+            raise modulo_app.OuvidoIndisponivel(f"{configuracao.asr} está desligado")
+        return MotorDeAsrFalso()
+
+    monkeypatch.setattr(modulo_app, "motor_de_asr", montar)
+    app = Aplicativo(
+        configuracao=Configuracao(
+            asr="asr-groq-whisper-large-v3-turbo", tts="tts-parametrico", s2="eco"
+        ),
+        raiz=tmp_path / "sessao",
+        relogio=RelogioFalso(),
+    )
+    saidas: list[str] = []
+    app.escrever_na_tela = saidas.append
+
+    app.abrir()
+
+    assert abertos == ["asr-groq-whisper-large-v3-turbo", "asr-whisper-local"]
+    assert app._asr is not None
+    avisos = [linha for linha in saidas if "ASR local" in linha]
+    assert len(avisos) == 1 and len(avisos[0]) < 120, avisos

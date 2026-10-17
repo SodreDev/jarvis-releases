@@ -76,7 +76,7 @@ from jarvis.s2.motor import INTERVALO_DE_CONSULTA_S, MotivoDoFim, MotorDeConvers
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.voz.chaves import SegredoAusente
-from jarvis.voz.config import Configuracao
+from jarvis.voz.config import ASR_PADRAO, Configuracao
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde
@@ -439,17 +439,7 @@ class Aplicativo:
         self.raiz.mkdir(parents=True, exist_ok=True)
         try:
             if com_asr and self._asr is None:
-                try:
-                    self._asr = motor_de_asr(
-                        self.configuracao,
-                        raiz=self.raiz,
-                        cancelado=cancelado,
-                        ambiente=self.ambiente,
-                    )
-                except (MotorRecusado, SegredoAusente, ErroDeRede, ImportError) as erro:
-                    raise OuvidoIndisponivel(
-                        f"o ASR escolhido ({self.configuracao.asr}) não abriu: {erro}"
-                    ) from None
+                self._asr = self._abrir_o_ouvido(cancelado)
             if self._tts is None:
                 self._tts = motor_de_tts(
                     self.configuracao, raiz=self.raiz, cancelado=cancelado, ambiente=self.ambiente
@@ -470,6 +460,45 @@ class Aplicativo:
         self._cerebro.ferramentas = self.ferramentas
         self._cerebro.confirmar = self._confirmar
         self._aquecer()
+
+    def _abrir_o_ouvido(self, cancelado: Callable[[], bool]) -> MotorDeAsr:
+        """O ASR escolhido — ou, se ele é de nuvem e não roda, o local, com uma linha dizendo.
+
+        Bug do dono (2026-10-17): com a Groq escolhida e desligada o laço desistia do áudio e
+        caía no modo texto — sem microfone, sem ativação por voz, e o botão de falar sem o que
+        fazer. A nuvem desligada é decisão do dono e continua valendo (nada sai daqui); o que
+        não é decisão dele é ficar surdo por isso. O ASR local roda na máquina e não pede nada.
+        """
+        try:
+            return motor_de_asr(
+                self.configuracao, raiz=self.raiz, cancelado=cancelado, ambiente=self.ambiente
+            )
+        except (OuvidoIndisponivel, MotorRecusado, SegredoAusente, ErroDeRede, ImportError) as erro:
+            escolhido = motor_registrado(self.configuracao.asr)
+            if escolhido is not None and escolhido.onde is Onde.NUVEM:
+                try:
+                    local = motor_de_asr(
+                        self.configuracao.com(asr=ASR_PADRAO),
+                        raiz=self.raiz,
+                        cancelado=cancelado,
+                        ambiente=self.ambiente,
+                    )
+                except (AplicativoIndisponivel, MotorRecusado, ErroDeRede, ImportError):
+                    local = None
+                if local is not None:
+                    self.escrever_na_tela(
+                        f"  ouvindo pelo ASR local: {self.configuracao.asr} está desligado "
+                        "(Configuração → Voz — ouvir)."
+                    )
+                    self.registrar_aviso(
+                        "evento", "ouvir", f"{self.configuracao.asr} desligado: uso o ASR local"
+                    )
+                    return local
+            if isinstance(erro, OuvidoIndisponivel):
+                raise
+            raise OuvidoIndisponivel(
+                f"o ASR escolhido ({self.configuracao.asr}) não abriu: {erro}"
+            ) from None
 
     def _montar_ferramentas(self) -> ExecutorDeFerramentas:
         """PDP, auditoria e executor com o alcance que o dono configurou (§5.5, ADR-0028)."""
