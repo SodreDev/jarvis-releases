@@ -187,15 +187,18 @@ Rectangle {
             Behavior on height { NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
         }
 
-        // as últimas falas, flutuando ao lado do núcleo (só no modo assistente)
+        // As últimas falas, embaixo do núcleo (só no modo assistente). Ao lado dele elas caíam
+        // por baixo dos módulos da coluna da direita (o card de avisos, desde que é real) e
+        // saíam cortadas; embaixo do núcleo é o espaço livre de propósito da composição.
         Column {
             id: falas
+            objectName: "falasDoNucleo"
             visible: ponte && ponte.modo === "assistente"
-            anchors.left: hud.right
-            anchors.leftMargin: Tema.espacamento * 2
-            anchors.verticalCenter: hud.verticalCenter
-            width: Math.max(200, tela.celulaLargura * 3)
-            spacing: 10
+            anchors.top: hud.bottom
+            anchors.topMargin: Tema.espacamento
+            anchors.horizontalCenter: hud.horizontalCenter
+            width: Math.max(hud.width, tela.celulaLargura * 4)
+            spacing: 8
             Repeater {
                 model: ponte ? ponte.transcricao.slice(-3) : []
                 Rectangle {
