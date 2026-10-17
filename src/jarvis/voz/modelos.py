@@ -108,6 +108,10 @@ def _descarga(bruto: Mapping[str, Any], pasta: Path) -> Descarga | None:
     arquivos = bruto.get("arquivo") or []
     if not base or not arquivos:
         return None
+    for arquivo in arquivos:
+        partes = Path(str(arquivo["nome"])).parts
+        if not partes or Path(str(arquivo["nome"])).is_absolute() or ".." in partes:
+            raise ValueError(f"nome de arquivo fora da pasta do modelo: {arquivo['nome']!r}")
     return Descarga(
         id=str(bruto["id"]),
         papel=str(bruto.get("papel", "")),
@@ -158,6 +162,7 @@ def baixar(
     for arquivo in descarga.falta():
         proibir_nuvem_real_em_ci(arquivo.url, ambiente)
         destino = descarga.destino / arquivo.nome
+        destino.parent.mkdir(parents=True, exist_ok=True)
         parcial = destino.with_suffix(destino.suffix + ".parcial")
         resumo = hashlib.sha256()
         lidos = 0

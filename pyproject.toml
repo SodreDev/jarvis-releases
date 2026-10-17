@@ -30,6 +30,9 @@ dependencies = [
 # o que vira dependência de verdade.
 medicao = [
   "onnxruntime>=1.20,<2",
+  # O candidato que perdeu a §8.1 (fatia 7): fica só para o harness poder ser repetido.
+  # Apache-2.0, conferido no PyPI em 2026-10-16.
+  "chromadb>=1.5,<2",
 ]
 # Só para gerar o corpus sintético (cartão F1-02): a voz piper é um .onnx lido pelo
 # onnxruntime (MIT) e a reamostragem 22 050 → 16 000 Hz é numpy (BSD-3). NÃO entra no CI nem
@@ -85,6 +88,16 @@ gui = [
 # tem `CI=1` e por isso não abre placa de som nem por acidente (F1-01).
 dispositivo = [
     "sounddevice>=0.5,<1",
+]
+# A memória que lembra sozinha (fatia 7): índice vetorial embutido (LanceDB, Apache-2.0,
+# escolhido pela medição da §8.1 — docs/medicoes/f3-01-indice.md) e o embedding local
+# (`intfloat/multilingual-e5-small`, MIT, lido pelo onnxruntime, MIT, com o tokenizador do
+# próprio modelo pelo `tokenizers`, Apache-2.0). Licenças conferidas no PyPI em 2026-10-16;
+# `pyarrow` (Apache-2.0) vem por baixo do LanceDB. Entra no pacote e no CI.
+memoria = [
+    "lancedb>=0.40,<1",
+    "onnxruntime>=1.20,<2",
+    "tokenizers>=0.21,<1",
 ]
 
 [project.scripts]
@@ -163,6 +176,10 @@ module = [
   "sounddevice",
   "jeepney",
   "jeepney.*",
+  "pyarrow",
+  "pyarrow.*",
+  "chromadb",
+  "chromadb.*",
 ]
 ignore_missing_imports = true
 

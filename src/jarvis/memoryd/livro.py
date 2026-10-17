@@ -162,12 +162,7 @@ class LivroDeMemoria:
                 (expressao, desde, desde, ate, ate, k * 2),
             )
         ]
-        densos = [
-            a.id
-            for a in self.indice.search(
-                consulta, k * 2, filtro=lambda md: md.get("kind") == "turno"
-            )
-        ]
+        densos = [a.id for a in self.indice.search(consulta, k * 2, onde={"tipo": "turno"})]
         achados: list[dict[str, Any]] = []
         for unidade, _escore, fontes in rrf([("lexico", lexicos), ("denso", densos)]):
             linha = self.con.execute(
@@ -434,20 +429,22 @@ class LivroDeMemoria:
     # --- esquecer de vez (gate 2) e retenção (D19) --------------------------------------
     def apagar(self, alvo_id: str, escopo: Escopo) -> dict[str, int]:
         if escopo == "turno":
-            return self._apagar_episodio(alvo_id)
-        if escopo == "sessao":
+            removidos = self._apagar_episodio(alvo_id)
+        elif escopo == "sessao":
             episodios = [
                 str(r["id"])
                 for r in self.con.execute("SELECT id FROM episode WHERE session_id = ?", (alvo_id,))
             ]
             if not episodios:
                 raise AlvoInexistente(alvo_id)
-            total: dict[str, int] = {}
+            removidos = {}
             for episodio in episodios:
                 for chave, n in self._apagar_episodio(episodio).items():
-                    total[chave] = total.get(chave, 0) + n
-            return total
-        return self._apagar_assertivas([alvo_id], exigir=True)
+                    removidos[chave] = removidos.get(chave, 0) + n
+        else:
+            removidos = self._apagar_assertivas([alvo_id], exigir=True)
+        self._expurgar()
+        return removidos
 
     def expirar(self) -> int:
         """D19: apaga turno vencido que nenhuma memória cita (citado tem retenção `NULL`)."""
@@ -461,32 +458,88 @@ class LivroDeMemoria:
         ]
         for episodio in vencidos:
             self._apagar_episodio(episodio)
+        if vencidos:
+            self._expurgar()
         return len(vencidos)
 
     def processar_outbox(self) -> int:
-        """O worker da §6.4: leva ao índice o que o caminho crítico deixou na outbox."""
+        """O worker da §6.4: leva ao índice o que o caminho crítico deixou na outbox.
+
+        No índice vão `tipo` (`turno`/`memoria`) e o `status` da assertiva, para o filtro descer
+        para dentro dele. Aqui também roda a ligação de menções (§6.7: extração é trabalho de
+        segundo plano, nunca da voz).
+        """
         feitos = 0
         for linha in self.con.execute(
-            "SELECT o.id, o.op, m.id AS unidade, m.text_redacted, m.content_hash, e.kind"
-            " FROM outbox o JOIN memory_unit m ON m.id = o.memory_unit_id"
-            " JOIN episode e ON e.id = m.episode_id"
+            "SELECT o.id, o.op, m.id AS unidade, m.text_redacted, m.content_hash,"
+            " m.episode_id, a.status FROM outbox o"
+            " JOIN memory_unit m ON m.id = o.memory_unit_id"
+            " LEFT JOIN assertion a ON a.id = m.assertion_id"
         ).fetchall():
             if linha["op"] == "upsert":
+                memoria = linha["status"] is not None
                 self.indice.upsert(
                     [
                         ItemDoIndice(
                             id=linha["unidade"],
                             text_redacted=linha["text_redacted"],
                             content_hash=linha["content_hash"],
-                            metadata={"kind": linha["kind"]},
+                            metadata={
+                                "tipo": "memoria" if memoria else "turno",
+                                "status": str(linha["status"]) if memoria else "turno",
+                            },
                         )
                     ]
                 )
+                if memoria:
+                    self.ligar_mencoes(linha["unidade"])
             else:
                 self.indice.delete([linha["unidade"]])
             self.con.execute("DELETE FROM outbox WHERE id = ?", (linha["id"],))
             feitos += 1
         return feitos
+
+    def ligar_mencoes(self, unidade: str) -> int:
+        """Extrator determinístico (§6.7 b): nome ou apelido **exato** de entidade no texto.
+
+        Liga a `memory_unit` às entidades que ela cita — é o que deixa o passo 1b da §6.8
+        (acerto denso → entidade) e a volta do grafo para a evidência funcionarem. A menção
+        herda o status da assertiva: memória só proposta não puxa nada para a recuperação.
+        """
+        linha = self.con.execute(
+            "SELECT m.text_redacted, m.episode_id, a.status FROM memory_unit m"
+            " JOIN assertion a ON a.id = m.assertion_id WHERE m.id = ?",
+            (unidade,),
+        ).fetchone()
+        if linha is None:
+            return 0
+        texto = f" {normalizar(str(linha['text_redacted']))} "
+        ligadas = 0
+        for apelido in self.con.execute(
+            "SELECT r.alias_norm, r.entity_id FROM entity_resolution r"
+            " JOIN entity e ON e.id = r.entity_id WHERE e.status = 'active'"
+        ).fetchall():
+            if f" {apelido['alias_norm']} " not in texto:
+                continue
+            if self.con.execute(
+                "SELECT 1 FROM entity_mention WHERE memory_unit_id = ? AND entity_id = ?",
+                (unidade, apelido["entity_id"]),
+            ).fetchone():
+                continue
+            self.con.execute(
+                "INSERT INTO entity_mention (id, episode_id, memory_unit_id, entity_id,"
+                " confidence, extractor, extractor_version, status)"
+                " VALUES (?, ?, ?, ?, 1.0, 'apelido-exato', '1', ?)",
+                (
+                    f"men-{uuid7()}",
+                    linha["episode_id"],
+                    unidade,
+                    apelido["entity_id"],
+                    "active" if linha["status"] == "active" else "proposed",
+                ),
+            )
+            ligadas += 1
+        return ligadas
 
     def varrer(self, trecho: str) -> dict[str, int]:
         """Onde este trecho ainda aparece — o teste de exclusão em cascata (gate 2) usa."""
@@ -616,6 +669,17 @@ class LivroDeMemoria:
                 str(estado),
             ),
         )
+
+    def _expurgar(self) -> None:
+        """Gate 2 no disco, não só na consulta: o FTS5 guarda os termos apagados nos segmentos
+        até a fusão (`optimize`); o WAL guarda as versões antigas das páginas até o checkpoint
+        (`TRUNCATE` zera o arquivo); o índice vetorial guarda o vetor até reescrever. As páginas
+        liberadas do SQLite são zeradas pelo `secure_delete` (`jarvis.memoryd.esquema`)."""
+        self.con.execute("INSERT INTO memory_unit_fts (memory_unit_fts) VALUES ('optimize')")
+        self.con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        expurgar = getattr(self.indice, "expurgar", None)
+        if callable(expurgar):
+            expurgar()
 
     def _tirar_do_indice_as_unidades_de(self, assertiva: str) -> None:
         ids = [

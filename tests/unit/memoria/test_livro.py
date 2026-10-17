@@ -283,6 +283,30 @@ def test_apagar_a_sessao_nao_deixa_resto_em_camada_nenhuma(livro: LivroDeMemoria
         livro.apagar(SESSAO, "sessao")
 
 
+def test_apagar_tira_o_texto_do_arquivo_do_banco(tmp_path: Path, relogio: Relogio) -> None:
+    """Gate 2 no disco: sem `secure_delete`, sem fundir o FTS5 e sem checkpoint do WAL, o texto
+    redigido apagado continua nos bytes do banco (o bruto é cifrado; a redação, não)."""
+    caminho = tmp_path / "memoria.sqlite"
+    livro = LivroDeMemoria.abrir(
+        caminho, cofre=CofreFernet(nova_chave()), indice=IndiceEmMemoria(), agora=relogio
+    )
+    for n in range(30):
+        livro.gravar_turno(
+            session_id=SESSAO, papel="dono", texto=f"conversa comum número {n}", trust="user_voice"
+        )
+    alvo = livro.gravar_turno(
+        session_id=SESSAO, papel="dono", texto="xilofonezumbido marcante", trust="user_voice"
+    )
+    livro.processar_outbox()
+    assert b"xilofonezumbido" in b"".join(p.read_bytes() for p in tmp_path.iterdir())
+
+    livro.apagar(alvo, "turno")
+    livro.con.close()
+
+    resto = b"".join(p.read_bytes() for p in tmp_path.iterdir() if p.is_file())
+    assert b"xilofonezumbido" not in resto
+
+
 def test_apagar_uma_memoria_deixa_o_turno(livro: LivroDeMemoria) -> None:
     dono, _, _ = _conversa(livro)
     gravada = livro.lembrar("Beatriz toca violão", estado=Estado.ATIVA, fonte=dono, extrator="s2:t")

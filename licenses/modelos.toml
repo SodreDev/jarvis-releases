@@ -66,6 +66,34 @@ data_de_acesso = "2026-10-15"
 nota = "Baseline de CPU."
 
 [[modelo]]
+id = "intfloat/multilingual-e5-small"
+papel = "embedding"
+licenca = "MIT"
+estado = "em_uso"
+fonte = "https://huggingface.co/api/models/intfloat/multilingual-e5-small"
+revisao = "614241f622f5"
+data_de_acesso = "2026-10-16"
+# Do repositório OFICIAL (não da conversão Xenova, cujo card não declara licença). Peso fora do
+# pacote (ADR-0020), baixado no primeiro uso; hashes calculados dos arquivos baixados na revisão.
+baixar_de = "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/"
+destino = "modelos/intfloat--multilingual-e5-small"
+nota = """Embedding do índice da memória (fatia 7, SPEC §6.3/§8.1): 384 dimensões, 100+ idiomas, \
+prefixos query:/passage:, média pela máscara e normalização. Lido pelo onnxruntime (MIT) com o \
+tokenizers (Apache-2.0); nada sai da máquina. Medido nesta máquina: ~5 ms por consulta curta \
+(fp32, 2 threads). A variante int8 do mesmo repositório deu ~2,8 ms e cosseno médio 0,9975 \
+contra a fp32, mas é otimizada para AVX-512 VNNI e não foi testada em outra CPU; fica fora."""
+
+[[modelo.arquivo]]
+nome = "onnx/model.onnx"
+bytes = 470268510
+sha256 = "ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665"
+
+[[modelo.arquivo]]
+nome = "tokenizer.json"
+bytes = 17082730
+sha256 = "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+
+[[modelo]]
 id = "BAAI/bge-m3"
 papel = "embedding"
 licenca = "MIT"

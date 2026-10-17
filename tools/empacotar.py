@@ -44,7 +44,7 @@ VERSAO_PYTHON: Final = "3.12"
 ID: Final = "dev.sodredev.Jarvis"
 NOME: Final = "jarvis"
 VERSAO: Final = "0.0.0"
-GRUPOS: Final[tuple[str, ...]] = ("gui", "voz", "asr", "dispositivo")
+GRUPOS: Final[tuple[str, ...]] = ("gui", "voz", "asr", "dispositivo", "memoria")
 """O que vai dentro do pacote: a janela, a voz local, o ASR local e o dispositivo de áudio.
 
 `edge` fica de fora de propósito — é extra LGPL de um motor barrado por padrão (ADR-0017), e

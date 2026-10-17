@@ -162,3 +162,38 @@ def test_toda_descarga_do_registro_tem_hash_e_tamanho() -> None:
         assert descarga.arquivos, descarga.id
         for arquivo in descarga.arquivos:
             assert arquivo.bytes > 0 and len(arquivo.sha256) == 64, f"{descarga.id}/{arquivo.nome}"
+
+
+def test_arquivo_em_subpasta_do_repositorio_cai_na_mesma_subpasta(
+    servidor: ServidorDePesos, tmp_path: Path
+) -> None:
+    """O e5 tem `onnx/model.onnx` e `tokenizer.json` na raiz: o nome é o caminho relativo."""
+    porta = servidor.server_address[1]
+    descarga = Descarga(
+        id="exemplo/embedding",
+        papel="embedding",
+        licenca="MIT",
+        destino=tmp_path / "e5",
+        arquivos=(
+            ArquivoDeModelo(
+                nome="onnx/model.onnx",
+                bytes=len(CONTEUDO),
+                sha256=hashlib.sha256(CONTEUDO).hexdigest(),
+                url=f"http://127.0.0.1:{porta}/onnx/model.onnx",
+            ),
+        ),
+    )
+    baixar(descarga)
+    assert (tmp_path / "e5" / "onnx" / "model.onnx").read_bytes() == CONTEUDO
+
+
+@pytest.mark.parametrize("nome", ["../fora.onnx", "/etc/passwd", "a/../../b"])
+def test_nome_que_sai_da_pasta_do_modelo_e_recusado(tmp_path: Path, nome: str) -> None:
+    registro = tmp_path / "modelos.toml"
+    registro.write_text(
+        '[[modelo]]\nid = "x"\nbaixar_de = "https://exemplo.invalid/"\ndestino = "x"\n'
+        f'[[modelo.arquivo]]\nnome = "{nome}"\nbytes = 1\nsha256 = "{"0" * 64}"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="fora da pasta"):
+        descargas(arquivo=registro, pasta=tmp_path)

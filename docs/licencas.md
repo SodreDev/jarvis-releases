@@ -16,6 +16,7 @@ Refazer a verificação na origem: `tools/license_gate.py --online`.
 | asr | `openai/whisper-small` | Apache-2.0 | permissiva | em_uso | <https://huggingface.co/api/models/openai/whisper-small> | 2026-10-15 |
 | embedding | `BAAI/bge-m3` | MIT | permissiva | candidato | <https://huggingface.co/api/models/BAAI/bge-m3> | 2026-10-15 |
 | embedding | `intfloat/multilingual-e5-base` | MIT | permissiva | candidato | <https://huggingface.co/api/models/intfloat/multilingual-e5-base> | 2026-10-15 |
+| embedding | `intfloat/multilingual-e5-small` | MIT | permissiva | em_uso | <https://huggingface.co/api/models/intfloat/multilingual-e5-small> | 2026-10-16 |
 | embedding | `Qwen/Qwen3-Embedding-0.6B` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/Qwen/Qwen3-Embedding-0.6B> | 2026-10-15 |
 | reranker | `BAAI/bge-reranker-v2-m3` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/BAAI/bge-reranker-v2-m3> | 2026-10-15 |
 | reranker | `jinaai/jina-reranker-v2-base-multilingual` | CC-BY-NC-4.0 | nao_comercial | barrado | <https://huggingface.co/api/models/jinaai/jina-reranker-v2-base-multilingual> | 2026-10-15 |
