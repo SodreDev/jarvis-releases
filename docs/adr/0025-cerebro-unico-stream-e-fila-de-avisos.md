@@ -211,6 +211,41 @@ regra 2 (o que "`s2` cancela geração" exige) e §3.4 (`modo`, `avisos_pendente
 pela da regra 6 quando a fatia mínima entrar; a ADR-0018 continua valendo até lá para o
 `jarvis-voz`.
 
+## Ajustes da implementação (2026-10-16, fatia 4: fila de avisos)
+
+`jarvis.agentd.fila_de_avisos` (a fila), `jarvis.s2.avisos` (a decisão de entrega e a frase),
+`Cerebro.responder(avisos=…)` e `Cerebro.avisar` (a fala), `fala_em_stream.avisos_tocados` (o
+que tocou). O que mudou em relação ao texto das regras 11–15:
+
+1. **`Notification` leva `resumo` em texto** (até 280), e não só `resumo_ref`: o card e a voz
+   precisam de algo legível, e buscar o texto em outro lugar a cada aviso seria uma segunda
+   leitura no caminho da fala. A origem `tarefas` entra no contrato quando o processo da
+   ADR-0022 existir (a lista de fontes da §3.1 ainda não o tem).
+2. **O teto de 2 min (D22) vale para o aviso espontâneo**, não para o que vai junto com a
+   mensagem do dono: ali quem abriu a conversa foi ele, e segurar o aviso esconderia o que ele
+   decidiu que quer saber. Espontâneo, sai **um por vez**: com um aviso liberado e ainda não
+   tocado, cortado ou decidido, a fila não libera outro (defeito que o teste pegou).
+3. **A frase do aviso é montada pelo código**, a partir do `resumo`, e sai antes da resposta em
+   pedaços marcados com `notif_ids`; o motor recebe, no contexto, que o aviso já foi dito e
+   responde à mensagem. Sem isso não há como saber se o aviso **tocou** (regra 15). Resumo de
+   terceiros é dito como de terceiros ("Aviso de mcp · arquivos: …"). O julgamento do modelo
+   entra por `julgar` (falar, só card, calar); `precisa_decisao` nunca é calado.
+4. **Card:** `FilaDeAvisos.dados_do_card()` devolve `{"avisos": [...]}` no contrato que o
+   componente `notificacoes` já valida (`tipo`, `origem`, `resumo`, `instante`, `entrega`,
+   `confianca`); o teste passa os dados pelo próprio `validar_dados` da janela. **Não ligado na
+   janela:** quem troca os dados de demonstração pelos da fila é a `ponte`, que é da CLI da
+   janela. E o vocabulário fechado não tem ação para **atualizar os dados** de um widget já
+   criado: `createWidget` de novo cria outro. É preciso uma ação nova (emenda da ADR-0019) ou
+   uma regra de "mesmo componente substitui" no `Workspace`.
+
+Testado sem rede e sem microfone: fila (`tests/unit/agentd/test_fila_de_avisos.py`), `s2`
+(`tests/unit/s2/test_avisos.py`) e uma hora simulada com 50 avisos e barge-in
+(`tests/integration/test_fila_de_avisos_ponta_a_ponta.py`, aceites (d), (e) e (f)): nenhuma
+liberação com o dono falando, com TTS tocando ou com menos de 1,5 s de silêncio; espontâneos com
+2 min de distância; a mensagem do dono leva todos os pendentes; aviso cortado volta, e nenhum se
+perde. **Não ligado:** os processos `agentd` e `s2` reais pelo barramento (a fila e o cérebro
+rodam em biblioteca), e o "não perturbe" não tem interruptor na UI.
+
 ## Decisões do diretor (2026-10-16)
 
 Decisões do diretor de 2026-10-16 (o dono delegou "siga a partir daí"); o dono pode revisar qualquer uma delas.
