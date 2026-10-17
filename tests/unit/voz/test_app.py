@@ -377,3 +377,25 @@ def test_o_turno_leva_os_quadros_de_antes_de_o_vad_disparar(tmp_path: Path) -> N
     assert app.turnos, "nenhum turno fechou"
     # 20 quadros guardados + 10 de fala + 700 ms de silêncio (35 quadros): sem o guardado, 900 ms.
     assert app.turnos[0].ouvido_ms >= 1200.0, app.turnos[0].ouvido_ms
+
+
+def test_o_aviso_de_privacidade_sai_uma_vez_e_nao_a_cada_conversa(tmp_path: Path) -> None:
+    # Bug do dono (2026-10-17): a conversa voltava a mostrar o texto longo de privacidade da
+    # Groq/ElevenLabs a cada sessão; depois da primeira vez ele só vive no painel.
+    ja_ditos: set[str] = set()
+    sessoes: list[list[str]] = []
+    for numero in range(2):
+        app = aplicativo_de(tmp_path / str(numero))
+        app.configuracao = Configuracao(
+            asr="asr-groq-whisper-large-v3-turbo", tts="tts-parametrico", s2="eco"
+        )
+        app.avisos_dados = ja_ditos
+        linhas: list[str] = []
+        app.escrever_na_tela = linhas.append
+        app.abrir(com_asr=False)
+        app._dizer_o_que_esta_ligado()
+        sessoes.append(linhas)
+
+    assert any("DESLIGADO" in linha for linha in sessoes[0])
+    assert not any("DESLIGADO" in linha for linha in sessoes[1]), sessoes[1]
+    assert any("falando com:" in linha for linha in sessoes[1]), "o resumo continua aparecendo"

@@ -89,6 +89,9 @@ class SessaoDeVoz:
     escuta: Escuta | None = None
     """O modo de escuta vivo, de quem abriu a sessão (a ponte). Trocá-lo vale no próximo tique
     do laço, sem reiniciar nada (ADR-0021). `None` = o laço monta um da configuração."""
+    avisos_dados: set[str] = field(default_factory=set)
+    """Os avisos de privacidade já ditos; quem abre as sessões (a ponte) passa o mesmo conjunto
+    a todas, e o texto longo não volta a cada conversa."""
     modo_texto: bool = False
     """Começa no modo texto (sem abrir dispositivo). Vira verdadeiro sozinho se o áudio cair."""
 
@@ -121,6 +124,7 @@ class SessaoDeVoz:
     def _ligar(self, aplicativo: Aplicativo) -> Aplicativo:
         """Liga as três portas da ADR-0019 (mais a tela e o teclado) no laço."""
         aplicativo.escrever_na_tela = self.ao_linha
+        aplicativo.avisos_dados = self.avisos_dados
         aplicativo.teclado = self.teclado
         aplicativo.ao_mudar_estado = self.ao_estado
         aplicativo.ao_mudar_avisos = self.ao_mudar_avisos

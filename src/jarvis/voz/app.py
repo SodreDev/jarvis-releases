@@ -340,6 +340,10 @@ class Aplicativo:
     bloqueia — quem espera a resposta é o laço, em `_confirmar`. Sem janela, a resposta é não."""
     ao_fim_da_confirmacao: Callable[[str], None] | None = None
     """O pedido saiu (respondido, prazo vencido ou turno interrompido): a janela o tira."""
+    avisos_dados: set[str] = field(default_factory=set)
+    """Os avisos de privacidade que o dono já leu nesta execução. A janela passa o MESMO
+    conjunto a cada conversa que abre: o texto longo sai uma vez ao ligar, e depois só vive no
+    painel de Configuração (bug do dono, 2026-10-17: voltava a cada sessão, sujando a conversa)."""
     lar: Path = field(default_factory=Path.home)
     """A casa do dono, de onde saem as raízes do modo de acesso e a lista de negação (§5.5)."""
     ao_mudar_avisos: Callable[[], None] | None = None
@@ -1111,8 +1115,13 @@ class Aplicativo:
                 " ferramentas"
             )
         for motor in self.configuracao.motores_de_nuvem_escolhidos():
+            ligado = motor.id in self.configuracao.nuvem_ligada
+            chave = f"{'ligado' if ligado else 'desligado'}:{motor.id}"
+            if chave in self.avisos_dados:
+                continue  # já dito nesta execução; o painel de Configuração guarda o texto
+            self.avisos_dados.add(chave)
             self.escrever_na_tela("")
-            if motor.id in self.configuracao.nuvem_ligada:
+            if ligado:
                 self.escrever_na_tela(f"  {motor.frase_de_aviso}")
             else:
                 # Escolhido e desligado não manda nada para fora: dizer "o seu áudio sai"

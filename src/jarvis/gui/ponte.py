@@ -243,6 +243,7 @@ class Ponte(QObject):
         self._sessao: SessaoDeVoz | None = None
         self._estado = Estado.PARADO
         self._transcricao: list[dict[str, str]] = []
+        self._avisos_dados: set[str] = set()  # privacidade já dita: só uma vez por execução
         self._diagnostico = ""
         self._nivel = 0.0
         self._aviso = ""
@@ -598,6 +599,7 @@ class Ponte(QObject):
             ao_pedir_confirmacao=self._pedir_confirmacao,
             ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,
             escuta=self._escuta,
+            avisos_dados=self._avisos_dados,
         )
         self._sessao.iniciar(self._aplicativo)
         self.conversaMudou.emit()
