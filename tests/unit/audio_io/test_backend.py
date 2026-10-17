@@ -17,6 +17,7 @@ from jarvis.audio_io import (
     SumidouroDeDispositivo,
     SumidouroEmMemoria,
     backend_escolhido,
+    dispositivo_pedido,
     em_ci,
     fonte_do_ambiente,
     sumidouro_do_ambiente,
@@ -27,6 +28,35 @@ from jarvis.relogio import RelogioFalso
 def test_sem_a_variavel_o_padrao_e_sintetico_e_nao_a_placa_de_som() -> None:
     assert backend_escolhido({}) is Backend.SINTETICO
     assert isinstance(fonte_do_ambiente(relogio=RelogioFalso(), ambiente={}), FonteSintetica)
+
+
+def test_o_aplicativo_sem_a_variavel_fora_do_ci_usa_a_placa_de_som(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Bug do dono (2026-10-17): o padrão sintético valia também para o aplicativo, que falava
+    # para uma lista em memória e ouvia um gerador de teste, sem erro nenhum.
+    monkeypatch.delenv("CI", raising=False)
+    assert backend_escolhido({}, de_produto=True) is Backend.DISPOSITIVO
+    assert backend_escolhido({}) is Backend.SINTETICO  # quem mede e testa continua sem placa
+    assert backend_escolhido({"CI": "1"}, de_produto=True) is Backend.SINTETICO
+    assert backend_escolhido({VARIAVEL_BACKEND: "arquivo"}, de_produto=True) is Backend.ARQUIVO
+
+
+def test_sob_ci_no_ambiente_do_processo_o_aplicativo_tambem_nao_abre_a_placa(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CI", "1")
+    assert backend_escolhido({}, de_produto=True) is Backend.SINTETICO
+
+
+@pytest.mark.parametrize(
+    ("campo", "esperado"),
+    [("", None), ("  ", None), ("3", 3), ("pipewire", "pipewire"), (" Ba-FON240 ", "Ba-FON240")],
+)
+def test_entrada_e_saida_da_configuracao_viram_o_dispositivo_do_portaudio(
+    campo: str, esperado: int | str | None
+) -> None:
+    assert dispositivo_pedido(campo) == esperado
 
 
 def test_valor_desconhecido_da_variavel_e_erro_com_a_lista_do_que_vale() -> None:

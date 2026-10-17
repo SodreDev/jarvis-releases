@@ -50,11 +50,13 @@ from jarvis.agentd.tts import (
     Trecho,
     fatiar,
 )
-from jarvis.audio_io.backend import fonte_do_ambiente, sumidouro_do_ambiente
+from jarvis.audio_io.ambiente import Backend, backend_escolhido
+from jarvis.audio_io.backend import dispositivo_pedido, fonte_do_ambiente, sumidouro_do_ambiente
 from jarvis.audio_io.captura import Captura
 from jarvis.audio_io.erros import ErroDeAudio
 from jarvis.audio_io.playback import FilaDePlayback, Pedaco
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
+from jarvis.audio_io.sumidouros import SumidouroDeAudio
 from jarvis.audio_io.vad import Vad
 from jarvis.barramento.envelope import Envelope, uuid7
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
@@ -777,19 +779,55 @@ class Aplicativo:
         """
         self.abrir(com_asr=False)
         self._dizer_o_que_esta_ligado()
-        for linha in linhas:
-            texto = linha.strip()
-            if not texto:
-                continue
-            if texto in {"/sair", "/quit", "/q"}:
-                break
-            turno = self.responder(texto)
-            self.turnos.append(turno)
-            if turno.respondeu:
-                self.escrever_na_tela(f"Jarvis: {turno.respondeu}")
-            self.escrever_na_tela(turno.resumo())
+        sumidouro = self._abrir_a_saida_do_texto()
+        fila = (
+            FilaDePlayback(sumidouro=sumidouro, session_id=self.session_id, epoch_atual=self.epoch)
+            if sumidouro is not None
+            else None
+        )
+        try:
+            for linha in linhas:
+                texto = linha.strip()
+                if not texto:
+                    continue
+                if texto in {"/sair", "/quit", "/q"}:
+                    break
+                turno = self.responder(texto, fila=fila)
+                self.turnos.append(turno)
+                if turno.respondeu:
+                    self.escrever_na_tela(f"Jarvis: {turno.respondeu}")
+                self.escrever_na_tela(turno.resumo())
+        finally:
+            if sumidouro is not None:
+                sumidouro.fechar()
         self._mudar(Estado.PARADO)
         return 0
+
+    def _abrir_a_saida_do_texto(self) -> SumidouroDeAudio | None:
+        """O alto-falante (ou o WAV) do modo texto — ou `None`, que é só medir a síntese.
+
+        Foi a falta disto que calou a janela em 2026-10-17: o modo texto, onde a janela cai
+        quando o ASR escolhido não roda, sintetizava a resposta e a jogava fora. Sem placa de som
+        a frase diz o que faltou e o texto continua; ninguém fica achando que o som saiu.
+        """
+        backend = backend_escolhido(self.ambiente, de_produto=True)
+        if backend is Backend.SINTETICO or (
+            backend is Backend.ARQUIVO and self.caminho_de_saida is None
+        ):
+            return None
+        try:
+            sumidouro = sumidouro_do_ambiente(
+                caminho=self.caminho_de_saida,
+                ambiente=self.ambiente,
+                de_produto=True,
+                dispositivo=dispositivo_pedido(self.configuracao.saida),
+            )
+            sumidouro.abrir()
+        except ErroDeAudio as erro:
+            self.escrever_na_tela(f"  sem som: {erro}")
+            return None
+        self.escrever_na_tela(f"  som por: {sumidouro.device_id}")
+        return sumidouro
 
     # --- modo áudio ----------------------------------------------------------------------
     def rodar_audio(self, *, limite_de_turnos: int | None = None, vad: Vad | None = None) -> int:
@@ -797,9 +835,18 @@ class Aplicativo:
         self.abrir()
         self._dizer_o_que_esta_ligado()
         fonte = fonte_do_ambiente(
-            relogio=self.relogio, caminho=self.caminho_de_entrada, ambiente=self.ambiente
+            relogio=self.relogio,
+            caminho=self.caminho_de_entrada,
+            ambiente=self.ambiente,
+            de_produto=True,
+            dispositivo=dispositivo_pedido(self.configuracao.entrada),
         )
-        sumidouro = sumidouro_do_ambiente(caminho=self.caminho_de_saida, ambiente=self.ambiente)
+        sumidouro = sumidouro_do_ambiente(
+            caminho=self.caminho_de_saida,
+            ambiente=self.ambiente,
+            de_produto=True,
+            dispositivo=dispositivo_pedido(self.configuracao.saida),
+        )
         captura = Captura(
             fonte=fonte, relogio=self.relogio, session_id=self.session_id, epoch=self.epoch
         )

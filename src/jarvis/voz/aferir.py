@@ -25,7 +25,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from jarvis.audio_io.backend import fonte_do_ambiente, sumidouro_do_ambiente
+from jarvis.audio_io.backend import (
+    dispositivo_pedido,
+    fonte_do_ambiente,
+    sumidouro_do_ambiente,
+)
 from jarvis.audio_io.captura import SEGUNDOS_POR_QUADRO
 from jarvis.audio_io.erros import ErroDeAudio
 from jarvis.audio_io.quadro import TAXA_PADRAO
@@ -132,9 +136,12 @@ def medir_microfone(
     `ao_quadro` recebe o dB de cada quadro — é o que move a barrinha de nível na tela sem a
     tela precisar saber o que é um quadro. `cancelado` deixa o dono fechar a aba no meio.
     """
-    _ = configuracao
     fonte = fonte_do_ambiente(
-        relogio=relogio or RelogioDoSistema(), caminho=caminho_de_entrada, ambiente=ambiente
+        relogio=relogio or RelogioDoSistema(),
+        caminho=caminho_de_entrada,
+        ambiente=ambiente,
+        de_produto=True,
+        dispositivo=dispositivo_pedido(configuracao.entrada),
     )
     try:
         fonte.abrir()
@@ -192,7 +199,12 @@ def provar_voz(
             "--group voz` (a voz local) ou escolha outro motor de fala"
         )
     try:
-        sumidouro = sumidouro_do_ambiente(caminho=caminho_de_saida, ambiente=ambiente)
+        sumidouro = sumidouro_do_ambiente(
+            caminho=caminho_de_saida,
+            ambiente=ambiente,
+            de_produto=True,
+            dispositivo=dispositivo_pedido(configuracao.saida),
+        )
         sumidouro.abrir()
     except (ErroDeAudio, ValueError) as erro:
         return ProvaDeVoz(erro=str(erro), motor=motor.nome, onde=str(motor.onde))

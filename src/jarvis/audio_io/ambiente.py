@@ -43,10 +43,21 @@ class Backend(StrEnum):
     DISPOSITIVO = "dispositivo"
 
 
-def backend_escolhido(ambiente: Mapping[str, str] | None = None) -> Backend:
-    """Backend pedido por `JARVIS_AUDIO_BACKEND`; valor desconhecido é erro, não padrão."""
+def backend_escolhido(
+    ambiente: Mapping[str, str] | None = None, *, de_produto: bool = False
+) -> Backend:
+    """Backend pedido por `JARVIS_AUDIO_BACKEND`; valor desconhecido é erro, não padrão.
+
+    Sem a variável, o padrão é `sintetico` — a suíte e as ferramentas de medição não abrem a
+    placa de som por acidente. `de_produto=True` é o pedido de quem é o aplicativo do dono (a
+    janela, o `jarvis-voz`): sem a variável e **fora do CI**, o padrão é o `dispositivo`. Foi
+    a falta disto que deixou o Jarvis mudo e surdo em 2026-10-17: o aplicativo falava para uma
+    lista em memória e ouvia um gerador de teste, sem erro nenhum.
+    """
     bruto = ambiente_ou_os(ambiente).get(VARIAVEL_BACKEND, "").strip().lower()
     if not bruto:
+        if de_produto and not (em_ci(ambiente) or em_ci(None)):
+            return Backend.DISPOSITIVO
         return Backend.SINTETICO
     try:
         return Backend(bruto)

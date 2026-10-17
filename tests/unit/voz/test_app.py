@@ -109,6 +109,33 @@ def test_modo_texto_responde_e_sintetiza(tmp_path: Path) -> None:
     assert any("Jarvis: Você disse: bom dia" in linha for linha in saidas)
 
 
+def test_modo_texto_fala_de_verdade_quando_ha_onde_tocar(tmp_path: Path) -> None:
+    # Bug do dono (2026-10-17): a janela cai no modo texto quando o ASR escolhido não roda, e
+    # o modo texto sintetizava a resposta e a jogava fora — a voz "nunca saía".
+    saida = tmp_path / "fala.wav"
+    app = aplicativo_de(
+        tmp_path,
+        ambiente={"JARVIS_AUDIO_BACKEND": "arquivo"},
+        caminho_de_saida=saida,
+    )
+    app.rodar_texto(["bom dia", "/sair"])
+
+    with wave.open(str(saida), "rb") as arquivo:
+        quadros = arquivo.getnframes()
+    assert quadros > 0, "o modo texto não entregou áudio ao alto-falante"
+    assert app.turnos[0].amostras_tocadas == quadros
+
+
+def test_modo_texto_sem_placa_diz_o_que_faltou_e_continua(tmp_path: Path) -> None:
+    app = aplicativo_de(tmp_path, ambiente={"JARVIS_AUDIO_BACKEND": "dispositivo", "CI": "1"})
+    saidas: list[str] = []
+    app.escrever_na_tela = saidas.append
+    app.rodar_texto(["bom dia", "/sair"])
+
+    assert any(linha.strip().startswith("sem som:") for linha in saidas)
+    assert app.turnos[0].respondeu == "Você disse: bom dia"
+
+
 def test_linha_vazia_nao_vira_turno(tmp_path: Path) -> None:
     app = aplicativo_de(tmp_path)
     app.rodar_texto(["", "   ", "/sair"])

@@ -22,7 +22,11 @@ from jarvis.audio_io.ambiente import (
     em_ci,
     proibir_dispositivo_em_ci,
 )
-from jarvis.audio_io.backend import fonte_do_ambiente, sumidouro_do_ambiente
+from jarvis.audio_io.backend import (
+    dispositivo_pedido,
+    fonte_do_ambiente,
+    sumidouro_do_ambiente,
+)
 from jarvis.audio_io.captura import Captura
 from jarvis.audio_io.dsp import (
     CanceladorDeEco,
@@ -133,6 +137,7 @@ __all__ = [
     "backend_escolhido",
     "como_int16",
     "de_int16",
+    "dispositivo_pedido",
     "eco",
     "em_ci",
     "em_pedacos",
