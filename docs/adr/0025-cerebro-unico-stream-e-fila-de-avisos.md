@@ -246,6 +246,28 @@ liberação com o dono falando, com TTS tocando ou com menos de 1,5 s de silênc
 perde. **Não ligado:** os processos `agentd` e `s2` reais pelo barramento (a fila e o cérebro
 rodam em biblioteca), e o "não perturbe" não tem interruptor na UI.
 
+## Ajustes da implementação (2026-10-17, fatia 5: a janela)
+
+- **O `Aplicativo` (o laço do `jarvis-voz` e da janela) responde pelo `Cerebro`.** O motor gera
+  numa linha de execução; o laço, que é o dono do epoch e da fila, sintetiza e toca cada
+  `ResponseChunk` assim que chega, olhando o teclado entre os quadros. A interface
+  `responder(texto) -> str` da ADR-0018 sai do laço, como esta ADR previa; a ADR-0018 continua
+  valendo para o motor `claude -p`, que segue provisório.
+- **Motor padrão é o eco** (`s2 = "eco"`, sem rede); o `claude -p` só roda com `s2 = "claude"`
+  escolhido pelo dono, e a tela diz `[nuvem]` ao lado do nome (D18).
+- **A janela mostra a resposta crescendo** (porta `ao_pedaco` do laço) e troca a linha parcial
+  pela final; o estado do núcleo (pensando → falando → repouso) vem do laço, e `falando` só
+  começa no primeiro pedaço de áudio pronto. O "interromper" da janela mata o epoch: o cérebro
+  fecha o motor e a fila descarta o que não tocou (teste: cancelamento durante o "pensando",
+  com motor de 6 s, volta em menos de 1 s).
+- **A fila de avisos mora no laço**, que no app faz o papel do `agentd`: a janela não importa
+  `agentd` nem barramento (teste de fronteira da ADR-0019). O card `notificacoes` mostra a fila
+  pelo `updateWidget` com `dados_reais`, sem o selo de demonstração; o roteiro não escreve mais
+  avisos inventados nele. Falha da conversa e do motor entram como aviso `falhou`, só no card.
+- **Não feito:** a fila do laço ainda não libera avisos para a voz (`NotificationRelease` →
+  `Cerebro.avisar`) — no app, os avisos ficam no card; e não há produtor real de avisos além das
+  falhas, porque ainda não há tarefa (ADR-0022) nem cliente MCP (ADR-0023).
+
 ## Decisões do diretor (2026-10-16)
 
 Decisões do diretor de 2026-10-16 (o dono delegou "siga a partir daí"); o dono pode revisar qualquer uma delas.
