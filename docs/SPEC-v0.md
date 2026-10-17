@@ -369,6 +369,8 @@ MemoryIndex:
 
 Duas implementações desde F1: `ChromaIndex` (padrão, por decisão do dono — reaproveita o que já roda no Orchestrator, ChromaDB + reranker) e `LanceIndex` (candidato da pesquisa: embutido, BM25/FTS e RRF na própria API). A escolha final sai da medição (§8.1), não de preferência.
 
+**Emenda (ADR-0005, item 5, 2026-10-16; pela regra fechada da §8.1, com corpus sintético — provisória até o C2 real):** o índice do produto é o `LanceIndex`. O `ChromaIndex` foi vetado: o vetor apagado continua no disco mesmo depois do `chroma vacuum` (gate 2 não verificável pela API pública). Qualidade empatou; o Chroma foi mais rápido. Números em `docs/medicoes/f3-01-indice.md`. O filtro da interface é igualdade de metadado (`tipo`, `status`), aplicado dentro do índice antes do ranking; a validade temporal é conferida no livro.
+
 Pipeline de recuperação (versão completa com grafo em §6.8): `filtro ACL+tempo+status → top 40 léxico + top 40 denso + ativação de grafo → RRF → top 20 no cross-encoder de licença comercial (se houver orçamento) → MMR → 4–8 evidências com IDs e com o caminho que as justificou`. Pontuação baixa ⇒ "não encontrei evidência", nunca lembrança inventada.
 
 ### 6.4 Escrita e consolidação

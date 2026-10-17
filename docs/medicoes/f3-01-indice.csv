@@ -1,0 +1,11 @@
+candidato,execucao,limiar,recall20_C2a,ndcg10_C2a,recall20_C2b,ndcg10_C2b,recall20_C2c,ndcg10_C2c,recall20,abstencao_correta,abstencao_indevida,n_retidas,busca_p50_ms,busca_p95_ms,busca_n,fria_ms,indexar_por_1k_ms,indexar_cpu_por_1k_ms,rss_pico_mib,disco_mib,expurgar_ms
+chroma,1,0.8545,0.7222,0.5940,0.7333,0.4385,0.5556,0.3624,0.6905,0.7000,0.5238,52,4.2305,5.3368,525,4.2163,358.9837,482.7299,164.7539,9.3486,nan
+chroma,2,0.8545,0.7778,0.6496,0.7333,0.4385,0.5556,0.4034,0.7143,0.7000,0.5000,52,4.1663,5.4118,525,4.2778,350.4812,478.3854,166.6641,9.3488,nan
+chroma,3,0.8545,0.7778,0.6496,0.7333,0.4385,0.5556,0.3624,0.7143,0.7000,0.5000,52,4.1828,5.2104,525,4.3007,353.7029,476.2117,168.3828,9.3525,nan
+lance,1,0.8545,0.7778,0.6496,0.7333,0.4385,0.5556,0.3624,0.7143,0.7000,0.5000,52,5.5645,6.7157,525,7.5053,349.1316,356.3379,383.2461,5.0445,20.1295
+lance,2,0.8545,0.7778,0.6496,0.7333,0.4385,0.5556,0.3624,0.7143,0.7000,0.5000,52,5.6150,6.7456,525,6.6936,364.9068,372.7343,381.0781,5.0445,19.4672
+lance,3,0.8545,0.7778,0.6496,0.7333,0.4385,0.5556,0.3624,0.7143,0.7000,0.5000,52,5.9114,7.5329,525,7.6991,348.7168,357.0939,380.3828,5.0445,20.2845
+
+candidato_veto,filtro_antes_do_ranking,delete_tira_da_busca,vetor_no_disco_depois_do_delete,vetor_no_disco_depois_da_manutencao,manutencao,onde_ficou,listas_iguais_nas_3
+chroma,True,True,True,True,chroma vacuum (CLI documentado) e reabrir o cliente,0a809b70-2584-46ce-8229-676cea9d6e1f/data_level0.bin; chroma.sqlite3,False
+lance,True,True,True,False,"IndiceLance.expurgar (reescrever + optimize), API pública",-,True
