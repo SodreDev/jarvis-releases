@@ -10,6 +10,7 @@ Row {
     property var microfone: ({})
     readonly property bool aberta: microfone.aberta === true
     readonly property bool armado: microfone.armado === true
+    readonly property bool preparando: microfone.preparando === true
     spacing: 7
 
     Rectangle {
@@ -22,7 +23,8 @@ Row {
     }
     Rotulo {
         anchors.verticalCenter: parent.verticalCenter
-        text: (indicador.aberta ? "mic aberto" : "mic fechado")
+        text: (indicador.aberta ? "mic aberto"
+               : indicador.preparando ? "preparando o microfone…" : "mic fechado")
               + (indicador.armado ? " · chamado"
                  : indicador.microfone.modoFrase ? " · " + indicador.microfone.modoFrase : "")
         color: indicador.armado ? Tema.alerta

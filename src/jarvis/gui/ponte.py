@@ -337,8 +337,17 @@ class Ponte(QObject):
         """
         estado = self._sessao.estado_do_microfone() if self._sessao else None
         aberta = bool(estado and estado.aberta)
+        sessao = self._sessao
         return {
             "aberta": aberta,
+            # A conversa foi pedida e o microfone ainda não abriu: o laço está carregando os
+            # modelos (alguns segundos na primeira vez). Dizer "mic fechado" ali parecia defeito.
+            "preparando": bool(
+                sessao is not None
+                and sessao.viva
+                and not aberta
+                and not getattr(sessao, "modo_texto", False)
+            ),
             "modo": str(self._escuta.modo),
             "modoFrase": self._escuta.modo.frase,
             "escuta": self._escuta.frase(time.monotonic_ns()),

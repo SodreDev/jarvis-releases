@@ -87,6 +87,30 @@ aparece acima da barra de conversa, com o motivo.
    "eleven_v3"`**: para o mais rápido, clique em `eleven_flash_v2_5` na linha da ElevenLabs e
    salve.
 
+### 0.0b Os consertos de 2026-10-17 (noite): som, ouvido, botão e configuração
+
+1. **Som de verdade.** A causa raiz de "nunca sai som": o aplicativo usava por padrão o backend
+   `sintetico` (a voz ia para uma lista em memória e o microfone era um gerador de teste), e o
+   modo texto — onde a janela cai quando o ASR escolhido não roda — sintetizava e jogava fora.
+   Agora, fora do CI e sem `JARVIS_AUDIO_BACKEND`, abre a placa; `entrada`/`saida` do
+   `jarvis-voz.toml` (índice ou nome do `--diagnostico`) chegam ao PortAudio. Conferido
+   gravando o monitor do sink padrão: piper local rms ≈ 1170 e ElevenLabs rms ≈ 2400 (silêncio = 0).
+2. **Groq desligada não deixa surdo.** O laço ouve pelo whisper local e diz numa linha.
+3. **Botão/espaço de falar** não interrompe mais a si mesmo: a tecla só interrompe com o Jarvis
+   falando, preparando a fala ou esperando confirmação. "Mic fechado" durante o carregamento
+   virou "preparando o microfone…".
+4. **Ativação por voz** (palavra e VAD): VAD do produto (silero), 400 ms de áudio guardados antes
+   do disparo e o nome "Jarvis" como dica para o whisper local. Provado com sink virtual
+   (PipeWire privado, sem microfone real): a frase gerada pelo piper entra como microfone e o
+   Jarvis responde nos dois modos.
+5. **Privacidade** em texto longo: uma vez por execução; depois só no painel de Configuração.
+6. **Configuração → abas** "pastas e arquivos" (seletor nativo, só leitura / leitura e escrita,
+   negações fixas à mostra), "aplicativos" (marcar os instalados, ou escolher programa/.desktop) e
+   "navegadores" (detectados, binário de cada um, principal). Cada clique grava na hora só os
+   campos de acesso e vale na conversa aberta. `sites.open` abre no navegador principal.
+   Limite honesto: acesso é por **pasta** (arquivo solto é recusado), e "escrita" fica guardada mas
+   nenhuma ferramenta grava fora da pasta do Jarvis ainda.
+
 ### 0.1 Pedir para o Jarvis fazer coisas (ferramentas, fatia 6)
 
 O Jarvis não monta comando: ele **propõe** uma ferramenta tipada (listar pasta, ler arquivo,

@@ -62,6 +62,12 @@ def _centro(janela: QQuickView, item: QQuickItem) -> QPoint:
     return QPoint(round(ponto.x()), round(ponto.y()))
 
 
+def _clicar_em(janela: QQuickView, item: QQuickItem) -> None:
+    QTest.mouseClick(
+        janela, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, _centro(janela, item)
+    )
+
+
 @pytest.fixture
 def conversa(
     aplicativo: QGuiApplication,
