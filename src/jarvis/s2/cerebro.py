@@ -33,8 +33,9 @@ from jarvis.executor.ferramentas import (
 )
 from jarvis.fatiador import Corte, FatiadorDeFala, PedacoDeFala
 from jarvis.memoryd.livro import LivroDeMemoria
-from jarvis.politica.memoria import Proveniencia, TurnoCorrente
+from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
+from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
 from jarvis.s2.motor import (
     Contexto,
     Fim,
@@ -88,6 +89,8 @@ class Resposta:
     deltas_depois_do_cancelamento: int = 0
     ferramentas: list[ResultadoDeFerramenta] = field(default_factory=list)
     """Cada chamada do turno, com o que aconteceu — para a auditoria e para o teste."""
+    memoria: MemoriaDoTurno | None = None
+    """O que o livro lembrou e foi ao prompt neste turno (fatia 7), com a proveniência."""
     ms_ate_contexto: float = 0.0
     ms_ate_primeiro_pedaco: float | None = None
     ms_cancelamento_ate_motor_parado: float | None = None
@@ -111,6 +114,13 @@ class Cerebro:
     """O executor das tools do catálogo v1 (ADR-0028). Sem ele, pedido de tool volta negado."""
     confirmar: Confirmar = negar_sempre
     """Como o dono confirma: a janela liga aqui. Sem janela, toda confirmação é não."""
+    lembrar_a_cada_turno: bool = True
+    """Com livro, consulta a memória antes de cada resposta (fatia 7, `memoria_do_turno`)."""
+    alcance_de_memoria: AlcanceDeMemoria = field(default_factory=AlcanceDeMemoria)
+    """O que o dono deixou a memória alcançar (ADR-0026, regra 7) — o D20 decide com ele."""
+    ao_lembrar: Callable[[MemoriaDoTurno], None] | None = None
+    """Chamada da linha do cérebro quando a consulta termina, antes do motor: é por onde a tela
+    mostra "lembrei: …". Quem liga aqui guarda e volta."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
 
     @property
@@ -147,7 +157,23 @@ class Cerebro:
                 session_id=self.session_id, papel="dono", texto=texto_do_dono, trust=trust
             )
             self.turno_corrente = TurnoCorrente(episodio, texto_do_dono, trust)
+        memoria = None
         contexto = self.conversa.contexto()
+        if self.livro is not None and self.lembrar_a_cada_turno:
+            memoria = consultar(
+                self.livro,
+                texto_do_dono,
+                onde=self.motor.onde,
+                motor=self.motor.nome,
+                alcance=self.alcance_de_memoria,
+            )
+            if self.ao_lembrar is not None:
+                self.ao_lembrar(memoria)
+            if memoria.bloco():
+                contexto = Contexto(
+                    sistema=f"{contexto.sistema}\n\n{memoria.bloco()}",
+                    mensagens=contexto.mensagens,
+                )
         if avisos:
             ditos = " ".join(frase_do_aviso(a) for a in avisos)
             contexto = Contexto(
@@ -161,6 +187,7 @@ class Cerebro:
             epoch=epoch,
             motor=self.motor.nome,
             ms_ate_contexto=_ms_desde(comeco),
+            memoria=memoria,
         )
         fatiador = FatiadorDeFala()
         visto_cancelamento = self._falar_avisos(

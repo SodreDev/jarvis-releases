@@ -18,21 +18,25 @@ invariantes do livro:
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import sqlite3
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, cast
 
 from jarvis.barramento.envelope import uuid7
 from jarvis.memoryd.cofre import Cofre
 from jarvis.memoryd.esquema import abrir
-from jarvis.memoryd.fusao import recuperar, rrf, termos
+from jarvis.memoryd.fusao import rrf, termos
 from jarvis.memoryd.importacao import classe_de_pii, redigir
 from jarvis.memoryd.indice import ItemDoIndice, MemoryIndex
+from jarvis.memoryd.recuperacao import Parametros
+from jarvis.memoryd.recuperacao import lembrar as lembrar_da_memoria
 from jarvis.politica.memoria import Estado, normalizar
 
 RETENCAO_DO_TURNO: Final = timedelta(days=90)
@@ -60,6 +64,15 @@ def _iso(momento: datetime) -> str:
     return momento.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def _com_trava[M: Callable[..., Any]](metodo: M) -> M:
+    @functools.wraps(metodo)
+    def travado(self: LivroDeMemoria, *args: Any, **kwargs: Any) -> Any:
+        with self.trava:
+            return metodo(self, *args, **kwargs)
+
+    return cast(M, travado)
+
+
 def _hash(texto: str) -> str:
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
@@ -70,6 +83,11 @@ class LivroDeMemoria:
     cofre: Cofre | None
     indice: MemoryIndex
     agora: Callable[[], datetime] = _agora
+    parametros: Parametros = field(default_factory=Parametros)
+    """Os da recuperação. O padrão (B, sem limiar) serve ao teste; o aplicativo passa os
+    calibrados (`Parametros.do_arquivo()`), que valem para o embedding com que foram medidos."""
+    trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    """O cérebro, o fim do turno e a consolidação chamam de linhas diferentes: uma de cada vez."""
     _ordem: dict[str, int] = field(default_factory=dict)
 
     @classmethod
@@ -80,6 +98,7 @@ class LivroDeMemoria:
         cofre: Cofre | None,
         indice: MemoryIndex,
         agora: Callable[[], datetime] = _agora,
+        parametros: Parametros | None = None,
     ) -> LivroDeMemoria:
         """Abre o livro. Em disco, **só com cofre**: sem cifra, a conversa não é gravada."""
         if str(caminho) != ":memory:" and cofre is None:
@@ -87,9 +106,16 @@ class LivroDeMemoria:
                 f"{caminho}: sem cofre não há histórico em disco — cifrar antes da primeira "
                 "gravação (ADR-0026, regra 6)"
             )
-        return cls(con=abrir(caminho), cofre=cofre, indice=indice, agora=agora)
+        return cls(
+            con=abrir(caminho, entre_threads=True),
+            cofre=cofre,
+            indice=indice,
+            agora=agora,
+            parametros=parametros or Parametros(),
+        )
 
     # --- turnos (M1) --------------------------------------------------------------------
+    @_com_trava
     def gravar_turno(
         self,
         *,
@@ -133,6 +159,7 @@ class LivroDeMemoria:
         self._unidade(episodio, None, redacao.texto)
         return episodio
 
+    @_com_trava
     def texto_bruto(self, episode_id: str) -> str:
         """O texto original, decifrado — para a tela do dono, não para o modelo."""
         linha = self.con.execute(
@@ -145,6 +172,7 @@ class LivroDeMemoria:
         bruto = bytes(linha["cifrado"])
         return (self.cofre.decifrar(bruto) if self.cofre is not None else bruto).decode("utf-8")
 
+    @_com_trava
     def buscar_historico(
         self, consulta: str, *, desde: str | None = None, ate: str | None = None, k: int = 5
     ) -> list[dict[str, Any]]:
@@ -192,6 +220,7 @@ class LivroDeMemoria:
                 break
         return achados
 
+    @_com_trava
     def ler_mensagem(self, episode_id: str, *, vizinhos: int = 2) -> list[dict[str, Any]]:
         alvo = self.con.execute(
             "SELECT session_id, ordem FROM turno WHERE episode_id = ?", (episode_id,)
@@ -219,6 +248,7 @@ class LivroDeMemoria:
         ]
 
     # --- memórias e grafo (M2) ----------------------------------------------------------
+    @_com_trava
     def lembrar(
         self,
         texto: str,
@@ -255,6 +285,7 @@ class LivroDeMemoria:
         self._citar(fonte)
         return {"assertion_id": assertiva, "estado": str(estado), "redigidos": redacao.total}
 
+    @_com_trava
     def atualizar(
         self, assertion_id: str, texto: str, *, motivo: str, fonte: str
     ) -> dict[str, Any]:
@@ -293,6 +324,7 @@ class LivroDeMemoria:
         self._citar(fonte)
         return {"assertion_id": nova, "substituida": assertion_id}
 
+    @_com_trava
     def criar_no(
         self,
         tipo: str,
@@ -335,6 +367,7 @@ class LivroDeMemoria:
         self._citar(fonte)
         return {"entity_id": entidade, "estado": str(estado), "existente": False}
 
+    @_com_trava
     def criar_aresta(
         self,
         origem: str,
@@ -372,6 +405,7 @@ class LivroDeMemoria:
         self._citar(fonte)
         return {"edge_id": aresta, "estado": str(estado)}
 
+    @_com_trava
     def retratar(self, alvo_id: str) -> dict[str, Any]:
         """Deixa de usar, sem apagar: status `retracted` e validade encerrada."""
         momento = _iso(self.agora())
@@ -396,38 +430,48 @@ class LivroDeMemoria:
             raise AlvoInexistente(alvo_id)
         return {"alvo_id": alvo_id, "estado": "retracted"}
 
+    @_com_trava
     def buscar(
         self, consulta: str, *, instante: str | None = None, k: int = 8
     ) -> list[dict[str, Any]]:
-        """Recuperação da §6.8 restrita a memória **ativa e vigente**, com o caminho (gate 6)."""
+        """Recuperação da §6.8 (`jarvis.memoryd.recuperacao`) restrita a memória **ativa e
+        vigente**, com o caminho (gate 6). Vazio é "não encontrei evidência", nunca invenção.
+
+        É o mesmo caminho para a tool `memoria.buscar` e para a consulta de todo turno do
+        cérebro, com os parâmetros que o livro recebeu (`parametros.toml` no aplicativo).
+        """
         quando = instante or _iso(self.agora())
+        lembranca = lembrar_da_memoria(
+            self.con,
+            self.indice,
+            consulta,
+            instante=quando,
+            parametros=self.parametros,
+            evidencias=k,
+        )
         achados: list[dict[str, Any]] = []
-        for achado in recuperar(self.con, consulta, k=k * 3, evidencias=k * 3).achados:
+        for evidencia in lembranca.evidencias:
             linha = self.con.execute(
-                "SELECT a.id AS assertiva, e.pii_class FROM memory_unit m"
-                " JOIN assertion a ON a.id = m.assertion_id JOIN episode e ON e.id = m.episode_id"
-                " WHERE m.id = ? AND a.status = 'active' AND a.valid_from <= ?"
-                " AND (a.valid_to IS NULL OR a.valid_to > ?)",
-                (achado.memory_unit_id, quando, quando),
+                "SELECT m.text_redacted, a.id AS assertiva, e.pii_class, e.occurred_at"
+                " FROM memory_unit m JOIN assertion a ON a.id = m.assertion_id"
+                " JOIN episode e ON e.id = m.episode_id WHERE m.id = ?",
+                (evidencia.memory_unit_id,),
             ).fetchone()
-            if linha is None:
-                continue
             achados.append(
                 {
-                    "memory_unit_id": achado.memory_unit_id,
+                    "memory_unit_id": evidencia.memory_unit_id,
                     "assertion_id": linha["assertiva"],
-                    "texto": achado.texto,
-                    "caminho": achado.caminho
-                    or f"acerto {'+'.join(achado.fontes)} direto na memória {linha['assertiva']}",
-                    "fontes": list(achado.fontes),
+                    "texto": linha["text_redacted"],
+                    "caminho": evidencia.caminho,
+                    "fontes": list(evidencia.fontes),
                     "pii_class": linha["pii_class"],
+                    "quando": linha["occurred_at"],
                 }
             )
-            if len(achados) == k:
-                break
         return achados
 
     # --- esquecer de vez (gate 2) e retenção (D19) --------------------------------------
+    @_com_trava
     def apagar(self, alvo_id: str, escopo: Escopo) -> dict[str, int]:
         if escopo == "turno":
             removidos = self._apagar_episodio(alvo_id)
@@ -447,6 +491,7 @@ class LivroDeMemoria:
         self._expurgar()
         return removidos
 
+    @_com_trava
     def expirar(self) -> int:
         """D19: apaga turno vencido que nenhuma memória cita (citado tem retenção `NULL`)."""
         vencidos = [
@@ -463,6 +508,7 @@ class LivroDeMemoria:
             self._expurgar()
         return len(vencidos)
 
+    @_com_trava
     def processar_outbox(self, *, lote: int = LOTE_DA_OUTBOX) -> int:
         """O worker da §6.4: leva ao índice o que o caminho crítico deixou na outbox.
 
@@ -545,6 +591,7 @@ class LivroDeMemoria:
             ligadas += 1
         return ligadas
 
+    @_com_trava
     def varrer(self, trecho: str) -> dict[str, int]:
         """Onde este trecho ainda aparece — o teste de exclusão em cascata (gate 2) usa."""
         alvo = f"%{trecho}%"
@@ -618,6 +665,7 @@ class LivroDeMemoria:
         if self.con.execute("SELECT 1 FROM episode WHERE id = ?", (episodio,)).fetchone() is None:
             raise AlvoInexistente(f"episódio de origem {episodio} não existe (ADR-0026, regra 2)")
 
+    @_com_trava
     def resolver(self, nome_ou_id: str) -> str | None:
         if nome_ou_id.startswith("ent-"):
             linha = self.con.execute("SELECT id FROM entity WHERE id = ?", (nome_ou_id,)).fetchone()

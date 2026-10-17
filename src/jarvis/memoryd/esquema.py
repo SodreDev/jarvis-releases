@@ -11,9 +11,14 @@ from jarvis.dados import caminho
 ARQUIVO_ESQUEMA: Final = caminho("schemas/memoria.sql")
 
 
-def abrir(caminho: Path | str = ":memory:", *, somente_leitura: bool = False) -> sqlite3.Connection:
-    """Abre (e migra) o banco de memória. `:memory:` serve para medição e teste."""
-    con = sqlite3.connect(caminho, isolation_level=None)
+def abrir(
+    caminho: Path | str = ":memory:", *, somente_leitura: bool = False, entre_threads: bool = False
+) -> sqlite3.Connection:
+    """Abre (e migra) o banco de memória. `:memory:` serve para medição e teste.
+
+    `entre_threads=True` deixa a conexão ser usada de outra linha de execução — só para quem
+    serializa o acesso (o `LivroDeMemoria`, com a trava dele)."""
+    con = sqlite3.connect(caminho, isolation_level=None, check_same_thread=not entre_threads)
     con.row_factory = sqlite3.Row
     # Gate 2 no disco: página liberada por DELETE é zerada, senão o texto apagado fica no
     # arquivo até ser sobrescrito por acaso (medido na fatia 7, `test_livro`).
