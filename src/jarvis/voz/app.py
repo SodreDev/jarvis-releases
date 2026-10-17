@@ -674,11 +674,28 @@ class Aplicativo:
         pedacos: queue.Queue[dict[str, object] | None] = queue.Queue()
         resultado: dict[str, Resposta] = {}
         falha: list[str] = []
+        exibido: list[str] = []
+        primeiro_texto_ms: list[float] = []
+
+        def publicar(pedaco: dict[str, object]) -> None:
+            """Na linha do cérebro, no instante em que o pedaço nasce: a tela segue a geração.
+
+            Antes isto ficava no gerador que o tocador consome, e o tocador só puxa o pedaço
+            seguinte depois de **tocar** o anterior — o texto aparecia no ritmo da fala (um
+            pedaço por segundo, achado do dono em 2026-10-17), embora a resposta estivesse pronta
+            em milissegundos. O que o dono ouve continua sendo o que o tocador consome."""
+            if pedaco["text"] and not cancelado():
+                if not primeiro_texto_ms:
+                    primeiro_texto_ms.append((time.monotonic() - comeco) * 1000.0)
+                exibido.append(str(pedaco["text"]))
+                if self.ao_pedaco is not None:
+                    self.ao_pedaco(" ".join(exibido))
+            pedacos.put(pedaco)
 
         def gerar() -> None:
             try:
                 resultado["r"] = cerebro.responder(
-                    texto, epoch=epoch, publicar=pedacos.put, cancelado=cancelado
+                    texto, epoch=epoch, publicar=publicar, cancelado=cancelado
                 )
             except Exception as erro:  # o turno degrada e diz; a linha não leva o laço junto
                 falha.append(f"{type(erro).__name__}: {erro}")
@@ -687,8 +704,6 @@ class Aplicativo:
 
         linha = threading.Thread(target=gerar, name="jarvis-cerebro", daemon=True)
         linha.start()
-        exibido: list[str] = []
-        primeiro_texto_ms: list[float] = []
 
         def do_cerebro() -> Iterator[dict[str, object]]:
             while True:
@@ -701,12 +716,6 @@ class Aplicativo:
                     continue
                 if pedaco is None:
                     return
-                if pedaco["text"]:
-                    if not primeiro_texto_ms:
-                        primeiro_texto_ms.append((time.monotonic() - comeco) * 1000.0)
-                    exibido.append(str(pedaco["text"]))
-                    if self.ao_pedaco is not None:
-                        self.ao_pedaco(" ".join(exibido))
                 yield pedaco
 
         fala, turno = self._tocar(
