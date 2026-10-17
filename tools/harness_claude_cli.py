@@ -60,7 +60,7 @@ def variantes() -> tuple[Variante, ...]:
         ),
         Variante(
             "safe-mode+sem-trafego",
-            "+ --safe-mode e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 (o padrão de agora)",
+            "+ --safe-mode e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
             True,
             True,
         ),

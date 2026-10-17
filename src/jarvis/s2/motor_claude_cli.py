@@ -164,11 +164,11 @@ class MotorClaudeCli:
     """Deltas de raciocínio que chegaram e não viraram fala — contados, não guardados."""
     modo_seguro: bool = True
     """`--safe-mode`: sem CLAUDE.md, skills, plugins, hooks nem MCP no spawn. Medido em
-    `docs/medicoes/f2-02-piso-do-claude.md`: tira ~400 ms do 1º token (p50) nesta máquina, e o
+    `docs/medicoes/f2-02-piso-do-claude.md`: tira ~300–400 ms do 1º token (p50) nesta máquina, e o
     motor fica ainda mais isolado do que a pasta vazia já deixava (ADR-0018, regra 1)."""
-    sem_trafego_extra: bool = True
-    """`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` no filho: sem telemetria, atualização e
-    relatório de erro no caminho da resposta (mesma medição: p95 menor)."""
+    sem_trafego_extra: bool = False
+    """`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` no filho. **Desligado**: na mesma medição
+    ele mexeu pouco no p50 e piorou o p95 em duas de três rodadas — fica só para medir."""
     extras: Sequence[str] = ()
     """Flags a mais no `argv`, para medição."""
 
