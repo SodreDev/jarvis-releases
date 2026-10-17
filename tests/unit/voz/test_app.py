@@ -345,3 +345,35 @@ def test_com_a_groq_desligada_o_laco_ouve_pelo_asr_local_e_diz_numa_linha(
     assert app._asr is not None
     avisos = [linha for linha in saidas if "ASR local" in linha]
     assert len(avisos) == 1 and len(avisos[0]) < 120, avisos
+
+
+class VadQueComecaDepois(VadQueFala):
+    """Fala entre os quadros `inicio` e `inicio + quadros_falando`: o VAD que dispara tarde."""
+
+    def __init__(self, inicio: int, quadros_falando: int = 10) -> None:
+        super().__init__(quadros_falando)
+        self.inicio = inicio
+
+    def ver(self, quadro: Quadro) -> bool | None:
+        self.vistos += 1
+        agora = self.inicio < self.vistos <= self.inicio + self.quadros_falando
+        self.ultima_probabilidade = 1.0 if agora else 0.0
+        if agora == self.falando:
+            return None
+        self.falando = agora
+        return agora
+
+
+def test_o_turno_leva_os_quadros_de_antes_de_o_vad_disparar(tmp_path: Path) -> None:
+    # Bug do dono (2026-10-17): "Jarvis, que horas são" chegava ao ASR como "que hoje são": o
+    # VAD notava a fala na segunda palavra e o turno começava ali, sem a palavra de ativação.
+    app = aplicativo_de(tmp_path)
+    app.ambiente = {"JARVIS_AUDIO_BACKEND": "arquivo"}
+    app.caminho_de_entrada = wav_de(tmp_path / "entrada.wav", segundos=4.0)
+    app.caminho_de_saida = tmp_path / "saida.wav"
+
+    app.rodar_audio(limite_de_turnos=1, vad=VadQueComecaDepois(inicio=30))
+
+    assert app.turnos, "nenhum turno fechou"
+    # 20 quadros guardados + 10 de fala + 700 ms de silêncio (35 quadros): sem o guardado, 900 ms.
+    assert app.turnos[0].ouvido_ms >= 1200.0, app.turnos[0].ouvido_ms

@@ -34,6 +34,7 @@ import os
 import queue
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,7 +58,7 @@ from jarvis.audio_io.erros import ErroDeAudio
 from jarvis.audio_io.playback import FilaDePlayback, Pedaco
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
 from jarvis.audio_io.sumidouros import SumidouroDeAudio
-from jarvis.audio_io.vad import Vad
+from jarvis.audio_io.vad import Vad, vad_do_ambiente
 from jarvis.barramento.envelope import Envelope, uuid7
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
 from jarvis.executor.lancador import RegistroDeApps
@@ -88,6 +89,8 @@ from jarvis.voz.teclado import ESPACO, TECLAS_DE_SAIDA, Teclado, TecladoMudo
 PASTA_DE_VOZES: Final = Path.home() / ".cache" / "jarvis" / "vozes"
 ID_DA_VOZ_NO_REGISTRO: Final = "rhasspy/piper-voices:{voz}"
 SILENCIO_PARA_FECHAR_O_TURNO_MS: Final = 700.0
+QUADROS_ANTES_DA_FALA: Final = 20
+"""400 ms de quadros guardados antes do VAD disparar (20 quadros de 20 ms)."""
 """Quanto silêncio fecha o turno no modo VAD. Não é o detector semântico do F1-07 — é o
 piso simples, e está dito no relatório para ninguém publicar isto como SLO-4."""
 MAXIMO_DE_AUDIO_POR_TURNO_S: Final = 30.0
@@ -183,7 +186,11 @@ def motor_de_asr(
             "o oráculo do rótulo não transcreve voz de verdade: ele devolve o texto do corpus "
             "(F1-06). Escolha `asr-whisper-local` ou um motor de nuvem"
         )
-    local = MotorWhisper(tamanho=configuracao.modelo_do_asr, pasta=str(PASTA_DE_VOZES.parent))
+    local = MotorWhisper(
+        tamanho=configuracao.modelo_do_asr,
+        pasta=str(PASTA_DE_VOZES.parent),
+        dicas=configuracao.palavra,
+    )
     local.abrir()
     return local
 
@@ -888,6 +895,10 @@ class Aplicativo:
         )
         if vad is not None:
             captura.detector = vad
+        elif backend_escolhido(self.ambiente, de_produto=True) is Backend.DISPOSITIVO:
+            # Microfone de verdade: o VAD do produto (silero, com histerese) e não o limiar cru
+            # de energia do banco de teste, que dispara tarde, no meio da primeira palavra.
+            captura.detector = vad_do_ambiente()
         try:
             # Quem abre a fonte é a `Captura` (F1-03), não este laço: é dela que o estado
             # "aberta" vem, e é desse estado que o indicador do F1-13 deriva. Abrir por fora
@@ -910,6 +921,10 @@ class Aplicativo:
         falando = False
         silencio_ms = 0.0
         audio = bytearray()
+        # Os últimos quadros ANTES de o VAD disparar: a fala começa antes de o VAD notar, e sem
+        # isto o turno perdia o começo ("Jarvis, que horas são" chegava ao ASR como "que hoje
+        # são", e a palavra de ativação nunca era ouvida — bug do dono, 2026-10-17).
+        antes_da_fala: deque[bytes] = deque(maxlen=QUADROS_ANTES_DA_FALA)
         turnos = 0
         try:
             while limite_de_turnos is None or turnos < limite_de_turnos:
@@ -935,7 +950,8 @@ class Aplicativo:
                 if self._quer_falar(captura):
                     if not falando:
                         falando = True
-                        audio = bytearray()
+                        audio = bytearray(b"".join(antes_da_fala))
+                        antes_da_fala.clear()
                         if fila.pedacos_na_fila:
                             self.interromper("barge_in")
                             fila.cancelar(reason="barge_in", epoch_novo=self.epoch)
@@ -954,6 +970,8 @@ class Aplicativo:
                         turnos += 1
                         self._turno_de_audio(bytes(audio), transcritor, fila)
                         audio = bytearray()
+                if not falando and not self._pelo_dedo:
+                    antes_da_fala.append(quadro.amostras)
                 _ = eventos
                 if len(audio) > MAXIMO_DE_AUDIO_POR_TURNO_S * TAXA_PADRAO * BYTES_POR_AMOSTRA:
                     falando = False

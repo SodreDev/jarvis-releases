@@ -101,6 +101,11 @@ class MotorWhisper:
     onde: Onde = Onde.LOCAL
     registrado: str = "asr-whisper-local"
     """Id no `licenses/motores.toml`: é o portão que diz se este motor pode rodar."""
+    dicas: str = ""
+    """Palavras que o modelo deve preferir (`hotwords` do faster-whisper). Nome próprio é onde o
+    whisper pequeno mais erra: "jarvis" sai "Dia 10" (medido em 2026-10-17 com a voz do piper);
+    com a dica sai "Jarvis". Vazio = sem dica. A dica vai com inicial maiúscula: o modelo ignora
+    "jarvis" em minúsculas (medido: "Diazis"), e só "Jarvis" muda a saída."""
     _modelo: Any = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -135,7 +140,11 @@ class MotorWhisper:
             self.abrir()
         audio = np.frombuffer(amostras, dtype="<i2").astype(np.float32) / 32768.0
         trechos, _ = self._modelo.transcribe(
-            audio, language=self.idioma, beam_size=self.beam, vad_filter=False
+            audio,
+            language=self.idioma,
+            beam_size=self.beam,
+            vad_filter=False,
+            hotwords=self.dicas.title() or None,
         )
         partes = list(trechos)
         texto = " ".join(t.text for t in partes).strip()

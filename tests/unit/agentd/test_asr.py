@@ -220,3 +220,25 @@ def test_o_motor_whisper_declara_modelo_e_licenca_sem_carregar_nada() -> None:
     assert motor.modelo == "openai/whisper-small"
     assert motor.licenca == "Apache-2.0"
     assert motor.nome == "faster-whisper@small"
+
+
+def test_a_dica_do_asr_local_vai_para_o_modelo_com_inicial_maiuscula() -> None:
+    # Medido em 2026-10-17: "jarvis" em minúsculas não muda a saída do whisper ("Diazis");
+    # "Jarvis" muda ("Jarvis, que horas são").
+    chamadas: list[dict[str, object]] = []
+
+    class ModeloFalso:
+        def transcribe(self, audio: object, **argumentos: object) -> tuple[list[object], None]:
+            chamadas.append(argumentos)
+            return [], None
+
+    motor = MotorWhisper(dicas="jarvis")
+    motor._modelo = ModeloFalso()
+    motor.transcrever(bytes(640))
+    assert chamadas[0]["hotwords"] == "Jarvis"
+
+    chamadas.clear()
+    sem_dica = MotorWhisper()
+    sem_dica._modelo = ModeloFalso()
+    sem_dica.transcrever(bytes(640))
+    assert chamadas[0]["hotwords"] is None
