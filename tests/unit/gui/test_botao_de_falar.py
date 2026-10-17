@@ -153,7 +153,11 @@ def test_apertar_com_o_jarvis_falando_interrompe(
     laco._motor = None  # remontado abaixo com uma resposta comprida
     from jarvis.s2.motor_roteirizado import MotorRoteirizado
 
-    laco._motor = MotorRoteirizado(resposta="uma resposta bem comprida. " * 12)
+    # Ritmo de geração: a resposta tem de **durar** com o Jarvis falando (o texto agora chega à
+    # tela na velocidade da geração, e uma resposta instantânea acabaria antes do aperto).
+    laco._motor = MotorRoteirizado(
+        resposta="uma resposta bem comprida. " * 12, atraso_entre_deltas_s=0.06
+    )
     laco._cerebro = None
     laco.abrir()
     tela.enviarTexto("conta uma história")
