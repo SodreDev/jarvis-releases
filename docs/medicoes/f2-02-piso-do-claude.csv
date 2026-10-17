@@ -1,0 +1,4 @@
+variante,execucao,primeiro_token_p50_ms,primeiro_token_p95_ms,primeira_fronteira_p50_ms,primeira_fronteira_p95_ms,fim_p50_ms,n,falhas
+antes,1,2144.8,4139.9,2159.8,4177.1,2334.6,24,0
+safe-mode,1,1690.7,2341.5,1753.2,2341.5,1934.1,24,0
+safe-mode+sem-trafego,1,1574.5,2739.0,1670.6,2762.2,1851.0,24,0
