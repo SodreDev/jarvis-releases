@@ -15,9 +15,19 @@ Item {
 
     // --- as caixas -----------------------------------------------------------------------
     // Rola quando o conteúdo passa da altura: o provedor escolhido abre modelo, aviso e voz.
+    IndicadorDeRolagem {
+        id: indicadorDeRolagem
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        alvo: rolagem
+        z: 2
+    }
+
     Flickable {
         id: rolagem
         anchors.fill: parent
+        anchors.rightMargin: indicadorDeRolagem.visible ? 10 : 0
         contentWidth: width
         contentHeight: caixas.implicitHeight
         boundsBehavior: Flickable.StopAtBounds

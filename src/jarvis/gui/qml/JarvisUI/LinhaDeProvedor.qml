@@ -220,7 +220,7 @@ Column {
             readonly property var frases: (linha.provedor.aviso || "")
                 .split(/\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/)
                 .filter(function (f) { return f.trim() !== "" })
-            readonly property real tetoRecolhido: 132
+            readonly property int frasesRecolhido: 2
             readonly property real tetoInteiro: 300
             visible: linha.naNuvem && !linha.provedor.ligado && frases.length > 0
             width: parent.width
@@ -251,8 +251,11 @@ Column {
                     id: alternar
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: corpoDoAviso.implicitHeight > caixaDoAviso.tetoRecolhido
-                    text: caixaDoAviso.inteiro ? "recolher" : "ler tudo"
+                    visible: caixaDoAviso.frases.length > caixaDoAviso.frasesRecolhido
+                    text: caixaDoAviso.inteiro
+                          ? "recolher"
+                          : "ler tudo (+" + (caixaDoAviso.frases.length
+                                             - caixaDoAviso.frasesRecolhido) + ")"
                     destaque: toqueDoAlternar.containsMouse
                     MouseArea {
                         id: toqueDoAlternar
@@ -269,9 +272,9 @@ Column {
                 anchors.top: cabecalhoDoAviso.bottom
                 anchors.topMargin: 6
                 width: parent.width - 26
-                height: Math.min(
-                    corpoDoAviso.implicitHeight,
-                    caixaDoAviso.inteiro ? caixaDoAviso.tetoInteiro : caixaDoAviso.tetoRecolhido)
+                // Recolhido mostra frases **inteiras** (as primeiras); aberto, todas, com teto e
+                // rolagem por dentro. Cortar no meio de uma linha parecia defeito.
+                height: Math.min(corpoDoAviso.implicitHeight, caixaDoAviso.tetoInteiro)
                 contentHeight: corpoDoAviso.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -282,7 +285,9 @@ Column {
                     width: rolagemDoAviso.width
                     spacing: 5
                     Repeater {
-                        model: caixaDoAviso.frases
+                        model: caixaDoAviso.inteiro
+                               ? caixaDoAviso.frases
+                               : caixaDoAviso.frases.slice(0, caixaDoAviso.frasesRecolhido)
                         Row {
                             width: corpoDoAviso.width
                             spacing: 8
