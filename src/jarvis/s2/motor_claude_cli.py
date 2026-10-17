@@ -21,6 +21,7 @@ import contextlib
 import json
 import os
 import queue
+import re
 import subprocess
 import threading
 import time
@@ -88,61 +89,126 @@ def sistema_com_ferramentas(sistema: str, ferramentas: Sequence[Mapping[str, obj
     return "\n".join(linhas)
 
 
+_MARCA_RE: Final = re.compile(r"<<\s*ferramenta\s*>>", re.IGNORECASE)
+_CERCA_NO_FIM: Final = re.compile(r"```(?:json)?\s*$", re.IGNORECASE)
+_CERCA_NO_COMECO: Final = re.compile(r"^\s*```(?:json)?\s*", re.IGNORECASE)
+LIMITE_DA_PROPOSTA: Final = 4000
+"""Caracteres que uma proposta pode ocupar antes de virar malformada: JSON que nunca fecha não
+pode segurar a fala do resto da resposta para sempre."""
+
+
+def _malformado(bruto: str) -> PedidoDeTool:
+    return PedidoDeTool("(malformado)", {"bruto": bruto.strip()[:200]})
+
+
+def _pedido_de(objeto: object, bruto: str) -> PedidoDeTool:
+    """O JSON já lido → pedido. Aceita os apelidos que o modelo usa por conta própria
+    (`tool`/`name`, `arguments`): recusar por nome de chave é falha que o dono sente como erro."""
+    if not isinstance(objeto, dict):
+        return _malformado(bruto)
+    ferramenta = next(
+        (objeto[k] for k in ("tool_id", "tool", "id", "name") if isinstance(objeto.get(k), str)),
+        None,
+    )
+    argumentos = next((objeto[k] for k in ("args", "arguments", "argumentos") if k in objeto), {})
+    if ferramenta is None or not isinstance(argumentos, dict):
+        return _malformado(bruto)
+    return PedidoDeTool(ferramenta, argumentos)
+
+
 @dataclass(slots=True)
 class LeitorDoProtocolo:
-    """Separa, ainda no stream, o texto falado das linhas de proposta de ferramenta.
+    """Separa, ainda no stream, o texto falado das propostas de ferramenta.
 
-    Cada linha é segurada só enquanto ainda **pode** ser uma proposta (é prefixo da marca); assim
-    que diverge, sai como texto — a fala não espera o fim da resposta. Linha de proposta com JSON
-    inválido vira um pedido malformado, que o executor recusa e o motor fica sabendo."""
+    A marca vale **em qualquer ponto** do texto (não só no começo da linha): o modelo escreve
+    "Vou abrir. <<ferramenta>> {...}" e o JSON não pode ir para a fala. O texto sai assim que
+    se sabe que não é o começo de uma marca (só um `<` no fim fica retido). Depois da marca, o
+    JSON é lido por **balanceamento** — vale em várias linhas, com cerca ``` em volta, com texto
+    depois — e a proposta sai no instante em que o objeto fecha, sem esperar a quebra de linha
+    nem o fim da geração. JSON que não fecha, ou sem objeto, vira um pedido malformado, que o
+    executor recusa e o motor fica sabendo."""
 
-    _linha: str = ""
-    _decidida: bool = False
+    _texto: str = ""
+    _proposta: str | None = None
 
     def alimentar(self, texto: str) -> Iterator[Delta]:
-        while texto:
-            fim, quebra, resto = texto.partition("\n")
-            if self._decidida:
-                if fim:
-                    yield Texto(fim)
-            else:
-                self._linha += fim
-                inicio = self._linha.lstrip()
-                if inicio and not (
-                    MARCA_DE_FERRAMENTA.startswith(inicio) or inicio.startswith(MARCA_DE_FERRAMENTA)
-                ):
-                    self._decidida = True
-                    yield Texto(self._linha)
-                    self._linha = ""
-            if not quebra:
+        while True:
+            if self._proposta is not None:
+                self._proposta += texto
+                texto = ""
+                lido = self._ler_proposta(final=False)
+                if lido is None:
+                    return
+                pedido, resto = lido
+                yield pedido
+                self._proposta = None
+                texto = resto
+                if not texto:
+                    return
+                continue
+            self._texto += texto
+            texto = ""
+            achada = _MARCA_RE.search(self._texto)
+            if achada is None:
+                retido = _retencao(self._texto)
+                saida = self._texto[: len(self._texto) - retido]
+                self._texto = self._texto[len(self._texto) - retido :]
+                if saida:
+                    yield Texto(saida)
                 return
-            if self._decidida:
-                yield Texto("\n")
-                self._decidida = False
-            else:
-                yield from self._fim_de_linha()
+            antes = _CERCA_NO_FIM.sub("", self._texto[: achada.start()])
+            self._proposta = self._texto[achada.end() :]
+            self._texto = ""
+            if antes.strip():
+                yield Texto(antes)
+            lido = self._ler_proposta(final=False)
+            if lido is None:
+                return
+            pedido, resto = lido
+            yield pedido
+            self._proposta = None
             texto = resto
+            if not texto:
+                return
 
     def fechar(self) -> Iterator[Delta]:
-        yield from self._fim_de_linha()
+        if self._proposta is not None:
+            lido = self._ler_proposta(final=True)
+            self._proposta = None
+            if lido is not None:
+                yield lido[0]
+        if self._texto:
+            texto, self._texto = self._texto, ""
+            yield Texto(texto)
 
-    def _fim_de_linha(self) -> Iterator[Delta]:
-        linha, self._linha = self._linha.strip(), ""
-        if not linha:
-            return
-        if not linha.startswith(MARCA_DE_FERRAMENTA):
-            yield Texto(linha)
-            return
-        bruto = linha[len(MARCA_DE_FERRAMENTA) :].strip()
+    def _ler_proposta(self, *, final: bool) -> tuple[PedidoDeTool, str] | None:
+        """O pedido e o que sobrou depois dele; `None` enquanto o JSON ainda pode fechar."""
+        assert self._proposta is not None
+        corpo = _CERCA_NO_COMECO.sub("", self._proposta).lstrip()
+        if not corpo.startswith("{"):
+            linha, quebra, resto = corpo.partition("\n")
+            if not quebra and not final:
+                return None
+            return _malformado(linha), resto
         try:
-            pedido = json.loads(bruto)
-            tool_id, args = str(pedido["tool_id"]), pedido.get("args", {})
-            if not isinstance(args, dict):
-                raise TypeError("args não é objeto")
-        except (ValueError, KeyError, TypeError):
-            yield PedidoDeTool("(malformado)", {"bruto": bruto[:200]})
-            return
-        yield PedidoDeTool(tool_id, args)
+            objeto, fim = json.JSONDecoder().raw_decode(corpo)
+        except ValueError:
+            if final or len(corpo) > LIMITE_DA_PROPOSTA:
+                return _malformado(corpo), ""
+            return None
+        resto = corpo[fim:]
+        if resto.lstrip().startswith("```"):  # a cerca que fecha o bloco não é fala
+            resto = resto.lstrip()[3:]
+        return _pedido_de(objeto, corpo[:fim]), resto
+
+
+def _retencao(texto: str) -> int:
+    """Quantos caracteres do fim ainda podem ser o começo da marca (e por isso esperam)."""
+    for tamanho in range(min(len(texto), len("<<ferramenta>>") + 2), 0, -1):
+        cauda = texto[-tamanho:]
+        if cauda[0] == "<" and "<<ferramenta>>".startswith(cauda.lower().replace(" ", "")):
+            return tamanho
+    return 0
 
 
 @dataclass(slots=True)
@@ -236,12 +302,18 @@ class MotorClaudeCli:
             return
         self.ultimo_pid = processo.pid
         concluido = False
+        propos = False
         try:
             for delta in self._ler(processo, contexto, cancelado):
+                propos = propos or isinstance(delta, PedidoDeTool)
                 concluido = isinstance(delta, Fim) and delta.motivo is MotivoDoFim.CONCLUIDO
                 yield delta
         finally:
-            self._encerrar(processo, cortesia_s=CORTESIA_DEPOIS_DO_FIM_S if concluido else 0.0)
+            # Com uma proposta na mão a cortesia só atrasa a ferramenta: a CLI leva ~0,5 s para
+            # sair sozinha (medido em 2026-10-17, 515 ms entre o `Fim` e o retorno) e ninguém
+            # espera por ela — o resultado vai para um processo novo.
+            cortesia = CORTESIA_DEPOIS_DO_FIM_S if concluido and not propos else 0.0
+            self._encerrar(processo, cortesia_s=cortesia)
 
     def _ler(
         self, processo: subprocess.Popen[str], contexto: Contexto, cancelado: Cancelado
