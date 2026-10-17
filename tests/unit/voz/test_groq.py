@@ -285,3 +285,56 @@ def test_prazo_nosso_vence_servico_lento(tmp_path: Path) -> None:
         motor = motor_em(servico, tmp_path, prazo_s=0.3)
         assert motor.transcrever(audio_de(1200)) == Hipotese("", 0.0)
         assert ler_degradacao(tmp_path).ativa
+
+
+# --- o conserto de 2026-10-17: o 403 `error code: 1010` e o modelo que chega ao serviço -------
+
+
+def test_o_cliente_nao_se_anuncia_como_python_urllib(tmp_path: Path) -> None:
+    """Medido ao vivo: com `Python-urllib/3.x` a Groq responde 403 `error code: 1010` (o
+    Cloudflare barra a assinatura) antes de olhar chave ou modelo. O UA é nosso."""
+    with ServicoFalso(roteiro=Roteiro(corpo=resposta_boa())) as servico:
+        motor_em(servico, tmp_path).transcrever(audio_de(1200))
+
+    agente = servico.pedidos[0].cabecalho("User-Agent")
+    assert agente.startswith("jarvis/") and "urllib" not in agente.lower()
+
+
+def test_cloudflare_1010_diz_o_que_e_e_nao_manda_conferir_a_chave(tmp_path: Path) -> None:
+    roteiro = Roteiro(status=403, corpo=b"error code: 1010")
+    with ServicoFalso(roteiro=roteiro) as servico, pytest.raises(ServicoRecusou) as erro:
+        motor_em(servico, tmp_path).transcrever(audio_de(1200))
+
+    assert "1010" in str(erro.value) and "Cloudflare" in str(erro.value)
+    assert "confira a chave" not in str(erro.value)
+
+
+@pytest.mark.parametrize(
+    ("escolhido", "esperado"),
+    [
+        ("asr-groq-whisper-large-v3-turbo", "whisper-large-v3-turbo"),
+        ("asr-groq-whisper-large-v3", "whisper-large-v3"),
+    ],
+)
+def test_o_modelo_da_groq_vem_do_motor_escolhido_e_nunca_do_tamanho_do_whisper_local(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, escolhido: str, esperado: str
+) -> None:
+    """`modelo_do_asr` ("small") é do whisper LOCAL. Com a Groq escolhida, o campo `model` que
+    sai é o do motor do registro — pelo caminho que o laço usa (`motor_de_asr`)."""
+    from functools import partial
+
+    from jarvis.voz import groq as modulo
+    from jarvis.voz.app import motor_de_asr
+    from jarvis.voz.config import Configuracao
+
+    with ServicoFalso(roteiro=Roteiro(corpo=resposta_boa())) as servico:
+        monkeypatch.setattr(modulo, "MotorAsrGroq", partial(MotorAsrGroq, base=servico.base))
+        configuracao = Configuracao().com(
+            asr=escolhido, nuvem_ligada=(escolhido,), modelo_do_asr="small"
+        )
+        motor = motor_de_asr(
+            configuracao, raiz=tmp_path, cancelado=lambda: False, ambiente=ambiente_com_chave()
+        )
+        motor.transcrever(audio_de(1200))
+
+    assert servico.pedidos[0].campo("model") == esperado

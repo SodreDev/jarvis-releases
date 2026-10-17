@@ -34,11 +34,15 @@ from http.client import HTTPResponse
 from typing import Any, Final
 from urllib.parse import urlparse
 
+from jarvis import __version__
 from jarvis.ambiente import VARIAVEL_CI, ambiente_ou_os, em_ci
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, CANAIS, TAXA_PADRAO
 from jarvis.rede import ErroDeRede
 from jarvis.voz.chaves import Chave, redigir
 from jarvis.voz.interface import Cancelado, nunca_cancelado
+
+AGENTE_DO_USUARIO: Final = f"jarvis/{__version__}"
+"""Como o cliente se anuncia ao serviço: o `Python-urllib` padrão é barrado pelo Cloudflare."""
 
 PEDACO_DE_LEITURA: Final = 8192
 """Bytes por leitura. Granularidade do descarte: quanto menor, mais rápido o `Cancel`
@@ -278,6 +282,10 @@ class ClienteHttp:
             pedido.add_header("Content-Length", str(len(corpo)))
         # A chave vai **no cabeçalho**: nunca na URL (fica em log de proxy), nunca no corpo.
         pedido.add_header(cabecalho_da_chave, f"{prefixo_da_chave}{chave.usar()}")
+        # Sem isto o urllib se anuncia `Python-urllib/3.x`, e o Cloudflare da Groq responde
+        # `403 error code: 1010` (assinatura de cliente barrada) antes de olhar a chave —
+        # provado ao vivo em 2026-10-17 com o turbo. Um UA próprio resolve e diz quem somos.
+        pedido.add_header("User-Agent", AGENTE_DO_USUARIO)
         for nome, valor in (cabecalhos or {}).items():
             pedido.add_header(nome, valor)
         self.chamadas += 1
@@ -289,9 +297,17 @@ class ClienteHttp:
             detalhe = redigir(erro.read().decode("utf-8", "replace")[:500], [chave])
             if erro.code in STATUS_QUE_VIRAM_DEGRADACAO or erro.code >= 500:
                 raise ErroDoServico(f"{erro.code} do serviço: {detalhe}") from None
+            if erro.code == 403 and "1010" in detalhe:
+                raise ServicoRecusou(
+                    f"o serviço barrou este cliente antes de olhar a chave (403, "
+                    f"{detalhe.strip()}): "
+                    "é a proteção do Cloudflare contra assinatura de cliente desconhecida, não "
+                    "problema de chave nem de modelo. Atualize o Jarvis; se persistir, tente "
+                    "outra rede ou VPN"
+                ) from None
             raise ServicoRecusou(
                 f"o serviço recusou o pedido ({erro.code}): {detalhe}. Isto não é falta de "
-                "rede — confira a chave, o plano e o motor escolhido"
+                "rede — confira a chave, o plano, o modelo e o motor escolhido"
             ) from None
         except urllib.error.URLError as erro:
             # `URLError` carrega o motivo do sistema (DNS, recusa de conexão). Não carrega
