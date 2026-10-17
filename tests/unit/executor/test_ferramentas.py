@@ -216,6 +216,11 @@ def test_app_fora_do_registro_e_negado_e_sugere(
     _desktop(apps, "org.kde.dolphin", "dolphin %u", "Dolphin")
     registro = RegistroDeApps.montar(["org.kde.kcalc"], pastas=[str(apps)])
     lancados: list[App] = []
+
+    def lancar(app: App) -> int:
+        lancados.append(app)
+        return 4242
+
     executor = _executor(
         casa,
         auditoria,
@@ -223,7 +228,7 @@ def test_app_fora_do_registro_e_negado_e_sugere(
         apps_autorizados=frozenset(
             nome_de_app(n) for a in registro.autorizados.values() for n in a.nomes
         ),
-        lancar_app=lambda app: lancados.append(app) or 4242,
+        lancar_app=lancar,
     )
 
     fora = executor.executar("apps.launch", {"nome": "Dolphin"}, cancelado=NUNCA)
