@@ -248,3 +248,36 @@ def test_cancelado_enquanto_o_motor_espera_o_primeiro_token_volta_no_prazo() -> 
     assert resposta.cancelada
     assert publicados == []
     assert (voltou - marcas["cancelou"]) <= PRAZO_DE_CANCELAMENTO_S
+
+
+# --- ADR-0026, M1: o histórico persistente só com o tocado -------------------------------
+def test_com_historico_o_livro_guarda_o_dono_e_so_o_tocado_do_jarvis() -> None:
+    from jarvis.memoryd.cofre import CofreFernet, nova_chave
+    from jarvis.memoryd.indice import IndiceEmMemoria
+    from jarvis.memoryd.livro import LivroDeMemoria
+
+    livro = LivroDeMemoria.abrir(
+        ":memory:", cofre=CofreFernet(nova_chave()), indice=IndiceEmMemoria()
+    )
+    cerebro = Cerebro(motor=MotorRoteirizado(resposta=RESPOSTA), livro=livro, session_id="s-1")
+    primeira = cerebro.responder("e depois de quinta?", epoch=0, publicar=lambda _: None)
+    assert cerebro.proveniencia.turno is not None
+    cerebro.ouvido(primeira.response_id, "Depois de quinta", interrompida=True, played_ms=640)
+    sem_tocar = cerebro.responder("outra coisa", epoch=1, publicar=lambda _: None)
+    cerebro.responder("e a última?", epoch=2, publicar=lambda _: None)
+    cerebro.ouvido(sem_tocar.response_id, "atrasado", interrompida=False, played_ms=10)
+
+    linhas = livro.con.execute(
+        "SELECT papel, played_ms, interrompida FROM turno ORDER BY ordem"
+    ).fetchall()
+    assert [(r["papel"], r["played_ms"], r["interrompida"]) for r in linhas] == [
+        ("dono", None, 0),
+        ("jarvis", 640, 1),
+        ("dono", None, 0),
+        ("dono", None, 0),
+    ]
+    jarvis = livro.ler_mensagem(
+        str(livro.con.execute("SELECT episode_id FROM turno WHERE papel='jarvis'").fetchone()[0])
+    )
+    assert [t["texto"] for t in jarvis if t["alvo"]] == ["Depois de quinta"]
+    assert "sábado" not in str(livro.buscar_historico("sábado")), "gerado e não tocado"

@@ -26,6 +26,8 @@ from typing import Any, Final
 from jarvis.barramento.contrato import prioridade_canonica, validar
 from jarvis.barramento.envelope import Envelope, Tipo, Trust, uuid7
 from jarvis.fatiador import Corte, FatiadorDeFala, PedacoDeFala
+from jarvis.memoryd.livro import LivroDeMemoria
+from jarvis.politica.memoria import Proveniencia, TurnoCorrente
 from jarvis.s2.motor import (
     Contexto,
     Fim,
@@ -89,7 +91,17 @@ class Cerebro:
 
     motor: MotorDeConversa
     conversa: Conversa = field(default_factory=Conversa)
+    livro: LivroDeMemoria | None = None
+    """O histórico persistente (ADR-0026, M1). Sem ele, a conversa vive só na memória."""
+    session_id: str = ""
+    turno_corrente: TurnoCorrente | None = None
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
+
+    @property
+    def proveniencia(self) -> Proveniencia:
+        """A origem de uma escrita de memória neste turno — do estado do cérebro, nunca do
+        modelo (ADR-0026, regra 2). Sem histórico não há episódio, e a escrita é negada."""
+        return Proveniencia(turno=self.turno_corrente, motor=self.motor.nome)
 
     def responder(
         self,
@@ -100,12 +112,19 @@ class Cerebro:
         turn_id: str = "",
         cancelado: Cancelado = nunca_cancelado,
         modo: Modo = Modo.RAPIDO,
+        trust: str = "user_voice",
     ) -> Resposta:
         """Responde a um turno estável do dono, publicando os pedaços enquanto o motor gera."""
         comeco = time.monotonic()
         # Resposta anterior sem `ouvido`: ninguém confirmou que tocou, então não existe (P4).
         self._pendentes.clear()
         self.conversa.turnos.append(Mensagem("dono", texto_do_dono))
+        self.turno_corrente = None
+        if self.livro is not None:
+            episodio = self.livro.gravar_turno(
+                session_id=self.session_id, papel="dono", texto=texto_do_dono, trust=trust
+            )
+            self.turno_corrente = TurnoCorrente(episodio, texto_do_dono, trust)
         contexto = self.conversa.contexto()
         resposta = Resposta(
             response_id=f"r-{uuid7()}",
@@ -160,12 +179,32 @@ class Cerebro:
         self._pendentes[resposta.response_id] = resposta
         return resposta
 
-    def ouvido(self, response_id: str, texto_tocado: str, *, interrompida: bool) -> None:
-        """O que de fato tocou da resposta — só isso entra na conversa (regra 3, P4)."""
+    def ouvido(
+        self,
+        response_id: str,
+        texto_tocado: str,
+        *,
+        interrompida: bool,
+        played_ms: int | None = None,
+    ) -> None:
+        """O que de fato tocou da resposta — só isso entra na conversa (regra 3, P4).
+
+        Com histórico, o turno vai para o livro com o `played_ms` real: sem ele, o livro recusa.
+        """
         if self._pendentes.pop(response_id, None) is None:
             return  # resposta velha, já substituída por um turno novo do dono
-        if texto_tocado or interrompida:
-            self.conversa.turnos.append(Mensagem("jarvis", texto_tocado, interrompida))
+        if not (texto_tocado or interrompida):
+            return
+        self.conversa.turnos.append(Mensagem("jarvis", texto_tocado, interrompida))
+        if self.livro is not None:
+            self.livro.gravar_turno(
+                session_id=self.session_id,
+                papel="jarvis",
+                texto=texto_tocado,
+                trust="system",
+                played_ms=played_ms,
+                interrompida=interrompida,
+            )
 
     def _publicar(
         self,
