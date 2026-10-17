@@ -15,9 +15,9 @@ saneado (sem chave de API nenhuma) e numa sessão própria (`setsid`). `Exec` qu
 
 from __future__ import annotations
 
-import contextlib
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import unicodedata
@@ -321,25 +321,40 @@ def lancar(app: App, *, ambiente: Mapping[str, str] | None = None) -> int:
     executavel = app.argv[0] if Path(app.argv[0]).is_absolute() else shutil.which(app.argv[0])
     if executavel is None:
         raise AppRecusado(f"{app.nome}: o executável {app.argv[0]!r} não está no PATH")
-    pid = os.posix_spawn(executavel, list(app.argv), ambiente_saneado(ambiente), setsid=True)
-    threading.Thread(target=_esperar, args=(pid,), daemon=True, name=f"app-{app.id}").start()
-    return pid
+    return _separar(executavel, app.argv, ambiente, nome=f"app-{app.id}")
 
 
 def lancar_argv(argv: Sequence[str], *, ambiente: Mapping[str, str] | None = None) -> int:
-    """O mesmo `posix_spawn` do `lancar`, para quem já tem o `argv` montado pelo código (o
-    navegador do dono + uma URL validada). Nada aqui vem do modelo além da URL, que é um único
-    elemento do `argv` e já passou por `validar_url` (só http/https)."""
+    """O mesmo `lancar`, para quem já tem o `argv` montado pelo código (o navegador do dono +
+    uma URL validada). Nada aqui vem do modelo além da URL, que é um único elemento do `argv` e
+    já passou por `validar_url` (só http/https)."""
     if sys.platform == "win32":  # pragma: no cover
         raise AppRecusado("abrir programa no Windows ainda não foi implementado")
     executavel = argv[0] if Path(argv[0]).is_absolute() else shutil.which(argv[0])
     if executavel is None:
         raise AppRecusado(f"o executável {argv[0]!r} não está no PATH")
-    pid = os.posix_spawn(executavel, list(argv), ambiente_saneado(ambiente), setsid=True)
-    threading.Thread(target=_esperar, args=(pid,), daemon=True, name="programa-aberto").start()
-    return pid
+    return _separar(executavel, argv, ambiente, nome="programa-aberto")
 
 
-def _esperar(pid: int) -> None:
-    with contextlib.suppress(ChildProcessError):
-        os.waitpid(pid, 0)
+def _separar(
+    executavel: str, argv: Sequence[str], ambiente: Mapping[str, str] | None, *, nome: str
+) -> int:
+    """Sobe o programa sem shell, em sessão própria (`start_new_session` = `setsid` no filho), sem
+    ligação com o terminal do Jarvis. Foi `os.posix_spawn(setsid=True)`, que nem toda plataforma
+    ou build do Python tem (`NotImplementedError: setsid unavailable`, achado do dono em
+    2026-10-17); `Popen` com `start_new_session` é o equivalente portátil."""
+    try:
+        filho = subprocess.Popen(  # noqa: S603 — argv sem shell; executável resolvido acima
+            [executavel, *argv[1:]],
+            executable=executavel,
+            env=ambiente_saneado(ambiente),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except OSError as erro:
+        raise AppRecusado(f"não consegui abrir {Path(executavel).name}: {erro}") from None
+    threading.Thread(target=filho.wait, daemon=True, name=nome).start()
+    return filho.pid
