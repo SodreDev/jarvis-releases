@@ -63,6 +63,29 @@ def _tupla_literal(valores: list[str]) -> str:
     return f"({corpo},)" if len(valores) == 1 else f"({corpo})"
 
 
+LARGURA: Final = 100
+"""A largura de linha do `ruff format` do projeto (`line-length` no pyproject)."""
+
+
+def _conjunto(nome: str, valores: list[str]) -> str:
+    """`NOME: Final[frozenset[str]] = frozenset((...))` como o `ruff format` deixaria.
+
+    Com dois ou mais itens não há vírgula final — com ela, o formatador expande a tupla item a
+    item (*magic trailing comma*) e o `conferir` acusaria stub velho. Linha longa demais quebra
+    como o formatador quebra: a tupla inteira na linha de baixo; se nem assim couber, um item
+    por linha, agora com a vírgula final.
+    """
+    cabeca = f"{nome}: Final[frozenset[str]] = frozenset("
+    tupla = _tupla_literal(valores)
+    numa_linha = f"{cabeca}{tupla})"
+    if len(numa_linha) <= LARGURA:
+        return numa_linha
+    if len(f"    {tupla}") <= LARGURA:
+        return f"{cabeca}\n    {tupla}\n)"
+    itens = "".join(f'        "{v}",\n' for v in valores)
+    return f"{cabeca}\n    (\n{itens}    )\n)"
+
+
 def _anotacao(propriedade: dict[str, Any]) -> str:
     return TIPOS.get(str(propriedade.get("type", "")), "Any")
 
@@ -121,13 +144,13 @@ def gerar_stub(manifesto: dict[str, Any]) -> str:
         partes.append(f"    {nome}: {tipo}" + ("" if obrigatorio else " | None = None"))
 
     obrigatorios_entrada = [n for n, _, o in campos_entrada if o]
-    permitidos = ", ".join(f'"{n}"' for n, _, _ in campos_entrada)
-    obrigatorios = ", ".join(f'"{n}"' for n in obrigatorios_entrada)
+    permitidos = _conjunto("PERMITIDOS", [n for n, _, _ in campos_entrada])
+    obrigatorios = _conjunto("OBRIGATORIOS", obrigatorios_entrada)
     partes.append(
         f'''
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(({permitidos}{"," if permitidos else ""}))
-OBRIGATORIOS: Final[frozenset[str]] = frozenset(({obrigatorios}{"," if obrigatorios else ""}))
+{permitidos}
+{obrigatorios}
 
 
 def validar_entrada(bruto: dict[str, Any]) -> {classe}Entrada:
