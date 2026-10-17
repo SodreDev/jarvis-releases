@@ -34,6 +34,7 @@ from jarvis.politica.canonicalizacao import (
 )
 from jarvis.politica.catalogo import Capacidade, allowlist_do_turno
 from jarvis.politica.descritor import AberturaRecusada, Identidade, RaizAberta, abrir_raiz
+from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, decidir_memoria
 from jarvis.politica.modos import Modo, Raiz, motivo_de_negacao, raizes_do_modo
 
 
@@ -77,6 +78,8 @@ class Pedido:
     caminho: str | None = None
     session_id: str = ""
     call_id: str = ""
+    proveniencia: Proveniencia | None = None
+    """Só para `memoria.*` (ADR-0026): o turno de origem, montado pelo `s2`, nunca pelo modelo."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +133,9 @@ class Pdp:
     em_voo: dict[str, Grant] = field(default_factory=dict)
     cancelados: list[str] = field(default_factory=list)
     ampliacao_pendente: Modo | None = None
+    alcance_de_memoria: AlcanceDeMemoria = field(default_factory=AlcanceDeMemoria)
+    escrita_autonoma_liberada: bool = False
+    """ADR-0026, M4: só vira verdade quando os seis gates da §6.6 passarem (aceite (a) da F3)."""
     _raizes: dict[str, RaizAberta] = field(default_factory=dict, repr=False)
     """Raiz aberta de cada grant vivo, por `grant_id`. É aqui que o descritor tem dono."""
 
@@ -161,6 +167,18 @@ class Pdp:
                 else f"exige modo {capacidade.access_level_min} (atual: {self.modo})"
             )
             return self._registrar(pedido, Veredito.DENY, motivo, None, capacidade)
+
+        regra = decidir_memoria(
+            pedido.tool_id,
+            pedido.args,
+            pedido.proveniencia,
+            alcance=self.alcance_de_memoria,
+            escrita_autonoma_liberada=self.escrita_autonoma_liberada,
+        )
+        if regra is not None:
+            # ADR-0026: a política de memória decide antes da matriz comum — nega o que não tem
+            # origem, e o grant de turno libera só o que é fala literal do dono neste turno.
+            return self._registrar(pedido, Veredito(regra.veredito), regra.motivo, None, capacidade)
 
         canonico: CaminhoCanonico | None = None
         raiz_escolhida: Raiz | None = None

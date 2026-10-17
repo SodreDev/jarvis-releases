@@ -1,0 +1,57 @@
+# Ferramenta de memória do cérebro (ADR-0026). Só o s2 chama; tarefa, MCP de entrada e Jev não veem.
+id: memoria.atualizar
+title: Corrigir uma memória
+description: 'Corrige o que o Jarvis sabe: encerra a validade da memória antiga e grava a nova no lugar,
+  com o motivo. Use quando o dono disser que algo mudou ou estava errado. Não edita no lugar, não apaga
+  a antiga e sempre pede confirmação.'
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - assertion_id
+  - texto
+  - motivo
+  properties:
+    assertion_id:
+      type: string
+      minLength: 1
+      maxLength: 128
+    texto: &id001
+      type: string
+      minLength: 1
+      maxLength: 2000
+    motivo: *id001
+output_schema:
+  type: object
+  required:
+  - assertion_id
+  - substituida
+preconditions:
+- assertiva ativa existe
+postcondition: antiga superseded com valid_to; a nova ativa a substitui
+capability: memoria.write.correcao
+risk_class: escrita_recuperavel
+side_effect: persistent
+reversible: true
+undo: memoria.atualizar
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: content
+confirmation: once_per_batch
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 500
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-memoria
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

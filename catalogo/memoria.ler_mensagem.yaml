@@ -1,0 +1,53 @@
+# Ferramenta de memória do cérebro (ADR-0026). Só o s2 chama; tarefa, MCP de entrada e Jev não veem.
+id: memoria.ler_mensagem
+title: Ler um turno da conversa
+description: Lê um turno do histórico pelo identificador e os turnos vizinhos da mesma sessão. Use depois
+  de buscar no histórico, para ver o contexto do trecho achado. Não lê fora do histórico, não devolve
+  segredo e não altera nada.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - episode_id
+  properties:
+    episode_id:
+      type: string
+      minLength: 1
+      maxLength: 128
+    vizinhos:
+      type: integer
+      minimum: 0
+      maximum: 6
+output_schema:
+  type: object
+  required:
+  - turnos
+preconditions:
+- alcance historico ligado pelo dono
+- turno existe
+postcondition: os turnos devolvidos são da mesma sessão, em ordem
+capability: memoria.read.mensagem
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: content
+confirmation: never
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 300
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-memoria
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

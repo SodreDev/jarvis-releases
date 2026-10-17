@@ -181,7 +181,11 @@ def test_total_nao_implica_elevacao(pdp: Pdp) -> None:
 def test_capacidade_de_modo_mais_amplo_nao_aparece_no_modo_estreito(pdp: Pdp) -> None:
     pdp.modo = Modo.JARVIS
 
-    assert pdp.allowlist() == ("system.read.status",)
+    # As `memoria.*` (ADR-0026) são `jarvis` de propósito: memória não é raiz de disco.
+    allowlist = pdp.allowlist()
+    assert "system.read.status" in allowlist
+    assert "files.move_to_trash" not in allowlist, "capacidade de `padrao` vazou para o `jarvis`"
+    assert all(pdp.catalogo[t].access_level_min == "jarvis" for t in allowlist)
 
 
 # --- (h) nenhuma capacidade mexe no controle de acesso ----------------------------

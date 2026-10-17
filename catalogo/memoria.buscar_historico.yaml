@@ -1,0 +1,56 @@
+# Ferramenta de memória do cérebro (ADR-0026). Só o s2 chama; tarefa, MCP de entrada e Jev não veem.
+id: memoria.buscar_historico
+title: Buscar no histórico de conversas
+description: 'Procura nos turnos de conversas passadas com o dono, por texto e por período. Use quando
+  o dono perguntar o que disse ou o que o Jarvis disse antes. Devolve trechos com o turno e o caminho
+  do acerto; não devolve segredo, não lê arquivo e não inventa: sem acerto, diz que não encontrou.'
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - consulta
+  properties:
+    consulta:
+      type: string
+      minLength: 1
+      maxLength: 2000
+    desde: &id001
+      type: string
+      format: date-time
+    ate: *id001
+    k:
+      type: integer
+      minimum: 1
+      maximum: 20
+output_schema:
+  type: object
+  required:
+  - achados
+preconditions:
+- alcance historico ligado pelo dono
+postcondition: todo achado traz episode_id e o caminho que o justificou
+capability: memoria.read.historico
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: content
+confirmation: never
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 300
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-memoria
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1
