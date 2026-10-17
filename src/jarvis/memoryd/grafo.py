@@ -142,8 +142,15 @@ def ativar_por_salto(
     tetos: Tetos = TETOS_PADRAO,
     *,
     instante: str = INSTANTE_PADRAO,
+    acumular: bool = False,
 ) -> Ativacao:
-    """Travessia de produção: uma consulta SQL por salto, com todos os tetos da §6.8."""
+    """Travessia de produção: uma consulta SQL por salto, com todos os tetos da §6.8.
+
+    `acumular=False` guarda a **maior** energia que chega a cada nó (o que a F0-05 mediu);
+    `acumular=True` **soma** as chegadas, como na ativação por propagação clássica: o nó que
+    é vizinho de duas sementes (o arquivo que a irmã mandou **e** que é sobre o contrato) passa
+    à frente dos vizinhos de uma só. Qual das duas vale é calibração (§6.8), não gosto.
+    """
 
     inicio = time.monotonic()
     prazo = inicio + tetos.orcamento_ms / 1000.0
@@ -158,6 +165,7 @@ def ativar_por_salto(
         salto_de[entidade] = 0
 
     fronteira = [e for e, _ in sementes]
+    melhor_chegada: dict[str, float] = {}
     for salto in range(1, tetos.saltos + 1):
         if not fronteira:
             break
@@ -195,12 +203,21 @@ def ativar_por_salto(
             )
             if nova < tetos.energia_minima:
                 continue
-            if nova > energia.get(para, 0.0):
+            if acumular and para in energia and salto_de.get(para) == 0:
+                continue  # semente não recebe de volta o que ela mesma espalhou
+            melhor = nova > melhor_chegada.get(para, 0.0)
+            if acumular:
+                energia[para] = energia.get(para, 0.0) + nova
+            elif nova > energia.get(para, 0.0):
                 energia[para] = nova
+            else:
+                continue
+            if melhor:
+                melhor_chegada[para] = nova
                 caminho[para] = (*caminho.get(de, (de,)), f"{linha['relacao']}→{para}")
                 salto_de[para] = salto
-                if para not in proxima:
-                    proxima.append(para)
+            if para not in proxima:
+                proxima.append(para)
             if len(energia) >= tetos.nos_visitados:
                 resultado.graph_truncated = True
                 resultado.motivo = f"teto de {tetos.nos_visitados} nós visitados no salto {salto}"

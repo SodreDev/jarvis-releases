@@ -38,6 +38,7 @@ from jarvis.politica.memoria import Estado, normalizar
 RETENCAO_DO_TURNO: Final = timedelta(days=90)
 """D19 (diretor, 2026-10-16): turno que nenhuma memória cita fica 90 dias."""
 ENTIDADE_DO_DONO: Final = "ent-dono"
+LOTE_DA_OUTBOX: Final = 64
 PREDICADO_PADRAO: Final = "nota"
 Papel = Literal["dono", "jarvis"]
 Escopo = Literal["turno", "sessao", "memoria"]
@@ -462,42 +463,45 @@ class LivroDeMemoria:
             self._expurgar()
         return len(vencidos)
 
-    def processar_outbox(self) -> int:
+    def processar_outbox(self, *, lote: int = LOTE_DA_OUTBOX) -> int:
         """O worker da §6.4: leva ao índice o que o caminho crítico deixou na outbox.
 
-        No índice vão `tipo` (`turno`/`memoria`) e o `status` da assertiva, para o filtro descer
-        para dentro dele. Aqui também roda a ligação de menções (§6.7: extração é trabalho de
-        segundo plano, nunca da voz).
+        Em lotes: o embedding de um lote custa quase o de um item, e o índice grava uma versão
+        por chamada. No índice vão `tipo` (`turno`/`memoria`) e o `status` da assertiva, para o
+        filtro descer para dentro dele. Aqui também roda a ligação de menções (§6.7: extração é
+        trabalho de segundo plano, nunca da voz).
         """
-        feitos = 0
-        for linha in self.con.execute(
+        linhas = self.con.execute(
             "SELECT o.id, o.op, m.id AS unidade, m.text_redacted, m.content_hash,"
-            " m.episode_id, a.status FROM outbox o"
+            " a.status FROM outbox o"
             " JOIN memory_unit m ON m.id = o.memory_unit_id"
             " LEFT JOIN assertion a ON a.id = m.assertion_id"
-        ).fetchall():
-            if linha["op"] == "upsert":
-                memoria = linha["status"] is not None
-                self.indice.upsert(
-                    [
-                        ItemDoIndice(
-                            id=linha["unidade"],
-                            text_redacted=linha["text_redacted"],
-                            content_hash=linha["content_hash"],
-                            metadata={
-                                "tipo": "memoria" if memoria else "turno",
-                                "status": str(linha["status"]) if memoria else "turno",
-                            },
-                        )
-                    ]
-                )
-                if memoria:
+        ).fetchall()
+        for inicio in range(0, len(linhas), lote):
+            pedaco = linhas[inicio : inicio + lote]
+            novos = [linha for linha in pedaco if linha["op"] == "upsert"]
+            self.indice.upsert(
+                [
+                    ItemDoIndice(
+                        id=linha["unidade"],
+                        text_redacted=linha["text_redacted"],
+                        content_hash=linha["content_hash"],
+                        metadata={
+                            "tipo": "turno" if linha["status"] is None else "memoria",
+                            "status": "turno" if linha["status"] is None else str(linha["status"]),
+                        },
+                    )
+                    for linha in novos
+                ]
+            )
+            self.indice.delete([linha["unidade"] for linha in pedaco if linha["op"] != "upsert"])
+            for linha in novos:
+                if linha["status"] is not None:
                     self.ligar_mencoes(linha["unidade"])
-            else:
-                self.indice.delete([linha["unidade"]])
-            self.con.execute("DELETE FROM outbox WHERE id = ?", (linha["id"],))
-            feitos += 1
-        return feitos
+            self.con.executemany(
+                "DELETE FROM outbox WHERE id = ?", [(linha["id"],) for linha in pedaco]
+            )
+        return len(linhas)
 
     def ligar_mencoes(self, unidade: str) -> int:
         """Extrator determinístico (§6.7 b): nome ou apelido **exato** de entidade no texto.

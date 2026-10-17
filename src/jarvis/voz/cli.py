@@ -147,6 +147,8 @@ def diagnosticar(
         ("epitran", "voz", "fonemização pt-BR do TTS local"),
         ("onnxruntime", "voz", "voz do piper"),
         ("sounddevice", "dispositivo", "microfone e alto-falante reais"),
+        ("lancedb", "memoria", "índice da memória (o Jarvis lembrando)"),
+        ("tokenizers", "memoria", "embedding local da memória"),
         ("edge_tts", "edge", "TTS do Edge (barrado por padrão)"),
     ):
         try:

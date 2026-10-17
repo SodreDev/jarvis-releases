@@ -19,6 +19,10 @@ from jarvis.memoryd.embedding import PASTA_DO_MODELO, EmbedderDeTeste, EmbedderE
 from jarvis.memoryd.indice import ItemDoIndice
 from jarvis.memoryd.indice_vetorial import IndiceLance
 
+pytest.importorskip(
+    "lancedb", reason="o índice precisa do grupo `memoria` (`uv sync --group memoria`)"
+)
+
 
 class EmbedderDenso:
     """Vetor denso por texto (semente = hash): os 16 primeiros floats identificam o vetor, o que
