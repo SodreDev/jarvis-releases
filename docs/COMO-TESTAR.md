@@ -13,7 +13,7 @@ com um gerador de resposta provisório (ADR-0018).
 
 ```bash
 cd /home/sodre/GranaFacil/J.A.R.V.I.S
-uv sync --frozen --group dev --group gui --group voz --group asr --group dispositivo
+uv sync --frozen --group dev --group gui --group voz --group asr --group dispositivo --group memoria
 uv run jarvis
 ```
 
@@ -29,7 +29,9 @@ O que a janela tem:
   Os anéis **só giram quando há processamento**; parado é parado;
 - **segurar para falar**: o botão "falar" ou a **barra de espaço**. Soltar fecha o turno na
   hora — é o PTT de verdade, que o terminal não tem como oferecer. Apertar também
-  **interrompe** o Jarvis no meio da fala (o mesmo barge-in da barra no terminal);
+  **interrompe** o Jarvis no meio da fala (o mesmo barge-in da barra no terminal). Vale com a
+  janela em foco **depois de qualquer clique**; com texto no campo, a barra digita (Esc ou
+  Enter devolvem o atalho);
 - **escrever** na barra de baixo funciona a qualquer momento: a linha vira um turno no mesmo
   laço, com a mesma voz e a mesma interrupção;
 - **`Esc`** interrompe, **`Ctrl+B`** fixa a barra lateral, **`1`/`2`/`3`** trocam de modo;
@@ -49,6 +51,41 @@ o diagnóstico e os indicadores desta máquina (lidos de `/proc`).
 **O que encosta na sua máquina pede confirmação.** Navegador, console, arquivos e captura de
 tela existem no catálogo e **não entram sem você dizer que sim** — a faixa de confirmação
 aparece acima da barra de conversa, com o motivo.
+
+### 0.0 Os consertos de 2026-10-17 — como conferir cada um
+
+> Atenção ao `uv sync`: ele **remove** o que não estiver na lista de grupos. Use a linha de
+> cima inteira (com `--group memoria`); uma lista antiga apaga o índice da memória.
+
+1. **Chave no chaveiro vale em todo lugar.** Guarde em Configuração → Chaves de API. Depois:
+   `uv run jarvis-voz --diagnostico` deve dizer `definida (chaveiro do sistema)`, e "testar
+   voz" na aba Diagnóstico usa a mesma chave. Exportada no shell, a do shell ganha. Sem chave
+   em lugar nenhum, a frase diz onde guardar.
+2. **O estado de cada motor é o que o laço vai fazer.** Na aba de provedores, o motor
+   escolhido mostra `LIGADO`, `DESLIGADO` ou `NÃO RODA` com o motivo (falta a chave, falta
+   baixar a voz, falta biblioteca, motor barrado pela licença). É a mesma frase com que o
+   laço recusaria. Com o seu arquivo de 16/10 (`nuvem_ligada = ["tts-elevenlabs"]`), a
+   ElevenLabs aparece `LIGADO`. Se ainda aparecer `DESLIGADO`, a janela leu outro arquivo: o
+   caminho dele está na caixa "Arquivo".
+3. **Outros motores.** `tts-piper-epitran` (local) funciona: `uv run jarvis-voz --texto --tts
+   tts-piper-epitran --s2 eco`. `tts-piper-espeak` **não roda de propósito**: o espeak-ng é
+   GPL-3.0, e a tela diz isso. Se falhar, o motivo aparece na conversa e no card de avisos.
+4. **"Minha voz não sai."** Com `asr = "asr-groq-…"` e a Groq **fora** de `nuvem_ligada`, o
+   Jarvis não te ouve. Agora a conversa diz `não estou ouvindo: …` e o caminho: ligue a Groq
+   em Configuração → Voz — ouvir (e salve) **ou** escolha `asr-whisper-local`. O ASR local é
+   o padrão e foi conferido sem rede (transcreve o corpus; ~1,9 s por frase nesta CPU).
+5. **Atalhos.** Clique em qualquer lugar e segure a barra de espaço: deve aparecer "ouvindo".
+   O atalho **global** (Configuração → Escuta → "usar como atalho global") abre o diálogo do
+   sistema; depois de aceitar, **salve a configuração**, e a janela pede o mesmo atalho ao
+   sistema toda vez que abrir. A frase ao lado diz o estado real ("ligado pelo sistema: …"
+   ou o motivo da recusa).
+6. **Tempo de cada trecho.** Depois de cada resposta aparece uma linha
+   `[enviado → contexto · 1º token · 1ª fronteira · 1º áudio · fala inteira]`. O `claude -p`
+   provisório agora sobe com `--safe-mode`: 1º token p50 de 2145 para 1691 ms
+   (`docs/medicoes/f2-02-piso-do-claude.md`). A ElevenLabs passa a ter
+   `eleven_flash_v2_5` como padrão, mas **o seu arquivo fixa `modelo_elevenlabs =
+   "eleven_v3"`**: para o mais rápido, clique em `eleven_flash_v2_5` na linha da ElevenLabs e
+   salve.
 
 ### 0.1 Pedir para o Jarvis fazer coisas (ferramentas, fatia 6)
 
@@ -131,7 +168,7 @@ dispositivo está **não verificado**, e a primeira vez que ele roda é a sua.
 cd /home/sodre/GranaFacil/J.A.R.V.I.S
 
 # o básico + a janela + os extras do caminho local de voz
-uv sync --frozen --group dev --group gui --group voz --group asr --group dispositivo
+uv sync --frozen --group dev --group gui --group voz --group asr --group dispositivo --group memoria
 
 # a biblioteca de áudio do SISTEMA (o sounddevice não a traz no Linux)
 sudo dnf install portaudio        # Nobara/Fedora
@@ -149,7 +186,10 @@ aí, baixe com `uv run jarvis-voz --baixar-voz` (ou pelo botão na aba de diagn�
 janela): o tamanho é dito antes e o sha256 é conferido depois. Dá para testar o resto sem ela,
 com `--tts tts-parametrico`.
 
-### 1.2 Exportar as duas chaves (só se for usar nuvem)
+### 1.2 As duas chaves (só se for usar nuvem)
+
+O jeito simples é guardar pela janela (Configuração → Chaves de API): vai para o chaveiro do
+sistema e vale também para o `jarvis-voz` no terminal. Se preferir o shell:
 
 ```bash
 export JARVIS_GROQ_API_KEY=...
