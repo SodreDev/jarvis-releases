@@ -281,3 +281,15 @@ def test_com_historico_o_livro_guarda_o_dono_e_so_o_tocado_do_jarvis() -> None:
     )
     assert [t["texto"] for t in jarvis if t["alvo"]] == ["Depois de quinta"]
     assert "sábado" not in str(livro.buscar_historico("sábado")), "gerado e não tocado"
+
+
+def test_o_primeiro_token_e_medido_antes_da_primeira_fronteira() -> None:
+    from jarvis.s2.cerebro import Cerebro
+    from jarvis.s2.motor_roteirizado import MotorRoteirizado
+
+    resposta = Cerebro(motor=MotorRoteirizado(resposta="Depois de quinta vem sexta.")).responder(
+        "que dia vem depois de quinta?", epoch=0, publicar=lambda _: None
+    )
+    assert resposta.ms_ate_primeiro_token is not None
+    assert resposta.ms_ate_primeiro_pedaco is not None
+    assert resposta.ms_ate_primeiro_token <= resposta.ms_ate_primeiro_pedaco

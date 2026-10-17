@@ -60,7 +60,7 @@ def test_a_elevenlabs_lista_so_modelos_com_portugues_no_endpoint_do_motor() -> N
     motor = motor_registrado(TTS_ELEVENLABS)
     assert motor is not None
 
-    assert motor.modelos_permitidos == ("eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_v3")
+    assert motor.modelos_permitidos == ("eleven_flash_v2_5", "eleven_multilingual_v2", "eleven_v3")
     assert motor.fonte_dos_modelos.startswith("https://elevenlabs.io/docs/")
     assert motor.data_dos_modelos == "2026-10-16"
     # Os de fora ficam fora: dialogue-only, aposentados ou só inglês.
@@ -73,7 +73,7 @@ def test_modelo_vazio_e_o_padrao_do_registro() -> None:
     motor = motor_registrado(TTS_ELEVENLABS)
     assert motor is not None
 
-    assert exigir_modelo(motor, "") == "eleven_multilingual_v2"
+    assert exigir_modelo(motor, "") == "eleven_flash_v2_5"  # o de menor latência (2026-10-16)
     assert exigir_modelo(motor, "eleven_v3") == "eleven_v3"
 
 
@@ -188,8 +188,8 @@ def test_a_elevenlabs_escolhe_modelo_pelo_campo_proprio() -> None:
     eleven = next(p for p in provedores(config, "tts") if p.nome == "ElevenLabs")
 
     assert [(o.modelo, o.campo, o.valor, o.escolhido) for o in eleven.modelos] == [
-        ("eleven_multilingual_v2", "modelo_elevenlabs", "", False),
-        ("eleven_flash_v2_5", "modelo_elevenlabs", "eleven_flash_v2_5", False),
+        ("eleven_flash_v2_5", "modelo_elevenlabs", "", False),
+        ("eleven_multilingual_v2", "modelo_elevenlabs", "eleven_multilingual_v2", False),
         ("eleven_v3", "modelo_elevenlabs", "eleven_v3", True),
     ]
 

@@ -112,8 +112,14 @@ class Turno:
     ouvido_ms: float = 0.0
     asr_ms: float = 0.0
     resposta_ms: float = 0.0
+    """Do enviado à 1ª fronteira: o primeiro pedaço de fala que o cérebro publicou."""
     primeiro_pedaco_ms: float = 0.0
+    """Do enviado ao 1º áudio na fila de playback."""
     tts_ms: float = 0.0
+    contexto_ms: float = 0.0
+    """Do enviado ao contexto pronto para o motor (inclui a consulta à memória)."""
+    primeiro_token_ms: float = 0.0
+    """Do enviado ao primeiro texto que o motor entregou."""
     amostras_tocadas: int = 0
     cancelado: bool = False
     epoch: int = 0
@@ -125,10 +131,15 @@ class Turno:
     def resumo(self) -> str:
         if self.cancelado:
             return f"  (interrompido no epoch {self.epoch}, nada do resto foi tocado)"
+        # Cada trecho visível, contado do enviado (pedido do dono, 2026-10-16: "está lento" —
+        # a tela diz onde o tempo foi). Com voz, antes vêm o ouvido e o ASR.
+        voz = (
+            f"ouvi {self.ouvido_ms:.0f} ms · asr {self.asr_ms:.0f} ms · " if self.ouvido_ms else ""
+        )
         return (
-            f"  [ouvi {self.ouvido_ms:.0f} ms · asr {self.asr_ms:.0f} ms · "
-            f"resposta {self.resposta_ms:.0f} ms · 1º pedaço {self.primeiro_pedaco_ms:.0f} ms · "
-            f"fala {self.tts_ms:.0f} ms]"
+            f"  [{voz}enviado → contexto {self.contexto_ms:.0f} ms · "
+            f"1º token {self.primeiro_token_ms:.0f} ms · 1ª fronteira {self.resposta_ms:.0f} ms · "
+            f"1º áudio {self.primeiro_pedaco_ms:.0f} ms · fala inteira {self.tts_ms:.0f} ms]"
         )
 
 
@@ -652,6 +663,8 @@ class Aplicativo:
             respondeu=respondeu,
             resposta_ms=primeiro_texto_ms[0] if primeiro_texto_ms else 0.0,
             primeiro_pedaco_ms=turno.primeiro_pedaco_ms,
+            contexto_ms=resposta.ms_ate_contexto if resposta is not None else 0.0,
+            primeiro_token_ms=(resposta.ms_ate_primeiro_token or 0.0) if resposta else 0.0,
             tts_ms=turno.tts_ms,
             amostras_tocadas=turno.amostras_tocadas,
             cancelado=cancelado() or not respondeu,
@@ -928,6 +941,8 @@ class Aplicativo:
             resposta_ms=turno.resposta_ms,
             primeiro_pedaco_ms=turno.primeiro_pedaco_ms,
             tts_ms=turno.tts_ms,
+            contexto_ms=turno.contexto_ms,
+            primeiro_token_ms=turno.primeiro_token_ms,
             amostras_tocadas=turno.amostras_tocadas,
             cancelado=turno.cancelado,
             epoch=turno.epoch,

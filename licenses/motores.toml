@@ -177,7 +177,9 @@ papel = "tts"
 onde = "nuvem"
 ligado = false
 implementacao = "jarvis.voz.elevenlabs:MotorTtsElevenLabs"
-modelo = "eleven_multilingual_v2"
+# Padrão = o de menor latência que a página de modelos dá com português por este endpoint
+# (pedido do dono, 2026-10-16: "está lento"). Latência pela documentação, não medida aqui.
+modelo = "eleven_flash_v2_5"
 voz = "(escolhida pelo dono na configuração)"
 servico = "ElevenLabs"
 endereco = "https://api.elevenlabs.io/v1/text-to-speech"
@@ -194,12 +196,13 @@ fonte = "https://elevenlabs.io/terms-of-use"
 fonte_tecnica = "https://elevenlabs.io/docs/api-reference/text-to-speech/convert"
 fonte_retencao = "https://elevenlabs.io/docs/eleven-api/resources/zero-retention-mode"
 data_de_acesso = "2026-10-15"
-modelos = ["eleven_flash_v2_5", "eleven_v3"]
+modelos = ["eleven_multilingual_v2", "eleven_v3"]
 fonte_dos_modelos = "https://elevenlabs.io/docs/models"
 data_dos_modelos = "2026-10-16"
 nota_dos_modelos = """Só entram modelos que a página de modelos dá com português E pelo \
-endpoint de Text to Speech que este motor usa: `eleven_multilingual_v2` (padrão, \
-"Portuguese (Brazil, Portugal)"), `eleven_flash_v2_5` (~75 ms, "real-time applications") e \
+endpoint de Text to Speech que este motor usa: `eleven_flash_v2_5` (padrão desde \
+2026-10-16, ~75 ms, "real-time applications"), `eleven_multilingual_v2` ("Portuguese (Brazil, \
+Portugal)", o padrão até então) e \
 `eleven_v3` ("can also be used with the Text to Speech API", geração anterior). Fora, com \
 o motivo: `eleven_v4` e `eleven_v4_turbo` (a página os dá pela Text to Dialogue API / \
 WebSocket, não pelo endpoint deste motor), `eleven_v3_conversational` (Text to Dialogue \

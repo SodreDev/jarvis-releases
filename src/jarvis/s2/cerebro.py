@@ -92,6 +92,8 @@ class Resposta:
     memoria: MemoriaDoTurno | None = None
     """O que o livro lembrou e foi ao prompt neste turno (fatia 7), com a proveniência."""
     ms_ate_contexto: float = 0.0
+    ms_ate_primeiro_token: float | None = None
+    """Do turno aceito ao primeiro texto que o motor entregou (antes do fatiador)."""
     ms_ate_primeiro_pedaco: float | None = None
     ms_cancelamento_ate_motor_parado: float | None = None
 
@@ -269,6 +271,8 @@ class Cerebro:
                 if isinstance(delta, PedidoDeTool):
                     pedidos.append(delta)  # o modelo propõe; quem dispõe é o código (P1)
                     continue
+                if resposta.ms_ate_primeiro_token is None and delta.texto.strip():
+                    resposta.ms_ate_primeiro_token = _ms_desde(comeco)
                 resposta.gerado += delta.texto
                 for pedaco in fatiador.alimentar(delta.texto):
                     if cancelado():

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import queue
 import subprocess
 import threading
@@ -42,6 +43,7 @@ from jarvis.voz.interface import Cancelado, Onde
 from jarvis.voz.s2_provisorio import FERRAMENTAS_PROIBIDAS, PROMPT_DE_SISTEMA
 
 COMANDO_PADRAO: Final = ("claude",)
+VARIAVEL_SEM_TRAFEGO: Final = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
 PRAZO_PADRAO_S: Final = 30.0
 ESFORCO_POR_MODO: Final[Mapping[Modo, str]] = {Modo.RAPIDO: "low", Modo.PENSAR: "high"}
 """Medido: o esforço pesa mais que o tamanho do modelo no tempo até a primeira fronteira
@@ -160,6 +162,15 @@ class MotorClaudeCli:
     ultimo_codigo: int | None = None
     pensamento_descartado: int = field(default=0)
     """Deltas de raciocínio que chegaram e não viraram fala — contados, não guardados."""
+    modo_seguro: bool = True
+    """`--safe-mode`: sem CLAUDE.md, skills, plugins, hooks nem MCP no spawn. Medido em
+    `docs/medicoes/f2-02-piso-do-claude.md`: tira ~400 ms do 1º token (p50) nesta máquina, e o
+    motor fica ainda mais isolado do que a pasta vazia já deixava (ADR-0018, regra 1)."""
+    sem_trafego_extra: bool = True
+    """`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` no filho: sem telemetria, atualização e
+    relatório de erro no caminho da resposta (mesma medição: p95 menor)."""
+    extras: Sequence[str] = ()
+    """Flags a mais no `argv`, para medição."""
 
     def argumentos(self, modo: Modo, ferramentas: Sequence[Mapping[str, object]] = ()) -> list[str]:
         """O `argv` completo — **sem** a fala do dono, que vai por `stdin`."""
@@ -186,7 +197,15 @@ class MotorClaudeCli:
         ]
         if self.modelo:
             argumentos += ["--model", self.modelo]
-        return argumentos
+        if self.modo_seguro:
+            argumentos.append("--safe-mode")
+        return [*argumentos, *self.extras]
+
+    def ambiente_do_filho(self) -> dict[str, str] | None:
+        if not self.sem_trafego_extra:
+            return dict(self.ambiente) if self.ambiente is not None else None
+        base = dict(os.environ if self.ambiente is None else self.ambiente)
+        return {**base, VARIAVEL_SEM_TRAFEGO: "1"}
 
     def gerar(
         self, contexto: Contexto, modo: Modo, cancelado: Cancelado
@@ -210,7 +229,7 @@ class MotorClaudeCli:
                 text=True,
                 encoding="utf-8",
                 cwd=self.pasta_de_trabalho,
-                env=dict(self.ambiente) if self.ambiente is not None else None,
+                env=self.ambiente_do_filho(),
             )
         except FileNotFoundError:
             yield Fim(MotivoDoFim.ERRO, f"{self.comando[0]} não está nesta máquina")

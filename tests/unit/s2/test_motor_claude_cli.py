@@ -195,3 +195,21 @@ def test_desistir_do_iterador_mata_o_processo(pasta_vazia: Path, tmp_path: Path)
     deltas.close()  # type: ignore[attr-defined]
 
     assert motor.ultimo_codigo is not None
+
+
+def test_piso_do_spawn_vem_ligado_por_padrao(tmp_path: Path) -> None:
+    """Medido em docs/medicoes/f2-02-piso-do-claude.md: `--safe-mode` tira ~400 ms do 1º token
+    e o filho sobe sem tráfego não essencial."""
+    from jarvis.s2.motor import Modo
+    from jarvis.s2.motor_claude_cli import VARIAVEL_SEM_TRAFEGO, MotorClaudeCli
+
+    motor = MotorClaudeCli(pasta_de_trabalho=tmp_path, ambiente={"PATH": "/usr/bin"})
+    assert "--safe-mode" in motor.argumentos(Modo.RAPIDO)
+    assert {"--strict-mcp-config", "--no-session-persistence"} <= set(motor.argumentos(Modo.RAPIDO))
+    assert motor.ambiente_do_filho() == {"PATH": "/usr/bin", VARIAVEL_SEM_TRAFEGO: "1"}
+
+    antes = MotorClaudeCli(
+        pasta_de_trabalho=tmp_path, ambiente={}, modo_seguro=False, sem_trafego_extra=False
+    )
+    assert "--safe-mode" not in antes.argumentos(Modo.RAPIDO)
+    assert antes.ambiente_do_filho() == {}

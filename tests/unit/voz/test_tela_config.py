@@ -222,7 +222,7 @@ def test_o_arquivo_gravado_e_relido_sem_perder_nada(tmp_path: Path) -> None:
         tts="tts-elevenlabs",
         s2="eco",
         voz_elevenlabs="voz-do-dono",
-        modelo_elevenlabs="eleven_flash_v2_5",
+        modelo_elevenlabs="eleven_multilingual_v2",  # a 2ª opção, depois do padrão (flash)
         nuvem_ligada=("tts-elevenlabs",),
     )
 

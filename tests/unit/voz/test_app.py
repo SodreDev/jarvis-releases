@@ -265,3 +265,21 @@ def test_resumo_do_turno_diz_o_que_mediu() -> None:
         .resumo()
         .startswith("  (interrompido no epoch 3")
     )
+
+
+def test_o_resumo_do_turno_mostra_cada_trecho_desde_o_enviado() -> None:
+    from jarvis.voz.app import Turno
+
+    resumo = Turno(
+        falou="oi",
+        respondeu="Oi.",
+        contexto_ms=3,
+        primeiro_token_ms=1411,
+        resposta_ms=1412,
+        primeiro_pedaco_ms=1587,
+        tts_ms=1749,
+    ).resumo()
+    assert resumo == (
+        "  [enviado → contexto 3 ms · 1º token 1411 ms · 1ª fronteira 1412 ms · "
+        "1º áudio 1587 ms · fala inteira 1749 ms]"
+    )
