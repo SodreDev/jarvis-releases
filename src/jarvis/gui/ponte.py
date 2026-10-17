@@ -38,7 +38,7 @@ from PySide6.QtCore import (
 )
 
 from jarvis.gui import chaveiro, recursos, sistema
-from jarvis.gui.acoes import Area, Modo
+from jarvis.gui.acoes import Acao, Area, Modo, Tipo
 from jarvis.gui.componentes import CATALOGO
 from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
 from jarvis.gui.nucleo import SessaoDeVoz
@@ -70,6 +70,13 @@ AREA_DOS_PAINEIS: Final[dict[str, Area]] = {
 escolhido abre o que se escolhe dentro dele (modelo, aviso, voz da conta) — e rola quando
 nem assim cabe; o de diagnóstico é texto corrido do `--diagnostico`."""
 MAXIMO_DE_LINHAS: Final = 400
+COMPONENTE_DE_AVISOS: Final = "notificacoes"
+PREFIXO_DA_RESPOSTA: Final = "Jarvis: "
+PREFIXO_DO_DIGITADO: Final = "Você (digitado): "
+"""Como o laço ecoa uma linha digitada no meio do laço de voz (`Aplicativo._turno_digitado`)."""
+"""Como o laço escreve a resposta na tela — o mesmo prefixo do terminal."""
+RENOVAR_O_CARD_A_CADA: Final = 30
+"""Tiques de 1 s entre duas renovações do card: o "há 3 min" de cada aviso envelhece."""
 
 
 class ModeloDeModulos(QAbstractListModel):
@@ -175,6 +182,10 @@ class Ponte(QObject):
     vozesMudaram = Signal()
     escutaMudou = Signal()
     dedoGlobal = Signal(bool)
+    avisosMudaram = Signal()
+    respostaParcial = Signal(str)
+    """O texto acumulado da resposta em curso, vindo do laço a cada pedaço (ADR-0025)."""
+    """A fila de avisos do laço mudou: o card é renovado na thread da janela."""
     """Apertar/soltar do atalho global. Vem da thread do portal; o Qt entrega na da janela."""
 
     def __init__(
@@ -212,6 +223,9 @@ class Ponte(QObject):
         self._portal: AtalhoPortal | None = None
         self._portal_ok, self._portal_frase = portal_disponivel(ambiente=self._ambiente_base)
         self.dedoGlobal.connect(self._aplicar_dedo)
+        self.avisosMudaram.connect(self._ligar_card_de_avisos)
+        self.respostaParcial.connect(self._guardar_parcial)
+        self._tiques = 0
         self._modelo = ModeloDeModulos(self)
         self._sessao: SessaoDeVoz | None = None
         self._estado = Estado.PARADO
@@ -497,6 +511,7 @@ class Ponte(QObject):
         )
         for bruta in propostas:
             self._espaco.propor(bruta)
+        self._ligar_card_de_avisos()
         self._historico_visto = len(self._espaco.historico)
         self._publicar()
 
@@ -552,6 +567,8 @@ class Ponte(QObject):
             ao_linha=lambda linha: self.linhaNova.emit("jarvis", linha),
             ao_estado=self._mudar_estado,
             ao_terminar=self._fim_da_conversa,
+            ao_mudar_avisos=self.avisosMudaram.emit,
+            ao_pedaco=self.respostaParcial.emit,
             escuta=self._escuta,
         )
         self._sessao.iniciar(self._aplicativo)
@@ -900,14 +917,68 @@ class Ponte(QObject):
     def _guardar_linha(self, quem: str, texto: str) -> None:
         if not texto.strip():
             return
-        self._transcricao.append({"quem": quem, "texto": texto})
+        digitado = texto.removeprefix(PREFIXO_DO_DIGITADO)
+        if (
+            digitado != texto
+            and self._transcricao
+            and self._transcricao[-1] == {"quem": "dono", "texto": digitado}
+        ):
+            return  # o eco do laço repete a linha que a janela já pôs: a mesma fala, uma vez
+        parcial = self._parcial_em_curso()
+        if quem == "jarvis" and texto.startswith(PREFIXO_DA_RESPOSTA) and parcial is not None:
+            # A linha final do turno substitui a que veio crescendo em stream: a mesma resposta
+            # não aparece duas vezes na conversa.
+            self._transcricao[parcial] = {"quem": quem, "texto": texto}
+        else:
+            self._transcricao.append({"quem": quem, "texto": texto})
         del self._transcricao[:-MAXIMO_DE_LINHAS]
         self.conversaMudou.emit()
+
+    def _guardar_parcial(self, acumulado: str) -> None:
+        """Um pedaço novo da resposta: a linha do Jarvis cresce no lugar, enquanto ele gera."""
+        linha = {"quem": "jarvis", "texto": f"{PREFIXO_DA_RESPOSTA}{acumulado}", "parcial": "1"}
+        parcial = self._parcial_em_curso()
+        if parcial is None:
+            self._transcricao.append(linha)
+        else:
+            self._transcricao[parcial] = linha
+        del self._transcricao[:-MAXIMO_DE_LINHAS]
+        self.conversaMudou.emit()
+
+    def _parcial_em_curso(self) -> int | None:
+        """A linha parcial do turno corrente, se houver — perto do fim, porque a interrupção e
+        o resumo do turno podem ter entrado depois dela."""
+        for indice in range(len(self._transcricao) - 1, max(-1, len(self._transcricao) - 5), -1):
+            if self._transcricao[indice].get("parcial"):
+                return indice
+        return None
 
     def _bater_o_relogio(self) -> None:
         self._relogio = datetime.now().strftime("%H:%M")
         self._medidas = sistema.medidas()
+        self._tiques += 1
+        if self._tiques % RENOVAR_O_CARD_A_CADA == 0:
+            self._ligar_card_de_avisos()
         self.mudou.emit()
+
+    def _ligar_card_de_avisos(self) -> None:
+        """Os dados reais da fila do laço em todo card `notificacoes`, pelo `updateWidget`.
+
+        Quem diz que os dados são reais é este código, que lê a fila — por isso o selo de
+        demonstração sai aqui e nunca por proposta da IA (ADR-0019, emenda de 2026-10-17).
+        Antes de haver laço, a fila é vazia, e vazio é real: o card diz o que vai aparecer.
+        """
+        dados = self._sessao.dados_dos_avisos() if self._sessao else {"avisos": []}
+        visto = len(self._espaco.historico) == self._historico_visto
+        for identificador, widget in list(self._espaco.widgets.items()):
+            if widget.componente == COMPONENTE_DE_AVISOS:
+                self._espaco.aplicar(
+                    Acao(tipo=Tipo.ATUALIZAR, widget=identificador, dados=dados),
+                    dados_reais=True,
+                )
+        if visto:
+            # Renovar o card não é novidade para o dono: não vira frase na tela.
+            self._historico_visto = len(self._espaco.historico)
 
     def _publicar(self) -> None:
         self._modelo.sincronizar(self._espaco.para_dict()["widgets"])

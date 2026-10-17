@@ -78,5 +78,6 @@ def test_o_roteiro_abre_o_card_pelo_mesmo_caminho_da_ia(modo: Modo) -> None:
     assert not recusas, recusas
     cards = [w for w in espaco.widgets.values() if w.componente == "notificacoes"]
     assert len(cards) == 1
-    assert cards[0].demonstracao
-    assert cards[0].dados["avisos"], "o card de demonstração saiu vazio"
+    # O roteiro abre o card **sem dados**: quem os põe é a ponte, com a fila de verdade
+    # (ADR-0019, emenda de 2026-10-17). Aviso inventado num card real seria mentira.
+    assert "avisos" not in cards[0].dados

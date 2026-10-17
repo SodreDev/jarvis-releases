@@ -78,6 +78,11 @@ class SessaoDeVoz:
     ao_estado: Callable[[Estado], None] = _nada
     ao_terminar: Callable[[str], None] = _nada
     """Fim da sessão: frase do erro, ou vazio quando terminou porque mandaram parar."""
+    ao_mudar_avisos: Callable[[], None] = lambda: None
+    ao_pedaco: Callable[[str], None] = _nada
+    """A resposta em stream: o texto acumulado a cada pedaço de fala (ADR-0025). Da thread de
+    trabalho, como as outras."""
+    """A fila de avisos do laço mudou (ADR-0025). Chamada da thread de trabalho."""
     escuta: Escuta | None = None
     """O modo de escuta vivo, de quem abriu a sessão (a ponte). Trocá-lo vale no próximo tique
     do laço, sem reiniciar nada (ADR-0021). `None` = o laço monta um da configuração."""
@@ -115,6 +120,8 @@ class SessaoDeVoz:
         aplicativo.escrever_na_tela = self.ao_linha
         aplicativo.teclado = self.teclado
         aplicativo.ao_mudar_estado = self.ao_estado
+        aplicativo.ao_mudar_avisos = self.ao_mudar_avisos
+        aplicativo.ao_pedaco = self.ao_pedaco
         # A porta do dedo fica **sempre** ligada: o modo troca com a sessão aberta, e quem
         # decide se o dedo manda é o laço, pelo modo vivo — não esta montagem.
         aplicativo.pressionado = self._pressionado
@@ -166,6 +173,12 @@ class SessaoDeVoz:
         self._thread.join(timeout=segundos)
         return not self._thread.is_alive()
 
+    def dados_dos_avisos(self) -> dict[str, list[dict[str, str]]]:
+        """O card `notificacoes`: a fila do laço, ou vazia antes de haver laço."""
+        if self.aplicativo is None:
+            return {"avisos": []}
+        return self.aplicativo.dados_dos_avisos()
+
     def estado_do_microfone(self) -> EstadoDaFonte:
         """O indicador do F1-13: o que a fonte **está** fazendo, lido de quem a tem na mão."""
         return ler_estado(self.raiz)
@@ -205,6 +218,12 @@ class SessaoDeVoz:
         except Exception as erro:  # a janela não pode morrer calada nem levar o processo junto
             erro_final = f"{type(erro).__name__}: {erro}"
         finally:
+            if erro_final:
+                # O card de avisos guarda o que derrubou a conversa: a linha da transcrição
+                # rola para fora da tela, o card fica (ADR-0025, "nada some sem rastro").
+                self.aplicativo.registrar_aviso(
+                    "falhou", "conversa", f"a conversa parou: {erro_final}"
+                )
             self.ao_terminar(erro_final)
 
     def _laco_de_audio(self) -> None:

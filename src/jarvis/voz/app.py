@@ -30,36 +30,46 @@ mentir.
 
 from __future__ import annotations
 
+import queue
+import threading
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
 from jarvis.agentd.asr import MotorWhisper, TranscritorIncremental
-from jarvis.agentd.tts import MotorParametrico, MotorPiperOnnx, SintetizadorEmStreaming
+from jarvis.agentd.fala_em_stream import trechos_do_stream
+from jarvis.agentd.fila_de_avisos import Entrega, FilaDeAvisos, notificacao
+from jarvis.agentd.tts import (
+    Fala,
+    MotorParametrico,
+    MotorPiperOnnx,
+    SintetizadorEmStreaming,
+    Trecho,
+    fatiar,
+)
 from jarvis.audio_io.backend import fonte_do_ambiente, sumidouro_do_ambiente
 from jarvis.audio_io.captura import Captura
 from jarvis.audio_io.erros import ErroDeAudio
-from jarvis.audio_io.playback import FilaDePlayback
+from jarvis.audio_io.playback import FilaDePlayback, Pedaco
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
 from jarvis.audio_io.vad import Vad
-from jarvis.barramento.envelope import uuid7
+from jarvis.barramento.envelope import Envelope, uuid7
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
+from jarvis.s2.cerebro import Cerebro, Resposta
+from jarvis.s2.motor import INTERVALO_DE_CONSULTA_S, MotivoDoFim, MotorDeConversa
+from jarvis.s2.motor_claude_cli import MotorClaudeCli
+from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import Configuracao
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde
 from jarvis.voz.registro import MotorRecusado, motor_registrado
-from jarvis.voz.s2_provisorio import (
-    GeradorDeResposta,
-    RespostaDeEco,
-    RespostaIndisponivel,
-    RespostaPelaCli,
-)
+from jarvis.voz.s2_provisorio import RespostaDeEco
 from jarvis.voz.teclado import ESPACO, TECLAS_DE_SAIDA, Teclado, TecladoMudo
 
 PASTA_DE_VOZES: Final = Path.home() / ".cache" / "jarvis" / "vozes"
@@ -68,6 +78,9 @@ SILENCIO_PARA_FECHAR_O_TURNO_MS: Final = 700.0
 """Quanto silêncio fecha o turno no modo VAD. Não é o detector semântico do F1-07 — é o
 piso simples, e está dito no relatório para ninguém publicar isto como SLO-4."""
 MAXIMO_DE_AUDIO_POR_TURNO_S: Final = 30.0
+ESPERA_DO_CEREBRO_S: Final = 2.0
+"""Quanto o laço espera a linha do cérebro fechar depois do último pedaço (ou do cancelamento):
+o motor já parou de gerar (regra 9 da ADR-0025, ≤ 50 ms); isto é só o fim da linha."""
 
 
 class AplicativoIndisponivel(RuntimeError):
@@ -207,20 +220,21 @@ def motor_de_tts(
     return piper
 
 
-def gerador_de_resposta(
-    configuracao: Configuracao,
-    *,
-    pasta_de_trabalho: Path,
-    cancelado: Callable[[], bool],
-) -> GeradorDeResposta:
+def motor_de_conversa(configuracao: Configuracao, *, pasta_de_trabalho: Path) -> MotorDeConversa:
+    """O motor do cérebro que o dono escolheu (ADR-0025; D18 do roteiro da F2).
+
+    `eco` é o **padrão**: repete o que o dono disse, sem rede e sem conta — testa voz,
+    interrupção e tela sem mandar nada para fora. O `claude -p` só roda quando o dono escolhe
+    `s2 = "claude"`, e a tela diz `[nuvem]` ao lado do nome: nunca é padrão silencioso.
+    """
     if configuracao.s2 == "eco":
-        return RespostaDeEco()
+        eco = RespostaDeEco()
+        return MotorRoteirizado(
+            resposta=lambda contexto: eco.responder(contexto.turno),
+            nome="eco (repete o que você disse)",
+        )
     pasta_de_trabalho.mkdir(parents=True, exist_ok=True)
-    return RespostaPelaCli(
-        pasta_de_trabalho=pasta_de_trabalho,
-        modelo=configuracao.modelo_do_s2,
-        cancelado=cancelado,
-    )
+    return MotorClaudeCli(pasta_de_trabalho=pasta_de_trabalho, modelo=configuracao.modelo_do_s2)
 
 
 @dataclass(slots=True)
@@ -264,6 +278,10 @@ class Aplicativo:
     Lido a cada tique, trocado de outra thread (a janela, o controlador) sem reiniciar a
     sessão. `None` monta um da configuração na primeira leitura — o terminal não precisa
     saber que isto existe."""
+    ao_pedaco: Callable[[str], None] | None = None
+    """A resposta **enquanto chega** (ADR-0025): o texto acumulado da resposta em curso, a cada
+    pedaço de fala que o cérebro publica. A janela mostra em stream; o terminal não liga. Como
+    as outras portas, é chamada da thread do laço."""
     texto_digitado: Callable[[], str | None] | None = None
     """Uma linha que o dono digitou, se houver. É consultada entre os quadros do laço de áudio.
 
@@ -271,13 +289,49 @@ class Aplicativo:
     playback, mesma interrupção. Fazer isso por fora (uma segunda thread chamando `responder`)
     daria dois donos do epoch — e dois donos do epoch é a origem do barge-in que não cancela."""
 
+    ao_mudar_avisos: Callable[[], None] | None = None
+    """A fila de avisos mudou (ADR-0025): a janela renova o card. Como `ao_mudar_estado`, é
+    chamada da thread do laço — quem liga aqui emite sinal e volta."""
+
     epoch: int = 1
     estado: Estado = Estado.PARADO
     session_id: str = field(default_factory=lambda: str(uuid7()))
+    avisos: FilaDeAvisos = field(init=False)
+    """A fila de avisos do laço, que aqui faz o papel do `agentd` (ADR-0025, regra 12)."""
     turnos: list[Turno] = field(default_factory=list)
     _asr: MotorDeAsr | None = field(default=None, repr=False)
     _tts: MotorDeTts | None = field(default=None, repr=False)
-    _s2: GeradorDeResposta | None = field(default=None, repr=False)
+    _motor: MotorDeConversa | None = field(default=None, repr=False)
+    """O motor do cérebro. Trocável entre turnos: a conversa mora no `Cerebro`, não nele."""
+    _cerebro: Cerebro | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        self.avisos = FilaDeAvisos(session_id=self.session_id)
+
+    # --- avisos (ADR-0025) ---------------------------------------------------------------
+    def receber_aviso(self, envelope: Envelope) -> None:
+        """Um `Notification` entra na fila; a janela é avisada para renovar o card."""
+        self.avisos.receber(envelope, time.monotonic())
+        self._avisos_mudaram()
+
+    def registrar_aviso(self, tipo: str, origem: str, resumo: str) -> None:
+        """Aviso que nasce no próprio laço (a conversa caiu, o motor falhou). Vai **só para o
+        card**: a frase já foi escrita na tela, e falar de novo seria repetir."""
+        identificador = f"local-{uuid7()}"
+        self.avisos.receber(
+            notificacao(self.session_id, identificador, tipo=tipo, origem=origem, resumo=resumo),
+            time.monotonic(),
+        )
+        self.avisos.decidido(identificador, Entrega.SO_CARD)
+        self._avisos_mudaram()
+
+    def dados_dos_avisos(self) -> dict[str, list[dict[str, str]]]:
+        """O que o card `notificacoes` mostra, no contrato `avisos` do componente."""
+        return self.avisos.dados_do_card(time.monotonic())
+
+    def _avisos_mudaram(self) -> None:
+        if self.ao_mudar_avisos is not None:
+            self.ao_mudar_avisos()
 
     # --- montagem -----------------------------------------------------------------------
     def cancelado_de(self, epoch: int) -> Callable[[], bool]:
@@ -308,6 +362,8 @@ class Aplicativo:
         if estado is self.estado:
             return
         self.estado = estado
+        # O piso da fila de avisos: enquanto o Jarvis fala, nenhum aviso sai por cima.
+        self.avisos.tts_tocando(estado is Estado.FALANDO, time.monotonic())
         if self.ao_mudar_estado is not None:
             self.ao_mudar_estado(estado)
 
@@ -344,12 +400,12 @@ class Aplicativo:
             # aqui está o porquê" —, porque para ele são: motor desligado, chave ausente e
             # nuvem proibida sob CI resolvem-se lendo a frase, não um traceback.
             raise AplicativoIndisponivel(str(erro)) from None
-        if self._s2 is None:
-            self._s2 = gerador_de_resposta(
-                self.configuracao,
-                pasta_de_trabalho=self.raiz / "conversa",
-                cancelado=cancelado,
+        if self._motor is None:
+            self._motor = motor_de_conversa(
+                self.configuracao, pasta_de_trabalho=self.raiz / "conversa"
             )
+        if self._cerebro is None:
+            self._cerebro = Cerebro(motor=self._motor, session_id=self.session_id)
         self._aquecer()
 
     def _aquecer(self) -> None:
@@ -386,67 +442,152 @@ class Aplicativo:
 
     # --- um turno -----------------------------------------------------------------------
     def responder(self, texto: str, *, fila: FilaDePlayback | None = None) -> Turno:
-        """Texto → resposta → áudio no sumidouro. É o turno sem a parte do microfone."""
-        if self._tts is None or self._s2 is None:
+        """Texto → cérebro em stream → áudio no sumidouro, falando enquanto o motor gera.
+
+        O cérebro (`jarvis.s2.cerebro`, ADR-0025) roda numa linha de execução própria e publica
+        um pedaço de fala por fronteira; este laço — que é o dono do epoch e da fila — sintetiza
+        e toca cada pedaço assim que ele chega, olhando o teclado entre os quadros. A barra (ou
+        o "parar" da janela) mata o epoch: o cérebro para de publicar e fecha o motor, a fila
+        descarta o que não tocou, e a conversa guarda só o que o dono ouviu.
+        """
+        if self._tts is None or self._motor is None or self._cerebro is None:
             # Só o que este caminho usa: responder não transcreve nada.
             self.abrir(com_asr=False)
-        assert self._tts is not None and self._s2 is not None
+        assert self._tts is not None and self._motor is not None and self._cerebro is not None
+        cerebro = self._cerebro
+        cerebro.motor = self._motor
 
         epoch = self.epoch
         self._turno_cancelado = False
+        cancelado = self.cancelado_de(epoch)
         self._mudar(Estado.PENSANDO)
         comeco = time.monotonic()
-        try:
-            resposta = self._s2.responder(texto)
-        except RespostaIndisponivel as erro:
-            self.escrever_na_tela(f"  (sem resposta: {erro})")
-            self._mudar(self._repouso)
-            return Turno(falou=texto, respondeu="", epoch=epoch)
-        resposta_ms = (time.monotonic() - comeco) * 1000.0
-        if not resposta:
-            self._mudar(self._repouso)
-            return Turno(
-                falou=texto, respondeu="", resposta_ms=resposta_ms, cancelado=True, epoch=epoch
+        pedacos: queue.Queue[dict[str, object] | None] = queue.Queue()
+        resultado: dict[str, Resposta] = {}
+        falha: list[str] = []
+
+        def gerar() -> None:
+            try:
+                resultado["r"] = cerebro.responder(
+                    texto, epoch=epoch, publicar=pedacos.put, cancelado=cancelado
+                )
+            except Exception as erro:  # o turno degrada e diz; a linha não leva o laço junto
+                falha.append(f"{type(erro).__name__}: {erro}")
+            finally:
+                pedacos.put(None)
+
+        linha = threading.Thread(target=gerar, name="jarvis-cerebro", daemon=True)
+        linha.start()
+        exibido: list[str] = []
+        primeiro_texto_ms: list[float] = []
+
+        def do_cerebro() -> Iterator[dict[str, object]]:
+            while True:
+                try:
+                    pedaco = pedacos.get(timeout=INTERVALO_DE_CONSULTA_S)
+                except queue.Empty:
+                    self._olhar_o_teclado()  # pensando também se interrompe
+                    if cancelado():
+                        return
+                    continue
+                if pedaco is None:
+                    return
+                if pedaco["text"]:
+                    if not primeiro_texto_ms:
+                        primeiro_texto_ms.append((time.monotonic() - comeco) * 1000.0)
+                    exibido.append(str(pedaco["text"]))
+                    if self.ao_pedaco is not None:
+                        self.ao_pedaco(" ".join(exibido))
+                yield pedaco
+
+        fala, turno = self._tocar(
+            trechos_do_stream(do_cerebro(), epoch=epoch), epoch=epoch, fila=fila
+        )
+        linha.join(timeout=ESPERA_DO_CEREBRO_S)
+        resposta = resultado.get("r")
+        if falha or (
+            resposta is not None and resposta.fim in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO)
+        ):
+            motivo = falha[0] if falha else (resposta.detalhe if resposta else "")
+            self.escrever_na_tela(f"  (sem resposta: {motivo or 'o motor não disse por quê'})")
+            self.registrar_aviso(
+                "falhou", f"cérebro · {self._motor.nome}", f"sem resposta: {motivo}"
             )
-        turno = self.falar(resposta, epoch=epoch, fila=fila)
+        if resposta is not None:
+            tocadas = turno.amostras_tocadas
+            cerebro.ouvido(
+                resposta.response_id,
+                fala.texto_ate(tocadas),
+                interrompida=cancelado(),
+                played_ms=int(1000 * tocadas / TAXA_PADRAO),
+            )
         self._mudar(self._repouso)
+        respondeu = " ".join(exibido)
         return Turno(
             falou=texto,
-            respondeu=resposta,
-            resposta_ms=resposta_ms,
+            respondeu=respondeu,
+            resposta_ms=primeiro_texto_ms[0] if primeiro_texto_ms else 0.0,
             primeiro_pedaco_ms=turno.primeiro_pedaco_ms,
             tts_ms=turno.tts_ms,
             amostras_tocadas=turno.amostras_tocadas,
-            cancelado=turno.cancelado,
+            cancelado=cancelado() or not respondeu,
             epoch=epoch,
         )
 
     def falar(self, texto: str, *, epoch: int, fila: FilaDePlayback | None = None) -> Turno:
-        """Sintetiza e entrega, parando no cancelamento (contrato do F1-09)."""
+        """Sintetiza e entrega um texto pronto, parando no cancelamento (contrato do F1-09)."""
+        return self._tocar(iter(fatiar(texto)), epoch=epoch, fila=fila, texto=texto)[1]
+
+    def _tocar(
+        self,
+        trechos: Iterator[tuple[int, str]],
+        *,
+        epoch: int,
+        fila: FilaDePlayback | None,
+        texto: str | None = None,
+    ) -> tuple[Fala, Turno]:
+        """Sintetiza os trechos conforme chegam e toca, olhando o teclado entre os quadros.
+
+        O estado vira `falando` no **primeiro pedaço de áudio** pronto — não antes: entre o fim
+        da fala do dono e esse pedaço, o Jarvis está pensando, e a tela diz isso.
+        """
         assert self._tts is not None
-        self._mudar(Estado.FALANDO)
         sintetizador = SintetizadorEmStreaming(
             motor=self._tts,
             session_id=self.session_id,
             epoch=epoch,
             cancelado=self.cancelado_de(epoch),
         )
+        textos: list[str] = []
+
+        def anotando() -> Iterator[tuple[int, str]]:
+            for inicio, trecho in trechos:
+                textos.append(trecho)
+                yield inicio, trecho
+
         comeco = time.monotonic()
         primeiro: float = 0.0
         tocadas = 0
-        for pedaco, _trecho in sintetizador.pedacos(texto):
+        tocados: list[Pedaco] = []
+        mapa: list[Trecho] = []
+        for pedaco, trecho in sintetizador.pedacos_do_stream(anotando()):
             if primeiro == 0.0:
                 primeiro = (time.monotonic() - comeco) * 1000.0
+                self._mudar(Estado.FALANDO)
             if fila is None:
                 # Sem fila (modo texto sem áudio), o que se mede é a síntese: o pedaço conta
                 # como produzido, e fica claro no relatório que ninguém o tocou.
                 tocadas += pedaco.n_amostras
+                tocados.append(pedaco)
+                mapa.append(trecho)
                 self._olhar_o_teclado()
                 if self.epoch > epoch:
                     break
                 continue
             if not fila.enfileirar(pedaco):
                 continue
+            tocados.append(pedaco)
+            mapa.append(trecho)
             # Drena o pedaço quadro a quadro, olhando o teclado entre eles: é aqui que a
             # barra interrompe **no meio** do pedaço, e não só entre pedaços.
             while fila.pedacos_na_fila and self.epoch == epoch:
@@ -457,9 +598,14 @@ class Aplicativo:
             if self.epoch > epoch:
                 fila.cancelar(reason="barge_in", epoch_novo=self.epoch)
                 break
-        return Turno(
+        fala = Fala(
+            texto=texto if texto is not None else " ".join(textos),
+            pedacos=tuple(tocados),
+            trechos=tuple(mapa),
+        )
+        return fala, Turno(
             falou="",
-            respondeu=texto,
+            respondeu=fala.texto,
             primeiro_pedaco_ms=primeiro,
             tts_ms=(time.monotonic() - comeco) * 1000.0,
             amostras_tocadas=tocadas,
@@ -711,13 +857,13 @@ class Aplicativo:
 
     def _dizer_o_que_esta_ligado(self) -> None:
         """Antes do primeiro turno, o dono lê o que está ligado — inclusive o que sai daqui."""
-        assert self._tts is not None and self._s2 is not None
+        assert self._tts is not None and self._motor is not None
         if self._asr is None:
             self.escrever_na_tela("ouvindo com: (modo texto — o microfone não entra aqui)")
         else:
             self.escrever_na_tela(f"ouvindo com: {self._asr.nome}  [{self._asr.onde}]")
         self.escrever_na_tela(f"falando com: {self._tts.nome}  [{self._tts.onde}]")
-        self.escrever_na_tela(f"respondendo com: {self._s2.nome}")
+        self.escrever_na_tela(f"respondendo com: {self._motor.nome}  [{self._motor.onde}]")
         for motor in self.configuracao.motores_de_nuvem_escolhidos():
             self.escrever_na_tela("")
             self.escrever_na_tela(f"  {motor.frase_de_aviso}")

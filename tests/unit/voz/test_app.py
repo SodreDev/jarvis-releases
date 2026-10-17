@@ -16,6 +16,7 @@ import pytest
 from jarvis.audio_io.quadro import TAXA_PADRAO, Quadro, de_int16
 from jarvis.microfone import ler_estado
 from jarvis.relogio import RelogioFalso
+from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.voz.app import Aplicativo, AplicativoIndisponivel, Turno
 from jarvis.voz.config import Configuracao
 from jarvis.voz.interface import Hipotese, Onde
@@ -202,13 +203,8 @@ def test_o_gerador_cancelado_nao_vira_turno_falado(tmp_path: Path) -> None:
     app = aplicativo_de(tmp_path)
     app.abrir()
 
-    class GeradorCancelado:
-        nome = "cancelado"
-
-        def responder(self, texto: str) -> str:
-            return ""
-
-    app._s2 = GeradorCancelado()
+    # Desde a ADR-0025 o motor é do cérebro: um motor que encerra sem texto nenhum.
+    app._motor = MotorRoteirizado(resposta="", nome="cancelado")
     turno = app.responder("alguma coisa")
 
     assert turno.respondeu == ""

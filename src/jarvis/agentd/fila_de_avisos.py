@@ -233,3 +233,28 @@ def _ha_quanto(segundos: float) -> str:
     if minutos < 60:
         return f"há {minutos} min"
     return f"há {minutos // 60} h"
+
+
+def notificacao(
+    session_id: str,
+    notif_id: str,
+    *,
+    tipo: str,
+    origem: str,
+    resumo: str,
+    source: str = "agentd",
+    trust: Trust = Trust.SYSTEM,
+) -> Envelope:
+    """Um `Notification` validado na borda — para quem produz aviso sem barramento ainda."""
+    payload = {"notif_id": notif_id, "origem": origem, "tipo": tipo, "resumo": resumo[:280]}
+    return validar(
+        Envelope(
+            session_id=session_id,
+            epoch=0,
+            source=source,
+            trust=trust,
+            priority=prioridade_canonica(Tipo.NOTIFICATION, payload),
+            type=Tipo.NOTIFICATION,
+            payload=payload,
+        )
+    )

@@ -86,34 +86,9 @@ class RoteiroDeDemonstracao:
                 # máquina já está no alto da tela; um card repetindo os mesmos números era ruído.
                 area={"coluna": 9, "linha": 1, "colunas": 3, "linhas": 3},
                 motivo="avisos que chegaram enquanto o dono falava (ADR-0025)",
-                dados={
-                    "avisos": [
-                        {
-                            "tipo": "precisa_decisao",
-                            "origem": "tarefa · empacotar",
-                            "resumo": "O .rpm está pronto; publicar exige a sua ordem",
-                            "instante": "há 2 min",
-                            "entrega": "so_card",
-                            "confianca": "terceiros",
-                        },
-                        {
-                            "tipo": "concluida",
-                            "origem": "tarefa · baixar voz",
-                            "resumo": "pt_BR-faber-medium baixada e conferida",
-                            "instante": "há 6 min",
-                            "entrega": "falado",
-                            "confianca": "terceiros",
-                        },
-                        {
-                            "tipo": "evento",
-                            "origem": "jarvis",
-                            "resumo": "Nuvem desligada: nada sai desta máquina",
-                            "instante": "agora",
-                            "entrega": "na_fila",
-                            "confianca": "propria",
-                        },
-                    ]
-                },
+                # Sem dados aqui: o card mostra a fila de avisos de verdade, que a ponte liga
+                # pelo `updateWidget` (ADR-0019, emenda de 2026-10-17). Aviso inventado num card
+                # que agora é real seria a mentira que o selo de demonstração existe para evitar.
             ),
         ]
 
@@ -312,27 +287,7 @@ class RoteiroDeDemonstracao:
             _acao(
                 "createWidget",
                 componente="notificacoes",
-                titulo="Avisos do empacotamento",
+                titulo="Avisos",
                 area={"coluna": 8, "linha": 5, "colunas": 4, "linhas": 3},
-                dados={
-                    "avisos": [
-                        {
-                            "tipo": "evento",
-                            "origem": "empacotar",
-                            "resumo": "Modelos ficam fora do pacote: baixados no primeiro uso",
-                            "instante": "há 1 min",
-                            "entrega": "calado",
-                            "confianca": "propria",
-                        },
-                        {
-                            "tipo": "precisa_decisao",
-                            "origem": "empacotar",
-                            "resumo": "Publicar exige ordem do dono: nada de release, tag ou push",
-                            "instante": "agora",
-                            "entrega": "so_card",
-                            "confianca": "propria",
-                        },
-                    ]
-                },
             ),
         ]

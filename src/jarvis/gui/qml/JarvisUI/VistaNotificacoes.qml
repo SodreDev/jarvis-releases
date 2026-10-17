@@ -15,6 +15,21 @@ ListView {
     spacing: 0
     boundsBehavior: Flickable.StopAtBounds
 
+    // Estado vazio útil: a fila é real, e vazia é o caso comum — dizer o que vai aparecer aqui.
+    Text {
+        objectName: "avisosVazio"
+        textFormat: Text.PlainText
+        visible: lista.count === 0
+        width: lista.width
+        y: 6
+        text: "Nenhum aviso por enquanto. Quando uma tarefa terminar ou algo pedir a sua "
+              + "decisão, aparece aqui — e eu só falo quando você não estiver falando."
+        color: Tema.textoFraco
+        font.pixelSize: Tema.tamanhoTexto - 1
+        wrapMode: Text.WordWrap
+        renderType: Text.NativeRendering
+    }
+
     readonly property var nomeDoTipo: ({
         "precisa_decisao": "pede decisão",
         "falhou": "falhou",
