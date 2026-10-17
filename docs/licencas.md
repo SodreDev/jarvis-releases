@@ -75,6 +75,7 @@ nascem desligados, e campo de termo vazio barra o motor em tempo de execução
 | asr | `asr-groq-whisper-large-v3-turbo` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://console.groq.com/docs/legal/services-agreement> | 2026-10-15 |
 | asr | `asr-oraculo` | local | sim | Apache-2.0 | permissiva | em_uso | <https://github.com/SodreDev/jarvis> | 2026-10-15 |
 | asr | `asr-whisper-local` | local | sim | MIT | permissiva | em_uso | <https://pypi.org/pypi/faster-whisper/json> | 2026-10-15 |
+| decisao | `decisao-jev-openrouter` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://typesafe.ai/legal/mca> | 2026-10-17 |
 | tts | `tts-edge` | nuvem | não | LGPL-3.0 | permissiva | extra_opcional | <https://pypi.org/pypi/edge-tts/json> | 2026-10-15 |
 | tts | `tts-elevenlabs` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://elevenlabs.io/terms-of-use> | 2026-10-15 |
 | tts | `tts-parametrico` | local | sim | Apache-2.0 | permissiva | em_uso | <https://github.com/SodreDev/jarvis> | 2026-10-15 |

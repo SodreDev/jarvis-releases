@@ -65,7 +65,7 @@ from jarvis.voz.interface import Onde
 from jarvis.voz.modelos import ModeloRecusado, baixar, descarga_da_voz
 from jarvis.voz.nuvem import ServicoRecusou
 from jarvis.voz.palavra import PalavraInvalida, exigir_limiar
-from jarvis.voz.provedores import provedores, vozes_da_elevenlabs
+from jarvis.voz.provedores import CAMPO_DO_PAPEL, provedores, vozes_da_elevenlabs
 from jarvis.voz.registro import motor_registrado, motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
@@ -531,6 +531,11 @@ class Ponte(QObject):
     def provedoresTts(self) -> list[dict[str, Any]]:
         return [p.para_dict() for p in provedores(self._configuracao, "tts")]
 
+    @Property(list, notify=mudou)
+    def provedoresDecisao(self) -> list[dict[str, Any]]:
+        """Quem decide se uma fala é para o Jarvis (ADR-0029): hoje só o Jev, na nuvem."""
+        return [p.para_dict() for p in provedores(self._configuracao, "decisao")]
+
     @Property(list, notify=vozesMudaram)
     def vozesDaConta(self) -> list[dict[str, Any]]:
         """As vozes que a conta da ElevenLabs enxerga, depois que o dono pediu a lista."""
@@ -735,7 +740,10 @@ class Ponte(QObject):
 
     @Slot(str, str)
     def escolherMotor(self, papel: str, identificador: str) -> None:
-        self._configuracao = self._configuracao.com(**{papel: identificador})
+        campo = CAMPO_DO_PAPEL.get(papel, papel)
+        if papel == "decisao" and getattr(self._configuracao, campo) == identificador:
+            identificador = ""  # o detector é opcional: clicar no escolhido tira a escolha
+        self._configuracao = self._configuracao.com(**{campo: identificador})
         self._publicar()
 
     @Slot(str, str)

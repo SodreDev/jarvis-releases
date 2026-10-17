@@ -60,6 +60,8 @@ from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
 from jarvis.audio_io.sumidouros import SumidouroDeAudio
 from jarvis.audio_io.vad import Vad, vad_do_ambiente
 from jarvis.barramento.envelope import Envelope, uuid7
+from jarvis.decisao.enderecamento import DetectorDeEnderecamento, Motivo
+from jarvis.decisao.openrouter import ClassificadorOpenRouter
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
 from jarvis.executor.lancador import RegistroDeApps
 from jarvis.executor.navegadores import AbridorDeNavegador, separar
@@ -351,6 +353,10 @@ class Aplicativo:
     """A fila de avisos mudou (ADR-0025): a janela renova o card. Como `ao_mudar_estado`, é
     chamada da thread do laço — quem liga aqui emite sinal e volta."""
 
+    detector: DetectorDeEnderecamento | None = field(default=None, repr=False)
+    """Diz, na escuta contínua, se a fala transcrita é para o Jarvis (ADR-0029). `None` = desligado
+    (o padrão): todo trecho que o VAD abre segue virando pedido. Montado em `abrir` quando o dono
+    escolheu e ligou o motor; injetável para o teste."""
     epoch: int = 1
     estado: Estado = Estado.PARADO
     session_id: str = field(default_factory=lambda: str(uuid7()))
@@ -465,6 +471,8 @@ class Aplicativo:
             self._motor = motor_de_conversa(
                 self.configuracao, pasta_de_trabalho=self.raiz / "conversa"
             )
+        if com_asr and self.detector is None and self.configuracao.enderecamento:
+            self.detector = self._abrir_o_detector()
         if self._cerebro is None:
             self._cerebro = Cerebro(motor=self._motor, session_id=self.session_id)
         if self.ferramentas is None:
@@ -472,6 +480,33 @@ class Aplicativo:
         self._cerebro.ferramentas = self.ferramentas
         self._cerebro.confirmar = self._confirmar
         self._aquecer()
+
+    def _abrir_o_detector(self) -> DetectorDeEnderecamento | None:
+        """O detector de endereçamento que o dono escolheu — ou `None`, com a razão na tela.
+
+        Escolher o motor não o liga (ADR-0017): sem o interruptor do dono ou sem a chave, nada
+        sai da máquina e a escuta contínua segue como era. Isso é dito, não calado: o dono
+        pediu proteção contra fala alheia e tem de saber que ela não está valendo."""
+        escolhido = self.configuracao.enderecamento
+        falta = o_que_falta(escolhido, self.configuracao, ambiente=self.ambiente)
+        if not falta:
+            try:
+                classificador = ClassificadorOpenRouter(
+                    registrado=escolhido,
+                    nuvem_ligada=self.configuracao.nuvem_ligada,
+                    ambiente=self.ambiente,
+                )
+                classificador.abrir()
+                return DetectorDeEnderecamento(classificador=classificador)
+            except (MotorRecusado, SegredoAusente, ErroDeRede) as erro:
+                falta = str(erro)
+        frase = (
+            f"o detector de endereçamento ({escolhido}) não está ativo: {falta}. Na escuta "
+            "contínua todo trecho continua virando pedido."
+        )
+        self.escrever_na_tela(f"  {frase}")
+        self.registrar_aviso("falhou", "endereçamento", frase)
+        return None
 
     def _abrir_o_ouvido(self, cancelado: Callable[[], bool]) -> MotorDeAsr:
         """O ASR escolhido — ou, se ele é de nuvem e não roda, o local, com uma linha dizendo.
@@ -1073,6 +1108,9 @@ class Aplicativo:
                 self.escrever_na_tela("  (não entendi nada nesse trecho)")
             self._mudar(self._repouso)
             return
+        if not self._enderecada_ao_jarvis(hipotese.texto):
+            self._mudar(self._repouso)
+            return
         pedido = self._pedido_do_trecho(hipotese.texto)
         if pedido is None:
             self._mudar(self._repouso)
@@ -1097,6 +1135,32 @@ class Aplicativo:
         if completo.respondeu:
             self.escrever_na_tela(f"Jarvis: {completo.respondeu}")
         self.escrever_na_tela(completo.resumo())
+
+    def _enderecada_ao_jarvis(self, texto: str) -> bool:
+        """O detector de endereçamento (ADR-0029), só na escuta contínua e só se o dono o ligou.
+
+        Na dúvida, **não age**; e a fala ignorada não aparece na tela nem no histórico (como na
+        palavra de ativação): só a linha de método — a decisão, a probabilidade e o tempo."""
+        if self.detector is None or self.modo_de_escuta.modo is not ModoDeEscuta.CONTINUA:
+            return True
+        anterior = self.turnos[-1].respondeu.rstrip() if self.turnos else ""
+        decisao = self.detector.avaliar(
+            texto, jarvis_perguntou=anterior.endswith("?"), cancelado=self._cancelado_agora
+        )
+        if decisao.agir:
+            self.escrever_na_tela(f"  ({decisao.frase()})")
+            return True
+        if decisao.motivo is Motivo.FORA_DO_AR:
+            if self.detector.falhas == 1 or self.detector.falhas % 10 == 0:
+                self.registrar_aviso(
+                    "falhou",
+                    "endereçamento",
+                    f"o detector não respondeu ({decisao.detalhe}); ignorei a fala, na dúvida "
+                    "não ajo — fale de novo, ou use o atalho",
+                )
+        else:
+            self.modo_de_escuta.descartar()
+        return False
 
     def _pedido_do_trecho(self, texto: str) -> str | None:
         """O que vira pedido neste trecho — ou `None`, que é descartar (ADR-0021).

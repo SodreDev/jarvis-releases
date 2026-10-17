@@ -356,7 +356,9 @@ Column {
                       ? "ligado: " + linha.provedor.motor + " — salvar guarda no arquivo"
                       : linha.provedor.papel === "asr"
                         ? "escolhido e desligado: nada sai daqui, e o Jarvis NÃO te ouve — ligue, ou escolha asr-whisper-local"
-                        : "escolhido e desligado: nada sai daqui"
+                        : linha.provedor.papel === "decisao"
+                          ? "escolhido e desligado: nada sai daqui, e a escuta contínua não separa fala alheia"
+                          : "escolhido e desligado: nada sai daqui"
                 color: !linha.provedor.ligado && linha.provedor.papel === "asr" ? Tema.alerta : Tema.textoFraco
             }
         }

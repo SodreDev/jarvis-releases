@@ -52,7 +52,7 @@ def test_motores_do_repositorio_entram_no_inventario() -> None:
     nomes = {item.nome for item in inventariar_motores()}
     assert {"asr-whisper-local", "tts-piper-epitran", "tts-edge"} <= nomes
     papeis = {item.tipo for item in inventariar_motores()}
-    assert papeis == {"motor/asr", "motor/tts"}
+    assert papeis == {"motor/asr", "motor/tts", "motor/decisao"}
 
 
 def test_cliente_nao_comercial_bloqueia_a_porta(tmp_path: Path) -> None:

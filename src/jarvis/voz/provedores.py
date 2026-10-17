@@ -28,6 +28,17 @@ from jarvis.voz.interface import Onde
 from jarvis.voz.prontidao import o_que_falta
 from jarvis.voz.registro import Motor, motores_de
 
+CAMPO_DO_PAPEL: Final[dict[str, str]] = {
+    "asr": "asr",
+    "tts": "tts",
+    "decisao": "enderecamento",
+}
+"""Papel do motor → campo da configuração que guarda o motor escolhido."""
+CAMPOS_DO_PAPEL_ATUAL: Final[dict[str, Any]] = {
+    papel: (lambda c, campo=campo: str(getattr(c, campo)))
+    for papel, campo in CAMPO_DO_PAPEL.items()
+}
+
 CAMPO_DO_MODELO: Final[dict[str, str]] = {TTS_ELEVENLABS: "modelo_elevenlabs"}
 """Motor com lista de modelos → campo da configuração que guarda a escolha."""
 
@@ -108,8 +119,8 @@ def _preco_curto(motor: Motor) -> str:
 def provedores(
     configuracao: Configuracao, papel: str, *, ambiente: Mapping[str, str] | None = None
 ) -> tuple[Provedor, ...]:
-    """Os provedores de um papel (`asr` ou `tts`), na ordem do registro."""
-    atual = configuracao.asr if papel == "asr" else configuracao.tts
+    """Os provedores de um papel (`asr`, `tts` ou `decisao`), na ordem do registro."""
+    atual = CAMPOS_DO_PAPEL_ATUAL[papel](configuracao)
     grupos: dict[str, list[Motor]] = {}
     for motor in motores_de(papel):
         grupos.setdefault(_chave_do_grupo(motor), []).append(motor)

@@ -203,3 +203,29 @@ def test_a_captura_da_configuracao_mostra_os_seletores(
         for y in range(0, imagem.height(), 19)
     }
     assert len(cores) > 12, "a captura saiu quase vazia"
+
+
+JEV = "decisao-jev-openrouter"
+
+
+def test_escolher_e_ligar_o_detector_de_enderecamento_chega_ao_arquivo(
+    tmp_path: Path, chaveiro_vazio: None
+) -> None:
+    """ "É comigo?" (ADR-0029): escolher não liga, ligar é outro clique, clicar de novo tira."""
+    ponte = _ponte(tmp_path)
+    tela = cast(Any, ponte)
+    (jev,) = tela.provedoresDecisao
+    assert jev["onde"] == "nuvem" and not jev["escolhido"] and not jev["ligado"]
+    assert "sai desta máquina" in jev["aviso"] and jev["variavelDaChave"] == "OPENROUTER_API_KEY"
+
+    tela.escolherProvedor("decisao", jev["chave"])
+    (jev,) = tela.provedoresDecisao
+    assert jev["escolhido"] and not jev["ligado"], "escolher não liga a nuvem"
+    tela.ligarNuvem(JEV, True)
+    tela.salvarConfiguracao()
+    gravada = ler(tmp_path / "jarvis-voz.toml")
+    assert gravada.enderecamento == JEV and gravada.nuvem_ligada == (JEV,)
+
+    tela.escolherProvedor("decisao", jev["chave"])  # clicar no escolhido tira a escolha
+    tela.salvarConfiguracao()
+    assert ler(tmp_path / "jarvis-voz.toml").enderecamento == ""

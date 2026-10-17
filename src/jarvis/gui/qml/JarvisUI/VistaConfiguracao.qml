@@ -117,6 +117,24 @@ Item {
                     }
                 }
             }
+
+            Painel {
+                width: parent.width
+                titulo: "é comigo?"
+                dica: "na escuta contínua, separa o que é para o Jarvis do resto"
+                Column {
+                    width: parent.width
+                    Repeater {
+                        objectName: "provedoresDecisao"
+                        model: ponte ? ponte.provedoresDecisao : []
+                        LinhaDeProvedor { provedor: modelData }
+                    }
+                    Nota {
+                        width: parent.width
+                        text: "Opcional e desligado. Ligado, o texto de cada fala que o microfone transcrever vai à nuvem para decidir se é com o Jarvis; na dúvida ele não age. Só vale no modo de escuta contínua."
+                    }
+                }
+            }
         }
 
         Column {

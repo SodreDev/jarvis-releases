@@ -134,7 +134,11 @@ class Motor:
 
     @property
     def o_que_sai(self) -> str:
-        return "o seu áudio" if self.papel == "asr" else "o texto que o Jarvis vai falar"
+        if self.papel == "asr":
+            return "o seu áudio"
+        if self.papel == "decisao":
+            return "o texto de cada fala sua que o microfone transcrever"
+        return "o texto que o Jarvis vai falar"
 
     @property
     def frase_de_aviso(self) -> str:

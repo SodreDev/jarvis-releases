@@ -121,6 +121,10 @@ class Configuracao:
     atalho_global: bool = False
     """O dono pediu o atalho **global** (portal do sistema) e o sistema aceitou: a janela pede
     de novo ao abrir. Antes isto não era guardado, e o atalho global sumia a cada reinício."""
+    enderecamento: str = ""
+    """O motor de decisão que diz se uma fala é para o Jarvis (ADR-0029): hoje só
+    `decisao-jev-openrouter`. Vazio = desligado, e na escuta contínua todo trecho segue virando
+    pedido. Motor de nuvem: também precisa estar em `nuvem_ligada` — escolher não liga."""
     nuvem_ligada: tuple[str, ...] = ()
     """Os motores de nuvem que o dono ligou. Vazio = nada sai da máquina."""
     nuvem_sem_termos: tuple[str, ...] = ()
@@ -163,6 +167,7 @@ class Configuracao:
             "limiar_palavra": self.limiar_palavra,
             "atalho": self.atalho,
             "atalho_global": self.atalho_global,
+            "enderecamento": self.enderecamento,
             "nuvem_ligada": list(self.nuvem_ligada),
             "nuvem_sem_termos": list(self.nuvem_sem_termos),
             "acesso": self.acesso,
@@ -177,7 +182,7 @@ class Configuracao:
 
     @property
     def usa_nuvem(self) -> bool:
-        motores = {self.asr, self.tts}
+        motores = {self.asr, self.tts, *([self.enderecamento] if self.enderecamento else [])}
         return any(
             (m := motor_registrado(identificador)) is not None and m.onde is Onde.NUVEM
             for identificador in motores
@@ -186,8 +191,8 @@ class Configuracao:
     def motores_de_nuvem_escolhidos(self) -> tuple[Motor, ...]:
         """Os motores de nuvem que estão **em uso** nesta configuração — para o aviso."""
         escolhidos = []
-        for identificador in (self.asr, self.tts):
-            motor = motor_registrado(identificador)
+        for identificador in (self.asr, self.tts, self.enderecamento):
+            motor = motor_registrado(identificador) if identificador else None
             if motor is not None and motor.onde is Onde.NUVEM:
                 escolhidos.append(motor)
         return tuple(escolhidos)
@@ -208,9 +213,10 @@ def _texto_toml(configuracao: Configuracao) -> str:
     return f"""# Configuração do `jarvis-voz` (ADR-0017, ADR-0018).
 #
 # **Nunca escreva chave de API aqui.** O aplicativo recusa o arquivo inteiro se achar algo
-# com cara de segredo. As chaves vêm só do ambiente:
+# com cara de segredo. As chaves vêm só do ambiente ou do chaveiro do sistema:
 #   export JARVIS_GROQ_API_KEY=...
 #   export JARVIS_ELEVENLABS_API_KEY=...
+#   export OPENROUTER_API_KEY=...
 #
 # `nuvem_ligada` é o interruptor da nuvem: motor que não estiver nesta lista **não** manda
 # áudio nem texto para fora, mesmo escolhido. `nuvem_sem_termos` é mais forte ainda — é
@@ -231,6 +237,10 @@ palavra = {aspas(configuracao.palavra)}
 limiar_palavra = {configuracao.limiar_palavra!r}
 atalho = {aspas(configuracao.atalho)}
 atalho_global = {"true" if configuracao.atalho_global else "false"}
+# Detector de endereçamento (ADR-0029): "" = desligado. Com "decisao-jev-openrouter" a fala
+# transcrita de cada trecho da escuta contínua vai ao OpenRouter para saber se é com o Jarvis
+# (precisa também estar em nuvem_ligada e da chave OPENROUTER_API_KEY).
+enderecamento = {aspas(configuracao.enderecamento)}
 nuvem_ligada = {lista(configuracao.nuvem_ligada)}
 nuvem_sem_termos = {lista(configuracao.nuvem_sem_termos)}
 
@@ -305,6 +315,8 @@ def validar(configuracao: Configuracao) -> Configuracao:
 
     exigir("asr", configuracao.asr, "asr")
     exigir("tts", configuracao.tts, "tts")
+    if configuracao.enderecamento:
+        exigir("enderecamento", configuracao.enderecamento, "decisao")
 
     if configuracao.voz_elevenlabs and not FORMA_DO_ID_DE_VOZ.fullmatch(
         configuracao.voz_elevenlabs
@@ -434,6 +446,7 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         limiar_palavra=_numero(dados, "limiar_palavra", LIMIAR_PADRAO),
         atalho=_texto(dados, "atalho", ""),
         atalho_global=_logico(dados, "atalho_global"),
+        enderecamento=_texto(dados, "enderecamento", ""),
         nuvem_ligada=_lista(dados, "nuvem_ligada"),
         nuvem_sem_termos=_lista(dados, "nuvem_sem_termos"),
         acesso=_texto(dados, "acesso", ACESSO_PADRAO),

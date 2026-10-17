@@ -243,3 +243,34 @@ pacote declara LGPL-3.0 e o endpoint não tem página de termos para ler — o R
 vínculo com a Microsoft. Por isso os quatro campos obrigatórios estão **vazios**, e vazio \
 barra: o motor está implementado e o portão o recusa até o dono decidir explicitamente. O \
 caminho oficial com contrato é o Azure Speech, que é outro motor e ainda não existe aqui."""
+
+# --- Decisão (classificador de perguntas fechadas) — ADR-0029 -------------------------
+
+[[motor]]
+id = "decisao-jev-openrouter"
+papel = "decisao"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.decisao.openrouter:ClassificadorOpenRouter"
+modelo = "typesafe/jev-1.13"
+servico = "OpenRouter → TypeSafe (Jev)"
+endereco = "https://openrouter.ai/api/alpha/decisions"
+variavel_da_chave = "OPENROUTER_API_KEY"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (urllib da biblioteca padrão)"
+uso_comercial = "o Master Customer Agreement (§2.2) licencia a API para ser incluída em aplicações próprias; §2.3(a) proíbe oferecer o serviço como serviço autônomo e §2.3(b) proíbe destilar modelo com a saída. Termos do OpenRouter para esta rota: não lidos"
+retencao_declarada = "TypeSafe: sem prazo fixo — MCA §10.3 diz que não é obrigada a guardar e pode apagar a qualquer hora; §4.1(c) permite usar dados por tempo indeterminado para telemetria, fraude e lei; ZDR só para clientes enterprise. OpenRouter: política própria desta rota alfa não encontrada na documentação"
+treina_com_entrada = "não, por compromisso da TypeSafe (Privacy Policy: não treina nem ajusta modelos com prompts/Input; MCA §4.1 exige consentimento prévio); telemetria de uso é à parte (MCA §4.3). OpenRouter: não verificado para esta rota"
+dono_da_saida = "o cliente (MCA §4.2: a TypeSafe cede à Customer os direitos que tiver sobre o Output; §11: Customer retém a propriedade do Input)"
+marca_dagua = "não se aplica"
+preco = "US$ 0,042 por milhão de tokens de entrada; saída grátis (docs.typesafe.ai/models, 2026-10-17)"
+fonte = "https://typesafe.ai/legal/mca"
+fonte_tecnica = "https://openrouter.ai/docs/guides/community/jev-tutorial"
+fonte_retencao = "https://typesafe.ai/legal/privacy-policy"
+data_de_acesso = "2026-10-17"
+nota = """Rota alfa do OpenRouter (/api/alpha/decisions): o caminho pode mudar. Modelo fixado em \
+typesafe/jev-1.13 porque os limiares do detector são calibrados nele; o alias jev-latest \
+aponta para a versão corrente e pode mover. Inglês é o idioma de melhor acurácia; português \
+tem de ser medido (docs.typesafe.ai/models). Privacy Policy 'last updated Nov 19, 2025'; MCA \
+'last updated Sep 23, 2026'. A fala transcrita vai para a nuvem: o aviso do registro é o que o \
+dono lê antes de ligar."""
