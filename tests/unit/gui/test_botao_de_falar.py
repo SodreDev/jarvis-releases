@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, cast
 
@@ -68,7 +68,7 @@ def conversa(
     abrir: Callable[[Ponte], QQuickView],
     tmp_path: Path,
     sem_chaveiro: None,
-) -> tuple[QQuickView, Any, Aplicativo]:
+) -> Iterator[tuple[QQuickView, Any, Aplicativo]]:
     laco = Aplicativo(
         configuracao=CONFIGURACAO,
         raiz=tmp_path / "sessao",
@@ -92,7 +92,10 @@ def conversa(
     tela.iniciarConversa()
     _esperar(aplicativo, 3.0, ate=lambda: laco.estado.value == "ouvindo")
     assert laco.estado.value == "ouvindo"
-    return janela, tela, laco
+    yield janela, tela, laco
+    # Sem isto o laço de áudio segue vivo no teste seguinte e a janela é destruída por baixo dele.
+    tela.pararConversa()
+    _esperar(aplicativo, 3.0, ate=lambda: not tela._sessao.viva)
 
 
 def _linhas(tela: Any) -> list[str]:

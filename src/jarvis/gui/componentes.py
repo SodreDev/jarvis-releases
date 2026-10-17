@@ -228,7 +228,7 @@ CATALOGO: Final[dict[str, Componente]] = {
         ),
         Componente(
             id="configuracao",
-            titulo="Provedores e chaves",
+            titulo="Configuração",
             vista=Vista.CONFIGURACAO,
             # Painel nasce pequeno numa faixa que nenhum modo reserva, e a janela o abre
             # maximizado: é o jeito de ele caber em qualquer composição sem empurrar nada.

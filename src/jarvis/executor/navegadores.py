@@ -102,8 +102,9 @@ def argv_da_entrada(entrada: str) -> tuple[str, ...]:
 
 
 def _rotulo(app: App | None, caminho: str) -> str:
+    """O que o dono lê no botão: o nome do navegador e o programa que ele abre."""
     if app is not None:
-        return f"{app.nome} — {Path(caminho).name}"
+        return f"{app.nome} · {Path(_argv_do_app(app)[0]).name}"
     return caminho
 
 

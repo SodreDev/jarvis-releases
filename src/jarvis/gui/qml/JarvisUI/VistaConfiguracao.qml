@@ -12,13 +12,59 @@ import JarvisUI
 Item {
     id: vista
     property var dados: ({})
+    // Quatro folhas, cada uma cabe numa tela e nenhuma rola dentro de outra: o que o Jarvis ouve
+    // e fala, e o que ele pode tocar (pastas, programas, navegadores).
+    property string aba: "voz"
+
+    Flow {
+        id: abas
+        z: 3
+        width: parent.width
+        spacing: 8
+        height: implicitHeight + 8
+        Botao {
+            objectName: "abaVoz"
+            texto: "voz e escuta"
+            ativo: vista.aba === "voz"
+            onApertado: vista.aba = "voz"
+        }
+        Botao {
+            objectName: "abaPastas"
+            texto: "pastas e arquivos"
+            ativo: vista.aba === "pastas"
+            onApertado: vista.aba = "pastas"
+        }
+        Botao {
+            objectName: "abaApps"
+            texto: "aplicativos"
+            ativo: vista.aba === "apps"
+            onApertado: vista.aba = "apps"
+        }
+        Botao {
+            objectName: "abaNavegadores"
+            texto: "navegadores"
+            ativo: vista.aba === "navegadores"
+            onApertado: vista.aba = "navegadores"
+        }
+    }
+
+    VistaAcesso {
+        objectName: "vistaAcesso"
+        secao: vista.aba
+        anchors.top: abas.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: vista.aba !== "voz"
+    }
 
     // --- as caixas -----------------------------------------------------------------------
     // Rola quando o conteúdo passa da altura: o provedor escolhido abre modelo, aviso e voz.
     IndicadorDeRolagem {
         id: indicadorDeRolagem
+        visible: vista.aba === "voz" && necessario
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: abas.bottom
         anchors.bottom: parent.bottom
         alvo: rolagem
         z: 2
@@ -26,7 +72,11 @@ Item {
 
     Flickable {
         id: rolagem
-        anchors.fill: parent
+        visible: vista.aba === "voz"
+        anchors.top: abas.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         anchors.rightMargin: indicadorDeRolagem.visible ? 10 : 0
         contentWidth: width
         contentHeight: caixas.implicitHeight

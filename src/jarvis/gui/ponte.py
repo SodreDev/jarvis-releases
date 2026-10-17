@@ -38,6 +38,7 @@ from PySide6.QtCore import (
 )
 
 from jarvis.gui import chaveiro, recursos, sistema
+from jarvis.gui.acesso import PonteDeAcesso
 from jarvis.gui.acoes import Acao, Area, Modo, Tipo
 from jarvis.gui.componentes import CATALOGO
 from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
@@ -50,7 +51,14 @@ from jarvis.voz import aferir
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.chaves import VARIAVEIS
 from jarvis.voz.cli import diagnosticar
-from jarvis.voz.config import Configuracao, caminho_padrao, escrever, ler, validar
+from jarvis.voz.config import (
+    Configuracao,
+    ConfiguracaoInvalida,
+    caminho_padrao,
+    escrever,
+    ler,
+    validar,
+)
 from jarvis.voz.escuta import CombinacaoInvalida, Escuta, exigir_combinacao, modo_de
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import Onde
@@ -203,6 +211,8 @@ class Ponte(QObject):
         controlador: Controlador | None = None,
         ambiente: Mapping[str, str] | None = None,
         aplicativo: Aplicativo | None = None,
+        pastas_de_apps: tuple[str, ...] | None = None,
+        lar: Path | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -255,6 +265,17 @@ class Ponte(QObject):
         ao trocar de modo não é novidade para o dono, e não vira frase na tela."""
         self._vozes: list[dict[str, Any]] = []
         self._vozes_frase = ""
+        extras_do_acesso: dict[str, Any] = {}
+        if pastas_de_apps is not None:
+            extras_do_acesso["pastas_de_apps"] = pastas_de_apps
+            extras_do_acesso["caminho_dos_binarios"] = ""
+        self._acesso = PonteDeAcesso(
+            obter=lambda: self._configuracao,
+            gravar=self._gravar_acesso,
+            lar=lar,
+            parent=self,
+            **extras_do_acesso,
+        )
         self._tique = QTimer(self)
         self._tique.setInterval(1000)
         self._tique.timeout.connect(self._bater_o_relogio)
@@ -413,6 +434,39 @@ class Ponte(QObject):
         dados = self._configuracao.para_dict()
         dados["caminho"] = str(self._caminho)
         return dados
+
+    @Property(QObject, constant=True)
+    def acesso(self) -> QObject:
+        """Pastas, aplicativos e navegadores (`PonteDeAcesso`): grava na hora."""
+        return self._acesso
+
+    def _gravar_acesso(self, nova: Configuracao) -> str:
+        """Guarda só os campos de acesso — no arquivo e na conversa aberta — e diz o que fez.
+
+        O resto da configuração (motores, voz, escuta) não é gravado por aqui: uma escolha de
+        motor ainda não salva não vira arquivo por ter o dono marcado um aplicativo."""
+        campos = (
+            "acesso",
+            "raizes",
+            "raizes_escrita",
+            "apps_autorizados",
+            "apps_extras",
+            "navegadores",
+            "navegador_principal",
+        )
+        mudancas = {campo: getattr(nova, campo) for campo in campos}
+        self._configuracao = self._configuracao.com(**mudancas)
+        if self._sessao is not None and self._sessao.viva and self._sessao.aplicativo is not None:
+            self._sessao.aplicativo.atualizar_acesso(self._configuracao)
+        try:
+            no_disco = ler(self._caminho)
+        except ConfiguracaoInvalida as erro:
+            return f"vale agora, mas não deu para salvar ({erro})"
+        try:
+            escrever(validar(no_disco.com(**mudancas)), self._caminho)
+        except (ValueError, OSError) as erro:
+            return f"vale agora, mas não deu para salvar ({erro})"
+        return "salvo"
 
     @Property(list, notify=mudou)
     def motores(self) -> list[dict[str, Any]]:

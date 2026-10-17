@@ -18,7 +18,7 @@ Rectangle {
         { chave: "assistente", glifo: "◎", rotulo: "assistente" },
         { chave: "pesquisa", glifo: "⌕", rotulo: "pesquisa" },
         { chave: "execucao", glifo: "▦", rotulo: "execução" },
-        { chave: "configuracao", glifo: "⚙", rotulo: "provedores" },
+        { chave: "configuracao", glifo: "⚙", rotulo: "configuração" },
         { chave: "diagnostico", glifo: "⏿", rotulo: "diagnóstico" }
     ]
     signal escolhido(string chave)
