@@ -630,6 +630,6 @@ Aceite: (a) comparação contra a cascata no **mesmo corpus** de F1, reportando 
 
 ## ADRs
 
-`docs/adr/0001` arquitetura C · `0002` epoch/cancelamento · `0003` capacidade e PDP · `0004` papel do Jev · `0005` memória e índice trocável (item 4 emendado pela 0008) · `0006` camadas de atuação no desktop · `0007` processos e barramento · **`0008` memória em grafo e ativação por propagação** · **`0009` níveis de acesso e elevação** · **`0010` catálogo do v1 e clientes MCP** · **`0011` reranker de licença comercial** · propostas de 2026-10-16: `0022` subagentes · `0023` MCP nos dois sentidos · `0024` seleção de tools · **`0025` cérebro único, stream e fila de avisos** · **`0026` ferramentas de memória**.
+`docs/adr/0001` arquitetura C · `0002` epoch/cancelamento · `0003` capacidade e PDP · `0004` papel do Jev · `0005` memória e índice trocável (item 4 emendado pela 0008) · `0006` camadas de atuação no desktop · `0007` processos e barramento · **`0008` memória em grafo e ativação por propagação** · **`0009` níveis de acesso e elevação** · **`0010` catálogo do v1 e clientes MCP** · **`0011` reranker de licença comercial** · propostas de 2026-10-16: `0022` subagentes · `0023` MCP nos dois sentidos · `0024` seleção de tools · **`0025` cérebro único, stream e fila de avisos** · **`0026` ferramentas de memória** · 2026-10-17: **`0027` navegador controlável** (proposta) · **`0028` laço de ferramentas do cérebro**.
 
 Cartões de tarefa: F0 em `docs/F0-tarefas.md`, F1 em `docs/F1-tarefas.md`.
