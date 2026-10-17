@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-import jarvis.voz.app as modulo
+from jarvis.agentd.tts import SintetizadorEmStreaming
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.config import Configuracao
@@ -28,14 +28,14 @@ REPRODUCAO_S = 0.15
 def test_o_texto_chega_a_tela_no_ritmo_da_geracao_e_nao_da_reproducao(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    original = modulo.SintetizadorEmStreaming.pedacos_do_stream
+    original = SintetizadorEmStreaming.pedacos_do_stream
 
     def com_reproducao_lenta(self: Any, trechos: Any) -> Iterator[Any]:
         for item in original(self, trechos):
             yield item
             time.sleep(REPRODUCAO_S)
 
-    monkeypatch.setattr(modulo.SintetizadorEmStreaming, "pedacos_do_stream", com_reproducao_lenta)
+    monkeypatch.setattr(SintetizadorEmStreaming, "pedacos_do_stream", com_reproducao_lenta)
     laco = Aplicativo(
         configuracao=Configuracao(asr="asr-whisper-local", tts="tts-parametrico", s2="eco"),
         raiz=tmp_path,

@@ -336,7 +336,7 @@ def test_abrir_o_navegador_pelo_nome_resolve_entre_os_configurados(
         r = executor.executar(
             "browser.launch", {"navegador": dito}, cancelado=NUNCA, confirmar=_sem_confirmar
         )
-        assert r.status == "ok" and r.dados is not None and r.dados["navegador"] == "firefox"
+        assert r.status == "ok" and r.dados["navegador"] == "firefox"
     assert {Path(a[0]).name for a in abertos} == {"firefox"}
 
 

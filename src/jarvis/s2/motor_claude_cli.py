@@ -110,7 +110,9 @@ def _pedido_de(objeto: object, bruto: str) -> PedidoDeTool:
         (objeto[k] for k in ("tool_id", "tool", "id", "name") if isinstance(objeto.get(k), str)),
         None,
     )
-    argumentos = next((objeto[k] for k in ("args", "arguments", "argumentos") if k in objeto), {})
+    argumentos: object = next(
+        (objeto[k] for k in ("args", "arguments", "argumentos") if k in objeto), {}
+    )
     if ferramenta is None or not isinstance(argumentos, dict):
         return _malformado(bruto)
     return PedidoDeTool(ferramenta, argumentos)
