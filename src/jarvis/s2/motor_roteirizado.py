@@ -23,6 +23,7 @@ from jarvis.s2.motor import (
     Fim,
     Modo,
     MotivoDoFim,
+    PedidoDeTool,
     Texto,
 )
 from jarvis.voz.interface import Cancelado, Onde
@@ -38,7 +39,11 @@ def em_deltas(texto: str, *, caracteres: int = 4) -> tuple[str, ...]:
 class MotorRoteirizado:
     """Responde sempre o roteiro, um delta por vez."""
 
-    resposta: Callable[[Contexto], str] | str = "Depois de quinta vem sexta-feira."
+    resposta: Callable[[Contexto], str | Sequence[str | PedidoDeTool]] | str = (
+        "Depois de quinta vem sexta-feira."
+    )
+    """Texto, ou (por função) uma sequência de textos e pedidos de ferramenta — é como o teste
+    do laço de ferramentas faz o motor "propor" sem LLM (ADR-0028)."""
     primeiro_atraso_s: float = 0.0
     """Do pedido ao primeiro delta: o "tempo até o primeiro token" do motor."""
     atraso_entre_deltas_s: float = 0.0
@@ -54,8 +59,14 @@ class MotorRoteirizado:
     ) -> Generator[Delta, None, None]:
         del modo  # o roteiro não pensa
         self.pedidos.append(contexto)
-        texto = self.resposta if isinstance(self.resposta, str) else self.resposta(contexto)
-        deltas: Sequence[str] = em_deltas(texto, caracteres=self.caracteres_por_delta)
+        roteiro = self.resposta if isinstance(self.resposta, str) else self.resposta(contexto)
+        partes: Sequence[str | PedidoDeTool] = [roteiro] if isinstance(roteiro, str) else roteiro
+        deltas: list[str | PedidoDeTool] = []
+        for parte in partes:
+            if isinstance(parte, str):
+                deltas += em_deltas(parte, caracteres=self.caracteres_por_delta)
+            else:
+                deltas.append(parte)
         for indice, delta in enumerate(deltas):
             atraso = self.primeiro_atraso_s if indice == 0 else self.atraso_entre_deltas_s
             if not self._esperar(atraso, cancelado):
@@ -64,7 +75,7 @@ class MotorRoteirizado:
             if cancelado():
                 yield Fim(MotivoDoFim.CANCELADO)
                 return
-            yield Texto(delta)
+            yield Texto(delta) if isinstance(delta, str) else delta
             if cancelado():
                 # O consumidor viu o cancelamento depois deste delta; nada mais é gerado.
                 yield Fim(MotivoDoFim.CANCELADO)

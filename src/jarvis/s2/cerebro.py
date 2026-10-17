@@ -25,6 +25,12 @@ from typing import Any, Final
 
 from jarvis.barramento.contrato import prioridade_canonica, validar
 from jarvis.barramento.envelope import Envelope, Tipo, Trust, uuid7
+from jarvis.executor.ferramentas import (
+    Confirmar,
+    ExecutorDeFerramentas,
+    ResultadoDeFerramenta,
+    negar_sempre,
+)
 from jarvis.fatiador import Corte, FatiadorDeFala, PedacoDeFala
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.politica.memoria import Proveniencia, TurnoCorrente
@@ -36,12 +42,15 @@ from jarvis.s2.motor import (
     Modo,
     MotivoDoFim,
     MotorDeConversa,
+    PedidoDeTool,
     Pensar,
-    Texto,
 )
 from jarvis.voz.interface import Cancelado, nunca_cancelado
 from jarvis.voz.s2_provisorio import PROMPT_DE_SISTEMA
 
+MAXIMO_DE_RODADAS: Final = 4
+"""Quantas vezes o motor pode pedir ferramenta num turno antes de ter de responder (ADR-0028)."""
+MAXIMO_DE_CHAMADAS_POR_RODADA: Final = 3
 TURNOS_NO_CONTEXTO: Final = 12
 """Orçamento fixo de conversa no contexto (regra 5): os últimos turnos estáveis. O resumo do que
 ficou para trás é trabalho de segundo plano, fora desta fatia."""
@@ -77,6 +86,8 @@ class Resposta:
     detalhe: str = ""
     pediu_pensar: bool = False
     deltas_depois_do_cancelamento: int = 0
+    ferramentas: list[ResultadoDeFerramenta] = field(default_factory=list)
+    """Cada chamada do turno, com o que aconteceu — para a auditoria e para o teste."""
     ms_ate_contexto: float = 0.0
     ms_ate_primeiro_pedaco: float | None = None
     ms_cancelamento_ate_motor_parado: float | None = None
@@ -96,6 +107,10 @@ class Cerebro:
     """O histórico persistente (ADR-0026, M1). Sem ele, a conversa vive só na memória."""
     session_id: str = ""
     turno_corrente: TurnoCorrente | None = None
+    ferramentas: ExecutorDeFerramentas | None = None
+    """O executor das tools do catálogo v1 (ADR-0028). Sem ele, pedido de tool volta negado."""
+    confirmar: Confirmar = negar_sempre
+    """Como o dono confirma: a janela liga aqui. Sem janela, toda confirmação é não."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
 
     @property
@@ -151,36 +166,40 @@ class Cerebro:
         visto_cancelamento = self._falar_avisos(
             avisos, fatiador, resposta, publicar, comeco, cancelado
         )
-        deltas = self.motor.gerar(contexto, modo, cancelado)
-        try:
-            for delta in deltas if visto_cancelamento is None else ():
-                if visto_cancelamento is not None:
-                    resposta.deltas_depois_do_cancelamento += isinstance(delta, Texto)
-                    continue
-                if isinstance(delta, Fim):
-                    resposta.fim, resposta.detalhe = delta.motivo, delta.detalhe
-                    if delta.motivo is MotivoDoFim.CANCELADO:
-                        visto_cancelamento = time.monotonic()
-                    break
-                if isinstance(delta, Pensar):
-                    # Regra 4: quem refaz no modo `pensar` (com a ponte) é o chamador.
-                    resposta.pediu_pensar = True
-                    continue
-                if not isinstance(delta, Texto):
-                    continue  # pedido de tool: fora da fatia 1 (sem PDP no caminho ainda)
-                resposta.gerado += delta.texto
-                for pedaco in fatiador.alimentar(delta.texto):
-                    if cancelado():
-                        visto_cancelamento = time.monotonic()
-                        break
-                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
-                if visto_cancelamento is None and cancelado():
+        catalogo = self.ferramentas.catalogo_para_o_modelo() if self.ferramentas else ()
+        resultados: list[Mensagem] = []
+        for _rodada in range(MAXIMO_DE_RODADAS):
+            if visto_cancelamento is not None:
+                break
+            da_vez = Contexto(
+                sistema=contexto.sistema,
+                mensagens=(*contexto.mensagens, *resultados),
+                ferramentas=catalogo,
+            )
+            pedidos, visto_cancelamento = self._rodada(
+                da_vez, modo, cancelado, fatiador, resposta, publicar, comeco
+            )
+            if (
+                visto_cancelamento is not None
+                or not pedidos
+                or resposta.fim is not MotivoDoFim.CONCLUIDO
+            ):
+                break
+            # O que o motor disse antes de pedir a ferramenta ("deixa eu ver") sai agora: a
+            # palavra que esperava o espaço seguinte é fechada, e só então a ferramenta roda.
+            for pedaco in fatiador.alimentar(" "):
+                self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+            for pedido in pedidos[:MAXIMO_DE_CHAMADAS_POR_RODADA]:
+                if cancelado():
                     visto_cancelamento = time.monotonic()
-                if visto_cancelamento is not None:
                     break
-        finally:
-            # Fechar o iterador é o que faz o motor parar de gerar (o `finally` dele).
-            deltas.close()
+                resultado = self._chamar(pedido, cancelado)
+                resposta.ferramentas.append(resultado)
+                resultados.append(Mensagem("ferramenta", resultado.para_o_modelo()))
+            if visto_cancelamento is None and cancelado():
+                visto_cancelamento = time.monotonic()
+        else:
+            resposta.detalhe = f"o motor pediu ferramenta {MAXIMO_DE_RODADAS} vezes sem responder"
         if visto_cancelamento is None and cancelado():
             visto_cancelamento = time.monotonic()
         if visto_cancelamento is not None or resposta.fim is MotivoDoFim.CANCELADO:
@@ -194,6 +213,62 @@ class Cerebro:
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
         self._pendentes[resposta.response_id] = resposta
         return resposta
+
+    def _rodada(
+        self,
+        contexto: Contexto,
+        modo: Modo,
+        cancelado: Cancelado,
+        fatiador: FatiadorDeFala,
+        resposta: Resposta,
+        publicar: Publicar,
+        comeco: float,
+    ) -> tuple[list[PedidoDeTool], float | None]:
+        """Uma chamada ao motor: publica o texto em pedaços e junta os pedidos de ferramenta."""
+        pedidos: list[PedidoDeTool] = []
+        visto_cancelamento: float | None = None
+        deltas = self.motor.gerar(contexto, modo, cancelado)
+        try:
+            for delta in deltas:
+                if isinstance(delta, Fim):
+                    resposta.fim, resposta.detalhe = delta.motivo, delta.detalhe
+                    if delta.motivo is MotivoDoFim.CANCELADO:
+                        visto_cancelamento = time.monotonic()
+                    break
+                if isinstance(delta, Pensar):
+                    # Regra 4: quem refaz no modo `pensar` (com a ponte) é o chamador.
+                    resposta.pediu_pensar = True
+                    continue
+                if isinstance(delta, PedidoDeTool):
+                    pedidos.append(delta)  # o modelo propõe; quem dispõe é o código (P1)
+                    continue
+                resposta.gerado += delta.texto
+                for pedaco in fatiador.alimentar(delta.texto):
+                    if cancelado():
+                        visto_cancelamento = time.monotonic()
+                        break
+                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+                if visto_cancelamento is None and cancelado():
+                    visto_cancelamento = time.monotonic()
+                if visto_cancelamento is not None:
+                    break
+        finally:
+            # Fechar o iterador é o que faz o motor parar de gerar (o `finally` dele).
+            deltas.close()
+        return pedidos, visto_cancelamento
+
+    def _chamar(self, pedido: PedidoDeTool, cancelado: Cancelado) -> ResultadoDeFerramenta:
+        if self.ferramentas is None:
+            return ResultadoDeFerramenta(
+                pedido.tool_id, "negado", motivo="nenhuma ferramenta está ligada nesta sessão"
+            )
+        return self.ferramentas.executar(
+            pedido.tool_id,
+            pedido.args,
+            cancelado=cancelado,
+            confirmar=self.confirmar,
+            session_id=self.session_id,
+        )
 
     def avisar(
         self,

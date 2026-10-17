@@ -35,6 +35,7 @@ from jarvis.s2.motor import (
     Fim,
     Modo,
     MotivoDoFim,
+    PedidoDeTool,
     Texto,
 )
 from jarvis.voz.interface import Cancelado, Onde
@@ -51,6 +52,95 @@ CORTESIA_DEPOIS_DO_FIM_S: Final = 0.5
 No cancelamento e no prazo não há cortesia — ali o processo morre na hora."""
 
 _FIM_DA_LEITURA: Final = object()
+
+MARCA_DE_FERRAMENTA: Final = "<<ferramenta>>"
+"""O protocolo de texto do provisório (ADR-0028): a CLI roda **sem** ferramenta nenhuma (ADR-0018),
+então a proposta de chamada chega como uma linha que começa com esta marca e traz um JSON."""
+
+INSTRUCAO_DE_FERRAMENTAS: Final = (
+    "Você pode PROPOR ferramentas; quem decide se roda é o código do Jarvis, e coisas como "
+    "gravar ou abrir site podem pedir a confirmação do dono. Para propor, responda com uma "
+    "linha que começa exatamente com " + MARCA_DE_FERRAMENTA + " seguida de um JSON "
+    '{"tool_id": "...", "args": {...}} — uma linha por chamada, sem markdown, sem explicar o '
+    'JSON. Pode dizer uma frase curta antes ("deixa eu ver"). Depois você recebe os '
+    "resultados e responde ao dono, em voz, curto. Use só as ferramentas da lista, só com os "
+    "argumentos dela, e nunca invente resultado. Caminhos: sempre a pasta inteira (~/Documentos/"
+    "...). Ferramentas disponíveis agora:"
+)
+
+
+def sistema_com_ferramentas(sistema: str, ferramentas: Sequence[Mapping[str, object]]) -> str:
+    """O prompt de sistema com o catálogo fixo do modo (C0). Sem ferramentas, fica como estava."""
+    if not ferramentas:
+        return sistema
+    linhas = [sistema.replace("Você não tem ferramentas, não lê arquivos e não executa nada", "")]
+    linhas.append(INSTRUCAO_DE_FERRAMENTAS)
+    for ferramenta in ferramentas:
+        argumentos = json.dumps(ferramenta.get("argumentos", {}), ensure_ascii=False)
+        pedidos = ferramenta.get("obrigatorios")
+        obrigatorios = ", ".join(str(o) for o in pedidos) if isinstance(pedidos, list) else ""
+        linhas.append(
+            f"- {ferramenta['id']}: {ferramenta['descricao']} Argumentos: {argumentos}. "
+            f"Obrigatórios: {obrigatorios or 'nenhum'}."
+        )
+    return "\n".join(linhas)
+
+
+@dataclass(slots=True)
+class LeitorDoProtocolo:
+    """Separa, ainda no stream, o texto falado das linhas de proposta de ferramenta.
+
+    Cada linha é segurada só enquanto ainda **pode** ser uma proposta (é prefixo da marca); assim
+    que diverge, sai como texto — a fala não espera o fim da resposta. Linha de proposta com JSON
+    inválido vira um pedido malformado, que o executor recusa e o motor fica sabendo."""
+
+    _linha: str = ""
+    _decidida: bool = False
+
+    def alimentar(self, texto: str) -> Iterator[Delta]:
+        while texto:
+            fim, quebra, resto = texto.partition("\n")
+            if self._decidida:
+                if fim:
+                    yield Texto(fim)
+            else:
+                self._linha += fim
+                inicio = self._linha.lstrip()
+                if inicio and not (
+                    MARCA_DE_FERRAMENTA.startswith(inicio) or inicio.startswith(MARCA_DE_FERRAMENTA)
+                ):
+                    self._decidida = True
+                    yield Texto(self._linha)
+                    self._linha = ""
+            if not quebra:
+                return
+            if self._decidida:
+                yield Texto("\n")
+                self._decidida = False
+            else:
+                yield from self._fim_de_linha()
+            texto = resto
+
+    def fechar(self) -> Iterator[Delta]:
+        yield from self._fim_de_linha()
+
+    def _fim_de_linha(self) -> Iterator[Delta]:
+        linha, self._linha = self._linha.strip(), ""
+        if not linha:
+            return
+        if not linha.startswith(MARCA_DE_FERRAMENTA):
+            yield Texto(linha)
+            return
+        bruto = linha[len(MARCA_DE_FERRAMENTA) :].strip()
+        try:
+            pedido = json.loads(bruto)
+            tool_id, args = str(pedido["tool_id"]), pedido.get("args", {})
+            if not isinstance(args, dict):
+                raise TypeError("args não é objeto")
+        except (ValueError, KeyError, TypeError):
+            yield PedidoDeTool("(malformado)", {"bruto": bruto[:200]})
+            return
+        yield PedidoDeTool(tool_id, args)
 
 
 @dataclass(slots=True)
@@ -71,7 +161,7 @@ class MotorClaudeCli:
     pensamento_descartado: int = field(default=0)
     """Deltas de raciocínio que chegaram e não viraram fala — contados, não guardados."""
 
-    def argumentos(self, modo: Modo) -> list[str]:
+    def argumentos(self, modo: Modo, ferramentas: Sequence[Mapping[str, object]] = ()) -> list[str]:
         """O `argv` completo — **sem** a fala do dono, que vai por `stdin`."""
         argumentos = [
             *self.comando,
@@ -81,7 +171,7 @@ class MotorClaudeCli:
             "stream-json",
             "--include-partial-messages",
             "--system-prompt",
-            self.sistema,
+            sistema_com_ferramentas(self.sistema, ferramentas),
             "--tools",
             "",
             "--disallowed-tools",
@@ -113,7 +203,7 @@ class MotorClaudeCli:
             return
         try:
             processo = subprocess.Popen(  # noqa: S603 — argv explícito, sem shell
-                self.argumentos(modo),
+                self.argumentos(modo, contexto.ferramentas),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -147,6 +237,7 @@ class MotorClaudeCli:
         leitor.start()
         threading.Thread(target=_ler_erro, args=(processo, erro), daemon=True).start()
         limite = time.monotonic() + self.prazo_s
+        protocolo = LeitorDoProtocolo()
         while True:
             if cancelado():
                 yield Fim(MotivoDoFim.CANCELADO)
@@ -170,6 +261,11 @@ class MotorClaudeCli:
                 # Chegou junto com o cancelamento: não é entregue.
                 yield Fim(MotivoDoFim.CANCELADO)
                 return
+            if isinstance(delta, Texto):
+                yield from protocolo.alimentar(delta.texto)
+                continue
+            if isinstance(delta, Fim):
+                yield from protocolo.fechar()
             yield delta
             if isinstance(delta, Fim):
                 return
