@@ -148,3 +148,26 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_unit_fts USING fts5 (
     content_rowid = 'rowid',
     tokenize = "unicode61 remove_diacritics 2"
 );
+
+-- --- bruto cifrado e turnos de conversa (ADR-0026, fatia M1) -------------------------
+-- O texto de cada episódio de conversa vai cifrado aqui; `episode.raw_cipher_ref` aponta para
+-- `raw_blob.ref`. O índice e a busca só veem `memory_unit.text_redacted` (§6.2 e).
+CREATE TABLE IF NOT EXISTS raw_blob (
+    ref       TEXT PRIMARY KEY,
+    cifrado   BLOB NOT NULL,
+    criado_em TEXT NOT NULL
+);
+
+-- Um turno estável da conversa. Do Jarvis, só o que tocou (P4): `played_ms` e `interrompida`
+-- dizem quanto o dono ouviu.
+CREATE TABLE IF NOT EXISTS turno (
+    episode_id   TEXT PRIMARY KEY REFERENCES episode (id),
+    session_id   TEXT NOT NULL,
+    ordem        INTEGER NOT NULL,
+    papel        TEXT NOT NULL CHECK (papel IN ('dono', 'jarvis')),
+    played_ms    INTEGER,
+    interrompida INTEGER NOT NULL DEFAULT 0 CHECK (interrompida IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS turno_sessao ON turno (session_id, ordem);
+CREATE INDEX IF NOT EXISTS episode_tipo_tempo ON episode (kind, occurred_at);
+CREATE INDEX IF NOT EXISTS episode_retencao ON episode (retention_until);
