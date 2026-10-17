@@ -92,8 +92,9 @@ class Resultado:
 
 def medir(
     classificador: ClassificadorDeDecisao, corpus: list[dict[str, Any]], limiares: Limiares
-) -> tuple[Resultado, list[float], list[dict[str, Any]]]:
+) -> tuple[Resultado, list[float], list[dict[str, Any]], list[dict[str, Any]]]:
     resultado = Resultado()
+    itens: list[dict[str, Any]] = []
     latencias: list[float] = []
     erros: list[dict[str, Any]] = []
     for linha in corpus:
@@ -102,6 +103,17 @@ def medir(
         detector = DetectorDeEnderecamento(classificador=classificador, limiares=limiares)
         d = detector.avaliar(linha["fala"], jarvis_perguntou=linha["jarvis_perguntou"])
         resultado.total += 1
+        # Toda fala com o seu `p`, não só os erros: é o que deixa escolher outro limiar sem
+        # gastar a nuvem de novo (a 1ª rodada real, de 2026-10-17, só guardou os erros).
+        itens.append(
+            {
+                "id": linha["id"],
+                "rotulo": linha["rotulo"],
+                "p": d.p_com_o_jarvis,
+                "intencao": d.intencao.value,
+                "agiu": d.agir,
+            }
+        )
         if d.motivo.value == "classificador fora":
             resultado.falhas += 1
         else:
@@ -118,7 +130,7 @@ def medir(
         if d.agir and para:
             resultado.aceitas_certas += 1
             resultado.intencao_certa += d.intencao is Intencao(linha["intencao"])
-    return resultado, latencias, erros
+    return resultado, latencias, erros, itens
 
 
 def relatorio(nome: str, r: Resultado, latencias: list[float], erros: list[dict[str, Any]]) -> str:
@@ -170,10 +182,16 @@ def main(argv: list[str] | None = None) -> int:
         aberto = ClassificadorOpenRouter(nuvem_ligada=[REGISTRADO], prazo_s=5.0)
         aberto.abrir()
         nome, classificador = f"openrouter {aberto.modelo}", aberto
-    r, latencias, erros = medir(classificador, corpus, Limiares())
+    r, latencias, erros, itens = medir(classificador, corpus, Limiares())
     print(relatorio(nome, r, latencias, erros))
     if args.json:
-        bruto = {"nome": nome, "resultado": asdict(r), "latencias_ms": latencias, "erros": erros}
+        bruto = {
+            "nome": nome,
+            "resultado": asdict(r),
+            "latencias_ms": latencias,
+            "erros": erros,
+            "itens": itens,
+        }
         args.json.write_text(json.dumps(bruto, ensure_ascii=False), encoding="utf-8")
     return 0
 

@@ -172,7 +172,9 @@ aparece acima da barra de conversa, com o motivo.
    pedido e a linha `(endereçamento: acao · p=0.97 · 716 ms)` diz o quê. Se o serviço cair, **não
    age** e o card de avisos diz uma vez. Medição: `uv run python tools/medir_enderecamento.py
    --regras` (baseline local: falso-aceite 23,3 %) e `--openrouter` (**58 chamadas** reais,
-   ≈ US$ 0,001; ainda não rodei — pedi só uma). ADR-0029 tem as fontes e o plano.
+   ≈ US$ 0,001). Rodado com o seu aval: falso-aceite **3,3 %**, falso-rejeito **46,4 %**, p50 563 ms /
+   p95 617 ms. Os pedidos ignorados ficaram todos com p 0,64–0,78, abaixo do limiar de entrada (0,80):
+   o limiar está alto para pt-BR e vai ser recalibrado com uma nova rodada. ADR-0029 tem as fontes e o plano.
 
 ### 0.1 Pedir para o Jarvis fazer coisas (ferramentas, fatia 6)
 

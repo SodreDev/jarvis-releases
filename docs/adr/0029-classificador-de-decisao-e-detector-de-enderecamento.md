@@ -67,10 +67,10 @@ Corpus `medicao/enderecamento/falas.jsonl` (58 falas sintéticas pt-BR, 28 com o
 | Abordagem | Falso-aceite | Falso-rejeito | Intenção certa (aceitas) | Latência | Observação |
 |---|---|---|---|---|---|
 | **Regras** (nome, verbo de ordem no começo, "?", "sim/não" após pergunta) | 7/30 = **23,3 %** | 3/28 = 10,7 % | 18/25 = 72 % | ~0 ms | roda no corpus (`--regras`); erra "abre a porta que o entregador chegou", "toca aqui!", "o Jarvis é rápido, né?" |
-| **Jev (OpenRouter, jev-1.13)** | **não medido no corpus** | não medido | não medido | **716 ms** numa única chamada de fumaça (inclui TLS, 1ª chamada) | a chamada real foi **uma só**: "Jarvis, abre o Discord pra mim" → p(noul) = 0,97, intenção `acao`. **Prova que o caminho funciona; não prova precisão.** Rodar `--openrouter` no corpus gasta 58 chamadas (≈ US$ 0,001) e depende do aval do dono |
+| **Jev (OpenRouter, jev-1.13)**, limiares da §4 (entrar 0,80) | 1/30 = **3,3 %** | 13/28 = **46,4 %** | 15/15 = 100 % | **p50 563 ms · p95 617 ms** (58 chamadas, uma execução, aval do dono) | os 13 rejeitados ficaram **todos** entre p = 0,64 e 0,78 (faixa "incerto"); o único falso-aceite teve 0,82 ("pode abrir a janela, por favor?", dito a outra pessoa). Fumaça anterior: 1 chamada, 716 ms, p = 0,97 |
 | **O próprio LLM** (`claude -p` haiku, o provisório da ADR-0018) | não medido | não medido | — | 1,2–2,5 s até a primeira proposta de ferramenta (6 medições hoje, outro prompt) | só serve de ordem de grandeza: gerar texto para decidir é mais lento e mais caro que um classificador |
 
-Os números de terceiros (p50 0,19 s, 0,35–0,53 s) e o meu único 716 ms não se contradizem — são amostras diferentes —, mas **nenhum é um p95 nosso**: o p50/p95 nosso sai da medição acima.
+**Leitura da medição real.** O Jev separa as classes, mas em pt-BR as falas para o Jarvis saem com p **0,64–0,78**, abaixo do limiar de entrada de 0,80 desta proposta: o limiar de 0,80 erra para o lado seguro (pouco falso-aceite) e ignora quase metade dos pedidos. Baixar o limiar exige saber onde caem as falas **alheias** — a primeira rodada só guardou o `p` dos erros; a ferramenta agora guarda o de todas, e a próxima rodada (58 chamadas, ≈ US$ 0,001) dá a curva. Com a conversa em andamento o limiar já é 0,55 (histerese), o que absorve parte dos rejeitados ("e em Lisboa?" p = 0,71, "sim, pode ser" p = 0,76). A latência medida (p95 617 ms) cabe no critério de p95 ≤ 1,0 s; a acurácia, com o limiar atual, **não** cabe (falso-rejeito ≥ 15 %).
 
 ## Alternativas descartadas
 

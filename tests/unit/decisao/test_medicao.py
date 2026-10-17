@@ -31,7 +31,9 @@ def test_o_oraculo_acerta_tudo_e_prova_que_a_conta_fecha(
     assert main(["--oraculo", "--json", str(saida)]) == 0
     texto = capsys.readouterr().out
     assert "falso-aceite     0" in texto and "falso-rejeito    0" in texto
-    assert json.loads(saida.read_text("utf-8"))["resultado"]["total"] == len(_corpus())
+    bruto = json.loads(saida.read_text("utf-8"))
+    assert bruto["resultado"]["total"] == len(_corpus())
+    assert len(bruto["itens"]) == len(_corpus()) and all("p" in i for i in bruto["itens"])
 
 
 def test_o_baseline_de_regras_erra_o_que_se_espera_dele(capsys: pytest.CaptureFixture[str]) -> None:
