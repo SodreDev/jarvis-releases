@@ -17,6 +17,11 @@ dependencies = [
   # PyPI parou em 2018 (sem roda para 3.12, nem Windows) e `speexdsp` só tem sdist e faz
   # supressão de ruído, não AEC. Por isso a cadeia é nossa, em numpy.
   "numpy>=2.1,<3",
+  # Cifra do bruto da memória antes da primeira gravação de conversa (ADR-0026, regra 6):
+  # Fernet (AES-128-CBC + HMAC-SHA256). `Apache-2.0 OR BSD-3-Clause`, conferido no PyPI em
+  # 2026-10-16. Já vinha no lock por baixo do keyring (SecretStorage), mas só no Linux: direto
+  # aqui para o Windows ter a mesma cifra (P11).
+  "cryptography>=46,<51",
 ]
 
 [dependency-groups]
