@@ -1,0 +1,258 @@
+"""Abrir um aplicativo que o dono autorizou — sem shell e sem argumento vindo do modelo (SPEC §5.6).
+
+Pedido do dono (2026-10-17): executar **não** é o modelo montando comando; é uma tool tipada
+com parâmetro nomeado, resolvida pelo código. Aqui o modelo diz só um **nome** ("o Dolphin",
+"navegador"); o código resolve esse nome contra um **registro** montado dos `.desktop` do sistema
+(spec freedesktop Desktop Entry) e filtrado pela lista que o dono autorizou na configuração. O
+que roda é o `Exec` daquele arquivo, com os códigos de campo (`%f`, `%U`…) retirados — nenhum
+caractere do pedido chega ao `argv`.
+
+**A única exceção à varredura de shell do executor** (`tests/unit/processos/test_sem_shell.py`)
+mora neste arquivo e é nomeada lá: `os.posix_spawn`, com `argv` em lista, sem shell, com ambiente
+saneado (sem chave de API nenhuma) e numa sessão própria (`setsid`). `Exec` que começa por shell
+(`sh -c`, `bash`…) ou por elevação (`sudo`, `pkexec`) é recusado ao montar o registro.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import shutil
+import sys
+import threading
+import unicodedata
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from pathlib import Path
+from typing import Final
+
+PASTAS_DE_APLICATIVOS: Final[tuple[str, ...]] = (
+    "~/.local/share/applications",
+    "~/.local/share/flatpak/exports/share/applications",
+    "/var/lib/flatpak/exports/share/applications",
+    "/usr/local/share/applications",
+    "/usr/share/applications",
+)
+"""Na ordem da precedência do XDG: o do usuário vence o do sistema com o mesmo id."""
+CODIGOS_DE_CAMPO: Final = frozenset(
+    {"%f", "%F", "%u", "%U", "%i", "%c", "%k", "%d", "%D", "%n", "%N", "%v", "%m"}
+)
+INTERPRETADORES_RECUSADOS: Final = frozenset(
+    {
+        "sh",
+        "bash",
+        "zsh",
+        "dash",
+        "fish",
+        "ksh",
+        "csh",
+        "tcsh",
+        "sudo",
+        "pkexec",
+        "su",
+        "doas",
+        "run0",
+    }
+)
+VARIAVEIS_DO_AMBIENTE: Final = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE",
+    "XDG_CURRENT_DESKTOP",
+    "XDG_DATA_DIRS",
+    "XDG_CONFIG_DIRS",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "XAUTHORITY",
+)
+"""O que o app precisa para abrir na sessão do dono — e só isso: nada de `GROQ_API_KEY` & cia."""
+
+
+class AppRecusado(LookupError):
+    """O nome não resolve para um app autorizado. A mensagem diz o que existe."""
+
+
+@dataclass(frozen=True, slots=True)
+class App:
+    id: str
+    """O nome do arquivo sem `.desktop` (ex.: `org.kde.dolphin`)."""
+    nome: str
+    nomes: tuple[str, ...]
+    """Nome, nome em pt e o id: tudo o que o dono pode dizer para chamá-lo."""
+    argv: tuple[str, ...]
+    arquivo: Path
+
+
+def _sem_acento(texto: str) -> str:
+    return (
+        "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
+        .casefold()
+        .strip()
+    )
+
+
+def dividir_exec(texto: str) -> list[str]:
+    """O `Exec` em argumentos, com as aspas da spec Desktop Entry — e nada de shell (sem `shlex`,
+    proibido aqui: a regra de aspas da spec é menor e é essa que vale)."""
+    argumentos: list[str] = []
+    atual: list[str] = []
+    entre_aspas = False
+    tem = False
+    i = 0
+    while i < len(texto):
+        c = texto[i]
+        if entre_aspas:
+            if c == "\\" and i + 1 < len(texto) and texto[i + 1] in '"`$\\':
+                atual.append(texto[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                entre_aspas = False
+            else:
+                atual.append(c)
+        elif c == '"':
+            entre_aspas, tem = True, True
+        elif c.isspace():
+            if atual or tem:
+                argumentos.append("".join(atual))
+                atual, tem = [], False
+        else:
+            atual.append(c)
+        i += 1
+    if entre_aspas:
+        raise ValueError("aspas sem fechar no Exec")
+    if atual or tem:
+        argumentos.append("".join(atual))
+    return argumentos
+
+
+def ler_desktop(arquivo: Path) -> App | None:
+    """Um `.desktop` de aplicativo visível e com `Exec` aceitável, ou `None`."""
+    try:
+        linhas = arquivo.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    secao = ""
+    campos: dict[str, str] = {}
+    for linha in linhas:
+        linha = linha.strip()
+        if linha.startswith("[") and linha.endswith("]"):
+            secao = linha[1:-1]
+            continue
+        if secao == "Desktop Entry" and "=" in linha and not linha.startswith("#"):
+            chave, valor = linha.split("=", 1)
+            campos.setdefault(chave.strip(), valor.strip())
+    if campos.get("Type") != "Application" or campos.get("Hidden") == "true":
+        return None
+    try:
+        argv = [a for a in dividir_exec(campos.get("Exec", "")) if a not in CODIGOS_DE_CAMPO]
+    except ValueError:
+        return None
+    if not argv or any("%" in a for a in argv):
+        return None
+    if Path(argv[0]).name in INTERPRETADORES_RECUSADOS:
+        return None
+    identificador = arquivo.name.removesuffix(".desktop")
+    nome = campos.get("Name", identificador)
+    nomes = tuple(
+        dict.fromkeys(
+            n
+            for n in (
+                nome,
+                campos.get("Name[pt_BR]", ""),
+                campos.get("Name[pt]", ""),
+                campos.get("GenericName[pt_BR]", ""),
+                identificador,
+            )
+            if n
+        )
+    )
+    return App(id=identificador, nome=nome, nomes=nomes, argv=tuple(argv), arquivo=arquivo)
+
+
+@dataclass(frozen=True, slots=True)
+class RegistroDeApps:
+    autorizados: Mapping[str, App]
+    instalados: frozenset[str]
+    """Ids encontrados no sistema, autorizados ou não — para a sugestão dizer o que falta."""
+
+    @classmethod
+    def montar(
+        cls, autorizados: Iterable[str], *, pastas: Sequence[str] = PASTAS_DE_APLICATIVOS
+    ) -> RegistroDeApps:
+        encontrados: dict[str, App] = {}
+        for pasta in pastas:
+            base = Path(pasta).expanduser()
+            if not base.is_dir():
+                continue
+            for arquivo in sorted(base.glob("*.desktop")):
+                app = ler_desktop(arquivo)
+                if app is not None and app.id not in encontrados:
+                    encontrados[app.id] = app
+        pedidos = {a.removesuffix(".desktop") for a in autorizados}
+        return cls(
+            autorizados={i: encontrados[i] for i in sorted(pedidos) if i in encontrados},
+            instalados=frozenset(encontrados),
+        )
+
+    def resolver(self, nome: str) -> App:
+        """O app autorizado que o dono chamou por este nome — exato, ou o único que começa
+        assim. Fora disso, recusa dizendo os parecidos."""
+        alvo = _sem_acento(nome)
+        exatos = [a for a in self.autorizados.values() if alvo in {_sem_acento(n) for n in a.nomes}]
+        if len(exatos) == 1:
+            return exatos[0]
+        prefixos = [
+            a
+            for a in self.autorizados.values()
+            if any(_sem_acento(n).startswith(alvo) for n in a.nomes)
+        ]
+        if len(alvo) >= 3 and len(prefixos) == 1:
+            return prefixos[0]
+        raise AppRecusado(self._sugestao(nome, alvo))
+
+    def _sugestao(self, nome: str, alvo: str) -> str:
+        if not self.autorizados:
+            return (
+                f"{nome!r} não está no registro: nenhum aplicativo está autorizado ainda "
+                "(apps_autorizados na configuração)"
+            )
+        pontuados = sorted(
+            self.autorizados.values(),
+            key=lambda a: (
+                -max(SequenceMatcher(None, alvo, _sem_acento(n)).ratio() for n in a.nomes)
+            ),
+        )
+        parecidos = ", ".join(a.nome for a in pontuados[:3])
+        return f"{nome!r} não está entre os aplicativos autorizados. Parecidos: {parecidos}"
+
+
+def ambiente_saneado(origem: Mapping[str, str] | None = None) -> dict[str, str]:
+    fonte = os.environ if origem is None else origem
+    return {k: fonte[k] for k in VARIAVEIS_DO_AMBIENTE if k in fonte}
+
+
+def lancar(app: App, *, ambiente: Mapping[str, str] | None = None) -> int:
+    """Abre o app numa sessão própria e devolve o pid. Quem espera o filho é uma linha à parte,
+    para não sobrar processo zumbi; o Jarvis não fica preso a ele."""
+    if sys.platform == "win32":  # pragma: no cover — Menu Iniciar/AppX ainda não implementado
+        raise AppRecusado("abrir aplicativo no Windows ainda não foi implementado")
+    executavel = app.argv[0] if Path(app.argv[0]).is_absolute() else shutil.which(app.argv[0])
+    if executavel is None:
+        raise AppRecusado(f"{app.nome}: o executável {app.argv[0]!r} não está no PATH")
+    pid = os.posix_spawn(executavel, list(app.argv), ambiente_saneado(ambiente), setsid=True)
+    threading.Thread(target=_esperar, args=(pid,), daemon=True, name=f"app-{app.id}").start()
+    return pid
+
+
+def _esperar(pid: int) -> None:
+    with contextlib.suppress(ChildProcessError):
+        os.waitpid(pid, 0)

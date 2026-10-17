@@ -1,0 +1,295 @@
+"""ADR-0028: as ferramentas reais do catálogo v1, do pedido do modelo ao resultado — sem rede."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
+from jarvis.executor.lancador import App, RegistroDeApps, dividir_exec, ler_desktop
+from jarvis.politica.abertura import nome_de_app
+from jarvis.politica.auditoria import LogDeAuditoria
+from jarvis.politica.catalogo import carregar_catalogo
+from jarvis.politica.modos import Modo
+from jarvis.politica.pdp import Pdp
+
+NUNCA = lambda: False  # noqa: E731
+
+
+@pytest.fixture
+def casa(tmp_path: Path) -> Path:
+    lar = tmp_path / "casa"
+    (lar / "Documentos" / "projetos").mkdir(parents=True)
+    (lar / "Documentos" / "notas.txt").write_text("comprar café\nligar para a Bia\n", "utf-8")
+    (lar / "Documentos" / "projetos" / "jarvis-ideias.md").write_text("# ideias\n", "utf-8")
+    (lar / "Documentos" / ".env").write_text("API_TOKEN=segredo\n", "utf-8")
+    (lar / ".ssh").mkdir()
+    (lar / ".ssh" / "id_rsa").write_text("CHAVE PRIVADA", "utf-8")
+    (lar / "Documentos" / "atalho").symlink_to(lar / ".ssh" / "id_rsa")
+    return lar
+
+
+@pytest.fixture
+def auditoria(tmp_path: Path) -> Iterator[LogDeAuditoria]:
+    with LogDeAuditoria(tmp_path / "auditoria.sqlite") as log:
+        yield log
+
+
+def _executor(
+    lar: Path, auditoria: LogDeAuditoria, modo: Modo = Modo.PADRAO, **mudancas: Any
+) -> ExecutorDeFerramentas:
+    pdp = Pdp(
+        catalogo=carregar_catalogo(),
+        lar=lar,
+        auditoria=auditoria,
+        modo=modo,
+        pasta_do_jarvis=lar.parent / "area",
+        session_id="01a1c000-0000-7000-8000-000000000006",
+        apps_autorizados=mudancas.pop("apps_autorizados", frozenset()),
+        sites_sem_confirmar=mudancas.pop("sites_sem_confirmar", frozenset()),
+    )
+    executor = ExecutorDeFerramentas(pdp=pdp, lar=lar, **mudancas)
+    executor.preparar()
+    return executor
+
+
+# --- leitura dentro das raízes ---------------------------------------------------------
+def test_lista_a_pasta_sem_o_segredo_e_sem_seguir_link(
+    casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    resultado = _executor(casa, auditoria).executar(
+        "files.list_dir", {"path": "~/Documentos"}, cancelado=NUNCA
+    )
+    assert resultado.status == "ok", resultado.motivo
+    nomes = {e["nome"]: e["tipo"] for e in resultado.dados["entradas"]}
+    assert nomes == {"atalho": "link (não seguido)", "notas.txt": "arquivo", "projetos": "pasta"}
+    assert resultado.dados["omitidas_por_seguranca"] == 1, ".env não aparece"
+
+
+def test_le_o_texto_e_recusa_link_para_a_chave(casa: Path, auditoria: LogDeAuditoria) -> None:
+    executor = _executor(casa, auditoria)
+    lido = executor.executar("files.read_text", {"path": "~/Documentos/notas.txt"}, cancelado=NUNCA)
+    assert lido.status == "ok"
+    assert "comprar café" in lido.dados["texto"]
+
+    pelo_link = executor.executar(
+        "files.read_text", {"path": "~/Documentos/atalho"}, cancelado=NUNCA
+    )
+    assert pelo_link.status in {"erro", "negado"}
+    assert "CHAVE" not in pelo_link.para_o_modelo()
+
+
+def test_chave_ssh_e_negada_ate_no_modo_total(casa: Path, auditoria: LogDeAuditoria) -> None:
+    resultado = _executor(casa, auditoria, Modo.TOTAL).executar(
+        "files.read_text", {"path": "~/.ssh/id_rsa"}, cancelado=NUNCA
+    )
+    assert resultado.status == "negado"
+    assert "CHAVE" not in resultado.para_o_modelo()
+
+
+def test_no_modo_padrao_do_produto_nada_do_dono_e_lido(
+    casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    """Padrão do Jarvis = modo `jarvis`: só a área dele. As pastas do dono ficam fora."""
+    resultado = _executor(casa, auditoria, Modo.JARVIS).executar(
+        "files.read_text", {"path": "~/Documentos/notas.txt"}, cancelado=NUNCA
+    )
+    assert resultado.status == "negado"
+    assert "fora das raízes" in resultado.motivo
+
+
+def test_caminho_relativo_e_recusado_com_exemplo(casa: Path, auditoria: LogDeAuditoria) -> None:
+    resultado = _executor(casa, auditoria).executar(
+        "files.list_dir", {"path": "Documentos"}, cancelado=NUNCA
+    )
+    assert resultado.status == "erro"
+    assert "~/Documentos" in resultado.motivo
+
+
+def test_procura_pelo_nome_sem_acento_e_sem_entrar_no_negado(
+    casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    executor = _executor(casa, auditoria, Modo.TOTAL)
+    achados = executor.executar("files.search_in_roots", {"consulta": "IDEIAS"}, cancelado=NUNCA)
+    assert achados.status == "ok"
+    assert any(a.endswith("jarvis-ideias.md") for a in achados.dados["achados"])
+    chaves = executor.executar("files.search_in_roots", {"consulta": "id_rsa"}, cancelado=NUNCA)
+    assert chaves.dados["achados"] == []
+
+
+def test_a_busca_para_quando_o_dono_interrompe(casa: Path, auditoria: LogDeAuditoria) -> None:
+    resultado = _executor(casa, auditoria).executar(
+        "files.search_in_roots", {"consulta": "notas"}, cancelado=lambda: True
+    )
+    assert resultado.status == "cancelado"
+
+
+# --- escrita só na pasta do Jarvis, com confirmação -----------------------------------------
+def test_rascunho_sem_o_sim_do_dono_nao_existe(casa: Path, auditoria: LogDeAuditoria) -> None:
+    perguntas: list[Confirmacao] = []
+
+    def negar(pergunta: Confirmacao) -> bool:
+        perguntas.append(pergunta)
+        return False
+
+    executor = _executor(casa, auditoria)
+    resultado = executor.executar(
+        "files.write_draft",
+        {"nome": "lista", "texto": "café e pão"},
+        cancelado=NUNCA,
+        confirmar=negar,
+    )
+    assert resultado.status == "negado"
+    assert perguntas and "«lista»" in perguntas[0].detalhe
+    assert list((casa.parent / "area" / "rascunhos").glob("*.md")) == []
+
+
+def test_rascunho_com_o_sim_grava_novo_e_nunca_sobrescreve(
+    casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    executor = _executor(casa, auditoria)
+    sim = lambda _p: True  # noqa: E731
+    primeiro = executor.executar(
+        "files.write_draft",
+        {"nome": "../../.bashrc", "texto": "um"},
+        cancelado=NUNCA,
+        confirmar=sim,
+    )
+    segundo = executor.executar(
+        "files.write_draft",
+        {"nome": "../../.bashrc", "texto": "dois"},
+        cancelado=NUNCA,
+        confirmar=sim,
+    )
+    assert primeiro.status == segundo.status == "ok"
+    pasta = casa.parent / "area" / "rascunhos"
+    assert sorted(p.name for p in pasta.iterdir() if p.is_file()) == ["bashrc-2.md", "bashrc.md"]
+    assert (pasta / "bashrc.md").read_text("utf-8") == "um", "o primeiro não foi sobrescrito"
+    assert not (casa / ".bashrc").exists()
+
+
+def test_rascunho_de_evento_e_um_ics_local_sem_convite(
+    casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    resultado = _executor(casa, auditoria).executar(
+        "calendar.create_draft_event",
+        {"titulo": "Dentista, sala 3", "inicio": "2026-10-20T14:30", "duracao_min": 45},
+        cancelado=NUNCA,
+        confirmar=lambda _p: True,
+    )
+    assert resultado.status == "ok"
+    ics = Path(resultado.dados["caminho"]).read_text("utf-8")
+    assert "DTSTART:20261020T143000" in ics and "DTEND:20261020T151500" in ics
+    assert "SUMMARY:Dentista\\, sala 3" in ics
+    assert "ATTENDEE" not in ics
+
+
+# --- apps e sites ------------------------------------------------------------------------
+def _desktop(pasta: Path, nome: str, exec_: str, titulo: str) -> None:
+    (pasta / f"{nome}.desktop").write_text(
+        f"[Desktop Entry]\nType=Application\nName={titulo}\nExec={exec_}\n", "utf-8"
+    )
+
+
+def test_o_exec_do_desktop_vira_argv_sem_shell(tmp_path: Path) -> None:
+    assert dividir_exec('"/opt/Meu App/app" --nova-janela %U') == [
+        "/opt/Meu App/app",
+        "--nova-janela",
+        "%U",
+    ]
+    _desktop(tmp_path, "perigoso", "sh -c 'rm -rf ~'", "Perigoso")
+    _desktop(tmp_path, "calc", "kcalc %u", "Calculadora")
+    assert ler_desktop(tmp_path / "perigoso.desktop") is None
+    calc = ler_desktop(tmp_path / "calc.desktop")
+    assert calc is not None and calc.argv == ("kcalc",)
+
+
+def test_app_fora_do_registro_e_negado_e_sugere(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    _desktop(apps, "org.kde.kcalc", "kcalc", "KCalc")
+    _desktop(apps, "org.kde.dolphin", "dolphin %u", "Dolphin")
+    registro = RegistroDeApps.montar(["org.kde.kcalc"], pastas=[str(apps)])
+    lancados: list[App] = []
+    executor = _executor(
+        casa,
+        auditoria,
+        registro_de_apps=registro,
+        apps_autorizados=frozenset(
+            nome_de_app(n) for a in registro.autorizados.values() for n in a.nomes
+        ),
+        lancar_app=lambda app: lancados.append(app) or 4242,
+    )
+
+    fora = executor.executar("apps.launch", {"nome": "Dolphin"}, cancelado=NUNCA)
+    assert fora.status == "negado"
+    assert "KCalc" in fora.motivo, "a recusa sugere o que está autorizado"
+    dentro = executor.executar("apps.launch", {"nome": "kcalc"}, cancelado=NUNCA)
+    assert dentro.status == "ok"
+    assert [a.argv for a in lancados] == [("kcalc",)]
+
+
+def test_site_so_http_e_dominio_liberado_abre_sem_perguntar(
+    casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    abertos: list[str] = []
+    perguntas: list[Confirmacao] = []
+    executor = _executor(
+        casa,
+        auditoria,
+        abrir_site=abertos.append,
+        sites_sem_confirmar=frozenset({"wikipedia.org"}),
+    )
+
+    def perguntar(p: Confirmacao) -> bool:
+        perguntas.append(p)
+        return False
+
+    js = executor.executar("sites.open", {"url": "javascript:alert(1)"}, cancelado=NUNCA)
+    senha = executor.executar("sites.open", {"url": "https://eu:x@banco.com"}, cancelado=NUNCA)
+    livre = executor.executar(
+        "sites.open",
+        {"url": "https://pt.wikipedia.org/wiki/Jarvis"},
+        cancelado=NUNCA,
+        confirmar=perguntar,
+    )
+    outro = executor.executar(
+        "sites.open", {"url": "https://exemplo.com"}, cancelado=NUNCA, confirmar=perguntar
+    )
+    assert js.status == senha.status == "negado"
+    assert livre.status == "ok"
+    assert outro.status == "negado" and [p.detalhe for p in perguntas] == [
+        "abrir exemplo.com no seu navegador"
+    ]
+    assert abertos == ["https://pt.wikipedia.org/wiki/Jarvis"]
+
+
+def test_argumento_a_mais_e_tool_inventada_sao_recusados(
+    casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    executor = _executor(casa, auditoria)
+    extra = executor.executar(
+        "files.list_dir", {"path": "~/Documentos", "recursivo": True}, cancelado=NUNCA
+    )
+    inventada = executor.executar("shell.run", {"cmd": "ls"}, cancelado=NUNCA)
+    assert extra.status == "erro" and "contrato" in extra.motivo
+    assert inventada.status == "negado"
+
+
+def test_o_catalogo_do_modelo_so_tem_o_que_tem_corpo(casa: Path, auditoria: LogDeAuditoria) -> None:
+    ids = {t["id"] for t in _executor(casa, auditoria).catalogo_para_o_modelo()}
+    assert ids == {
+        "files.list_dir",
+        "files.read_text",
+        "files.search_in_roots",
+        "files.write_draft",
+        "calendar.create_draft_event",
+        "apps.launch",
+        "sites.open",
+    }
+    assert not any(i.startswith("memoria.") for i in ids)

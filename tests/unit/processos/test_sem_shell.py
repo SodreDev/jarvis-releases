@@ -18,9 +18,49 @@ RAIZ = Path(__file__).resolve().parents[3]
 MODULOS_PROIBIDOS = frozenset(
     {"subprocess", "os.system", "os.popen", "os.spawnl", "pty", "shlex", "commands", "popen2"}
 )
-CHAMADAS_PROIBIDAS = frozenset({"eval", "exec", "compile", "system", "popen", "__import__"})
+CHAMADAS_PROIBIDAS = frozenset(
+    {
+        "eval",
+        "exec",
+        "compile",
+        "system",
+        "popen",
+        "__import__",
+        # Criar processo por fora do `subprocess` também é caminho para executar algo: a
+        # varredura cobre a família inteira, e não só o nome que o F0-03 listou.
+        "fork",
+        "forkpty",
+        "posix_spawn",
+        "posix_spawnp",
+        "spawnv",
+        "spawnve",
+        "spawnvp",
+        "spawnvpe",
+        "spawnl",
+        "spawnle",
+        "spawnlp",
+        "spawnlpe",
+        "execv",
+        "execve",
+        "execvp",
+        "execvpe",
+        "execl",
+        "execle",
+        "execlp",
+        "execlpe",
+        "startfile",
+    }
+)
 
 PACOTES_SEM_SHELL = ("executor", "policy")
+
+EXCECOES: dict[str, frozenset[str]] = {
+    "executor/lancador.py": frozenset({"chamada posix_spawn()"}),
+    "executor/sites.py": frozenset({"chamada startfile()"}),
+}
+"""As duas únicas aberturas, nomeadas (ADR-0028): abrir um app **do registro autorizado pelo
+dono**, com `argv` do `.desktop` e sem shell; e abrir uma URL validada com o "abrir com o padrão"
+do Windows. Qualquer outro arquivo do executor que crie processo cai neste teste."""
 
 
 def arquivos(pacote: str) -> list[Path]:
@@ -58,9 +98,15 @@ def achados(arquivo: Path) -> list[str]:
     return problemas
 
 
+def _sem_excecao(arquivo: Path) -> list[str]:
+    relativo = arquivo.relative_to(RAIZ / "src" / "jarvis").as_posix()
+    permitidos = EXCECOES.get(relativo, frozenset())
+    return [p for p in achados(arquivo) if p not in permitidos]
+
+
 @pytest.mark.parametrize("pacote", PACOTES_SEM_SHELL)
 def test_pacote_nao_tem_caminho_para_shell(pacote: str) -> None:
-    encontrados = {a.name: achados(a) for a in arquivos(pacote)}
+    encontrados = {a.name: _sem_excecao(a) for a in arquivos(pacote)}
 
     assert arquivos(pacote), f"jarvis.{pacote} não tem arquivo nenhum — varredura vazia não vale"
     assert all(not v for v in encontrados.values()), encontrados
@@ -81,3 +127,21 @@ def test_a_varredura_pega_um_shell_plantado(tmp_path: Path) -> None:
     assert "from os import system" in problemas
     assert "chamada eval()" in problemas
     assert "chamada system()" in problemas
+
+
+def test_as_excecoes_existem_e_nao_vao_alem_do_nomeado() -> None:
+    """A exceção tem de existir (senão a lista envelheceu) e não pode ter mais nada junto."""
+    for relativo, permitidos in EXCECOES.items():
+        arquivo = RAIZ / "src" / "jarvis" / relativo
+        assert set(achados(arquivo)) == set(permitidos), relativo
+
+
+def test_a_varredura_pega_processo_criado_por_fora_do_subprocess(tmp_path: Path) -> None:
+    alvo = tmp_path / "ruim.py"
+    alvo.write_text(
+        "import os\n\n\ndef f() -> None:\n    os.posix_spawn('/bin/sh', ['sh'], {})\n"
+        "    os.execv('/bin/sh', ['sh'])\n    os.fork()\n",
+        encoding="utf-8",
+    )
+    problemas = achados(alvo)
+    assert {"chamada posix_spawn()", "chamada execv()", "chamada fork()"} <= set(problemas)
