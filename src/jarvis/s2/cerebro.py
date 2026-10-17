@@ -19,7 +19,7 @@ para o contrato ser testado inteiro em memória:
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
@@ -28,6 +28,7 @@ from jarvis.barramento.envelope import Envelope, Tipo, Trust, uuid7
 from jarvis.fatiador import Corte, FatiadorDeFala, PedacoDeFala
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.politica.memoria import Proveniencia, TurnoCorrente
+from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
 from jarvis.s2.motor import (
     Contexto,
     Fim,
@@ -113,8 +114,14 @@ class Cerebro:
         cancelado: Cancelado = nunca_cancelado,
         modo: Modo = Modo.RAPIDO,
         trust: str = "user_voice",
+        avisos: Sequence[AvisoLiberado] = (),
     ) -> Resposta:
-        """Responde a um turno estável do dono, publicando os pedaços enquanto o motor gera."""
+        """Responde a um turno estável do dono, publicando os pedaços enquanto o motor gera.
+
+        `avisos` são os que a fila liberou junto com esta mensagem e que o `s2` decidiu falar
+        (ADR-0025, regra 13, decisão do dono): vão **antes** da resposta, em pedaços marcados
+        com `notif_ids`, e o motor fica sabendo que já foram ditos — informa, depois responde.
+        """
         comeco = time.monotonic()
         # Resposta anterior sem `ouvido`: ninguém confirmou que tocou, então não existe (P4).
         self._pendentes.clear()
@@ -126,6 +133,13 @@ class Cerebro:
             )
             self.turno_corrente = TurnoCorrente(episodio, texto_do_dono, trust)
         contexto = self.conversa.contexto()
+        if avisos:
+            ditos = " ".join(frase_do_aviso(a) for a in avisos)
+            contexto = Contexto(
+                sistema=f"{contexto.sistema}\n\nAntes desta resposta você já disse ao dono, em "
+                f"voz: «{ditos}» Não repita o aviso: responda à mensagem dele.",
+                mensagens=contexto.mensagens,
+            )
         resposta = Resposta(
             response_id=f"r-{uuid7()}",
             turn_id=turn_id or f"t-{uuid7()}",
@@ -134,10 +148,12 @@ class Cerebro:
             ms_ate_contexto=_ms_desde(comeco),
         )
         fatiador = FatiadorDeFala()
+        visto_cancelamento = self._falar_avisos(
+            avisos, fatiador, resposta, publicar, comeco, cancelado
+        )
         deltas = self.motor.gerar(contexto, modo, cancelado)
-        visto_cancelamento: float | None = None
         try:
-            for delta in deltas:
+            for delta in deltas if visto_cancelamento is None else ():
                 if visto_cancelamento is not None:
                     resposta.deltas_depois_do_cancelamento += isinstance(delta, Texto)
                     continue
@@ -179,6 +195,52 @@ class Cerebro:
         self._pendentes[resposta.response_id] = resposta
         return resposta
 
+    def avisar(
+        self,
+        avisos: Sequence[AvisoLiberado],
+        *,
+        epoch: int,
+        publicar: Publicar,
+        cancelado: Cancelado = nunca_cancelado,
+    ) -> Resposta:
+        """Piso livre, sem mensagem do dono: só os avisos, sem chamar o motor (regra 12)."""
+        comeco = time.monotonic()
+        self._pendentes.clear()
+        resposta = Resposta(
+            response_id=f"r-{uuid7()}", turn_id=f"t-{uuid7()}", epoch=epoch, motor="avisos"
+        )
+        fatiador = FatiadorDeFala()
+        if self._falar_avisos(avisos, fatiador, resposta, publicar, comeco, cancelado) is None:
+            for pedaco in fatiador.fechar():
+                self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
+        else:
+            resposta.fim = MotivoDoFim.CANCELADO
+        self._pendentes[resposta.response_id] = resposta
+        return resposta
+
+    def _falar_avisos(
+        self,
+        avisos: Sequence[AvisoLiberado],
+        fatiador: FatiadorDeFala,
+        resposta: Resposta,
+        publicar: Publicar,
+        comeco: float,
+        cancelado: Cancelado,
+    ) -> float | None:
+        """Publica a frase de cada aviso; devolve o instante do cancelamento, se houve."""
+        for aviso in avisos:
+            frase = frase_do_aviso(aviso)
+            resposta.gerado += frase + " "
+            # A frase termina em ponto, e o espaço depois fecha a última palavra: todos os
+            # pedaços do aviso saem aqui, e nenhum mistura aviso com a resposta do motor.
+            for pedaco in fatiador.alimentar(frase + " "):
+                if cancelado():
+                    return time.monotonic()
+                self._publicar(
+                    resposta, pedaco, publicar, comeco, ultimo=False, notif_ids=[aviso.notif_id]
+                )
+        return time.monotonic() if cancelado() else None
+
     def ouvido(
         self,
         response_id: str,
@@ -214,6 +276,7 @@ class Cerebro:
         comeco: float,
         *,
         ultimo: bool,
+        notif_ids: Sequence[str] = (),
     ) -> None:
         payload: dict[str, Any] = {
             "response_id": resposta.response_id,
@@ -224,6 +287,8 @@ class Cerebro:
             "boundary": str(pedaco.corte),
             "last": ultimo,
         }
+        if notif_ids:
+            payload["notif_ids"] = list(notif_ids)
         if ultimo:
             # Nunca `cancelado`: resposta cancelada não publica o último pedaço (regra 9).
             payload["end_reason"] = str(resposta.fim)

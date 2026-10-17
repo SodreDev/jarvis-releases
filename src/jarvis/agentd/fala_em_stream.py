@@ -82,3 +82,27 @@ def _anotando(trechos: Iterator[tuple[int, str]], textos: list[str]) -> Iterator
     for inicio, texto in trechos:
         textos.append(texto)
         yield inicio, texto
+
+
+def avisos_tocados(
+    pedacos: Iterable[Mapping[str, Any]], fala: Fala, amostras_tocadas: int, *, epoch: int
+) -> tuple[set[str], set[str]]:
+    """Quais avisos **tocaram inteiros** e quais foram cortados (ADR-0025, regra 15, P4).
+
+    Um aviso é entregue quando todo pedaço que o carrega (`notif_ids`) saiu inteiro pelo
+    alto-falante; qualquer pedaço dele cortado ou não sintetizado devolve o aviso para a fila.
+    Os pedaços com texto, na ordem, casam um a um com os trechos da `Fala`.
+    """
+    por_aviso: dict[str, bool] = {}
+    indice = 0
+    for pedaco in pedacos:
+        if int(pedaco["epoch"]) != epoch or not pedaco["text"]:
+            continue
+        tocou = indice < len(fala.trechos) and (
+            fala.trechos[indice].fim_em_amostras <= amostras_tocadas
+        )
+        for notif_id in pedaco.get("notif_ids", ()):
+            por_aviso[str(notif_id)] = por_aviso.get(str(notif_id), True) and tocou
+        indice += 1
+    tocados = {n for n, ok in por_aviso.items() if ok}
+    return tocados, set(por_aviso) - tocados
