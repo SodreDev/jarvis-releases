@@ -89,6 +89,11 @@ class App:
     """Nome, nome em pt e o id: tudo o que o dono pode dizer para chamá-lo."""
     argv: tuple[str, ...]
     arquivo: Path
+    sem_exibicao: bool = False
+    """`NoDisplay=true`: serviço, painel de configuração, handler — não é um app para abrir."""
+    categorias: tuple[str, ...] = ()
+    esquemas: tuple[str, ...] = ()
+    """Os `x-scheme-handler/…` do `MimeType`: `https` é o que faz dele um navegador."""
 
 
 def _sem_acento(texto: str) -> str:
@@ -175,7 +180,69 @@ def ler_desktop(arquivo: Path) -> App | None:
             if n
         )
     )
-    return App(id=identificador, nome=nome, nomes=nomes, argv=tuple(argv), arquivo=arquivo)
+    return App(
+        id=identificador,
+        nome=nome,
+        nomes=nomes,
+        argv=tuple(argv),
+        arquivo=arquivo,
+        sem_exibicao=campos.get("NoDisplay") == "true",
+        categorias=tuple(c for c in campos.get("Categories", "").split(";") if c),
+        esquemas=tuple(
+            m.removeprefix("x-scheme-handler/")
+            for m in campos.get("MimeType", "").split(";")
+            if m.startswith("x-scheme-handler/")
+        ),
+    )
+
+
+def app_de_binario(caminho: str) -> App | None:
+    """Um binário escolhido à mão vira um app com o nome do arquivo; nada do que o modelo disser
+    chega ao `argv`. Recusa o que não é executável, e os interpretadores/elevadores."""
+    arquivo = Path(caminho).expanduser()
+    if not arquivo.is_absolute() or not arquivo.is_file() or not os.access(arquivo, os.X_OK):
+        return None
+    if arquivo.name in INTERPRETADORES_RECUSADOS:
+        return None
+    return App(
+        id=f"caminho:{arquivo}",
+        nome=arquivo.name,
+        nomes=(arquivo.name,),
+        argv=(str(arquivo),),
+        arquivo=arquivo,
+    )
+
+
+def app_de_caminho(caminho: str) -> App | None:
+    """O que o dono apontou à mão: um `.desktop` (lido como os do sistema) ou um binário."""
+    arquivo = Path(caminho).expanduser()
+    if arquivo.suffix == ".desktop":
+        return ler_desktop(arquivo) if arquivo.is_absolute() else None
+    return app_de_binario(caminho)
+
+
+def listar_apps(*, pastas: Sequence[str] = PASTAS_DE_APLICATIVOS) -> tuple[App, ...]:
+    """Os aplicativos instalados que dá para abrir, por nome — é a lista que a tela mostra.
+
+    Fora ficam os `NoDisplay` e os que são só painel de configuração do KDE/GNOME (categoria
+    `Settings`): nenhum dono quer marcar `kcm_clock` para o Jarvis abrir."""
+    encontrados: dict[str, App] = {}
+    for pasta in pastas:
+        base = Path(pasta).expanduser()
+        if not base.is_dir():
+            continue
+        for arquivo in sorted(base.glob("*.desktop")):
+            app = ler_desktop(arquivo)
+            if app is not None and app.id not in encontrados:
+                encontrados[app.id] = app
+    visiveis = [
+        a
+        for a in encontrados.values()
+        if not a.sem_exibicao
+        and "Settings" not in a.categorias
+        and "Screensaver" not in a.categorias
+    ]
+    return tuple(sorted(visiveis, key=lambda a: _sem_acento(a.nome)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +253,11 @@ class RegistroDeApps:
 
     @classmethod
     def montar(
-        cls, autorizados: Iterable[str], *, pastas: Sequence[str] = PASTAS_DE_APLICATIVOS
+        cls,
+        autorizados: Iterable[str],
+        *,
+        pastas: Sequence[str] = PASTAS_DE_APLICATIVOS,
+        extras: Iterable[str] = (),
     ) -> RegistroDeApps:
         encontrados: dict[str, App] = {}
         for pasta in pastas:
@@ -198,10 +269,12 @@ class RegistroDeApps:
                 if app is not None and app.id not in encontrados:
                     encontrados[app.id] = app
         pedidos = {a.removesuffix(".desktop") for a in autorizados}
-        return cls(
-            autorizados={i: encontrados[i] for i in sorted(pedidos) if i in encontrados},
-            instalados=frozenset(encontrados),
-        )
+        liberados = {i: encontrados[i] for i in sorted(pedidos) if i in encontrados}
+        for caminho in extras:
+            escolhido = app_de_caminho(caminho)
+            if escolhido is not None:
+                liberados.setdefault(escolhido.id, escolhido)
+        return cls(autorizados=liberados, instalados=frozenset(encontrados))
 
     def resolver(self, nome: str) -> App:
         """O app autorizado que o dono chamou por este nome — exato, ou o único que começa
@@ -250,6 +323,20 @@ def lancar(app: App, *, ambiente: Mapping[str, str] | None = None) -> int:
         raise AppRecusado(f"{app.nome}: o executável {app.argv[0]!r} não está no PATH")
     pid = os.posix_spawn(executavel, list(app.argv), ambiente_saneado(ambiente), setsid=True)
     threading.Thread(target=_esperar, args=(pid,), daemon=True, name=f"app-{app.id}").start()
+    return pid
+
+
+def lancar_argv(argv: Sequence[str], *, ambiente: Mapping[str, str] | None = None) -> int:
+    """O mesmo `posix_spawn` do `lancar`, para quem já tem o `argv` montado pelo código (o
+    navegador do dono + uma URL validada). Nada aqui vem do modelo além da URL, que é um único
+    elemento do `argv` e já passou por `validar_url` (só http/https)."""
+    if sys.platform == "win32":  # pragma: no cover
+        raise AppRecusado("abrir programa no Windows ainda não foi implementado")
+    executavel = argv[0] if Path(argv[0]).is_absolute() else shutil.which(argv[0])
+    if executavel is None:
+        raise AppRecusado(f"o executável {argv[0]!r} não está no PATH")
+    pid = os.posix_spawn(executavel, list(argv), ambiente_saneado(ambiente), setsid=True)
+    threading.Thread(target=_esperar, args=(pid,), daemon=True, name="programa-aberto").start()
     return pid
 
 

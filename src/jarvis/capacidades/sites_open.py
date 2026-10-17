@@ -9,7 +9,8 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
   risco: egress · confirmação: per_action · egress: network:navegador
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
-  pós-condição verificada pelo executor: o portal do desktop aceitou abrir a URL no navegador padrão
+  pós-condição verificada pelo executor: o navegador configurado (ou o portal do desktop) aceitou
+    abrir a URL
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ REQUIRES_ELEVATION: Final = False
 IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 3000
 ROOTS: Final[tuple[str, ...]] = ()
-POSTCONDITION: Final = "o portal do desktop aceitou abrir a URL no navegador padrão"
+POSTCONDITION: Final = "o navegador configurado (ou o portal do desktop) aceitou abrir a URL"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +36,7 @@ class SitesOpenEntrada:
     """Argumentos normalizados de `sites.open` (input_schema do §4)."""
 
     url: str
+    navegador: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +47,7 @@ class SitesOpenSaida:
     dominio: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("url",))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("url", "navegador"))
 OBRIGATORIOS: Final[frozenset[str]] = frozenset(("url",))
 
 

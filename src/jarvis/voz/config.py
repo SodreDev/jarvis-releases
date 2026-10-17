@@ -66,6 +66,8 @@ FORMA_DA_VOZ_DO_PIPER: Final[re.Pattern[str]] = re.compile(r"[a-z]{2,3}_[A-Z]{2}
 ACESSO_PADRAO: Final = "jarvis"
 """Padrão da fatia 6 (pedido do dono): nenhuma pasta dele — só a área do Jarvis."""
 ACESSOS: Final[tuple[str, ...]] = ("jarvis", "padrao", "concedido", "total")
+FORMA_DA_FAMILIA: Final[re.Pattern[str]] = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}")
+"""O nome curto de um navegador na configuração (`firefox`, `brave`)."""
 FORMA_DO_APP: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 FORMA_DO_DOMINIO: Final[re.Pattern[str]] = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,63}")
 
@@ -127,8 +129,20 @@ class Configuracao:
     """O modo de acesso da §5.5 (P12: escolha do dono). `jarvis` = só a área do Jarvis."""
     raizes: tuple[str, ...] = ()
     """Pastas concedidas uma a uma, **só leitura**, que valem no modo `concedido`."""
+    raizes_escrita: tuple[str, ...] = ()
+    """Subconjunto de `raizes` com nível **leitura e escrita**. As outras ficam só de leitura. Hoje
+    nenhuma ferramenta grava fora da pasta do Jarvis: o nível fica guardado e o PDP já o respeita
+    (`pode_escrever`), para a primeira ferramenta que escrever numa raiz concedida."""
     apps_autorizados: tuple[str, ...] = ()
     """Ids de `.desktop` que `apps.launch` pode abrir (ex.: `org.kde.dolphin`). Vazio = nenhum."""
+    apps_extras: tuple[str, ...] = ()
+    """Apps que o dono escolheu à mão: caminho de um `.desktop` ou de um binário. Cada um vale
+    como autorizado; o nome com que se chama é o do arquivo."""
+    navegadores: tuple[str, ...] = ()
+    """Os navegadores que o dono configurou, cada um `família=caminho` (um binário ou um
+    `.desktop`): `firefox=/usr/bin/firefox`. Vazio = `sites.open` usa o padrão do desktop."""
+    navegador_principal: str = ""
+    """A família (de `navegadores`) onde `sites.open` abre quando o pedido não nomeia outro."""
     sites_sem_confirmar: tuple[str, ...] = ()
     """Domínios que `sites.open` abre sem perguntar (com subdomínios). Vazio = sempre pergunta."""
 
@@ -153,7 +167,11 @@ class Configuracao:
             "nuvem_sem_termos": list(self.nuvem_sem_termos),
             "acesso": self.acesso,
             "raizes": list(self.raizes),
+            "raizes_escrita": list(self.raizes_escrita),
             "apps_autorizados": list(self.apps_autorizados),
+            "apps_extras": list(self.apps_extras),
+            "navegadores": list(self.navegadores),
+            "navegador_principal": self.navegador_principal,
             "sites_sem_confirmar": list(self.sites_sem_confirmar),
         }
 
@@ -222,8 +240,15 @@ nuvem_sem_termos = {lista(configuracao.nuvem_sem_termos)}
 # ficam negados em qualquer modo. Escrever, só rascunho na pasta do Jarvis, com confirmação.
 acesso = {aspas(configuracao.acesso)}
 raizes = {lista(configuracao.raizes)}
+# As que, entre as `raizes`, também podem ser escritas (as outras são só de leitura).
+raizes_escrita = {lista(configuracao.raizes_escrita)}
 # Apps que "abrir o Dolphin" pode abrir: o id do .desktop (ls /usr/share/applications).
 apps_autorizados = {lista(configuracao.apps_autorizados)}
+# Apps escolhidos à mão: caminho de um .desktop ou de um binário.
+apps_extras = {lista(configuracao.apps_extras)}
+# Navegadores, "família=caminho" (binário ou .desktop), e qual é o principal.
+navegadores = {lista(configuracao.navegadores)}
+navegador_principal = {aspas(configuracao.navegador_principal)}
 # Sites que abrem sem perguntar (o resto pede confirmação na tela). Ex.: ["wikipedia.org"]
 sites_sem_confirmar = {lista(configuracao.sites_sem_confirmar)}
 """
@@ -334,6 +359,30 @@ def validar(configuracao: Configuracao) -> Configuracao:
     for raiz in configuracao.raizes:
         if not Path(raiz).expanduser().is_absolute():
             raise ConfiguracaoInvalida(f"raizes tem {raiz!r}: use o caminho inteiro (~/Projetos)")
+    for raiz in configuracao.raizes_escrita:
+        if raiz not in configuracao.raizes:
+            raise ConfiguracaoInvalida(
+                f"raizes_escrita tem {raiz!r}, que não está em raizes: o nível de escrita é de "
+                "uma pasta já concedida"
+            )
+    for extra in configuracao.apps_extras:
+        if not Path(extra).expanduser().is_absolute():
+            raise ConfiguracaoInvalida(f"apps_extras tem {extra!r}: use o caminho inteiro")
+    familias: set[str] = set()
+    for entrada in configuracao.navegadores:
+        familia, _, caminho_do_navegador = entrada.partition("=")
+        if (
+            not FORMA_DA_FAMILIA.fullmatch(familia)
+            or not Path(caminho_do_navegador).expanduser().is_absolute()
+        ):
+            raise ConfiguracaoInvalida(
+                f"navegadores tem {entrada!r}: use família=caminho (firefox=/usr/bin/firefox)"
+            )
+        familias.add(familia)
+    if configuracao.navegador_principal and configuracao.navegador_principal not in familias:
+        raise ConfiguracaoInvalida(
+            f"navegador_principal = {configuracao.navegador_principal!r} não está em navegadores"
+        )
     for app in configuracao.apps_autorizados:
         if not FORMA_DO_APP.fullmatch(app):
             raise ConfiguracaoInvalida(
@@ -389,7 +438,11 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         nuvem_sem_termos=_lista(dados, "nuvem_sem_termos"),
         acesso=_texto(dados, "acesso", ACESSO_PADRAO),
         raizes=_lista(dados, "raizes"),
+        raizes_escrita=_lista(dados, "raizes_escrita"),
         apps_autorizados=_lista(dados, "apps_autorizados"),
+        apps_extras=_lista(dados, "apps_extras"),
+        navegadores=_lista(dados, "navegadores"),
+        navegador_principal=_texto(dados, "navegador_principal", ""),
         sites_sem_confirmar=tuple(s.lower() for s in _lista(dados, "sites_sem_confirmar")),
     )
     return validar(configuracao)

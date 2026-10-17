@@ -25,6 +25,7 @@ import jsonschema
 from jarvis.barramento.envelope import uuid7
 from jarvis.executor import arquivos
 from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
+from jarvis.executor.navegadores import AbridorDeNavegador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
 from jarvis.manifesto.validador import carregar_catalogo
 from jarvis.politica.canonicalizacao import CaminhoRecusado, Sistema, canonicalizar
@@ -100,6 +101,9 @@ class ExecutorDeFerramentas:
         default_factory=lambda: RegistroDeApps(autorizados={}, instalados=frozenset())
     )
     abrir_site: Abridor = abrir_pelo_portal
+    navegadores: AbridorDeNavegador | None = None
+    """Os navegadores que o dono configurou. Sem principal (ou sem esta peça), o site abre pelo
+    portal, no padrão do desktop — como antes."""
     lancar_app: Callable[[App], int] = lancar
     sistema: Sistema = Sistema.POSIX
     prazo_de_confirmacao_s: float = PRAZO_DE_CONFIRMACAO_S
@@ -236,6 +240,10 @@ class ExecutorDeFerramentas:
             return {"app": app.nome, "pid": self.lancar_app(app)}
         if tool_id == "sites.open":
             url = validar_url(str(args["url"]))
+            pedido = str(args.get("navegador", "")).strip()
+            if self.navegadores is not None and (self.navegadores.principal or pedido):
+                usado = self.navegadores.abrir(url, pedido)
+                return {"url": url, "dominio": dominio(url), "navegador": usado}
             self.abrir_site(url)
             return {"url": url, "dominio": dominio(url)}
         assert caminho is not None
@@ -309,7 +317,13 @@ class ExecutorDeFerramentas:
         if tool_id == "calendar.create_draft_event":
             return f"criar o rascunho de evento «{args['titulo']}» em {args['inicio']}, sem convite"
         if tool_id == "sites.open":
-            return f"abrir {dominio(str(args['url'])) or args['url']} no seu navegador"
+            onde = str(args.get("navegador", "")).strip()
+            if not onde and self.navegadores is not None and self.navegadores.principal:
+                onde = self.navegadores.principal
+            return (
+                f"abrir {dominio(str(args['url'])) or args['url']} no "
+                f"{'navegador ' + onde if onde else 'seu navegador'}"
+            )
         if tool_id == "apps.launch":
             return f"abrir o aplicativo «{args['nome']}»"
         return f"{tool_id} com {json.dumps(dict(args), ensure_ascii=False)[:160]}"

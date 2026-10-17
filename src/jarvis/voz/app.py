@@ -62,6 +62,7 @@ from jarvis.audio_io.vad import Vad, vad_do_ambiente
 from jarvis.barramento.envelope import Envelope, uuid7
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
 from jarvis.executor.lancador import RegistroDeApps
+from jarvis.executor.navegadores import AbridorDeNavegador, separar
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
 from jarvis.politica.abertura import nome_de_app
 from jarvis.politica.auditoria import LogDeAuditoria
@@ -515,7 +516,9 @@ class Aplicativo:
         """PDP, auditoria e executor com o alcance que o dono configurou (§5.5, ADR-0028)."""
         sistema = Sistema.WINDOWS if os.name == "nt" else Sistema.POSIX
         self._auditoria = LogDeAuditoria(self.raiz / "auditoria.sqlite")
-        registro = RegistroDeApps.montar(self.configuracao.apps_autorizados)
+        registro = RegistroDeApps.montar(
+            self.configuracao.apps_autorizados, extras=self.configuracao.apps_extras
+        )
         pdp = Pdp(
             catalogo=carregar_catalogo(),
             lar=self.lar,
@@ -529,7 +532,7 @@ class Aplicativo:
                     nome="concedida",
                     caminho=canonicalizar(str(Path(r).expanduser()), sistema),
                     pode_ler=True,
-                    pode_escrever=False,
+                    pode_escrever=r in self.configuracao.raizes_escrita,
                 )
                 for r in self.configuracao.raizes
             ),
@@ -539,12 +542,39 @@ class Aplicativo:
             sites_sem_confirmar=frozenset(self.configuracao.sites_sem_confirmar),
         )
         executor = ExecutorDeFerramentas(
-            pdp=pdp, lar=self.lar, registro_de_apps=registro, sistema=sistema
+            pdp=pdp,
+            lar=self.lar,
+            registro_de_apps=registro,
+            sistema=sistema,
+            navegadores=AbridorDeNavegador(
+                navegadores=separar(self.configuracao.navegadores),
+                principal=self.configuracao.navegador_principal,
+                ambiente=self.ambiente,
+            ),
         )
         executor.preparar()
         return executor
 
     # --- confirmação de ferramenta (ADR-0028) -------------------------------------------------
+    def atualizar_acesso(self, configuracao: Configuracao) -> None:
+        """O dono mexeu em pastas, apps ou navegadores com a conversa aberta: vale já no próximo
+        pedido, sem reiniciar o laço. Troca só o executor (PDP, registro e navegador); o resto
+        da configuração — motores, voz, escuta — só muda na conversa seguinte."""
+        self.configuracao = self.configuracao.com(
+            acesso=configuracao.acesso,
+            raizes=configuracao.raizes,
+            raizes_escrita=configuracao.raizes_escrita,
+            apps_autorizados=configuracao.apps_autorizados,
+            apps_extras=configuracao.apps_extras,
+            navegadores=configuracao.navegadores,
+            navegador_principal=configuracao.navegador_principal,
+            sites_sem_confirmar=configuracao.sites_sem_confirmar,
+        )
+        if self._cerebro is None:
+            return
+        self.ferramentas = self._montar_ferramentas()
+        self._cerebro.ferramentas = self.ferramentas
+
     def _confirmar(self, pergunta: Confirmacao) -> bool:
         """Pede à janela e espera o dono — da linha do cérebro, sem travar a fala nem a tela.
 

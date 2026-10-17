@@ -1,8 +1,9 @@
 # Ferramenta real do catálogo v1 (SPEC §5.6, fatia 6 da F2; pedido do dono de 2026-10-17).
 id: sites.open
 title: Abrir um site
-description: Abre um endereço http ou https no navegador padrão do dono. Use quando o dono pedir para
-  abrir uma página. Domínio fora da lista que o dono liberou pede confirmação na tela. Não lê a página,
+description: Abre um endereço http ou https no navegador principal que o dono configurou (ou no padrão
+  do desktop, se ele não configurou). Use quando o dono pedir para abrir uma página; só diga `navegador`
+  se ele pedir um navegador específico e for um dos que ele configurou. Domínio fora da lista que o dono liberou pede confirmação na tela. Não lê a página,
   não controla o navegador, não abre outro esquema (arquivo, javascript, dados) e não aceita URL com senha.
 input_schema:
   type: object
@@ -14,6 +15,9 @@ input_schema:
       type: string
       minLength: 8
       maxLength: 2048
+    navegador:
+      type: string
+      maxLength: 40
 output_schema:
   type: object
   required:
@@ -21,7 +25,7 @@ output_schema:
   - dominio
 preconditions:
 - url http(s) com host e sem credencial
-postcondition: o portal do desktop aceitou abrir a URL no navegador padrão
+postcondition: o navegador configurado (ou o portal do desktop) aceitou abrir a URL
 capability: sites.open
 risk_class: egress
 side_effect: ephemeral
