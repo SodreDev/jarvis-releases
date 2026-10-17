@@ -50,6 +50,66 @@ o diagnóstico e os indicadores desta máquina (lidos de `/proc`).
 tela existem no catálogo e **não entram sem você dizer que sim** — a faixa de confirmação
 aparece acima da barra de conversa, com o motivo.
 
+### 0.1 Pedir para o Jarvis fazer coisas (ferramentas, fatia 6)
+
+O Jarvis não monta comando: ele **propõe** uma ferramenta tipada (listar pasta, ler arquivo,
+procurar, gravar rascunho, rascunho de evento, abrir app, abrir site) e o **código** decide —
+política de acesso, confirmação na tela e só então a execução. Não existe shell em lugar nenhum.
+
+**1. Escolha o motor que entende pedido.** O padrão (`eco`) só repete o que você disse: ele não
+propõe ferramenta. Para testar ferramentas, use o `claude -p` **provisório** (manda o texto da
+conversa para a nuvem da Anthropic; precisa da CLI `claude` instalada e logada nesta máquina).
+Edite `~/.config/jarvis/jarvis-voz.toml` (a janela cria o arquivo na primeira vez que você
+salva a configuração; se não existir, crie só com estas linhas):
+
+```toml
+s2 = "claude"
+# Alcance. "jarvis" (padrão) = nenhuma pasta sua, só a área do Jarvis.
+# "padrao" = + Documentos, Downloads, Imagens, Música, Vídeos, Área de Trabalho.
+# "concedido" = + as pastas de `raizes`, só leitura.
+acesso = "padrao"
+raizes = []
+# Apps que ele pode abrir pelo nome (o id do .desktop, sem ".desktop"):
+apps_autorizados = ["org.kde.dolphin", "org.kde.kcalc", "org.kde.kate"]
+# Sites que abrem sem perguntar (o resto pede confirmação na faixa):
+sites_sem_confirmar = ["wikipedia.org"]
+```
+
+Chaves, cofres, `.env`, perfis de navegador e `~/.ssh` ficam **negados em qualquer modo**, até no
+`total` — eles nem aparecem numa listagem.
+
+**2. Abra a janela e clique em "começar"** (`uv run jarvis`). A conversa mostra, logo no início,
+`respondendo com: claude-cli … [nuvem]` e `alcance: nível 1 — só pastas padrão · 7 ferramentas`.
+Se aparecer `[local]` e `eco`, o arquivo não foi lido.
+
+**3. Digite na barra de baixo (ou fale), um por vez, e confira:**
+
+| Digite | O que deve acontecer |
+|---|---|
+| `o que tem na minha pasta Documentos?` | "Deixa eu ver…" e a lista, em voz. **Não** pede confirmação (é leitura). |
+| `lê o arquivo ~/Documentos/<um .txt seu>` | resume o que o arquivo diz. Binário ou maior que 64 KiB: ele diz que não leu tudo. |
+| `procura um arquivo com "orçamento" no nome` | os caminhos achados, nas raízes do modo. |
+| `lê ~/.ssh/id_rsa` | **negado**, e ele diz isso. Nada do arquivo chega ao modelo. |
+| `anota: comprar café e pão` | aparece a faixa **CONFIRMAR** acima da barra, com o nome do rascunho e "responda em 30 s". **Permitir** grava; **não**, ou 30 s sem resposta, não grava — e ele diz qual dos dois. |
+| `marca dentista dia 20 às 14h30` | a faixa pede confirmação; permitido, grava um `.ics` (sem convite, nada sai da máquina). |
+| `abre o Dolphin` | abre (está em `apps_autorizados`). `abre o Firefox`, se não estiver na lista: **negado**, com os parecidos que estão. |
+| `abre a Wikipédia sobre Marte` | abre no seu navegador padrão sem perguntar (domínio liberado). Outro site: faixa de confirmação. `javascript:`/`file:`: negado. |
+| durante qualquer um: **Esc** ou **interromper** | para a fala e a geração; com a faixa aberta, é "não". |
+
+**Onde ficam as coisas:** rascunhos em `~/.local/state/jarvis/voz/area/rascunhos/` (eventos em
+`…/rascunhos/agenda/`); cada decisão da política e cada resultado, encadeados por hash, em
+`~/.local/state/jarvis/voz/auditoria.sqlite`.
+
+**O que ainda não foi verificado aqui** (é o seu teste que fecha):
+
+- o `claude -p` **de verdade** propondo ferramenta pelo protocolo de texto (`<<ferramenta>>
+  {json}`): toda a suíte usa um motor roteirizado e uma CLI falsa. Se ele responder em voz o
+  JSON em vez de propor, me mande a linha da conversa;
+- abrir app e site **de verdade**: o teste não abre nada (lançador e portal são falsos). O site
+  abre pelo portal `OpenURI` do KDE; o app, pelo `Exec` do `.desktop`, sem shell;
+- Windows: listar/ler/rascunho são o mesmo código, mas não rodaram lá; abrir app no Windows
+  ainda não foi implementado (ele diz isso).
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)
@@ -255,7 +315,9 @@ sudo dnf remove jarvis
    não marcava nenhuma) e cobre todo o inventário da voz — mas se **soa bem** é o seu ouvido
    que diz;
 4. **WER do ASR em pt-BR**, local ou na Groq: nenhum model card publica, e ninguém mediu aqui;
-5. **chamada real à nuvem.** Toda a suíte fala com um servidor falso em porta efêmera; sob
+5. **ferramentas com o `claude -p` de verdade, e abrir app/site de verdade** (ver o fim da
+   seção 0.1);
+6. **chamada real à nuvem.** Toda a suíte fala com um servidor falso em porta efêmera; sob
    `CI=1` o código **recusa** falar com serviço de verdade. A primeira chamada real é sua.
 
 ## 4. Como reportar
