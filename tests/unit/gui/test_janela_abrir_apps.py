@@ -44,7 +44,7 @@ from tests.unit.gui.test_janela import (  # noqa: F401 — fixtures
     sem_chaveiro,
     wav_longo,
 )
-from tests.unit.gui.test_janela_ferramentas import _esperar, _pendente, _resultado
+from tests.unit.gui.test_janela_ferramentas import _esperar, _pendente
 from tests.unit.voz.test_app import MotorDeAsrFalso
 
 CONFIGURACAO = Configuracao(
@@ -78,14 +78,36 @@ class Maquina:
         self.sites_abertos.append(url)
 
 
-def _proposta(tool_id: str, args: dict[str, Any], *, ok: str) -> Callable[[Contexto], Any]:
-    def roteiro(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
-        resultado = _resultado(contexto)
-        if resultado is None:
-            return ["Já vejo. ", PedidoDeTool(tool_id, args)]
-        return [ok] if resultado["status"] == "ok" else [f"Não deu: {resultado['status']}."]
+def _resultado_do_turno(contexto: Contexto) -> dict[str, Any] | None:
+    """O resultado de ferramenta **deste** turno (depois da última fala do dono), se já veio."""
+    for mensagem in reversed(contexto.mensagens):
+        if mensagem.papel == "dono":
+            return None
+        if mensagem.papel == "ferramenta":
+            return cast(dict[str, Any], json.loads(mensagem.texto.removesuffix(" …[truncado]")))
+    return None
 
-    return roteiro
+
+# frase do dono → o que o "modelo" propõe (a janela e a política são as de verdade)
+PROPOSTAS: dict[str, tuple[str, dict[str, Any]]] = {
+    "abre o discord": ("apps.launch", {"nome": "Discord"}),
+    "abre o brave": ("apps.launch", {"nome": "brave"}),
+    "abre a calculadora": ("apps.launch", {"nome": "Calculadora"}),
+    "abre o exemplo": ("sites.open", {"url": "https://exemplo.com.br/a"}),
+}
+
+
+def roteiro(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
+    resultado = _resultado_do_turno(contexto)
+    if resultado is None:
+        tool_id, args = PROPOSTAS[contexto.turno]
+        return [PedidoDeTool(tool_id, args)]
+    vistos.append((contexto.turno, resultado))
+    return ["Feito." if resultado["status"] == "ok" else f"Não deu: {resultado['status']}."]
+
+
+vistos: list[tuple[str, dict[str, Any]]] = []
+"""O que cada turno viu como resultado da ferramenta (frase do dono → resultado)."""
 
 
 def _montar(
@@ -135,79 +157,74 @@ def _montar(
     return laco, ponte
 
 
-def _pedir(
-    app: QGuiApplication, ponte: Ponte, laco: Aplicativo, frase: str, *, marcar: str = ""
-) -> Any:
-    """Abre a conversa, marca o app **pela aba** (já com a conversa viva) e fala."""
+def _falar(
+    app: QGuiApplication, tela: Any, laco: Aplicativo, frase: str, *, sim: bool | None = None
+) -> bool:
+    """Uma frase do dono, um turno inteiro. Devolve se a faixa de confirmação apareceu.
+
+    `sim` responde à faixa quando ela aparece (o que o clique do dono faria)."""
+    antes = len(laco.turnos)
+    viu_a_faixa = False
+    tela.enviarTexto(frase)
+
+    def terminou() -> bool:
+        nonlocal viu_a_faixa
+        pendente = _pendente(tela)
+        if pendente is not None:
+            viu_a_faixa = True
+            if sim is not None:
+                tela.responderPendencia(pendente["id"], sim)
+        return len(laco.turnos) > antes
+
+    _esperar(app, 8.0, ate=terminou)
+    _esperar(app, 0.3)
+    return viu_a_faixa
+
+
+def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
+    aplicativo: QGuiApplication,
+    abrir: Callable[[Ponte], QQuickView],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sem_chaveiro: None,
+) -> None:
+    """Uma conversa, quatro pedidos: marcado abre sem faixa (inclusive por nome parcial), não
+    marcado é negado com sugestão, e site fora da lista pede o sim do dono."""
+    vistos.clear()
+    maquina = Maquina(tmp_path)
+    laco, ponte = _montar(
+        tmp_path, monkeypatch, maquina, roteiro, sites_sem_confirmar=("wikipedia.org",)
+    )
+    abrir(ponte)
     tela = cast(Any, ponte)
     tela.iniciarConversa()
-    _esperar(app, 1.0, ate=lambda: laco.estado.value != "parado")
-    if marcar:
-        tela.acesso.marcarApp(marcar, True)
-    tela.enviarTexto(frase)
-    return tela
+    _esperar(aplicativo, 1.0, ate=lambda: laco.estado.value != "parado")
+    tela.acesso.marcarApp("discord", True)  # pela aba, com a conversa já aberta
+    tela.acesso.marcarApp("brave-browser", True)
 
-
-def _respostas(tela: Any) -> list[str]:
-    return [linha["texto"] for linha in tela.transcricao if linha["texto"].startswith("Jarvis: ")]
-
-
-def test_app_marcado_na_aba_abre_sem_faixa_de_confirmacao(
-    aplicativo: QGuiApplication,
-    abrir: Callable[[Ponte], QQuickView],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    sem_chaveiro: None,
-) -> None:
-    maquina = Maquina(tmp_path)
-    roteiro = _proposta("apps.launch", {"nome": "Discord"}, ok="Abri o Discord.")
-    laco, ponte = _montar(tmp_path, monkeypatch, maquina, roteiro)
-    abrir(ponte)
-    tela = _pedir(aplicativo, ponte, laco, "abre o discord", marcar="discord")
-    viu_a_faixa = False
-
-    def terminou() -> bool:
-        nonlocal viu_a_faixa
-        viu_a_faixa = viu_a_faixa or _pendente(tela) is not None
-        return bool(laco.turnos)
-
-    _esperar(aplicativo, 6.0, ate=terminou)
-    _esperar(aplicativo, 0.3)
-    tela.pararConversa()
-    _esperar(aplicativo, 0.8)
-
-    assert not viu_a_faixa, "app que o dono marcou na Configuração pediu confirmação"
+    assert not _falar(aplicativo, tela, laco, "abre o discord"), "app marcado pediu confirmação"
     assert maquina.apps_abertos == ["discord"]
-    assert _respostas(tela) == ["Jarvis: Já vejo. Abri o Discord."]
 
+    assert not _falar(aplicativo, tela, laco, "abre o brave"), "nome parcial pediu confirmação"
+    assert maquina.apps_abertos == ["discord", "brave-browser"]
 
-def test_app_marcado_chamado_por_nome_parcial_tambem_abre_sem_faixa(
-    aplicativo: QGuiApplication,
-    abrir: Callable[[Ponte], QQuickView],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    sem_chaveiro: None,
-) -> None:
-    """ "Brave" para o app "Brave Web Browser": o executor sempre resolveu, a política negava."""
-    maquina = Maquina(tmp_path)
-    roteiro = _proposta("apps.launch", {"nome": "brave"}, ok="Abri o Brave.")
-    laco, ponte = _montar(tmp_path, monkeypatch, maquina, roteiro)
-    abrir(ponte)
-    tela = _pedir(aplicativo, ponte, laco, "abre o brave", marcar="brave-browser")
-    viu_a_faixa = False
+    assert not _falar(aplicativo, tela, laco, "abre a calculadora"), "negar não é perguntar"
+    assert maquina.apps_abertos == ["discord", "brave-browser"], "app não marcado abriu"
+    negado = dict(vistos)["abre a calculadora"]
+    assert negado["status"] == "negado" and "Parecidos:" in negado["motivo"]
+    assert "Discord" in negado["motivo"], json.dumps(negado, ensure_ascii=False)
 
-    def terminou() -> bool:
-        nonlocal viu_a_faixa
-        viu_a_faixa = viu_a_faixa or _pendente(tela) is not None
-        return bool(laco.turnos)
+    assert maquina.sites_abertos == []
+    assert _falar(aplicativo, tela, laco, "abre o exemplo", sim=True), "site fora da lista confirma"
+    assert maquina.sites_abertos == ["https://exemplo.com.br/a"]
 
-    _esperar(aplicativo, 6.0, ate=terminou)
-    _esperar(aplicativo, 0.3)
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
-
-    assert not viu_a_faixa
-    assert maquina.apps_abertos == ["brave-browser"]
+    assert [f for f, r in vistos if r["status"] == "ok"] == [
+        "abre o discord",
+        "abre o brave",
+        "abre o exemplo",
+    ]
 
 
 def test_o_modelo_ve_quais_apps_estao_autorizados(
@@ -224,67 +241,3 @@ def test_o_modelo_ve_quais_apps_estao_autorizados(
         t["descricao"] for t in ferramentas.catalogo_para_o_modelo() if t["id"] == "apps.launch"
     )
     assert str(descricao).endswith("Autorizados agora: Discord.")
-
-
-def test_app_nao_marcado_e_negado_com_sugestao_e_nao_abre(
-    aplicativo: QGuiApplication,
-    abrir: Callable[[Ponte], QQuickView],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    sem_chaveiro: None,
-) -> None:
-    maquina = Maquina(tmp_path)
-    vistos: list[dict[str, Any]] = []
-
-    def roteiro(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
-        resultado = _resultado(contexto)
-        if resultado is None:
-            return [PedidoDeTool("apps.launch", {"nome": "Calculadora"})]
-        vistos.append(resultado)
-        return ["Não abri."]
-
-    laco, ponte = _montar(tmp_path, monkeypatch, maquina, roteiro)
-    abrir(ponte)
-    tela = _pedir(aplicativo, ponte, laco, "abre a calculadora", marcar="discord")
-    viu_a_faixa = False
-
-    def terminou() -> bool:
-        nonlocal viu_a_faixa
-        viu_a_faixa = viu_a_faixa or _pendente(tela) is not None
-        return bool(laco.turnos)
-
-    _esperar(aplicativo, 6.0, ate=terminou)
-    tela.pararConversa()
-    _esperar(aplicativo, 0.8)
-
-    assert not viu_a_faixa, "negar não é perguntar"
-    assert maquina.apps_abertos == []
-    assert vistos and vistos[0]["status"] == "negado"
-    assert "Parecidos: Discord" in vistos[0]["motivo"], json.dumps(vistos[0], ensure_ascii=False)
-
-
-def test_site_fora_da_lista_confirma_e_o_dono_decide(
-    aplicativo: QGuiApplication,
-    abrir: Callable[[Ponte], QQuickView],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    sem_chaveiro: None,
-) -> None:
-    maquina = Maquina(tmp_path)
-    roteiro = _proposta("sites.open", {"url": "https://exemplo.com.br/a"}, ok="Abri o site.")
-    laco, ponte = _montar(
-        tmp_path, monkeypatch, maquina, roteiro, sites_sem_confirmar=("wikipedia.org",)
-    )
-    abrir(ponte)
-    tela = _pedir(aplicativo, ponte, laco, "abre exemplo.com.br")
-    _esperar(aplicativo, 5.0, ate=lambda: _pendente(tela) is not None)
-
-    pedido = _pendente(tela)
-    assert pedido is not None, "site fora da lista tem de pedir confirmação"
-    assert maquina.sites_abertos == [], "nada abre antes do sim"
-    tela.responderPendencia(pedido["id"], True)
-    _esperar(aplicativo, 5.0, ate=lambda: bool(laco.turnos))
-    tela.pararConversa()
-    _esperar(aplicativo, 0.8)
-
-    assert maquina.sites_abertos == ["https://exemplo.com.br/a"]
