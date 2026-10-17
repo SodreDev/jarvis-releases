@@ -63,6 +63,13 @@ FORMA_DA_VOZ_DO_PIPER: Final[re.Pattern[str]] = re.compile(r"[a-z]{2,3}_[A-Z]{2}
 """`pt_BR-faber-medium`: idioma_PAÍS-nome-qualidade, como o rhasspy/piper-voices nomeia."""
 
 
+ACESSO_PADRAO: Final = "jarvis"
+"""Padrão da fatia 6 (pedido do dono): nenhuma pasta dele — só a área do Jarvis."""
+ACESSOS: Final[tuple[str, ...]] = ("jarvis", "padrao", "concedido", "total")
+FORMA_DO_APP: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+FORMA_DO_DOMINIO: Final[re.Pattern[str]] = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,63}")
+
+
 class ConfiguracaoInvalida(ValueError):
     """O arquivo existe e não serve. A mensagem diz o campo e o que é válido."""
 
@@ -113,6 +120,14 @@ class Configuracao:
     """Os motores de nuvem que o dono ligou. Vazio = nada sai da máquina."""
     nuvem_sem_termos: tuple[str, ...] = ()
     """Motores que ele aceita usar **sem termos publicados** (hoje: `tts-edge`)."""
+    acesso: str = ACESSO_PADRAO
+    """O modo de acesso da §5.5 (P12: escolha do dono). `jarvis` = só a área do Jarvis."""
+    raizes: tuple[str, ...] = ()
+    """Pastas concedidas uma a uma, **só leitura**, que valem no modo `concedido`."""
+    apps_autorizados: tuple[str, ...] = ()
+    """Ids de `.desktop` que `apps.launch` pode abrir (ex.: `org.kde.dolphin`). Vazio = nenhum."""
+    sites_sem_confirmar: tuple[str, ...] = ()
+    """Domínios que `sites.open` abre sem perguntar (com subdomínios). Vazio = sempre pergunta."""
 
     def para_dict(self) -> dict[str, Any]:
         return {
@@ -132,6 +147,10 @@ class Configuracao:
             "atalho": self.atalho,
             "nuvem_ligada": list(self.nuvem_ligada),
             "nuvem_sem_termos": list(self.nuvem_sem_termos),
+            "acesso": self.acesso,
+            "raizes": list(self.raizes),
+            "apps_autorizados": list(self.apps_autorizados),
+            "sites_sem_confirmar": list(self.sites_sem_confirmar),
         }
 
     @property
@@ -191,6 +210,17 @@ limiar_palavra = {configuracao.limiar_palavra!r}
 atalho = {aspas(configuracao.atalho)}
 nuvem_ligada = {lista(configuracao.nuvem_ligada)}
 nuvem_sem_termos = {lista(configuracao.nuvem_sem_termos)}
+
+# O que o Jarvis pode tocar (SPEC §5.5, ADR-0028). `acesso`: "jarvis" (só a área dele — o
+# padrão), "padrao" (+ Documentos, Downloads, Imagens, Música, Vídeos, Área de Trabalho),
+# "concedido" (+ as `raizes`, só leitura) ou "total". Chaves, cofres e perfis de navegador
+# ficam negados em qualquer modo. Escrever, só rascunho na pasta do Jarvis, com confirmação.
+acesso = {aspas(configuracao.acesso)}
+raizes = {lista(configuracao.raizes)}
+# Apps que "abrir o Dolphin" pode abrir: o id do .desktop (ls /usr/share/applications).
+apps_autorizados = {lista(configuracao.apps_autorizados)}
+# Sites que abrem sem perguntar (o resto pede confirmação na tela). Ex.: ["wikipedia.org"]
+sites_sem_confirmar = {lista(configuracao.sites_sem_confirmar)}
 """
 
 
@@ -285,6 +315,23 @@ def validar(configuracao: Configuracao) -> Configuracao:
             raise ConfiguracaoInvalida(
                 f"nuvem_sem_termos tem {identificador!r}, que não está no registro de motores"
             )
+    if configuracao.acesso not in ACESSOS:
+        raise ConfiguracaoInvalida(
+            f"acesso = {configuracao.acesso!r} não existe. Válidos: {', '.join(ACESSOS)}"
+        )
+    for raiz in configuracao.raizes:
+        if not Path(raiz).expanduser().is_absolute():
+            raise ConfiguracaoInvalida(f"raizes tem {raiz!r}: use o caminho inteiro (~/Projetos)")
+    for app in configuracao.apps_autorizados:
+        if not FORMA_DO_APP.fullmatch(app):
+            raise ConfiguracaoInvalida(
+                f"apps_autorizados tem {app!r}: use o id do .desktop (ex.: org.kde.dolphin)"
+            )
+    for site in configuracao.sites_sem_confirmar:
+        if not FORMA_DO_DOMINIO.fullmatch(site):
+            raise ConfiguracaoInvalida(
+                f"sites_sem_confirmar tem {site!r}: use só o domínio (ex.: wikipedia.org)"
+            )
     return configuracao
 
 
@@ -327,6 +374,10 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         atalho=_texto(dados, "atalho", ""),
         nuvem_ligada=_lista(dados, "nuvem_ligada"),
         nuvem_sem_termos=_lista(dados, "nuvem_sem_termos"),
+        acesso=_texto(dados, "acesso", ACESSO_PADRAO),
+        raizes=_lista(dados, "raizes"),
+        apps_autorizados=_lista(dados, "apps_autorizados"),
+        sites_sem_confirmar=tuple(s.lower() for s in _lista(dados, "sites_sem_confirmar")),
     )
     return validar(configuracao)
 

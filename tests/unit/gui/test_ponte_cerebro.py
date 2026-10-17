@@ -167,8 +167,6 @@ def test_a_resposta_aparece_crescendo_e_o_estado_vem_do_laco(
     parciais: list[str] = []
 
     def observar() -> None:
-        if not estados or estados[-1] != tela.estado:
-            estados.append(tela.estado)
         ultima = tela.transcricao[-1] if tela.transcricao else {}
         if ultima.get("parcial"):
             parciais.append(ultima["texto"])
@@ -176,6 +174,16 @@ def test_a_resposta_aparece_crescendo_e_o_estado_vem_do_laco(
     ponte.conversaMudou.connect(observar)
     tela.iniciarConversa()
     _esperar(aplicativo, 1.0, ate=lambda: laco.estado.value != "parado")
+    # O estado é lido **na porta do laço**, na hora em que muda: o sinal chega à janela depois,
+    # e sob carga a janela pode ler já o estado seguinte (pensando → falando num tique só).
+    porta = laco.ao_mudar_estado
+    assert porta is not None
+
+    def registrar(estado: Any) -> None:
+        estados.append(str(estado))
+        porta(estado)
+
+    laco.ao_mudar_estado = registrar
     tela.enviarTexto("como vai estar o tempo amanhã?")
     _esperar(aplicativo, 4.0, ate=lambda: len(parciais) >= 4)
     _capturar(janela, "conversa-em-stream.png")

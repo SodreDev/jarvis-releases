@@ -72,6 +72,8 @@ nem assim cabe; o de diagnóstico é texto corrido do `--diagnostico`."""
 MAXIMO_DE_LINHAS: Final = 400
 COMPONENTE_DE_AVISOS: Final = "notificacoes"
 PREFIXO_DA_RESPOSTA: Final = "Jarvis: "
+PREFIXO_DE_FERRAMENTA: Final = "ferramenta:"
+"""As confirmações de ferramenta na faixa de pendências: o id vai com este prefixo."""
 PREFIXO_DO_DIGITADO: Final = "Você (digitado): "
 """Como o laço ecoa uma linha digitada no meio do laço de voz (`Aplicativo._turno_digitado`)."""
 """Como o laço escreve a resposta na tela — o mesmo prefixo do terminal."""
@@ -184,6 +186,9 @@ class Ponte(QObject):
     dedoGlobal = Signal(bool)
     avisosMudaram = Signal()
     respostaParcial = Signal(str)
+    confirmacaoPedida = Signal(str, str)
+    """(id, frase) de uma confirmação de ferramenta pedida pelo laço (ADR-0028)."""
+    confirmacaoEncerrada = Signal(str)
     """O texto acumulado da resposta em curso, vindo do laço a cada pedaço (ADR-0025)."""
     """A fila de avisos do laço mudou: o card é renovado na thread da janela."""
     """Apertar/soltar do atalho global. Vem da thread do portal; o Qt entrega na da janela."""
@@ -225,6 +230,12 @@ class Ponte(QObject):
         self.dedoGlobal.connect(self._aplicar_dedo)
         self.avisosMudaram.connect(self._ligar_card_de_avisos)
         self.respostaParcial.connect(self._guardar_parcial)
+        self.confirmacaoPedida.connect(self._mostrar_confirmacao)
+        self.confirmacaoEncerrada.connect(self._tirar_confirmacao)
+        self._confirmacoes: dict[str, str] = {}
+        self._esperando_eco: list[str] = []
+        """Linhas que a janela já pôs na conversa e que o laço ainda vai ecoar."""
+        """Confirmações de ferramenta abertas, por id: entram na mesma faixa das pendências."""
         self._tiques = 0
         self._modelo = ModeloDeModulos(self)
         self._sessao: SessaoDeVoz | None = None
@@ -342,8 +353,16 @@ class Ponte(QObject):
         return self._medidas
 
     def pendencias_abertas(self) -> list[dict[str, str]]:
-        """As confirmações esperando o dono. Método normal, para quem não é QML (a captura)."""
-        return [dict(p) for p in self._espaco.para_dict()["pendentes"]]
+        """As confirmações esperando o dono. Método normal, para quem não é QML (a captura).
+
+        As de ferramenta (ADR-0028) vêm junto, na mesma faixa e com os mesmos dois botões: o
+        dono não precisa aprender um segundo jeito de dizer sim ou não.
+        """
+        ferramentas = [
+            {"id": f"{PREFIXO_DE_FERRAMENTA}{i}", "motivo": frase}
+            for i, frase in self._confirmacoes.items()
+        ]
+        return ferramentas + [dict(p) for p in self._espaco.para_dict()["pendentes"]]
 
     @Property(list, notify=mudou)
     def pendentes(self) -> list[dict[str, str]]:
@@ -569,6 +588,8 @@ class Ponte(QObject):
             ao_terminar=self._fim_da_conversa,
             ao_mudar_avisos=self.avisosMudaram.emit,
             ao_pedaco=self.respostaParcial.emit,
+            ao_pedir_confirmacao=self._pedir_confirmacao,
+            ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,
             escuta=self._escuta,
         )
         self._sessao.iniciar(self._aplicativo)
@@ -600,6 +621,8 @@ class Ponte(QObject):
         linha = texto.strip()
         if not linha:
             return
+        self._esperando_eco.append(linha)
+        del self._esperando_eco[:-20]  # no modo texto o laço não ecoa: a lista não cresce sem fim
         self.linhaNova.emit("dono", linha)
         if self._sessao is None or not self._sessao.viva:
             self.iniciarConversa()
@@ -629,6 +652,12 @@ class Ponte(QObject):
 
     @Slot(str, bool)
     def responderPendencia(self, pendencia: str, sim: bool) -> None:
+        if pendencia.startswith(PREFIXO_DE_FERRAMENTA):
+            identificador = pendencia.removeprefix(PREFIXO_DE_FERRAMENTA)
+            if self._sessao is not None:
+                self._sessao.responder_confirmacao(identificador, sim)
+            self._tirar_confirmacao(identificador)
+            return
         self._espaco.confirmar(pendencia, sim)
         self._publicar()
 
@@ -918,12 +947,11 @@ class Ponte(QObject):
         if not texto.strip():
             return
         digitado = texto.removeprefix(PREFIXO_DO_DIGITADO)
-        if (
-            digitado != texto
-            and self._transcricao
-            and self._transcricao[-1] == {"quem": "dono", "texto": digitado}
-        ):
-            return  # o eco do laço repete a linha que a janela já pôs: a mesma fala, uma vez
+        if digitado != texto and digitado in self._esperando_eco:
+            # O eco do laço repete a linha que a janela já pôs: a mesma fala, uma vez. Não basta
+            # olhar a última linha — o que o laço escreve ao abrir pode ter entrado no meio.
+            self._esperando_eco.remove(digitado)
+            return
         parcial = self._parcial_em_curso()
         if quem == "jarvis" and texto.startswith(PREFIXO_DA_RESPOSTA) and parcial is not None:
             # A linha final do turno substitui a que veio crescendo em stream: a mesma resposta
@@ -933,6 +961,22 @@ class Ponte(QObject):
             self._transcricao.append({"quem": quem, "texto": texto})
         del self._transcricao[:-MAXIMO_DE_LINHAS]
         self.conversaMudou.emit()
+
+    def _pedir_confirmacao(self, pergunta: Any) -> None:
+        """Da thread do laço: monta a frase (texto puro) e entrega à thread da janela."""
+        frase = (
+            f"{pergunta.titulo}: {pergunta.detalhe}. Responda em {pergunta.prazo_s:.0f} s — "
+            "sem resposta, eu não faço."
+        )
+        self.confirmacaoPedida.emit(str(pergunta.id), frase)
+
+    def _mostrar_confirmacao(self, identificador: str, frase: str) -> None:
+        self._confirmacoes[identificador] = frase
+        self.mudou.emit()
+
+    def _tirar_confirmacao(self, identificador: str) -> None:
+        if self._confirmacoes.pop(identificador, None) is not None:
+            self.mudou.emit()
 
     def _guardar_parcial(self, acumulado: str) -> None:
         """Um pedaço novo da resposta: a linha do Jarvis cresce no lugar, enquanto ele gera."""

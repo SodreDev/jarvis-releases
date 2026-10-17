@@ -25,7 +25,7 @@ from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from jarvis.microfone import EstadoDaFonte, ler_estado
 from jarvis.voz.app import Aplicativo, AplicativoIndisponivel
@@ -80,6 +80,9 @@ class SessaoDeVoz:
     """Fim da sessão: frase do erro, ou vazio quando terminou porque mandaram parar."""
     ao_mudar_avisos: Callable[[], None] = lambda: None
     ao_pedaco: Callable[[str], None] = _nada
+    ao_pedir_confirmacao: Callable[[Any], None] = _nada
+    """O laço quer a confirmação do dono para uma ferramenta (ADR-0028). Da thread de trabalho."""
+    ao_fim_da_confirmacao: Callable[[str], None] = _nada
     """A resposta em stream: o texto acumulado a cada pedaço de fala (ADR-0025). Da thread de
     trabalho, como as outras."""
     """A fila de avisos do laço mudou (ADR-0025). Chamada da thread de trabalho."""
@@ -122,6 +125,8 @@ class SessaoDeVoz:
         aplicativo.ao_mudar_estado = self.ao_estado
         aplicativo.ao_mudar_avisos = self.ao_mudar_avisos
         aplicativo.ao_pedaco = self.ao_pedaco
+        aplicativo.ao_pedir_confirmacao = self.ao_pedir_confirmacao
+        aplicativo.ao_fim_da_confirmacao = self.ao_fim_da_confirmacao
         # A porta do dedo fica **sempre** ligada: o modo troca com a sessão aberta, e quem
         # decide se o dedo manda é o laço, pelo modo vivo — não esta montagem.
         aplicativo.pressionado = self._pressionado
@@ -172,6 +177,12 @@ class SessaoDeVoz:
             return True
         self._thread.join(timeout=segundos)
         return not self._thread.is_alive()
+
+    def responder_confirmacao(self, identificador: str, sim: bool) -> bool:
+        """O clique do dono numa confirmação de ferramenta, levado ao laço que espera."""
+        if self.aplicativo is None:
+            return False
+        return self.aplicativo.responder_confirmacao(identificador, sim)
 
     def dados_dos_avisos(self) -> dict[str, list[dict[str, str]]]:
         """O card `notificacoes`: a fila do laço, ou vazia antes de haver laço."""

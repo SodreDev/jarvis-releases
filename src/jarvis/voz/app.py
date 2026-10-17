@@ -30,6 +30,7 @@ mentir.
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
@@ -56,7 +57,16 @@ from jarvis.audio_io.playback import FilaDePlayback, Pedaco
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
 from jarvis.audio_io.vad import Vad
 from jarvis.barramento.envelope import Envelope, uuid7
+from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
+from jarvis.executor.lancador import RegistroDeApps
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
+from jarvis.politica.abertura import nome_de_app
+from jarvis.politica.auditoria import LogDeAuditoria
+from jarvis.politica.canonicalizacao import Sistema, canonicalizar
+from jarvis.politica.catalogo import carregar_catalogo
+from jarvis.politica.modos import Modo as ModoDeAcesso
+from jarvis.politica.modos import Raiz
+from jarvis.politica.pdp import Pdp
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
 from jarvis.s2.cerebro import Cerebro, Resposta
@@ -289,6 +299,13 @@ class Aplicativo:
     playback, mesma interrupção. Fazer isso por fora (uma segunda thread chamando `responder`)
     daria dois donos do epoch — e dois donos do epoch é a origem do barge-in que não cancela."""
 
+    ao_pedir_confirmacao: Callable[[Confirmacao], None] | None = None
+    """A política mandou confirmar uma ferramenta (ADR-0028): a janela mostra o pedido. Não
+    bloqueia — quem espera a resposta é o laço, em `_confirmar`. Sem janela, a resposta é não."""
+    ao_fim_da_confirmacao: Callable[[str], None] | None = None
+    """O pedido saiu (respondido, prazo vencido ou turno interrompido): a janela o tira."""
+    lar: Path = field(default_factory=Path.home)
+    """A casa do dono, de onde saem as raízes do modo de acesso e a lista de negação (§5.5)."""
     ao_mudar_avisos: Callable[[], None] | None = None
     """A fila de avisos mudou (ADR-0025): a janela renova o card. Como `ao_mudar_estado`, é
     chamada da thread do laço — quem liga aqui emite sinal e volta."""
@@ -298,6 +315,11 @@ class Aplicativo:
     session_id: str = field(default_factory=lambda: str(uuid7()))
     avisos: FilaDeAvisos = field(init=False)
     """A fila de avisos do laço, que aqui faz o papel do `agentd` (ADR-0025, regra 12)."""
+    ferramentas: ExecutorDeFerramentas | None = field(default=None, repr=False)
+    _auditoria: LogDeAuditoria | None = field(default=None, repr=False)
+    _confirmacoes: dict[str, tuple[threading.Event, list[bool]]] = field(
+        default_factory=dict, repr=False
+    )
     turnos: list[Turno] = field(default_factory=list)
     _asr: MotorDeAsr | None = field(default=None, repr=False)
     _tts: MotorDeTts | None = field(default=None, repr=False)
@@ -406,7 +428,85 @@ class Aplicativo:
             )
         if self._cerebro is None:
             self._cerebro = Cerebro(motor=self._motor, session_id=self.session_id)
+        if self.ferramentas is None:
+            self.ferramentas = self._montar_ferramentas()
+        self._cerebro.ferramentas = self.ferramentas
+        self._cerebro.confirmar = self._confirmar
         self._aquecer()
+
+    def _montar_ferramentas(self) -> ExecutorDeFerramentas:
+        """PDP, auditoria e executor com o alcance que o dono configurou (§5.5, ADR-0028)."""
+        sistema = Sistema.WINDOWS if os.name == "nt" else Sistema.POSIX
+        self._auditoria = LogDeAuditoria(self.raiz / "auditoria.sqlite")
+        registro = RegistroDeApps.montar(self.configuracao.apps_autorizados)
+        pdp = Pdp(
+            catalogo=carregar_catalogo(),
+            lar=self.lar,
+            auditoria=self._auditoria,
+            modo=ModoDeAcesso(self.configuracao.acesso),
+            sistema=sistema,
+            session_id=self.session_id,
+            pasta_do_jarvis=self.raiz / "area",
+            concedidas=tuple(
+                Raiz(
+                    nome="concedida",
+                    caminho=canonicalizar(str(Path(r).expanduser()), sistema),
+                    pode_ler=True,
+                    pode_escrever=False,
+                )
+                for r in self.configuracao.raizes
+            ),
+            apps_autorizados=frozenset(
+                nome_de_app(n) for app in registro.autorizados.values() for n in app.nomes
+            ),
+            sites_sem_confirmar=frozenset(self.configuracao.sites_sem_confirmar),
+        )
+        executor = ExecutorDeFerramentas(
+            pdp=pdp, lar=self.lar, registro_de_apps=registro, sistema=sistema
+        )
+        executor.preparar()
+        return executor
+
+    # --- confirmação de ferramenta (ADR-0028) -------------------------------------------------
+    def _confirmar(self, pergunta: Confirmacao) -> bool:
+        """Pede à janela e espera o dono — da linha do cérebro, sem travar a fala nem a tela.
+
+        Não há "sim" sem o dono: sem janela, é não; prazo vencido, é não; o dono interrompeu o
+        turno enquanto o pedido estava na tela, é não. E nada que o modelo escreva chega aqui:
+        quem chama `responder_confirmacao` é o clique na janela.
+        """
+        if self.ao_pedir_confirmacao is None:
+            self.escrever_na_tela(f"  (precisa da sua confirmação na janela: {pergunta.detalhe})")
+            return False
+        epoch = self.epoch
+        evento = threading.Event()
+        resposta: list[bool] = []
+        self._confirmacoes[pergunta.id] = (evento, resposta)
+        # Enquanto a pergunta está na tela a vez é do dono: o núcleo não diz "falando" à toa.
+        self._mudar(self._repouso)
+        self.ao_pedir_confirmacao(pergunta)
+        limite = time.monotonic() + pergunta.prazo_s
+        try:
+            while not evento.wait(INTERVALO_DE_CONSULTA_S * 10):
+                if self.epoch > epoch or time.monotonic() > limite:
+                    return False
+            return bool(resposta and resposta[0])
+        finally:
+            if self.epoch == epoch:
+                self._mudar(Estado.PENSANDO)
+            self._confirmacoes.pop(pergunta.id, None)
+            if self.ao_fim_da_confirmacao is not None:
+                self.ao_fim_da_confirmacao(pergunta.id)
+
+    def responder_confirmacao(self, identificador: str, sim: bool) -> bool:
+        """O clique do dono na janela. Devolve se ainda havia alguém esperando a resposta."""
+        espera = self._confirmacoes.get(identificador)
+        if espera is None:
+            return False
+        evento, resposta = espera
+        resposta.append(sim)
+        evento.set()
+        return True
 
     def _aquecer(self) -> None:
         """Uma síntese curta, jogada fora, **só em motor local**.
@@ -864,6 +964,12 @@ class Aplicativo:
             self.escrever_na_tela(f"ouvindo com: {self._asr.nome}  [{self._asr.onde}]")
         self.escrever_na_tela(f"falando com: {self._tts.nome}  [{self._tts.onde}]")
         self.escrever_na_tela(f"respondendo com: {self._motor.nome}  [{self._motor.onde}]")
+        if self.ferramentas is not None:
+            modo = self.ferramentas.pdp.modo
+            self.escrever_na_tela(
+                f"alcance: {modo.nome_do_dono} · {len(self.ferramentas.catalogo_para_o_modelo())}"
+                " ferramentas"
+            )
         for motor in self.configuracao.motores_de_nuvem_escolhidos():
             self.escrever_na_tela("")
             self.escrever_na_tela(f"  {motor.frase_de_aviso}")
