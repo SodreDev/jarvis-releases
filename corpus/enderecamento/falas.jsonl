@@ -1,0 +1,58 @@
+{"id": "e001", "fala": "Jarvis, que horas são?", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": false}
+{"id": "e002", "fala": "qual é a capital da Austrália?", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": false}
+{"id": "e003", "fala": "Jarvis, me explica o que é um buraco negro", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": false}
+{"id": "e004", "fala": "como está o tempo em Curitiba amanhã?", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": false}
+{"id": "e005", "fala": "me conta uma curiosidade sobre o Brasil", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": false}
+{"id": "e006", "fala": "quanto é quinze por cento de duzentos e oitenta?", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": false}
+{"id": "e007", "fala": "sim, pode ser", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": true}
+{"id": "e008", "fala": "não, deixa pra depois", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": true}
+{"id": "e009", "fala": "o que você acha disso?", "rotulo": "jarvis", "intencao": "sugestao", "jarvis_perguntou": false}
+{"id": "e010", "fala": "Jarvis, sugere um filme pra hoje à noite", "rotulo": "jarvis", "intencao": "sugestao", "jarvis_perguntou": false}
+{"id": "e011", "fala": "me recomenda uma playlist pra estudar", "rotulo": "jarvis", "intencao": "sugestao", "jarvis_perguntou": false}
+{"id": "e012", "fala": "o que eu faço de jantar com ovo e arroz?", "rotulo": "jarvis", "intencao": "sugestao", "jarvis_perguntou": false}
+{"id": "e013", "fala": "qual é melhor, o plano A ou o B?", "rotulo": "jarvis", "intencao": "sugestao", "jarvis_perguntou": false}
+{"id": "e014", "fala": "Jarvis, abre o Discord", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e015", "fala": "abre o navegador", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e016", "fala": "abre a pasta de downloads", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e017", "fala": "anota aí: comprar café e pão", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e018", "fala": "cria um lembrete pra amanhã às nove", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e019", "fala": "procura meu arquivo do orçamento", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e020", "fala": "Jarvis, toca uma música calma", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e021", "fala": "abre o site da wikipédia", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e022", "fala": "fecha isso", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e023", "fala": "agenda uma reunião com o time na sexta de manhã", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e024", "fala": "liga o modo foco", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e025", "fala": "para de falar", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": false}
+{"id": "e026", "fala": "repete a última resposta", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": false}
+{"id": "e027", "fala": "e em Lisboa?", "rotulo": "jarvis", "intencao": "resposta", "jarvis_perguntou": true}
+{"id": "e028", "fala": "pode abrir o calendário também", "rotulo": "jarvis", "intencao": "acao", "jarvis_perguntou": true}
+{"id": "e029", "fala": "amor, onde você deixou a chave do carro?", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e030", "fala": "bom dia, tudo bem com você?", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e031", "fala": "já terminei o relatório, mando daqui a pouco", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e032", "fala": "hmm, onde foi que eu coloquei meus óculos", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e033", "fala": "preciso lembrar de pagar a conta de luz", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e034", "fala": "nossa, que calor hoje", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e035", "fala": "pode abrir a janela, por favor? tá abafado aqui", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e036", "fala": "me passa o sal?", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e037", "fala": "o Jarvis é bem rápido pra responder, né?", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e038", "fala": "eu falei pro Jarvis ontem e ele resolveu", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e039", "fala": "vem jantar, tá na mesa!", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e040", "fala": "não, eu disse que a reunião era na quinta", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e041", "fala": "e aí, vamos pro cinema hoje?", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e042", "fala": "a previsão diz que vai chover o fim de semana inteiro", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e043", "fala": "gol! gol do Brasil!", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e044", "fala": "e agora, direto de Brasília, as principais notícias do dia", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e045", "fala": "segura aí que eu já volto", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e046", "fala": "tá, tá, entendi", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e047", "fala": "aham", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e048", "fala": "é isso mesmo, ele me ligou ontem à noite", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e049", "fala": "depois a gente compra o café e o pão", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e050", "fala": "será que eu esqueci de desligar o forno", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e051", "fala": "abre a porta que o entregador chegou", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e052", "fala": "toca aqui!", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e053", "fala": "deixa que eu faço isso depois", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e054", "fala": "quantos anos você tem, vovó?", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e055", "fala": "sim", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e056", "fala": "o que você acha, amor, a gente pinta a sala de azul?", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e057", "fala": "estou cansado demais pra pensar nisso agora", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
+{"id": "e058", "fala": "pausa o vídeo que a gente já volta", "rotulo": "outro", "intencao": "ignorar", "jarvis_perguntou": false}
