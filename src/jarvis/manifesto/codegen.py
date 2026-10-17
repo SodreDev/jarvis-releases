@@ -12,6 +12,7 @@ verdade é o `executor`, com credencial de menor privilégio e sandbox (§2).
 from __future__ import annotations
 
 import json
+import textwrap
 from typing import Any, Final
 
 TIPOS: Final[dict[str, str]] = {
@@ -34,7 +35,7 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
   risco: {risk_class} · confirmação: {confirmation} · egress: {data_egress}
   modo mínimo: {access_level_min} · elevação: {requires_elevation} · raízes: {roots}
-  pós-condição verificada pelo executor: {postcondition}
+{postcondition}
 """
 
 from __future__ import annotations
@@ -87,6 +88,16 @@ def _conjunto(nome: str, valores: list[str]) -> str:
     return f"{cabeca}\n    (\n{itens}    )\n)"
 
 
+def _linha_da_poscondicao(texto: str) -> str:
+    """A pós-condição na docstring, quebrada em 100 colunas como o linter cobra."""
+    return textwrap.fill(
+        f"pós-condição verificada pelo executor: {texto}",
+        width=LARGURA,
+        initial_indent="  ",
+        subsequent_indent="    ",
+    )
+
+
 def _anotacao(propriedade: dict[str, Any]) -> str:
     return TIPOS.get(str(propriedade.get("type", "")), "Any")
 
@@ -122,7 +133,7 @@ def gerar_stub(manifesto: dict[str, Any]) -> str:
             timeout_ms=int(manifesto["timeout_ms"]),
             roots=", ".join(manifesto["roots"]) or "(nenhuma)",
             roots_tupla=_tupla_literal(manifesto["roots"]),
-            postcondition=manifesto["postcondition"],
+            postcondition=_linha_da_poscondicao(str(manifesto["postcondition"])),
             postcondition_literal=json.dumps(str(manifesto["postcondition"]), ensure_ascii=False),
         )
     ]
