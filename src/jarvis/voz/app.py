@@ -795,7 +795,14 @@ class Aplicativo:
             return None
         if tecla in TECLAS_DE_SAIDA:
             return tecla
-        if tecla == ESPACO:
+        if tecla == ESPACO and (
+            self.estado in (Estado.FALANDO, Estado.PENSANDO) or bool(self._confirmacoes)
+        ):
+            # Barge-in por tecla só vale com o Jarvis falando (ou preparando a fala, ou esperando
+            # a confirmação do dono). Com ele
+            # calado o mesmo aperto é o PTT do dono abrindo o turno: tratá-lo como interrupção
+            # era o "interrompe sozinho" da janela (bug do dono, 2026-10-17) — a época subia a
+            # cada aperto e a conversa dizia "interrompido (tecla)" sem ninguém ter sido calado.
             self.interromper("tecla")
         return tecla
 

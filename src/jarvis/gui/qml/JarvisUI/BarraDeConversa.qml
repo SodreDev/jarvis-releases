@@ -110,6 +110,7 @@ Item {
         spacing: 10
 
         Botao {
+            objectName: "botaoFalar"
             texto: barra.estado === "falando" ? "interromper" : "falar"
             ativo: barra.microfone.aberta === true && barra.estado === "ouvindo"
             onApertado: { if (!barra.conversaViva) barra.comecou(); barra.segurou() }
