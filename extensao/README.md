@@ -1,0 +1,53 @@
+# Extensão de navegador do Jarvis
+
+Esta é uma WebExtension MV3 sem dependências de terceiros. Ela não abre servidor, porta TCP,
+WebSocket ou HTTP próprio. A única ponte é Native Messaging: o navegador lança o host local
+registrado e troca mensagens JSON enquadradas por `stdin`/`stdout`.
+
+O host só aceita a extensão identificada no manifesto correspondente. No Chromium, a chave
+pública em `manifest.json` fixa o identificador em
+`eainnehpangdlhmjenljnbfkjjeckoli`; a chave privada **não** está no repositório nem no release.
+No Firefox, o ID é `jarvis-browser@granafacil.local`.
+
+## Protocolo da ponte
+
+O host envia uma linha JSON com `{ "id", "method", "params" }`; a extensão responde
+`{ "id", "ok", "result" }` ou `{ "id", "ok": false, "error" }`. Os métodos aceitos são:
+
+- `tabs.list`, `tabs.active`, `tabs.open` (`url`, `reutilizar`), `tabs.navigate` (`url`, `tabId`);
+- `page.read`, `page.inspect`, `page.click`, `page.type`, `page.scroll`.
+
+`page.read` devolve URL, título, texto visível, links (`texto`, `href`, `data` de `<time datetime>`)
+e as datas visíveis. O DOM é sempre conteúdo de terceiro; o host do Jarvis o encaminha como
+`DADO`, nunca como instrução. `page.inspect` é interno: permite ao Jarvis classificar formulário,
+envio e campo sensível antes de efetivar `click` ou `type`.
+
+O conteúdo rejeita automaticamente campos de senha, cartão e OTP. A política completa, inclusive
+as confirmações por ação, fica no Jarvis; a extensão nunca recebe uma autorização da página.
+
+## Instalação Linux para desenvolvimento
+
+O empacotamento do release fará esta cópia e substituirá
+`__JARVIS_NATIVE_HOST_ABSOLUTO__` pelo executável instalado. Para testar uma árvore de release
+sem abrir porta de rede:
+
+1. Instale a extensão descompactada. Em Chromium/Chrome, abra `chrome://extensions`, ligue o
+   modo de desenvolvedor e escolha **Carregar sem compactação** apontando para `extensao/`.
+   No Firefox, abra `about:debugging#/runtime/this-firefox`, escolha **Carregar extensão temporária**
+   e selecione `extensao/manifest.json`.
+2. Copie o manifesto de host para o navegador correto e troque o marcador pelo caminho absoluto
+   do lançador `jarvis-native-host` que acompanha o release:
+
+   - Firefox: `~/.mozilla/native-messaging-hosts/br.com.granafacil.jarvis.json`
+   - Google Chrome: `~/.config/google-chrome/NativeMessagingHosts/br.com.granafacil.jarvis.json`
+   - Chromium: `~/.config/chromium/NativeMessagingHosts/br.com.granafacil.jarvis.json`
+
+   O arquivo do host deve ter permissão de leitura para o navegador; o executável indicado em
+   `path` deve ser absoluto e executável. Em instalações corporativas, o administrador pode usar
+   os diretórios de sistema equivalentes do navegador.
+3. Abra uma página `http` ou `https`. O host nativo se conecta somente quando o Jarvis o executa;
+   sem ele a extensão permanece inerte. `about:`, `file:`, páginas de extensão e páginas internas
+   do navegador nunca são lidas ou controladas.
+
+Não carregue uma extensão de origem diferente: o manifesto do host fixa os IDs acima. Não há
+necessidade, nem caminho suportado, para expor uma porta local.

@@ -1,0 +1,9 @@
+{
+  "name": "br.com.granafacil.jarvis",
+  "description": "Host nativo local da extensão Jarvis",
+  "path": "__JARVIS_NATIVE_HOST_ABSOLUTO__",
+  "type": "stdio",
+  "allowed_extensions": [
+    "jarvis-browser@granafacil.local"
+  ]
+}
