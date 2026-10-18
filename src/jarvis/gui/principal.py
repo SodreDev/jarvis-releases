@@ -165,6 +165,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from jarvis.gui import foco
     from jarvis.gui.ponte import Ponte
+    from jarvis.voz.conversa import abrir_conversa
 
     aplicativo = QGuiApplication(sys.argv[:1])
     aplicativo.setApplicationName(NOME)
@@ -172,7 +173,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     aplicativo.setDesktopFileName(ID_DO_APLICATIVO)
     aplicativo.setWindowIcon(QIcon(str(ICONE_SVG)))
 
-    ponte = Ponte(raiz=_raiz_de_sessao(), caminho_da_configuracao=args.config)
+    raiz = _raiz_de_sessao()
+    # Capturar telas não toca o histórico do dono: o chaveiro e o disco ficam fora do ensaio.
+    conversa = None if args.capturar is not None else abrir_conversa(raiz)
+    ponte = Ponte(raiz=raiz, caminho_da_configuracao=args.config, conversa=conversa)
     janela = QQuickView()
     janela.setTitle(NOME)
     janela.setIcon(QIcon(str(ICONE_SVG)))

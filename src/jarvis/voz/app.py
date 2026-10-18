@@ -65,6 +65,7 @@ from jarvis.decisao.openrouter import ClassificadorOpenRouter
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
 from jarvis.executor.lancador import RegistroDeApps
 from jarvis.executor.navegadores import AbridorDeNavegador, separar
+from jarvis.memoryd.conversa import ConversaPersistente
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
 from jarvis.politica.abertura import nome_de_app
 from jarvis.politica.auditoria import LogDeAuditoria
@@ -76,7 +77,7 @@ from jarvis.politica.pdp import Pdp
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
 from jarvis.s2.cerebro import Cerebro, Resposta
-from jarvis.s2.motor import INTERVALO_DE_CONSULTA_S, MotivoDoFim, MotorDeConversa
+from jarvis.s2.motor import INTERVALO_DE_CONSULTA_S, Mensagem, MotivoDoFim, MotorDeConversa
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.voz.chaves import SegredoAusente
@@ -363,6 +364,9 @@ class Aplicativo:
     avisos: FilaDeAvisos = field(init=False)
     """A fila de avisos do laço, que aqui faz o papel do `agentd` (ADR-0025, regra 12)."""
     ferramentas: ExecutorDeFerramentas | None = field(default=None, repr=False)
+    conversa: ConversaPersistente | None = field(default=None, repr=False)
+    """A conversa que sobrevive ao reinício (ADR-0026). `None` = só na memória, como o terminal e
+    a suíte sempre fizeram: quem quer persistir (a janela) passa uma aberta."""
     _auditoria: LogDeAuditoria | None = field(default=None, repr=False)
     _confirmacoes: dict[str, tuple[threading.Event, list[bool]]] = field(
         default_factory=dict, repr=False
@@ -479,7 +483,27 @@ class Aplicativo:
             self.ferramentas = self._montar_ferramentas()
         self._cerebro.ferramentas = self.ferramentas
         self._cerebro.confirmar = self._confirmar
+        self._sincronizar_conversa(self._cerebro)
         self._aquecer()
+
+    def _sincronizar_conversa(self, cerebro: Cerebro) -> None:
+        """Põe no cérebro a conversa corrente do dono: o livro e os últimos turnos que ele ouviu.
+
+        Roda ao abrir **e** a cada turno: "nova conversa" na janela troca o id de outra thread, e
+        o cérebro só repara aqui — entre turnos, nunca no meio de um. O modelo lê o texto
+        redigido (sem segredo nem dado pessoal); a tela mostra o original.
+        """
+        conversa = self.conversa
+        if conversa is None or cerebro.id_da_conversa == conversa.conversa_id:
+            return
+        if not cerebro.id_da_conversa and conversa.aviso:
+            self.escrever_na_tela(f"  {conversa.aviso}")
+        cerebro.id_da_conversa = conversa.conversa_id
+        cerebro.livro = conversa.livro
+        cerebro.conversa.turnos[:] = [
+            Mensagem("dono" if t.papel == "dono" else "jarvis", t.redigido, t.interrompida)
+            for t in conversa.recentes()
+        ]
 
     def _abrir_o_detector(self) -> DetectorDeEnderecamento | None:
         """O detector de endereçamento que o dono escolheu — ou `None`, com a razão na tela.
@@ -700,6 +724,7 @@ class Aplicativo:
         assert self._tts is not None and self._motor is not None and self._cerebro is not None
         cerebro = self._cerebro
         cerebro.motor = self._motor
+        self._sincronizar_conversa(cerebro)
 
         epoch = self.epoch
         self._turno_cancelado = False
@@ -774,6 +799,8 @@ class Aplicativo:
                 interrompida=cancelado(),
                 played_ms=int(1000 * tocadas / TAXA_PADRAO),
             )
+        if self.conversa is not None:
+            self.conversa.indexar_depois()
         self._mudar(self._repouso)
         respondeu = " ".join(exibido)
         return Turno(

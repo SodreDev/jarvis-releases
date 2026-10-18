@@ -59,6 +59,7 @@ from jarvis.voz.config import (
     ler,
     validar,
 )
+from jarvis.voz.conversa import ConversaPersistente
 from jarvis.voz.escuta import CombinacaoInvalida, Escuta, exigir_combinacao, modo_de
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import Onde
@@ -211,6 +212,7 @@ class Ponte(QObject):
         controlador: Controlador | None = None,
         ambiente: Mapping[str, str] | None = None,
         aplicativo: Aplicativo | None = None,
+        conversa: ConversaPersistente | None = None,
         pastas_de_apps: tuple[str, ...] | None = None,
         lar: Path | None = None,
         parent: QObject | None = None,
@@ -223,6 +225,8 @@ class Ponte(QObject):
         self._ambiente_base = dict(ambiente) if ambiente is not None else None
         self._aplicativo = aplicativo
         """Um laço já montado (teste, medição). `None` monta um na hora de conversar."""
+        self._conversa = conversa
+        """O histórico persistente: a conversa de antes volta à tela ao abrir (ADR-0026)."""
         self._espaco = Workspace()
         self._espaco.ao_mudar = self._publicar
         # O modo de escuta vivo (ADR-0021): o mesmo objeto para o laço, para o gerente (que
@@ -252,7 +256,7 @@ class Ponte(QObject):
         self._modelo = ModeloDeModulos(self)
         self._sessao: SessaoDeVoz | None = None
         self._estado = Estado.PARADO
-        self._transcricao: list[dict[str, str]] = []
+        self._transcricao: list[dict[str, str]] = self._transcricao_salva()
         self._avisos_dados: set[str] = set()  # privacidade já dita: só uma vez por execução
         self._diagnostico = ""
         self._nivel = 0.0
@@ -668,8 +672,20 @@ class Ponte(QObject):
             ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,
             escuta=self._escuta,
             avisos_dados=self._avisos_dados,
+            conversa=self._conversa,
         )
         self._sessao.iniciar(self._aplicativo)
+        self.conversaMudou.emit()
+
+    @Slot()
+    def novaConversa(self) -> None:
+        """Recomeça do zero: a tela limpa e o cérebro esquece o que veio antes. O que já foi
+        dito continua no histórico (a busca o acha); só deixa de voltar sozinho."""
+        if self._conversa is not None:
+            self._conversa.nova()
+        if self._sessao is not None and self._sessao.viva:
+            self._sessao.interromper()  # o turno em curso é da conversa que acabou
+        self._transcricao = []
         self.conversaMudou.emit()
 
     @Slot()
@@ -1026,6 +1042,22 @@ class Ponte(QObject):
     def _mudar_estado(self, estado: Estado) -> None:
         self._estado = estado
         self.conversaMudou.emit()
+
+    def _transcricao_salva(self) -> list[dict[str, str]]:
+        """A conversa de antes, do histórico persistente, no formato da tela (ADR-0026).
+
+        O dono vê o original; o que ele não ouviu inteiro vem marcado. Sem histórico (sem
+        chaveiro, primeira vez), a tela começa vazia como sempre."""
+        if self._conversa is None:
+            return []
+        return [
+            {
+                "quem": "dono" if turno.papel == "dono" else "jarvis",
+                "texto": turno.texto + (" …(interrompido)" if turno.interrompida else ""),
+                "historico": "1",
+            }
+            for turno in self._conversa.recentes()
+        ]
 
     def _fim_da_conversa(self, erro: str) -> None:
         if erro:

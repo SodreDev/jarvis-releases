@@ -236,6 +236,37 @@ Se aparecer `[local]` e `eco`, o arquivo não foi lido.
 - Windows: listar/ler/rascunho são o mesmo código, mas não rodaram lá; abrir app no Windows
   ainda não foi implementado (ele diz isso).
 
+### 0.2 A conversa continua depois de fechar (2026-10-18)
+
+Pedido do dono: a conversa não persistia ao reiniciar. Agora persiste — o histórico cifrado já
+existia (livro-razão, ADR-0026) e a janela o liga.
+
+**Como conferir:**
+
+1. `uv run jarvis`, **começar**, escreva duas ou três mensagens e espere as respostas.
+2. Feche a janela e abra de novo. As últimas falas voltam à tela (a que você interrompeu vem
+   marcada com `…(interrompido)`), **e** o Jarvis sabe o que foi dito: pergunte "o que eu acabei
+   de te perguntar?" (com `s2 = "claude"`; o `eco` só repete).
+3. **Nova conversa** (botão na barra de baixo, só aparece quando há conversa): a tela limpa e o
+   cérebro esquece. Feche e reabra logo depois: continua vazia. O que foi dito antes ainda está
+   no histórico (a busca `memoria.buscar_historico` o acha); só deixa de voltar sozinho.
+
+**O que volta:** os últimos 30 turnos na tela e os últimos 12 no contexto do cérebro. Do Jarvis,
+só o que você **ouviu** (P4). O modelo lê o texto *redigido* (sem segredo nem dado pessoal); a
+tela mostra o original.
+
+**Onde fica:** `~/.local/state/jarvis/voz/memoria/` (`livro.sqlite`; `conversa-atual.json` guarda
+o id da conversa corrente). O texto original vai **cifrado** com a chave do chaveiro do sistema.
+**Limite honesto (ADR-0026, pergunta aberta 1):** o texto redigido que alimenta a busca léxica
+ainda fica em claro no mesmo arquivo — só o bruto é cifrado.
+
+**Sem chaveiro** (sem Secret Service/KWallet), o Jarvis diz na conversa "sem histórico em disco" e
+segue funcionando, só que a conversa vale até fechar.
+
+**Não verificado:** o chaveiro real do seu KDE (a suíte usa um cofre de teste); o índice vetorial
+(LanceDB + e5) só entra se o modelo já estiver baixado em `~/.cache/jarvis/modelos/` — sem ele a
+busca cai no léxico.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

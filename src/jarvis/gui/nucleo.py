@@ -30,6 +30,7 @@ from typing import Any, Final
 from jarvis.microfone import EstadoDaFonte, ler_estado
 from jarvis.voz.app import Aplicativo, AplicativoIndisponivel, OuvidoIndisponivel
 from jarvis.voz.config import Configuracao
+from jarvis.voz.conversa import ConversaPersistente
 from jarvis.voz.escuta import Escuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.teclado import ESPACO
@@ -92,6 +93,8 @@ class SessaoDeVoz:
     avisos_dados: set[str] = field(default_factory=set)
     """Os avisos de privacidade já ditos; quem abre as sessões (a ponte) passa o mesmo conjunto
     a todas, e o texto longo não volta a cada conversa."""
+    conversa: ConversaPersistente | None = None
+    """A conversa que sobrevive ao reinício (a ponte a abre uma vez e passa a todas as sessões)."""
     modo_texto: bool = False
     """Começa no modo texto (sem abrir dispositivo). Vira verdadeiro sozinho se o áudio cair."""
 
@@ -119,7 +122,12 @@ class SessaoDeVoz:
         self._thread.start()
 
     def _montar(self) -> Aplicativo:
-        return Aplicativo(configuracao=self.configuracao, raiz=self.raiz, ambiente=self.ambiente)
+        return Aplicativo(
+            configuracao=self.configuracao,
+            raiz=self.raiz,
+            ambiente=self.ambiente,
+            conversa=self.conversa,
+        )
 
     def _ligar(self, aplicativo: Aplicativo) -> Aplicativo:
         """Liga as três portas da ADR-0019 (mais a tela e o teclado) no laço."""
@@ -137,6 +145,8 @@ class SessaoDeVoz:
         if self.escuta is not None:
             aplicativo.escuta = self.escuta
         aplicativo.texto_digitado = self._texto_pendente
+        if aplicativo.conversa is None:
+            aplicativo.conversa = self.conversa
         return aplicativo
 
     @property

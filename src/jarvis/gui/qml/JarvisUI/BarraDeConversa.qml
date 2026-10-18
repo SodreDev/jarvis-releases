@@ -8,11 +8,13 @@ Item {
     property string estado: "parado"
     property var microfone: ({})
     property string atalho: ""
+    property bool temConversa: false
     signal enviou(string texto)
     signal segurou()
     signal soltou()
     signal parou()
     signal comecou()
+    signal recomecou()
     signal devolveuOFoco()
     // A regra do atalho mora na tela (`Principal.ehOAtalho`); o campo só pergunta.
     property var ehOAtalho: function (evento) { return false }
@@ -115,6 +117,12 @@ Item {
             ativo: barra.microfone.aberta === true && barra.estado === "ouvindo"
             onApertado: { if (!barra.conversaViva) barra.comecou(); barra.segurou() }
             onSolto: barra.soltou()
+        }
+        Botao {
+            objectName: "botaoNovaConversa"
+            texto: "nova conversa"
+            visible: barra.temConversa
+            onApertado: barra.recomecou()
         }
         Botao {
             texto: barra.conversaViva ? "encerrar" : "começar"

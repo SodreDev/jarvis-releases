@@ -247,6 +247,33 @@ class LivroDeMemoria:
             for linha in linhas
         ]
 
+    @_com_trava
+    def turnos_da_sessao(self, session_id: str, *, ultimos: int) -> list[dict[str, Any]]:
+        """Os últimos turnos de uma conversa, do mais antigo ao mais novo — para reabri-la.
+
+        Cada um leva o `texto` (o original, decifrado: é para a tela do dono) e o `redigido` (o
+        que o modelo pode ler: sem segredo nem dado pessoal). Turno do Jarvis é, por construção,
+        o que tocou (`gravar_turno` recusa o resto).
+        """
+        linhas = self.con.execute(
+            "SELECT t.episode_id, t.papel, t.interrompida, t.ordem, m.text_redacted,"
+            " e.occurred_at FROM turno t JOIN episode e ON e.id = t.episode_id"
+            " JOIN memory_unit m ON m.episode_id = e.id AND m.assertion_id IS NULL"
+            " WHERE t.session_id = ? ORDER BY t.ordem DESC LIMIT ?",
+            (session_id, ultimos),
+        ).fetchall()
+        return [
+            {
+                "episode_id": linha["episode_id"],
+                "papel": linha["papel"],
+                "texto": self.texto_bruto(linha["episode_id"]),
+                "redigido": linha["text_redacted"],
+                "interrompida": bool(linha["interrompida"]),
+                "occurred_at": linha["occurred_at"],
+            }
+            for linha in reversed(linhas)
+        ]
+
     # --- memórias e grafo (M2) ----------------------------------------------------------
     @_com_trava
     def lembrar(

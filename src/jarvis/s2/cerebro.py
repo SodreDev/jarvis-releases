@@ -111,6 +111,9 @@ class Cerebro:
     livro: LivroDeMemoria | None = None
     """O histórico persistente (ADR-0026, M1). Sem ele, a conversa vive só na memória."""
     session_id: str = ""
+    id_da_conversa: str = ""
+    """A conversa persistente a que os turnos pertencem no livro (reabrir o app a continua).
+    Vazio = a da sessão, como antes."""
     turno_corrente: TurnoCorrente | None = None
     ferramentas: ExecutorDeFerramentas | None = None
     """O executor das tools do catálogo v1 (ADR-0028). Sem ele, pedido de tool volta negado."""
@@ -156,7 +159,10 @@ class Cerebro:
         self.turno_corrente = None
         if self.livro is not None:
             episodio = self.livro.gravar_turno(
-                session_id=self.session_id, papel="dono", texto=texto_do_dono, trust=trust
+                session_id=self.id_da_conversa or self.session_id,
+                papel="dono",
+                texto=texto_do_dono,
+                trust=trust,
             )
             self.turno_corrente = TurnoCorrente(episodio, texto_do_dono, trust)
         memoria = None
@@ -366,7 +372,7 @@ class Cerebro:
         self.conversa.turnos.append(Mensagem("jarvis", texto_tocado, interrompida))
         if self.livro is not None:
             self.livro.gravar_turno(
-                session_id=self.session_id,
+                session_id=self.id_da_conversa or self.session_id,
                 papel="jarvis",
                 texto=texto_tocado,
                 trust="system",
