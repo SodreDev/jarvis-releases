@@ -22,10 +22,12 @@ import sys
 import threading
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
+
+from jarvis.apps.resolvedor import RepositorioDeAliases, Resolucao, ResolvedorDeApps
 
 PASTAS_DE_APLICATIVOS: Final[tuple[str, ...]] = (
     "~/.local/share/applications",
@@ -94,6 +96,12 @@ class App:
     categorias: tuple[str, ...] = ()
     esquemas: tuple[str, ...] = ()
     """Os `x-scheme-handler/…` do `MimeType`: `https` é o que faz dele um navegador."""
+    generico: str = ""
+    """`GenericName` do desktop entry; serve para buscar, não para montar argv."""
+    keywords: tuple[str, ...] = ()
+    """`Keywords` do desktop entry; recupera candidatos, mas não é autorização por si só."""
+    exec_nome: str = ""
+    """Nome-base do executável já validado no `Exec`, para a fala "code"/"discord"."""
 
 
 def _sem_acento(texto: str) -> str:
@@ -167,6 +175,18 @@ def ler_desktop(arquivo: Path) -> App | None:
         return None
     identificador = arquivo.name.removesuffix(".desktop")
     nome = campos.get("Name", identificador)
+    generico = campos.get("GenericName[pt_BR]", campos.get("GenericName[pt]", "")) or campos.get(
+        "GenericName", ""
+    )
+    keywords = tuple(
+        dict.fromkeys(
+            palavra
+            for chave in ("Keywords[pt_BR]", "Keywords[pt]", "Keywords")
+            for palavra in campos.get(chave, "").split(";")
+            if palavra
+        )
+    )
+    exec_nome = Path(argv[0]).name
     nomes = tuple(
         dict.fromkeys(
             n
@@ -174,8 +194,9 @@ def ler_desktop(arquivo: Path) -> App | None:
                 nome,
                 campos.get("Name[pt_BR]", ""),
                 campos.get("Name[pt]", ""),
-                campos.get("GenericName[pt_BR]", ""),
+                generico,
                 identificador,
+                exec_nome,
             )
             if n
         )
@@ -193,6 +214,9 @@ def ler_desktop(arquivo: Path) -> App | None:
             for m in campos.get("MimeType", "").split(";")
             if m.startswith("x-scheme-handler/")
         ),
+        generico=generico,
+        keywords=keywords,
+        exec_nome=exec_nome,
     )
 
 
@@ -210,6 +234,7 @@ def app_de_binario(caminho: str) -> App | None:
         nomes=(arquivo.name,),
         argv=(str(arquivo),),
         arquivo=arquivo,
+        exec_nome=arquivo.name,
     )
 
 
@@ -245,11 +270,39 @@ def listar_apps(*, pastas: Sequence[str] = PASTAS_DE_APLICATIVOS) -> tuple[App, 
     return tuple(sorted(visiveis, key=lambda a: _sem_acento(a.nome)))
 
 
+def listar_binarios_do_path(*, ambiente: Mapping[str, str] | None = None) -> tuple[App, ...]:
+    """Binários instalados no ``PATH`` como rótulos de catálogo, sem executá-los.
+
+    Eles não viram autorizados automaticamente: para abrir um deles o dono ainda o escolhe em
+    ``apps_extras``. A coleta existe para a descoberta/hotwords e para não precisar de apelido
+    manual quando um app não instala desktop entry.
+    """
+    fonte = os.environ if ambiente is None else ambiente
+    achados: dict[str, App] = {}
+    for entrada in fonte.get("PATH", "").split(os.pathsep):
+        pasta = Path(entrada)
+        if not entrada or not pasta.is_dir():
+            continue
+        try:
+            arquivos = sorted(pasta.iterdir(), key=lambda arquivo: arquivo.name.casefold())
+        except OSError:
+            continue
+        for arquivo in arquivos:
+            app = app_de_binario(str(arquivo))
+            if app is not None and app.nome not in achados:
+                achados[app.nome] = app
+    return tuple(achados.values())
+
+
 @dataclass(frozen=True, slots=True)
 class RegistroDeApps:
     autorizados: Mapping[str, App]
     instalados: frozenset[str]
     """Ids encontrados no sistema, autorizados ou não — para a sugestão dizer o que falta."""
+    catalogo: Mapping[str, App] = field(default_factory=dict)
+    """Desktop entries e, quando pedido, binários do PATH; não implica autorização."""
+    aliases: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    repositorio_de_aliases: RepositorioDeAliases | None = None
 
     @classmethod
     def montar(
@@ -258,6 +311,9 @@ class RegistroDeApps:
         *,
         pastas: Sequence[str] = PASTAS_DE_APLICATIVOS,
         extras: Iterable[str] = (),
+        incluir_binarios_do_path: bool = False,
+        ambiente: Mapping[str, str] | None = None,
+        repositorio_de_aliases: RepositorioDeAliases | None = None,
     ) -> RegistroDeApps:
         encontrados: dict[str, App] = {}
         for pasta in pastas:
@@ -268,29 +324,55 @@ class RegistroDeApps:
                 app = ler_desktop(arquivo)
                 if app is not None and app.id not in encontrados:
                     encontrados[app.id] = app
+        if incluir_binarios_do_path:
+            for app in listar_binarios_do_path(ambiente=ambiente):
+                encontrados.setdefault(app.id, app)
         pedidos = {a.removesuffix(".desktop") for a in autorizados}
         liberados = {i: encontrados[i] for i in sorted(pedidos) if i in encontrados}
         for caminho in extras:
             escolhido = app_de_caminho(caminho)
             if escolhido is not None:
                 liberados.setdefault(escolhido.id, escolhido)
-        return cls(autorizados=liberados, instalados=frozenset(encontrados))
+                encontrados.setdefault(escolhido.id, escolhido)
+        repositorio = repositorio_de_aliases or RepositorioDeAliases.padrao(ambiente)
+        aliases = repositorio.carregar()
+        return cls(
+            autorizados=liberados,
+            instalados=frozenset(encontrados),
+            catalogo=encontrados,
+            aliases=aliases,
+            repositorio_de_aliases=repositorio,
+        )
+
+    def resolver_detalhado(self, nome: str) -> Resolucao:
+        return ResolvedorDeApps(self.autorizados.values(), aliases=self.aliases).resolver(nome)
 
     def resolver(self, nome: str) -> App:
         """O app autorizado que o dono chamou por este nome — exato, ou o único que começa
         assim. Fora disso, recusa dizendo os parecidos."""
-        alvo = _sem_acento(nome)
-        exatos = [a for a in self.autorizados.values() if alvo in {_sem_acento(n) for n in a.nomes}]
-        if len(exatos) == 1:
-            return exatos[0]
-        prefixos = [
-            a
-            for a in self.autorizados.values()
-            if any(_sem_acento(n).startswith(alvo) for n in a.nomes)
-        ]
-        if len(alvo) >= 3 and len(prefixos) == 1:
-            return prefixos[0]
-        raise AppRecusado(self._sugestao(nome, alvo))
+        resultado = self.resolver_detalhado(nome)
+        if resultado.estado == "encontrado" and resultado.app is not None:
+            # O índice foi construído logo acima só com ``self.autorizados.values()``, que são
+            # Apps. O protocolo do resolvedor evita acoplamento circular; aqui recuperamos o
+            # tipo concreto exigido pelo lançador.
+            return cast(App, resultado.app)
+        if resultado.estado == "ambiguo":
+            raise AppRecusado(
+                "não abri por ambiguidade: " + resultado.pergunta + " Diga o nome completo."
+            )
+        raise AppRecusado(self._sugestao(nome, _sem_acento(nome)))
+
+    def com_correcao(self, fala: str, app_id: str) -> RegistroDeApps:
+        """Persiste uma correção explícita do dono e devolve registro renovado.
+
+        Só aceita um id já autorizado: uma frase parecida nunca amplia o alcance do Jarvis.
+        """
+        if app_id not in self.autorizados:
+            raise AppRecusado("a correção aponta para aplicativo não autorizado")
+        if self.repositorio_de_aliases is None:
+            raise AppRecusado("não há repositório de aliases configurado")
+        self.repositorio_de_aliases.aprender(fala, app_id)
+        return replace(self, aliases=self.repositorio_de_aliases.carregar())
 
     def _sugestao(self, nome: str, alvo: str) -> str:
         if not self.autorizados:

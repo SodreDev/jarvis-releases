@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from jarvis.apps.resolvedor import RepositorioDeAliases
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
 from jarvis.executor.lancador import App, RegistroDeApps, dividir_exec, ler_desktop
 from jarvis.politica.abertura import nome_de_app
@@ -276,6 +277,101 @@ def test_app_marcado_chamado_por_nome_parcial_abre_sem_confirmar(
         )
         assert resultado.status == "ok", (dito, resultado.motivo)
     assert [a.id for a in lancados] == ["brave-browser"] * 4
+
+
+def test_app_autorizado_por_pronuncia_aproximada_abre_o_canonico(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    _desktop(apps, "discord", "discord", "Discord")
+    registro = RegistroDeApps.montar(["discord"], pastas=[str(apps)])
+    lancados: list[App] = []
+
+    def lancar(app: App) -> int:
+        lancados.append(app)
+        return 7
+
+    executor = _executor(
+        casa,
+        auditoria,
+        registro_de_apps=registro,
+        apps_autorizados=frozenset(
+            nome_de_app(nome) for nome in registro.autorizados["discord"].nomes
+        ),
+        lancar_app=lancar,
+    )
+
+    resultado = executor.executar("apps.launch", {"nome": "discórdi"}, cancelado=NUNCA)
+
+    assert resultado.status == "ok", resultado.motivo
+    assert resultado.dados["app"] == "Discord"
+    assert [app.id for app in lancados] == ["discord"]
+
+
+def test_app_ambiguo_pergunta_e_nunca_lanca(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    _desktop(apps, "discord", "discord", "Discord")
+    _desktop(apps, "discord-canary", "discord-canary", "Discord Canary")
+    registro = RegistroDeApps.montar(["discord", "discord-canary"], pastas=[str(apps)])
+    lancados: list[App] = []
+
+    def lancar(app: App) -> int:
+        lancados.append(app)
+        return 7
+
+    executor = _executor(
+        casa,
+        auditoria,
+        registro_de_apps=registro,
+        apps_autorizados=frozenset(
+            nome_de_app(nome) for app in registro.autorizados.values() for nome in app.nomes
+        ),
+        lancar_app=lancar,
+    )
+
+    resultado = executor.executar("apps.launch", {"nome": "discord"}, cancelado=NUNCA)
+
+    assert resultado.status == "negado"
+    assert "você quis dizer Discord, Discord Canary?" in resultado.motivo
+    assert lancados == []
+
+
+def test_correcao_confirmada_vira_alias_sem_ampliar_autorizacao(
+    tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
+) -> None:
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    _desktop(apps, "discord", "discord", "Discord")
+    aliases = RepositorioDeAliases(tmp_path / "estado" / "aliases.json")
+    registro = RegistroDeApps.montar(
+        ["discord"], pastas=[str(apps)], repositorio_de_aliases=aliases
+    )
+    lancados: list[App] = []
+
+    def lancar(app: App) -> int:
+        lancados.append(app)
+        return 7
+
+    executor = _executor(
+        casa,
+        auditoria,
+        registro_de_apps=registro,
+        apps_autorizados=frozenset(
+            nome_de_app(nome) for nome in registro.autorizados["discord"].nomes
+        ),
+        lancar_app=lancar,
+    )
+
+    executor.aprender_correcao_de_app("bate-papo roxo", "discord")
+    resultado = executor.executar("apps.launch", {"nome": "bate-papo roxo"}, cancelado=NUNCA)
+
+    assert aliases.carregar() == {"discord": ("bate-papo roxo",)}
+    assert resultado.status == "ok"
+    assert [app.id for app in lancados] == ["discord"]
 
 
 def _executor_de_navegadores(

@@ -144,7 +144,8 @@ class MotorWhisper:
             language=self.idioma,
             beam_size=self.beam,
             vad_filter=False,
-            hotwords=self.dicas.title() or None,
+            hotwords=self._dicas_para_modelo() or None,
+            initial_prompt=self._prompt_inicial() or None,
         )
         partes = list(trechos)
         texto = " ".join(t.text for t in partes).strip()
@@ -153,6 +154,16 @@ class MotorWhisper:
         # avg_logprob é logaritmo de probabilidade média por token; exp traz para [0, 1].
         media = sum(float(t.avg_logprob) for t in partes) / len(partes)
         return Hipotese(texto, float(min(1.0, max(0.0, 2.718281828**media))))
+
+    def _dicas_para_modelo(self) -> str:
+        """Capitaliza só palavras inteiramente minúsculas e preserva nomes como TeamSpeak."""
+        return " ".join(
+            parte.capitalize() if parte.islower() else parte for parte in self.dicas.strip().split()
+        )
+
+    def _prompt_inicial(self) -> str:
+        dicas = self._dicas_para_modelo()
+        return f"Abra {dicas}." if dicas else ""
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,7 +14,6 @@ O modelo **propõe** (`tool_id` + argumentos nomeados); daqui para baixo, só c�
 
 from __future__ import annotations
 
-import contextlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -193,6 +192,10 @@ class ExecutorDeFerramentas:
         """Cria as pastas de rascunho **antes** de qualquer pedido: é configuração, não efeito."""
         (self.pasta_do_jarvis / arquivos.PASTA_DE_AGENDA).mkdir(parents=True, exist_ok=True)
 
+    def aprender_correcao_de_app(self, fala: str, app_id: str) -> None:
+        """Registra o alias que o dono confirmou; não abre aplicativo nem altera permissões."""
+        self.registro_de_apps = self.registro_de_apps.com_correcao(fala, app_id)
+
     def catalogo_para_o_modelo(self) -> tuple[dict[str, Any], ...]:
         """O catálogo pequeno e fixo do modo (braço C0 da ADR-0024): o que o motor pode propor."""
         return tuple(
@@ -276,8 +279,18 @@ class ExecutorDeFerramentas:
             # "Brave Web Browser". Sem alinhar, app marcado chamado por nome parcial era negado
             # (com a mensagem errada). Resolvido, o nome que a política vê é o do app marcado.
             # Fora do registro, o nome fica como veio: o PDP nega e a sugestão sai abaixo.
-            with contextlib.suppress(AppRecusado):
-                argumentos["nome"] = self.registro_de_apps.resolver(str(argumentos["nome"])).nome
+            resolucao = self.registro_de_apps.resolver_detalhado(str(argumentos["nome"]))
+            if resolucao.estado == "ambiguo":
+                return ResultadoDeFerramenta(
+                    tool_id,
+                    "negado",
+                    motivo=(
+                        "não abri por ambiguidade: " + resolucao.pergunta + " Diga o nome completo."
+                    ),
+                    call_id=chamada,
+                )
+            if resolucao.app is not None:
+                argumentos["nome"] = resolucao.app.nome
         if tool_id == "browser.launch" and self.navegadores is not None:
             dito = str(argumentos.get("navegador", "")).strip()
             familia = self.navegadores.resolver(dito) if dito else None

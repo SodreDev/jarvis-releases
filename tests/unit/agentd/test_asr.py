@@ -235,10 +235,29 @@ def test_a_dica_do_asr_local_vai_para_o_modelo_com_inicial_maiuscula() -> None:
     motor = MotorWhisper(dicas="jarvis")
     motor._modelo = ModeloFalso()
     motor.transcrever(bytes(640))
-    assert chamadas[0]["hotwords"] == "Jarvis"
+    assert str(chamadas[0]["hotwords"]) == "Jarvis"
+    assert str(chamadas[0]["initial_prompt"]) == "Abra Jarvis."
 
     chamadas.clear()
     sem_dica = MotorWhisper()
     sem_dica._modelo = ModeloFalso()
     sem_dica.transcrever(bytes(640))
     assert chamadas[0]["hotwords"] is None
+    assert chamadas[0]["initial_prompt"] is None
+
+
+def test_as_dicas_de_apps_vao_para_hotwords_e_prompt_sem_perder_camelcase() -> None:
+    chamadas: list[dict[str, object]] = []
+
+    class ModeloFalso:
+        def transcribe(self, audio: object, **argumentos: object) -> tuple[list[object], None]:
+            chamadas.append(argumentos)
+            return [], None
+
+    motor = MotorWhisper(dicas="Jarvis, Discord, TeamSpeak")
+    motor._modelo = ModeloFalso()
+
+    motor.transcrever(bytes(640))
+
+    assert chamadas[0]["hotwords"] == "Jarvis, Discord, TeamSpeak"
+    assert chamadas[0]["initial_prompt"] == "Abra Jarvis, Discord, TeamSpeak."
