@@ -29,9 +29,13 @@ from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
 from jarvis.executor.navegadores import AbridorDeNavegador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
 from jarvis.manifesto.validador import carregar_catalogo
+from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
+from jarvis.memoryd.livro import AlvoInexistente
 from jarvis.politica.canonicalizacao import CaminhoRecusado, Sistema, canonicalizar
 from jarvis.politica.descritor import AberturaRecusada, RaizAberta, abrir_raiz
+from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.pdp import Decisao, Grant, Pdp, Pedido, Veredito
+from jarvis.voz.interface import Onde
 
 PRAZO_DE_CONFIRMACAO_S: Final = 30.0
 LIMITE_PARA_O_MODELO: Final = 6000
@@ -48,7 +52,22 @@ FERRAMENTAS_LIGADAS: Final = frozenset(
         "browser.launch",
     }
 )
-"""As que têm corpo aqui. Manifesto sem corpo (memória, lixeira) não aparece para o modelo."""
+"""As que têm corpo aqui. Manifesto sem corpo (lixeira, instalar) não aparece para o modelo."""
+FERRAMENTAS_DE_MEMORIA: Final = frozenset(
+    {
+        "memoria.buscar",
+        "memoria.buscar_historico",
+        "memoria.ler_mensagem",
+        "memoria.lembrar",
+        "memoria.atualizar",
+        "memoria.criar_no",
+        "memoria.criar_aresta",
+        "memoria.retratar",
+        "memoria.apagar",
+    }
+)
+"""As `memoria.*` (ADR-0026): o corpo é do `FerramentasDeMemoria`, e só existem para o modelo
+quando há livro aberto (o histórico persistente) — sem ele, a persona não promete o que não há."""
 
 Cancelado = Callable[[], bool]
 
@@ -110,6 +129,11 @@ class ExecutorDeFerramentas:
     sistema: Sistema = Sistema.POSIX
     prazo_de_confirmacao_s: float = PRAZO_DE_CONFIRMACAO_S
     manifestos: dict[str, dict[str, Any]] = field(default_factory=carregar_catalogo)
+    memoria: FerramentasDeMemoria | None = None
+    """O livro do dono, quando há (a conversa persistente). Liga as `memoria.*` ao modelo."""
+    destino_onde: Onde = Onde.LOCAL
+    destino_motor: str = ""
+    """Quem vai ler o resultado: o D20 filtra o que da memória pode ir para este motor."""
 
     @property
     def pasta_do_jarvis(self) -> Path:
@@ -132,8 +156,16 @@ class ExecutorDeFerramentas:
                 "obrigatorios": self.manifestos[tool_id]["input_schema"].get("required", []),
             }
             for tool_id in self.pdp.allowlist()
-            if tool_id in FERRAMENTAS_LIGADAS and tool_id in self.manifestos
+            if self._ligada(tool_id)
         )
+
+    def _ligada(self, tool_id: str) -> bool:
+        """Tem corpo aqui, manifesto no catálogo e (se for de memória) um livro aberto."""
+        if tool_id not in self.manifestos:
+            return False
+        if tool_id in FERRAMENTAS_DE_MEMORIA:
+            return self.memoria is not None
+        return tool_id in FERRAMENTAS_LIGADAS
 
     def _descricao(self, tool_id: str) -> str:
         texto = " ".join(str(self.manifestos[tool_id]["description"]).split())
@@ -159,9 +191,10 @@ class ExecutorDeFerramentas:
         confirmar: Confirmar = negar_sempre,
         session_id: str = "",
         call_id: str = "",
+        proveniencia: Proveniencia | None = None,
     ) -> ResultadoDeFerramenta:
         chamada = call_id or f"c-{uuid7()}"
-        if tool_id not in FERRAMENTAS_LIGADAS or tool_id not in self.manifestos:
+        if not self._ligada(tool_id):
             return ResultadoDeFerramenta(
                 tool_id,
                 "negado",
@@ -200,6 +233,7 @@ class ExecutorDeFerramentas:
             caminho=caminho,
             session_id=session_id,
             call_id=chamada,
+            proveniencia=proveniencia,
         )
         decisao = self.pdp.decidir(pedido)
         if decisao.veredito is Veredito.CONFIRM:
@@ -227,7 +261,9 @@ class ExecutorDeFerramentas:
             if tool_id == "apps.launch":
                 motivo = self._sugestao_de_app(str(argumentos["nome"]), motivo)
             return ResultadoDeFerramenta(tool_id, "negado", motivo=motivo, call_id=chamada)
-        resultado = self._rodar(tool_id, argumentos, decisao, caminho, cancelado, chamada)
+        resultado = self._rodar(
+            tool_id, argumentos, decisao, caminho, cancelado, chamada, proveniencia
+        )
         self.pdp.auditoria.anexar_resultado(decisao.decision_id, resultado.status, resultado.motivo)
         return resultado
 
@@ -239,6 +275,7 @@ class ExecutorDeFerramentas:
         caminho: str | None,
         cancelado: Cancelado,
         chamada: str,
+        proveniencia: Proveniencia | None = None,
     ) -> ResultadoDeFerramenta:
         if cancelado():
             return ResultadoDeFerramenta(
@@ -246,12 +283,43 @@ class ExecutorDeFerramentas:
             )
         assert decisao.grant is not None
         try:
-            dados = self._corpo(tool_id, args, decisao.grant, caminho, cancelado)
+            if tool_id in FERRAMENTAS_DE_MEMORIA:
+                dados = self._memoria(tool_id, args, decisao, proveniencia)
+            else:
+                dados = self._corpo(tool_id, args, decisao.grant, caminho, cancelado)
         except arquivos.Cancelada as erro:
             return ResultadoDeFerramenta(tool_id, "cancelado", motivo=str(erro), call_id=chamada)
-        except (AberturaRecusada, OSError, ValueError, AppRecusado, UrlRecusada) as erro:
+        except (
+            AberturaRecusada,
+            AlvoInexistente,
+            NaoAutorizado,
+            OSError,
+            ValueError,
+            AppRecusado,
+            UrlRecusada,
+        ) as erro:
             return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
         return ResultadoDeFerramenta(tool_id, "ok", dados=dados, call_id=chamada)
+
+    def _memoria(
+        self,
+        tool_id: str,
+        args: dict[str, Any],
+        decisao: Decisao,
+        proveniencia: Proveniencia | None,
+    ) -> dict[str, Any]:
+        """Corpo das `memoria.*`: aqui a decisão já é `allow` (se houve confirmação, foi do dono)."""
+        assert self.memoria is not None
+        return self.memoria.executar(
+            Chamada(
+                tool_id=tool_id,
+                args=args,
+                decisao=decisao,
+                proveniencia=proveniencia,
+                destino_onde=self.destino_onde,
+                destino_motor=self.destino_motor,
+            )
+        )
 
     def _corpo(
         self,
@@ -362,6 +430,8 @@ class ExecutorDeFerramentas:
             )
         if tool_id == "apps.launch":
             return f"abrir o aplicativo «{args['nome']}»"
+        if tool_id in FERRAMENTAS_DE_MEMORIA:
+            return f"{self.manifestos[tool_id]['title'].lower()} ({_resumo(args)})"
         if tool_id == "browser.launch":
             return f"abrir o navegador «{args.get('navegador') or 'principal'}»"
         return f"{tool_id} com {json.dumps(dict(args), ensure_ascii=False)[:160]}"
@@ -372,3 +442,8 @@ class ExecutorDeFerramentas:
         except AppRecusado as erro:
             return str(erro)
         return motivo
+
+
+def _resumo(args: Mapping[str, Any]) -> str:
+    """Os argumentos em uma linha para o dono ler na confirmação (texto puro, truncado)."""
+    return json.dumps(dict(args), ensure_ascii=False)[:160]

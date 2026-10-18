@@ -46,8 +46,8 @@ from jarvis.s2.motor import (
     PedidoDeTool,
     Pensar,
 )
+from jarvis.s2.persona import prompt_de_sistema
 from jarvis.voz.interface import Cancelado, nunca_cancelado
-from jarvis.voz.s2_provisorio import PROMPT_DE_SISTEMA
 
 MAXIMO_DE_RODADAS: Final = 4
 """Quantas vezes o motor pode pedir ferramenta num turno antes de ter de responder (ADR-0028)."""
@@ -64,7 +64,8 @@ Publicar = Callable[[dict[str, Any]], None]
 class Conversa:
     """Os turnos estáveis da sessão. Do Jarvis, só o que tocou."""
 
-    sistema: str = PROMPT_DE_SISTEMA
+    sistema: str = field(default_factory=prompt_de_sistema)
+    """A persona (`persona.md`), no lugar do prompt curto do provisório."""
     turnos: list[Mensagem] = field(default_factory=list)
     maximo: int = TURNOS_NO_CONTEXTO
 
@@ -305,6 +306,7 @@ class Cerebro:
             cancelado=cancelado,
             confirmar=self.confirmar,
             session_id=self.session_id,
+            proveniencia=self.proveniencia,
         )
 
     def avisar(

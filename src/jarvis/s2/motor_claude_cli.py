@@ -40,8 +40,9 @@ from jarvis.s2.motor import (
     PedidoDeTool,
     Texto,
 )
+from jarvis.s2.persona import prompt_de_sistema
 from jarvis.voz.interface import Cancelado, Onde
-from jarvis.voz.s2_provisorio import FERRAMENTAS_PROIBIDAS, PROMPT_DE_SISTEMA
+from jarvis.voz.s2_provisorio import FERRAMENTAS_PROIBIDAS
 
 COMANDO_PADRAO: Final = ("claude",)
 VARIAVEL_SEM_TRAFEGO: Final = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
@@ -221,7 +222,8 @@ class MotorClaudeCli:
     """Uma pasta **vazia**: o processo não enxerga o projeto do dono (ADR-0018, regra 1)."""
     comando: Sequence[str] = COMANDO_PADRAO
     modelo: str = ""
-    sistema: str = PROMPT_DE_SISTEMA
+    sistema: str = field(default_factory=prompt_de_sistema)
+    """Só vale quando o contexto não traz o seu: o cérebro sempre traz (a persona)."""
     prazo_s: float = PRAZO_PADRAO_S
     ambiente: Mapping[str, str] | None = None
     nome: str = "claude-cli em stream (provisório, ADR-0018/0025)"
@@ -240,8 +242,17 @@ class MotorClaudeCli:
     extras: Sequence[str] = ()
     """Flags a mais no `argv`, para medição."""
 
-    def argumentos(self, modo: Modo, ferramentas: Sequence[Mapping[str, object]] = ()) -> list[str]:
-        """O `argv` completo — **sem** a fala do dono, que vai por `stdin`."""
+    def argumentos(
+        self,
+        modo: Modo,
+        ferramentas: Sequence[Mapping[str, object]] = (),
+        sistema: str = "",
+    ) -> list[str]:
+        """O `argv` completo — **sem** a fala do dono, que vai por `stdin`.
+
+        `sistema` é o prompt que o **cérebro** montou (persona + o que a memória lembrou + os
+        avisos já ditos): a conversa é nossa (ADR-0025, regra 2). Sem ele, vale o do motor.
+        """
         argumentos = [
             *self.comando,
             "--print",
@@ -250,7 +261,7 @@ class MotorClaudeCli:
             "stream-json",
             "--include-partial-messages",
             "--system-prompt",
-            sistema_com_ferramentas(self.sistema, ferramentas),
+            sistema_com_ferramentas(sistema or self.sistema, ferramentas),
             "--tools",
             "",
             "--disallowed-tools",
@@ -290,7 +301,7 @@ class MotorClaudeCli:
             return
         try:
             processo = subprocess.Popen(  # noqa: S603 — argv explícito, sem shell
-                self.argumentos(modo, contexto.ferramentas),
+                self.argumentos(modo, contexto.ferramentas, contexto.sistema),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

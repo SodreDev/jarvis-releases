@@ -66,6 +66,7 @@ from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
 from jarvis.executor.lancador import RegistroDeApps
 from jarvis.executor.navegadores import AbridorDeNavegador, separar
 from jarvis.memoryd.conversa import ConversaPersistente
+from jarvis.memoryd.ferramentas import FerramentasDeMemoria
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
 from jarvis.politica.abertura import nome_de_app
 from jarvis.politica.auditoria import LogDeAuditoria
@@ -505,6 +506,18 @@ class Aplicativo:
             for t in conversa.recentes()
         ]
 
+    def _ligar_a_memoria(self, cerebro: Cerebro) -> None:
+        """As tools `memoria.*` só existem para o modelo quando há livro (a persona manda usá-las
+        quando o dono pede para lembrar), e o D20 precisa saber **qual** motor vai lê-las."""
+        if self.ferramentas is None:
+            return
+        self.ferramentas.destino_onde = cerebro.motor.onde
+        self.ferramentas.destino_motor = cerebro.motor.nome
+        if cerebro.livro is not None and self.ferramentas.memoria is None:
+            self.ferramentas.memoria = FerramentasDeMemoria(
+                livro=cerebro.livro, alcance=cerebro.alcance_de_memoria
+            )
+
     def _abrir_o_detector(self) -> DetectorDeEnderecamento | None:
         """O detector de endereçamento que o dono escolheu — ou `None`, com a razão na tela.
 
@@ -725,6 +738,7 @@ class Aplicativo:
         cerebro = self._cerebro
         cerebro.motor = self._motor
         self._sincronizar_conversa(cerebro)
+        self._ligar_a_memoria(cerebro)
 
         epoch = self.epoch
         self._turno_cancelado = False

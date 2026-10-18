@@ -181,3 +181,29 @@ def test_nova_conversa_no_laco_esquece_o_contexto_no_turno_seguinte(tmp_path: Pa
     aplicativo.rodar_texto(["segundo assunto"])
 
     assert [m.texto for m in motor.pedidos[-1].mensagens] == ["segundo assunto"]
+
+
+def test_com_historico_o_laco_liga_as_ferramentas_de_memoria_ao_modelo(tmp_path: Path) -> None:
+    """A persona manda usar `memoria.*`: só existe para o modelo se há livro aberto."""
+    configuracao = Configuracao(asr="asr-whisper-local", tts="tts-parametrico", s2="eco")
+    ambiente = {"JARVIS_AUDIO_BACKEND": "arquivo"}
+
+    def ids(conversa: ConversaPersistente | None, raiz: Path) -> set[str]:
+        aplicativo = Aplicativo(
+            configuracao=configuracao,
+            raiz=raiz,
+            ambiente=ambiente,
+            caminho_de_saida=raiz / "saida.wav",
+            conversa=conversa,
+        )
+        aplicativo._motor = MotorRoteirizado(resposta="Certo.")
+        aplicativo.abrir(com_asr=False)
+        aplicativo.rodar_texto(["oi"])
+        assert aplicativo.ferramentas is not None
+        return {t["id"] for t in aplicativo.ferramentas.catalogo_para_o_modelo()}
+
+    com = ids(_abrir(tmp_path / "com"), tmp_path / "com")
+    sem = ids(None, tmp_path / "sem")
+
+    assert "memoria.lembrar" in com and "memoria.buscar_historico" in com
+    assert not {i for i in sem if i.startswith("memoria.")}
