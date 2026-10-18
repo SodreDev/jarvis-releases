@@ -1,6 +1,6 @@
 # ADR-0027 — Navegador controlável: extensão própria, entrada virtual e PDP por ação
 
-**Data:** 2026-10-17 · **Estado:** proposta · **Decide:** dono (aceitar; quais navegadores;
+**Data:** 2026-10-17 · **Estado:** aceita em 2026-10-18 · **Decide:** dono (navegadores;
 loja ou sideload; quando "responder pelo dono" entra), planejador (o desenho e a prova)
 **Pedido:** dono, 2026-10-17 (ajuste da fatia 6 do roteiro da F2): para a fase seguinte, o
 Jarvis controla o navegador como o "Claude in Chrome" — uma **extensão própria** distribuída
@@ -10,6 +10,15 @@ por script de página); **PDP por ação**; **indicador visível** de quando a I
 **botão de parar imediato**; páginas sensíveis (banco, senhas, mensageiros) **só com
 confirmação explícita**; e "responder mensagens pelo dono" como **fase posterior**, com opt-in
 por conversa. **Sem implementar nesta fatia.**
+
+## Histórico de decisão
+
+- **2026-10-18 — aceita pelo dono.** O produto terá uma extensão WebExtension própria, entregue
+  com os releases e controlada pelo Jarvis, além de mouse e teclado virtuais. Acionar uma função
+  ou ação do DOM é equivalente a clicar o elemento; em sites que proíbem automação (inclusive
+  Instagram e WhatsApp Web), a interação usa mouse e teclado virtuais. A ponte continua sendo
+  native messaging por `stdio`, sem porta de rede aberta. Esta decisão substitui as perguntas
+  abertas sobre aceitar a ADR e inclui Firefox e Chromium no v1.
 
 ## Contexto
 
