@@ -75,6 +75,24 @@ INSTRUCAO_DE_FERRAMENTAS: Final = (
 )
 
 
+LIMITE_DA_DESCRICAO: Final = 230
+
+
+def _curta(descricao: str) -> str:
+    """As primeiras frases da descrição, até ~230 caracteres: com mais de 40 ferramentas, a lista
+    inteira custaria milhares de tokens em **todo** turno (e o dono julga latência)."""
+    texto = " ".join(descricao.split())
+    if len(texto) <= LIMITE_DA_DESCRICAO:
+        return texto
+    frases = re.split(r"(?<=[.!?])\s+", texto)
+    saida = ""
+    for frase in frases:
+        if saida and len(saida) + len(frase) + 1 > LIMITE_DA_DESCRICAO:
+            break
+        saida = f"{saida} {frase}".strip()
+    return saida[:LIMITE_DA_DESCRICAO]
+
+
 def sistema_com_ferramentas(sistema: str, ferramentas: Sequence[Mapping[str, object]]) -> str:
     """O prompt de sistema com o catálogo fixo do modo (C0). Sem ferramentas, fica como estava."""
     if not ferramentas:
@@ -86,7 +104,8 @@ def sistema_com_ferramentas(sistema: str, ferramentas: Sequence[Mapping[str, obj
         pedidos = ferramenta.get("obrigatorios")
         obrigatorios = ", ".join(str(o) for o in pedidos) if isinstance(pedidos, list) else ""
         linhas.append(
-            f"- {ferramenta['id']}: {ferramenta['descricao']} Argumentos: {argumentos}. "
+            f"- {ferramenta['id']}: {_curta(str(ferramenta['descricao']))} "
+            f"Argumentos: {argumentos}. "
             f"Obrigatórios: {obrigatorios or 'nenhum'}."
         )
     return "\n".join(linhas)

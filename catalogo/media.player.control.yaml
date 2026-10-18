@@ -1,0 +1,56 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: media.player.control
+title: Controlar a mídia
+description: Toca, pausa, alterna, passa para a próxima, volta para a anterior ou para a música ou vídeo que está
+  tocando (MPRIS). Use quando o dono pedir para dar play, pausar, próxima faixa e afins. Não escolhe o que tocar,
+  não abre o player e não controla o volume.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - acao
+  properties:
+    acao:
+      enum:
+      - tocar
+      - pausar
+      - alternar
+      - proxima
+      - anterior
+      - parar
+    player:
+      type: string
+      minLength: 1
+      maxLength: 40
+output_schema:
+  type: object
+  required:
+  - acao
+preconditions: []
+postcondition: o player que estava tocando (ou o pedido) recebeu o comando
+capability: media.player.control
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

@@ -30,7 +30,9 @@ REQUIRES_ELEVATION: Final = False
 IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 1000
 ROOTS: Final[tuple[str, ...]] = ()
-POSTCONDITION: Final = "a tarefa existe, roda em linha própria e é cancelável; o id voltou sem esperar o fim"
+POSTCONDITION: Final = (
+    "a tarefa existe, roda em linha própria e é cancelável; o id voltou sem esperar o fim"
+)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,0 +1,52 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: files.create_dir
+title: Criar uma pasta
+description: Cria uma pasta nova (um nível só) dentro de uma pasta que já existe, nas raízes liberadas para escrita.
+  Use quando o dono pedir para criar uma pasta. Não sobrescreve nem renomeia nada, não cria em pasta que não existe
+  e avisa em voz; dá para desfazer.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - path
+  properties:
+    path:
+      type: string
+      minLength: 2
+      maxLength: 1024
+output_schema:
+  type: object
+  required:
+  - caminho
+  - nome
+preconditions: []
+postcondition: a pasta nova existe, vazia, dentro da raiz liberada
+capability: files.create_dir
+risk_class: escrita_recuperavel
+side_effect: persistent
+reversible: true
+undo: acao.desfazer
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: path_only
+confirmation: never
+tier: moderado
+aviso_falado: Criei a pasta {nome}.
+access_level_min: jarvis
+roots:
+- jarvis_root
+requires_elevation: false
+timeout_ms: 2000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-files
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

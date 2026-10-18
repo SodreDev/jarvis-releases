@@ -56,13 +56,17 @@ PACOTES_SEM_SHELL = ("executor", "policy")
 
 EXCECOES: dict[str, frozenset[str]] = {
     "executor/lancador.py": frozenset({"import subprocess"}),
+    "executor/comandos.py": frozenset({"import subprocess"}),
     "executor/sites.py": frozenset({"chamada startfile()"}),
 }
-"""As duas únicas aberturas, nomeadas (ADR-0028): abrir um app **do registro autorizado pelo
-dono**, com `argv` do `.desktop` e sem shell (`subprocess.Popen` com `start_new_session`, no lugar
-do `posix_spawn(setsid=True)` que nem toda plataforma tem — 2026-10-17); e abrir uma URL validada
-com o "abrir com o padrão" do Windows. Qualquer outro arquivo do executor que crie processo cai
-neste teste. `shell=True` segue barrado pelo linter (regras `S`) e `posix_spawn` segue proibido."""
+"""As três únicas aberturas, nomeadas (ADR-0028). A terceira, `comandos.py` (2026-10-18), chama o
+desktop — volume, brilho, mídia, janelas, área de transferência, notificação — por **argv fixo** de
+uma lista fechada de programas, sem shell e com lançador injetável. As duas primeiras: abrir um app
+**do registro autorizado pelo dono**, com `argv` do `.desktop` e sem shell (`subprocess.Popen` com
+`start_new_session`, no lugar do `posix_spawn(setsid=True)` que nem toda plataforma tem —
+2026-10-17); e abrir uma URL validada com o "abrir com o padrão" do Windows. Qualquer outro arquivo
+do executor que crie processo cai neste teste. `shell=True` segue barrado pelo linter (regras `S`)
+e `posix_spawn` segue proibido."""
 
 
 def arquivos(pacote: str) -> list[Path]:

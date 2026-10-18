@@ -1,0 +1,41 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: media.player.status
+title: O que está tocando
+description: Diz qual player de mídia está aberto, se está tocando ou pausado e o título e artista. Use quando o
+  dono perguntar o que está tocando. Não muda nada e não busca letra nem informação na internet.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - players
+preconditions: []
+postcondition: a resposta lista os players de mídia abertos no instante da chamada, ou diz que não há nenhum
+capability: media.player.status
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: metadata
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

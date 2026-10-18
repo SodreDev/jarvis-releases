@@ -30,7 +30,9 @@ REQUIRES_ELEVATION: Final = False
 IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 1000
 ROOTS: Final[tuple[str, ...]] = ()
-POSTCONDITION: Final = "a tarefa recebe o cancelamento e vira cancelada na próxima checagem do passo em curso"
+POSTCONDITION: Final = (
+    "a tarefa recebe o cancelamento e vira cancelada na próxima checagem do passo em curso"
+)
 
 
 @dataclass(frozen=True, slots=True)

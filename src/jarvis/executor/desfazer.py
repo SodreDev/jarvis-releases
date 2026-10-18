@@ -50,15 +50,20 @@ class Desfazer:
     tipo: str
     """`lixeira` (arquivo novo → `lixeira/`) ou `retratar` (memória)."""
     alvo: str
-    """O caminho absoluto do arquivo, ou o id da memória."""
+    """O caminho absoluto do arquivo, ou o id da memória, da tarefa ou do alarme."""
+    extra: str = ""
+    """O que o desfazer precisa além do alvo: para onde voltar um arquivo movido, o texto que a
+    área de transferência tinha."""
 
 
 @dataclass(slots=True)
 class RegistroDeDesfazeres:
     itens: deque[Desfazer] = field(default_factory=lambda: deque(maxlen=LIMITE_DO_REGISTRO))
 
-    def registrar(self, tool_id: str, descricao: str, tipo: str, alvo: str) -> Desfazer:
-        desfazer = Desfazer(f"a-{uuid7()[-8:]}", tool_id, descricao, tipo, alvo)
+    def registrar(
+        self, tool_id: str, descricao: str, tipo: str, alvo: str, extra: str = ""
+    ) -> Desfazer:
+        desfazer = Desfazer(f"a-{uuid7()[-8:]}", tool_id, descricao, tipo, alvo, extra)
         self.itens.append(desfazer)
         return desfazer
 

@@ -1,0 +1,42 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: system.machine.status
+title: Estado da máquina
+description: 'Diz como está o computador: bateria, rede, uso de CPU, memória e espaço em disco. Use quando o dono
+  perguntar sobre bateria, internet, lentidão ou espaço. Não lista processos, não mexe em nada e não inventa o que
+  a máquina não tem (sem bateria, ele diz isso).'
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - rede
+preconditions: []
+postcondition: a resposta reflete /proc, /sys e o disco agora; o que não existe não aparece
+capability: system.machine.status
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: metadata
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 2000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-sistema
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

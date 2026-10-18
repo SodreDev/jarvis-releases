@@ -1,0 +1,47 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: timer.alarm.cancel
+title: Cancelar alarme
+description: Cancela um alarme ou lembrete marcado, pelo id que a lista ou a marcação devolveu. Use quando o dono
+  pedir para desmarcar. Não apaga os que já dispararam e não mexe em outro alarme.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - alarme_id
+  properties:
+    alarme_id:
+      type: string
+      minLength: 3
+      maxLength: 40
+output_schema:
+  type: object
+  required:
+  - alarme_id
+preconditions: []
+postcondition: o alarme saiu da agenda e do disco
+capability: timer.alarm.cancel
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 1000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-alarmes
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

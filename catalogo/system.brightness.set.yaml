@@ -1,0 +1,49 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: system.brightness.set
+title: Mudar o brilho da tela
+description: 'Muda o brilho da tela: um `nivel` de 0 a 100 ou um `delta` para aumentar ou diminuir. Use quando o
+  dono pedir mais ou menos brilho. Nunca apaga a tela (o mínimo é 1%) e não controla monitor externo.'
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    nivel:
+      type: integer
+      minimum: 0
+      maximum: 100
+    delta:
+      type: integer
+      minimum: -100
+      maximum: 100
+output_schema:
+  type: object
+  required:
+  - brilho_pct
+preconditions: []
+postcondition: o brilho da tela passou ao valor pedido (limitado entre 1% e 100%)
+capability: system.brightness.set
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

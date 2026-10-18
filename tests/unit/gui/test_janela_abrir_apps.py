@@ -123,7 +123,7 @@ def _montar(
         modulo_app,
         "RegistroDeApps",
         SimpleNamespace(
-            montar=lambda autorizados, extras=(): RegistroDeApps.montar(
+            montar=lambda autorizados, extras=(), **_resto: RegistroDeApps.montar(
                 autorizados, pastas=[str(maquina.pasta)], extras=extras
             )
         ),

@@ -1,0 +1,49 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: clipboard.text.write
+title: Escrever na área de transferência
+description: 'Põe um texto na área de transferência para o dono colar. Use quando ele pedir para copiar algo. Substitui
+  o que estava lá (dá para desfazer: o texto anterior volta) e não cola em lugar nenhum nem lê o que já havia.'
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - texto
+  properties:
+    texto:
+      type: string
+      minLength: 1
+      maxLength: 20000
+output_schema:
+  type: object
+  required:
+  - caracteres
+preconditions: []
+postcondition: a área de transferência tem o texto pedido
+capability: clipboard.text.write
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: true
+undo: acao.desfazer
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: moderado
+aviso_falado: Copiei o texto para a área de transferência.
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

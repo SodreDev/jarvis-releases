@@ -30,6 +30,7 @@ mentir.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import queue
 import threading
@@ -51,6 +52,7 @@ from jarvis.agentd.tts import (
     Trecho,
     fatiar,
 )
+from jarvis.apps.resolvedor import RepositorioDeAliases, dicas_de_apps
 from jarvis.audio_io.ambiente import Backend, backend_escolhido
 from jarvis.audio_io.backend import dispositivo_pedido, fonte_do_ambiente, sumidouro_do_ambiente
 from jarvis.audio_io.captura import Captura
@@ -62,8 +64,10 @@ from jarvis.audio_io.vad import Vad, vad_do_ambiente
 from jarvis.barramento.envelope import Envelope, Trust, uuid7
 from jarvis.decisao.enderecamento import DetectorDeEnderecamento, Motivo
 from jarvis.decisao.openrouter import ClassificadorOpenRouter
+from jarvis.executor import desktop
+from jarvis.executor.alarmes import Alarme, agenda_compartilhada
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
-from jarvis.executor.lancador import RegistroDeApps
+from jarvis.executor.lancador import RegistroDeApps, listar_apps
 from jarvis.executor.navegadores import AbridorDeNavegador, separar
 from jarvis.memoryd.conversa import ConversaPersistente
 from jarvis.memoryd.ferramentas import FerramentasDeMemoria
@@ -171,8 +175,13 @@ def motor_de_asr(
     raiz: Path,
     cancelado: Callable[[], bool],
     ambiente: Mapping[str, str] | None = None,
+    dicas_apps: Iterable[str] = (),
 ) -> MotorDeAsr:
-    """O motor de ASR que a configuração pediu, já pelo portão (ADR-0017)."""
+    """O motor de ASR que a configuração pediu, já pelo portão (ADR-0017).
+
+    `dicas_apps` são os nomes dos apps instalados: o ASR local os recebe como `hotwords` e
+    `initial_prompt`, para "abre o Discord" não virar "abre o disco" (pedido do dono, 2026-10-18; o
+    resolvedor de `jarvis.apps` faz o resto, contra o registro)."""
     falta = o_que_falta(
         configuracao.asr, configuracao, ambiente=ambiente, pasta_de_vozes=PASTA_DE_VOZES
     )
@@ -202,7 +211,7 @@ def motor_de_asr(
     local = MotorWhisper(
         tamanho=configuracao.modelo_do_asr,
         pasta=str(PASTA_DE_VOZES.parent),
-        dicas=configuracao.palavra,
+        dicas=dicas_de_apps(dicas_apps, primeira=configuracao.palavra),
     )
     local.abrir()
     return local
@@ -498,7 +507,30 @@ class Aplicativo:
         self._sincronizar_conversa(self._cerebro)
         if self.ferramentas.tarefas is None:
             self.ferramentas.tarefas = self._montar_tarefas(self.ferramentas)
+        self.ferramentas.portas().ambiente = self.ambiente
+        self.ferramentas.portas().agenda = agenda_compartilhada(
+            self.raiz / "area" / "alarmes.json", self._alarme_disparou
+        )
         self._aquecer()
+
+    def _alarme_disparou(self, alarme: Alarme) -> None:
+        """Um lembrete venceu: entra pela fila de avisos (ADR-0025) — o Jarvis decide como dizê-lo,
+        sem cortar fala — e também vira notificação do desktop, que chega mesmo com a janela
+        escondida. O que venceu com o Jarvis fechado sai marcado como atrasado."""
+        atraso = " (atrasado: venceu com o Jarvis fechado)" if alarme.atrasado else ""
+        texto = alarme.mensagem + atraso
+        self.receber_aviso(
+            notificacao(
+                self.session_id,
+                f"alarme-{alarme.id}",
+                tipo="evento",
+                origem="lembrete",
+                resumo=texto,
+            )
+        )
+        if self.ferramentas is not None:
+            with contextlib.suppress(Exception):  # sem notify-send, o aviso da fila basta
+                desktop.notificar(self.ferramentas.portas().lancar, "Jarvis", texto)
 
     # --- tarefas em segundo plano (ADR-0022) ----------------------------------------------
     def _montar_tarefas(self, executor: ExecutorDeFerramentas) -> GestorDeTarefas:
@@ -627,6 +659,13 @@ class Aplicativo:
         self.registrar_aviso("falhou", "endereçamento", frase)
         return None
 
+    def _nomes_dos_apps(self) -> list[str]:
+        """Os apps instalados (`.desktop`), pelo nome que o dono fala — dica para o ASR."""
+        try:
+            return [app.nome for app in listar_apps()]
+        except OSError:  # sem pasta de apps legível, o ASR só perde a dica
+            return []
+
     def _abrir_o_ouvido(self, cancelado: Callable[[], bool]) -> MotorDeAsr:
         """O ASR escolhido — ou, se ele é de nuvem e não roda, o local, com uma linha dizendo.
 
@@ -637,7 +676,11 @@ class Aplicativo:
         """
         try:
             return motor_de_asr(
-                self.configuracao, raiz=self.raiz, cancelado=cancelado, ambiente=self.ambiente
+                self.configuracao,
+                raiz=self.raiz,
+                cancelado=cancelado,
+                ambiente=self.ambiente,
+                dicas_apps=self._nomes_dos_apps(),
             )
         except (OuvidoIndisponivel, MotorRecusado, SegredoAusente, ErroDeRede, ImportError) as erro:
             escolhido = motor_registrado(self.configuracao.asr)
@@ -648,6 +691,7 @@ class Aplicativo:
                         raiz=self.raiz,
                         cancelado=cancelado,
                         ambiente=self.ambiente,
+                        dicas_apps=self._nomes_dos_apps(),
                     )
                 except (AplicativoIndisponivel, MotorRecusado, ErroDeRede, ImportError):
                     local = None
@@ -671,7 +715,11 @@ class Aplicativo:
         sistema = Sistema.WINDOWS if os.name == "nt" else Sistema.POSIX
         self._auditoria = LogDeAuditoria(self.raiz / "auditoria.sqlite")
         registro = RegistroDeApps.montar(
-            self.configuracao.apps_autorizados, extras=self.configuracao.apps_extras
+            self.configuracao.apps_autorizados,
+            extras=self.configuracao.apps_extras,
+            incluir_binarios_do_path=True,
+            ambiente=self.ambiente,
+            repositorio_de_aliases=RepositorioDeAliases.padrao(self.ambiente),
         )
         pdp = Pdp(
             catalogo=carregar_catalogo(),

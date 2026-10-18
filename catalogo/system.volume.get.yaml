@@ -1,0 +1,42 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: system.volume.get
+title: Volume atual
+description: Diz o volume do som do computador e se está mudo. Use quando o dono perguntar quanto está o volume.
+  Não muda nada e não fala do volume de um aplicativo específico.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - volume_pct
+  - mudo
+preconditions: []
+postcondition: o volume devolvido é o do dispositivo de saída padrão no instante da chamada
+capability: system.volume.get
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

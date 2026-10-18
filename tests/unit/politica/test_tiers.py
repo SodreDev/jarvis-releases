@@ -60,6 +60,28 @@ TIER_ESPERADO: dict[str, str] = {
     "memoria.atualizar": "perigoso",
     "memoria.retratar": "perigoso",
     "system.install_package": "perigoso",
+    # item 4 do pedido do dono (tools nativas de assistente de voz)
+    "system.clock.now": "livre",
+    "system.machine.status": "livre",
+    "system.volume.get": "livre",
+    "system.volume.set": "livre",
+    "system.brightness.set": "livre",
+    "media.player.control": "livre",
+    "media.player.status": "livre",
+    "window.list": "livre",
+    "window.focus_app": "livre",
+    "window.close_app": "perigoso",
+    "clipboard.text.read": "livre",
+    "clipboard.text.write": "moderado",
+    "notify.desktop.send": "livre",
+    "timer.alarm.set": "moderado",
+    "timer.alarm.list": "livre",
+    "timer.alarm.cancel": "livre",
+    "web.buscar": "livre",
+    "web.ler": "livre",
+    "files.create_dir": "moderado",
+    "files.copy": "moderado",
+    "files.move": "moderado",
 }
 
 
@@ -117,7 +139,7 @@ def test_o_lint_pega_argumento_que_deixaria_a_ia_confirmar() -> None:
     assert any(a.regra == "autoconfirmacao" for a in achados)
 
 
-# --- o validador recusa tier incoerente ---------------------------------------------------
+# --- o validador recusa tier incoerente -----------------------------------------------------
 def _com(base: str, **mudancas: Any) -> dict[str, Any]:
     manifesto = dict(MANIFESTOS[base]) | mudancas
     return {k: v for k, v in manifesto.items() if v != "(sem o campo)"}
@@ -161,7 +183,7 @@ def test_manifesto_sem_tier_e_recusado() -> None:
         validar_manifesto(manifesto, origem="teste")
 
 
-# --- o PDP impõe, tool por tool -------------------------------------------------------------
+# --- o PDP impõe, tool por tool ------------------------------------------------------------
 @pytest.fixture
 def pdp(tmp_path: Path) -> Iterator[Pdp]:
     lar = tmp_path / "casa"
@@ -237,6 +259,33 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         ),
         "memoria.retratar": _pedido(pdp, "memoria.retratar", {"alvo_id": "ast-1"}),
         "system.install_package": _pedido(pdp, "system.install_package", {"pacote": "vlc"}),
+        "system.clock.now": _pedido(pdp, "system.clock.now", {}),
+        "system.machine.status": _pedido(pdp, "system.machine.status", {}),
+        "system.volume.get": _pedido(pdp, "system.volume.get", {}),
+        "system.volume.set": _pedido(pdp, "system.volume.set", {"nivel": 30}),
+        "system.brightness.set": _pedido(pdp, "system.brightness.set", {"nivel": 50}),
+        "media.player.control": _pedido(pdp, "media.player.control", {"acao": "pausar"}),
+        "media.player.status": _pedido(pdp, "media.player.status", {}),
+        "window.list": _pedido(pdp, "window.list", {}),
+        "window.focus_app": _pedido(pdp, "window.focus_app", {"app": "firefox"}),
+        "window.close_app": _pedido(pdp, "window.close_app", {"app": "firefox"}),
+        "clipboard.text.read": _pedido(pdp, "clipboard.text.read", {}),
+        "clipboard.text.write": _pedido(pdp, "clipboard.text.write", {"texto": "x"}),
+        "notify.desktop.send": _pedido(pdp, "notify.desktop.send", {"titulo": "a", "texto": "b"}),
+        "timer.alarm.set": _pedido(pdp, "timer.alarm.set", {"mensagem": "bolo", "em_segundos": 60}),
+        "timer.alarm.list": _pedido(pdp, "timer.alarm.list", {}),
+        "timer.alarm.cancel": _pedido(pdp, "timer.alarm.cancel", {"alarme_id": "al-1"}),
+        "web.buscar": _pedido(pdp, "web.buscar", {"consulta": "capital da França"}),
+        "web.ler": _pedido(pdp, "web.ler", {"url": "https://pt.wikipedia.org/wiki/Paris"}),
+        "files.create_dir": _pedido(
+            pdp, "files.create_dir", {"path": "x"}, f"{lar}/Documentos/nova"
+        ),
+        "files.copy": _pedido(
+            pdp, "files.copy", {"origem": "a", "destino": "b"}, f"{lar}/Documentos/b.txt"
+        ),
+        "files.move": _pedido(
+            pdp, "files.move", {"origem": "a", "destino": "b"}, f"{lar}/Documentos/b.txt"
+        ),
     }
 
 

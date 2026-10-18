@@ -23,10 +23,13 @@ from typing import TYPE_CHECKING, Any, Final
 import jsonschema
 
 from jarvis.barramento.envelope import uuid7
-from jarvis.executor import arquivos
-from jarvis.executor.desfazer import Contaminacao, RegistroDeDesfazeres, aviso_falado
+from jarvis.executor import arquivos, desktop
+from jarvis.executor.comandos import ComandoIndisponivel
+from jarvis.executor.desfazer import LIXEIRA, Contaminacao, RegistroDeDesfazeres, aviso_falado
 from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
+from jarvis.executor.nativas import CORPOS, DE_ARQUIVOS, PRECISAM_DE_AGENDA, Nativas
 from jarvis.executor.navegadores import AbridorDeNavegador
+from jarvis.executor.organizar import OrganizacaoRecusada, Organizador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
 from jarvis.manifesto.validador import carregar_catalogo
 from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
@@ -77,7 +80,15 @@ FERRAMENTAS_DE_MEMORIA: Final = frozenset(
 quando há livro aberto (o histórico persistente) — sem ele, a persona não promete o que não há."""
 
 FONTES_DE_TERCEIROS: Final = frozenset(
-    {"files.list_dir", "files.read_text", "files.search_in_roots", "memoria.buscar_historico"}
+    {
+        "files.list_dir",
+        "files.read_text",
+        "files.search_in_roots",
+        "memoria.buscar_historico",
+        "web.buscar",
+        "web.ler",
+        "clipboard.text.read",
+    }
 )
 """Tools cujo resultado é texto que **outra pessoa** escreveu (nome de arquivo, conteúdo, conversa
 antiga). Depois de uma delas, o turno é `contaminado`: o que o PDP deixaria livre e que leva
@@ -161,6 +172,8 @@ class ExecutorDeFerramentas:
     manifestos: dict[str, dict[str, Any]] = field(default_factory=carregar_catalogo)
     memoria: FerramentasDeMemoria | None = None
     tarefas: GestorDeTarefas | None = None
+    nativas: Nativas | None = None
+    """As portas das ferramentas nativas (desktop, relógio, agenda, web). `None` = as de verdade."""
     """Quem roda as tarefas em segundo plano. Liga as `tarefa.*` ao modelo."""
     """O livro do dono, quando há (a conversa persistente). Liga as `memoria.*` ao modelo."""
     destino_onde: Onde = Onde.LOCAL
@@ -210,6 +223,11 @@ class ExecutorDeFerramentas:
             if self._ligada(tool_id)
         )
 
+    def portas(self) -> Nativas:
+        if self.nativas is None:
+            self.nativas = Nativas(lar=self.lar)
+        return self.nativas
+
     def disponivel(self, tool_id: str) -> bool:
         """Existe nesta sessão **e** o modo de acesso a permite: o que uma tarefa pode rodar."""
         return self._ligada(tool_id) and tool_id in self.pdp.allowlist()
@@ -222,7 +240,9 @@ class ExecutorDeFerramentas:
             return self.memoria is not None
         if tool_id in FERRAMENTAS_DE_TAREFA:
             return self.tarefas is not None
-        return tool_id in FERRAMENTAS_LIGADAS
+        if tool_id in PRECISAM_DE_AGENDA:
+            return self.portas().agenda is not None
+        return tool_id in FERRAMENTAS_LIGADAS or tool_id in CORPOS or tool_id in DE_ARQUIVOS
 
     def _descricao(self, tool_id: str) -> str:
         texto = " ".join(str(self.manifestos[tool_id]["description"]).split())
@@ -332,7 +352,7 @@ class ExecutorDeFerramentas:
                 motivo = self._sugestao_de_app(str(argumentos["nome"]), motivo)
             return ResultadoDeFerramenta(tool_id, "negado", motivo=motivo, call_id=chamada)
         resultado = self._rodar(
-            tool_id, argumentos, decisao, caminho, cancelado, chamada, proveniencia
+            tool_id, argumentos, decisao, caminho, cancelado, chamada, proveniencia, marca
         )
         if resultado.status == "ok":
             resultado = self._depois_do_efeito(tool_id, argumentos, resultado, marca)
@@ -377,6 +397,23 @@ class ExecutorDeFerramentas:
             return registro.registrar(
                 tool_id, f"o rascunho {nome}", "lixeira", str(dados["caminho"])
             ).acao_id
+        if tool_id in ("files.create_dir", "files.copy"):
+            quem = "a pasta" if tool_id == "files.create_dir" else "a cópia"
+            alvo = str(dados["caminho"])
+            return registro.registrar(tool_id, f"{quem} {dados['nome']}", "lixeira", alvo).acao_id
+        if tool_id == "files.move":
+            return registro.registrar(
+                tool_id, f"o que foi movido para {dados['nome']}", "mover", str(dados["de"]),
+                str(dados["para"]),
+            ).acao_id  # fmt: skip
+        if tool_id == "clipboard.text.write":
+            return registro.registrar(
+                tool_id, "a área de transferência", "area", "", self.portas().anterior_da_area
+            ).acao_id
+        if tool_id == "timer.alarm.set":
+            return registro.registrar(
+                tool_id, "o lembrete", "cancelar_alarme", str(dados["alarme_id"])
+            ).acao_id
         livro = {
             "memoria.lembrar": ("assertion_id", "a anotação"),
             "memoria.criar_no": ("entity_id", "o registro novo na memória"),
@@ -395,6 +432,7 @@ class ExecutorDeFerramentas:
         cancelado: Cancelado,
         chamada: str,
         proveniencia: Proveniencia | None = None,
+        marca: Contaminacao | None = None,
     ) -> ResultadoDeFerramenta:
         if cancelado():
             return ResultadoDeFerramenta(
@@ -405,12 +443,15 @@ class ExecutorDeFerramentas:
             if tool_id in FERRAMENTAS_DE_MEMORIA:
                 dados = self._memoria(tool_id, args, decisao, proveniencia)
             else:
-                dados = self._corpo(tool_id, args, decisao.grant, caminho, cancelado)
+                dados = self._corpo(
+                    tool_id, args, decisao.grant, caminho, cancelado, chamada, marca
+                )
         except arquivos.Cancelada as erro:
             return ResultadoDeFerramenta(tool_id, "cancelado", motivo=str(erro), call_id=chamada)
         except (
             AberturaRecusada,
             AlvoInexistente,
+            ComandoIndisponivel,
             NaoAutorizado,
             OSError,
             ValueError,
@@ -419,6 +460,34 @@ class ExecutorDeFerramentas:
         ) as erro:
             return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
         return ResultadoDeFerramenta(tool_id, "ok", dados=dados, call_id=chamada)
+
+    def _organizar(
+        self,
+        tool_id: str,
+        args: Mapping[str, Any],
+        grant: Grant,
+        caminho: str | None,
+        marca: Contaminacao | None,
+        chamada: str,
+    ) -> dict[str, Any]:
+        """Criar pasta, copiar e mover (moderadas): sob o descritor da raiz do grant."""
+        assert caminho is not None
+        organizador = Organizador(
+            self.pdp,
+            self.lar,
+            self.sistema,
+            session_id=self.pdp.session_id,
+            call_id=chamada,
+            contaminado=bool(marca and marca.valor) or self.contaminado,
+        )
+        try:
+            if tool_id == "files.create_dir":
+                return organizador.criar_pasta(grant, caminho)
+            if tool_id == "files.copy":
+                return organizador.copiar(grant, str(args["origem"]), caminho)
+            return organizador.mover(grant, str(args["origem"]), caminho)
+        except OrganizacaoRecusada as erro:
+            raise ValueError(str(erro)) from None
 
     def _tarefa(self, tool_id: str, args: Mapping[str, Any]) -> dict[str, Any]:
         """Corpo das `tarefa.*`. Recusa do gestor (teto, ferramenta fora da allowlist) volta como
@@ -446,9 +515,26 @@ class ExecutorDeFerramentas:
                 "não há ação para desfazer com esse id" if acao_id else "não há nada para desfazer"
             )
         if desfazer.tipo == "lixeira":
-            raiz = self.pdp.abrir_para(grant, ".")
-            relativo = desfazer.alvo.removeprefix(str(self.pasta_do_jarvis)).lstrip("/")
-            arquivos.recolher_para_a_lixeira(raiz, relativo)
+            dono, lixeira = self._grant_do_alvo(desfazer.alvo, grant)
+            raiz = self.pdp.abrir_para(dono, ".")
+            relativo = canonicalizar(desfazer.alvo, self.sistema).texto
+            relativo = relativo[len(dono.raiz.rstrip("/")) :].lstrip("/")
+            arquivos.recolher_para_a_lixeira(raiz, relativo, lixeira=lixeira)
+        elif desfazer.tipo == "mover":
+            dono, _ = self._grant_do_alvo(desfazer.alvo, grant)
+            try:
+                Organizador(self.pdp, self.lar, self.sistema).desfazer_mover(
+                    dono, desfazer.alvo, desfazer.extra
+                )
+            except OrganizacaoRecusada as erro:
+                raise ValueError(str(erro)) from None
+        elif desfazer.tipo == "area":
+            desktop.escrever_area(self.portas().lancar, desfazer.extra, self.portas().ambiente)
+        elif desfazer.tipo == "cancelar_alarme":
+            agenda = self.portas().agenda
+            if agenda is None:
+                raise ValueError("a agenda não está ligada")
+            agenda.cancelar(desfazer.alvo)
         elif desfazer.tipo == "cancelar_tarefa" and self.tarefas is not None:
             self.tarefas.cancelar(desfazer.alvo)
         elif self.memoria is not None:
@@ -457,6 +543,21 @@ class ExecutorDeFerramentas:
             raise ValueError("a memória não está aberta: não dá para retratar")
         self.desfazeres.retirar(desfazer)
         return {"desfeito": desfazer.descricao}
+
+    def _grant_do_alvo(self, alvo: str, grant_do_jarvis: Grant) -> tuple[Grant, str]:
+        """O grant da raiz onde o alvo do desfazer está, e o nome da lixeira dela. Na área do
+        Jarvis é o da própria chamada; fora dela, uma decisão nova do PDP (a raiz tem de deixar
+        escrever), e a lixeira é uma pasta escondida **dentro** dessa raiz — nada é apagado."""
+        if alvo.startswith(str(self.pasta_do_jarvis) + "/"):
+            return grant_do_jarvis, LIXEIRA
+        decisao = self.pdp.decidir(
+            Pedido(
+                "files.move", {"origem": alvo, "destino": alvo}, alvo, call_id=f"desfazer-{uuid7()}"
+            )
+        )
+        if decisao.veredito is not Veredito.ALLOW or decisao.grant is None:
+            raise ValueError(f"não posso desfazer ali: {decisao.motivo}")
+        return decisao.grant, ".lixeira-do-jarvis"
 
     def _memoria(
         self,
@@ -485,6 +586,8 @@ class ExecutorDeFerramentas:
         grant: Grant,
         caminho: str | None,
         cancelado: Cancelado,
+        chamada: str = "",
+        marca: Contaminacao | None = None,
     ) -> dict[str, Any]:
         if tool_id == "files.search_in_roots":
             return self._procurar(str(args["consulta"]), cancelado)
@@ -492,6 +595,10 @@ class ExecutorDeFerramentas:
             return self._desfazer(str(args.get("acao_id", "")), grant)
         if tool_id in FERRAMENTAS_DE_TAREFA:
             return self._tarefa(tool_id, args)
+        if tool_id in CORPOS:
+            return CORPOS[tool_id](self.portas(), args)
+        if tool_id in DE_ARQUIVOS:
+            return self._organizar(tool_id, args, grant, caminho, marca, chamada)
         if tool_id == "apps.launch":
             app = self.registro_de_apps.resolver(str(args["nome"]))
             return {"app": app.nome, "pid": self.lancar_app(app)}
@@ -543,6 +650,10 @@ class ExecutorDeFerramentas:
             return str(self.pasta_do_jarvis / arquivos.PASTA_DE_AGENDA)
         if tool_id == "acao.desfazer":
             return str(self.pasta_do_jarvis)  # o código escolhe: nunca um caminho do modelo
+        if tool_id in ("files.create_dir", "files.copy", "files.move"):
+            return Organizador(self.pdp, self.lar, self.sistema).absoluto(
+                str(args.get("path") or args["destino"])
+            )
         if tool_id in ("files.list_dir", "files.read_text"):
             bruto = str(args["path"]).strip()
             if bruto == "~" or bruto.startswith("~/"):

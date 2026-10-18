@@ -1,0 +1,41 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: timer.alarm.list
+title: Listar alarmes
+description: Lista os alarmes e lembretes marcados e quanto falta para cada um. Use quando o dono perguntar o que
+  está marcado. Não marca nem cancela nada.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - alarmes
+preconditions: []
+postcondition: a lista reflete a agenda no instante da chamada
+capability: timer.alarm.list
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 500
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-alarmes
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

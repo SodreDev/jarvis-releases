@@ -401,6 +401,51 @@ tarefa (qualquer ferramenta permitida pelo modo); `memoria.*` dentro de tarefa �
 tem o turno de origem que a política de memória exige); o `agente` com `claude -p` real não foi
 exercitado (os testes usam motor roteirizado).
 
+### 0.6 Mais tools de assistente (2026-10-18)
+
+Pedido do dono: muito mais do que abrir app e site. A lista e a escolha de cada uma estão em
+`docs/notas-tools-nativas.md`. Todas têm manifesto, tier, teste por tool e entram sozinhas no
+catálogo que o modelo vê. **Nenhuma usa shell**: o desktop é chamado por `argv` fixo de uma lista
+de programas (`wpctl`, `gdbus`, `wmctrl`, `wl-copy`, `notify-send`…).
+
+**Como conferir** (com `s2 = "claude"`, `acesso = "padrao"`; cada linha é um pedido por voz ou texto):
+
+| Peça | O que deve acontecer | Tier |
+|---|---|---|
+| "que horas são?" / "que dia é hoje?" | fala hora e data por extenso | livre |
+| "como está a bateria / a internet / o computador?" | bateria, rede, CPU, RAM, disco; sem bateria ele diz que não tem | livre |
+| "aumenta o volume", "volume em 30", "silencia" | muda (nunca passa de 100%); "quanto está o volume?" lê | livre |
+| "mais brilho", "brilho em 40" | muda pelo PowerDevil do KDE (ou `brightnessctl`); nunca apaga (mín. 1%) | livre |
+| "pausa a música", "próxima", "o que está tocando?" | MPRIS (`playerctl` ou `gdbus`) | livre |
+| "o que está aberto?", "vai pro navegador" | lista/foca janelas (`wmctrl`) | livre |
+| "fecha o Firefox" | **faixa de confirmação** (pode perder trabalho); fecha do jeito educado | perigoso |
+| "o que eu copiei?" / "copia isso" | lê (sem senhas/chaves) / escreve; "desfaz" devolve o texto anterior | livre / moderado |
+| "me avisa com uma notificação" | notificação do desktop | livre |
+| "me lembra em 10 minutos de tirar o bolo", "alarme às 7" | fala "Marquei o lembrete…"; **ao vencer** entra como aviso na fila **e** notificação do desktop; sobrevive a fechar (o que venceu fechado sai "atrasado") | moderado |
+| "o que está marcado?", "cancela o lembrete" | lista / cancela | livre |
+| "pesquisa X na web", "lê essa página" | texto limpo de página **pública**; conteúdo é dado, nunca ordem | livre |
+| "cria a pasta viagem em Documentos", "copia a.txt para b.txt", "move isso para projetos" | faz, **fala o que fez**, nunca sobrescreve (nome repetido ganha `-2`); "desfaz" recolhe para a lixeira | moderado |
+
+**Segurança (testada):** a web só aceita endereço **público** (nada de `localhost`, rede local,
+`169.254.169.254`; redirecionamento é conferido de novo; a conexão vai ao IP conferido) e recusa
+consulta com segredo/e-mail; o que a web, a área de transferência ou um arquivo devolvem marca o
+turno como "de terceiros" (abrir site fora da lista passa a pedir o seu sim); copiar/mover só dentro
+das raízes (a lista de negação e raízes só de leitura valem), mover só na mesma raiz; fechar app
+pergunta.
+
+**Limites honestos / não verificado ao vivo:** os comandos do desktop (volume, brilho, mídia,
+janelas, área de transferência, notificação) foram testados só com lançador falso — **o seu desktop
+fecha esta conta**; `wmctrl` só vê janelas X11/XWayland (janela Wayland nativa pode não aparecer: ele
+diz "nenhuma"); a busca é a da Wikipédia (boa para fato, fraca para notícia — para busca geral
+configure `BRAVE_SEARCH_API_KEY`, também não verificada); `window.close_app` e o brilho por D-Bus
+dependem do KDE responder; Windows: só a leitura de hora, web e arquivos são portáveis; copiar pasta
+inteira ainda não.
+
+**Resolvedor de apps na voz (Codex, ligado em 2026-10-18):** os nomes dos apps instalados vão ao ASR
+local como `hotwords`/`initial_prompt` (junto com a palavra de ativação), e o registro de apps inclui os
+binários do `PATH` e os apelidos que o dono já corrigiu. Conferir: "abre o Discord" / "abre o Brave" por
+voz, com o ASR local. Não verificado com a sua voz.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

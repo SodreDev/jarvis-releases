@@ -55,7 +55,7 @@ REQUIRES_ELEVATION: Final = {requires_elevation}
 IDEMPOTENCY: Final = "{idempotency}"
 TIMEOUT_MS: Final = {timeout_ms}
 ROOTS: Final[tuple[str, ...]] = {roots_tupla}
-POSTCONDITION: Final = {postcondition_literal}
+{postcondition_linha}
 '''
 
 
@@ -88,6 +88,13 @@ def _conjunto(nome: str, valores: list[str]) -> str:
         return f"{cabeca}\n    {tupla}\n)"
     itens = "".join(f'        "{v}",\n' for v in valores)
     return f"{cabeca}\n    (\n{itens}    )\n)"
+
+
+def _constante(nome: str, texto: str) -> str:
+    """`NOME: Final = "texto"`, entre parênteses se passa de 100 colunas (como o `ruff format`)."""
+    literal = json.dumps(texto, ensure_ascii=False)
+    linha = f"{nome}: Final = {literal}"
+    return linha if len(linha) <= LARGURA else f"{nome}: Final = (\n    {literal}\n)"
 
 
 def _linha_da_poscondicao(texto: str) -> str:
@@ -137,7 +144,7 @@ def gerar_stub(manifesto: dict[str, Any]) -> str:
             roots=", ".join(manifesto["roots"]) or "(nenhuma)",
             roots_tupla=_tupla_literal(manifesto["roots"]),
             postcondition=_linha_da_poscondicao(str(manifesto["postcondition"])),
-            postcondition_literal=json.dumps(str(manifesto["postcondition"]), ensure_ascii=False),
+            postcondition_linha=_constante("POSTCONDITION", str(manifesto["postcondition"])),
         )
     ]
 

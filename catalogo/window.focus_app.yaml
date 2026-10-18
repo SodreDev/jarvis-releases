@@ -1,0 +1,48 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: window.focus_app
+title: Trazer um aplicativo para a frente
+description: Traz para a frente a janela de um aplicativo que já está aberto, pelo nome. Use quando o dono pedir
+  para ir para o navegador, voltar ao editor e afins. Não abre o aplicativo (para isso existe apps.launch) e, se
+  mais de um casar, pergunta qual.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - app
+  properties:
+    app:
+      type: string
+      minLength: 2
+      maxLength: 60
+output_schema:
+  type: object
+  required:
+  - app
+preconditions: []
+postcondition: a janela escolhida pelo código na lista real ficou em foco
+capability: window.focus_app
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

@@ -1,0 +1,53 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: system.volume.set
+title: Mudar o volume
+description: 'Muda o volume do som do computador: um `nivel` de 0 a 100, ou um `delta` para subir ou descer, e/ou
+  `mudo`. Use quando o dono pedir para aumentar, abaixar, silenciar ou pôr o volume em tal valor. Nunca passa de
+  100% e não mexe no volume de um aplicativo só.'
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    nivel:
+      type: integer
+      minimum: 0
+      maximum: 100
+    delta:
+      type: integer
+      minimum: -100
+      maximum: 100
+    mudo:
+      type: boolean
+output_schema:
+  type: object
+  required:
+  - volume_pct
+  - mudo
+preconditions: []
+postcondition: o volume da saída padrão passou ao valor pedido e a resposta traz o valor lido
+capability: system.volume.set
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

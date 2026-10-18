@@ -1,0 +1,53 @@
+# Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
+id: notify.desktop.send
+title: Notificação do desktop
+description: Mostra uma notificação do desktop com título e texto curtos. Use quando o dono pedir um aviso na tela
+  ou quando o Jarvis precisar chamar a atenção sem falar. Não aceita botões nem links, não pede resposta e o texto
+  aparece como foi escrito.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - titulo
+  - texto
+  properties:
+    titulo:
+      type: string
+      minLength: 1
+      maxLength: 80
+    texto:
+      type: string
+      minLength: 1
+      maxLength: 300
+output_schema:
+  type: object
+  required:
+  - titulo
+preconditions: []
+postcondition: o desktop recebeu a notificação com o título e o texto pedidos
+capability: notify.desktop.send
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1
