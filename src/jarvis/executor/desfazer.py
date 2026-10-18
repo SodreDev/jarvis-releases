@@ -1,0 +1,91 @@
+"""O aviso falado e o "desfazer" das tools moderadas (dono, 2026-10-18).
+
+Tool `moderada` roda sem perguntar, e em troca duas coisas são **do código**, não do modelo:
+
+1. **o aviso**: depois do efeito, o Jarvis fala a frase que o manifesto declara (`aviso_falado`),
+   com os argumentos e o resultado no lugar dos `{campos}`. É o dono sabendo o que aconteceu sem
+   ter sido consultado antes;
+2. **o desfazer**: o que dá para voltar atrás fica num registro curto, e `acao.desfazer` o usa.
+   Nada é apagado de verdade: arquivo criado pelo Jarvis vai para `lixeira/` na área dele (e
+   dali o dono decide), memória é retratada (continua no livro, deixa de valer).
+
+O registro vive na memória do processo: desfazer vale para o que aconteceu **nesta** execução.
+"""
+
+from __future__ import annotations
+
+import re
+from collections import deque
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any, Final
+
+from jarvis.barramento.envelope import uuid7
+
+LIMITE_DO_REGISTRO: Final = 20
+LIMITE_DO_CAMPO: Final = 80
+LIMITE_DO_AVISO: Final = 200
+PADRAO_DE_CAMPO: Final = r"\{(\w+)\}"
+
+LIXEIRA: Final = "lixeira"
+"""Pasta, dentro da área do Jarvis, para onde vai o que o dono mandou desfazer."""
+
+
+@dataclass(frozen=True, slots=True)
+class Desfazer:
+    """Como voltar atrás de uma ação moderada."""
+
+    acao_id: str
+    tool_id: str
+    descricao: str
+    """Para o dono ouvir: "o rascunho notas.md"."""
+    tipo: str
+    """`lixeira` (arquivo novo → `lixeira/`) ou `retratar` (memória)."""
+    alvo: str
+    """O caminho absoluto do arquivo, ou o id da memória."""
+
+
+@dataclass(slots=True)
+class RegistroDeDesfazeres:
+    itens: deque[Desfazer] = field(default_factory=lambda: deque(maxlen=LIMITE_DO_REGISTRO))
+
+    def registrar(self, tool_id: str, descricao: str, tipo: str, alvo: str) -> Desfazer:
+        desfazer = Desfazer(f"a-{uuid7()[-8:]}", tool_id, descricao, tipo, alvo)
+        self.itens.append(desfazer)
+        return desfazer
+
+    def achar(self, acao_id: str = "") -> Desfazer | None:
+        """A pedida, ou a última. `None` se não há (ou o id não existe)."""
+        if not acao_id:
+            return self.itens[-1] if self.itens else None
+        return next((d for d in self.itens if d.acao_id == acao_id), None)
+
+    def retirar(self, desfazer: Desfazer) -> None:
+        self.itens.remove(desfazer)
+
+
+class _Campos(dict[str, str]):
+    def __missing__(self, chave: str) -> str:
+        return ""
+
+
+def aviso_falado(
+    manifesto: Mapping[str, Any], args: Mapping[str, Any], dados: Mapping[str, Any]
+) -> str:
+    """A frase do manifesto com os campos preenchidos — uma linha, curta, texto puro.
+
+    O que o dono ou um arquivo escreveu entra no meio da frase: é cortado e perde quebra de linha,
+    para uma frase de aviso nunca virar um parágrafo falado (nem carregar uma instrução comprida).
+    """
+    modelo = str(manifesto.get("aviso_falado", ""))
+    if not modelo:
+        return ""
+    campos = _Campos()
+    for origem in (args, dados):
+        for chave, valor in origem.items():
+            texto = " ".join(str(valor).split())
+            campos[chave] = (
+                texto if len(texto) <= LIMITE_DO_CAMPO else texto[:LIMITE_DO_CAMPO] + "…"
+            )
+    frase = re.sub(PADRAO_DE_CAMPO, lambda m: campos[m.group(1)], modelo)
+    return " ".join(frase.split())[:LIMITE_DO_AVISO]

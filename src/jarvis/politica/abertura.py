@@ -1,16 +1,18 @@
 """Abrir app e abrir site: o que o dono pré-autorizou passa, o resto não (dono, 2026-10-17).
 
-As duas tools declaram confirmação no manifesto — o validador exige isso de todo efeito, e está
-certo. O que esta regra faz é o **grant estreito** da SPEC §5.3 ("sempre permitir X" vira grant
-com destino), só que configurado pelo dono antes, e não clicado na hora:
+As três tools são do tier `livre` (dono, 2026-10-18: abrir app, site e navegador não pede
+confirmação). O que esta regra faz é o **grant estreito** da SPEC §5.3 ("sempre permitir X" vira
+grant com destino), só que configurado pelo dono antes, e não clicado na hora — o que ele não
+configurou continua negado, e o que o turno leu de terceiros aperta o site:
 
 - `apps.launch`: o nome tem de resolver para um app que o dono pôs no registro autorizado
   (`apps_autorizados`); dentro, `allow`; fora, `deny` — o executor acrescenta as sugestões.
 - `browser.launch`: abrir só o navegador (sem endereço); o principal ou um que o dono nomeou
   entre os que ele configurou é `allow`, o resto é `deny`;
 - `sites.open`: URL que não é `http`/`https` limpa é `deny`; domínio que o dono liberou
-  (`sites_sem_confirmar`, com subdomínios) é `allow`; qualquer outro segue a matriz comum, que
-  para `egress` é `confirm` na janela.
+  (`sites_sem_confirmar`, com subdomínios) é `allow`; qualquer outro é livre — **exceto** num turno
+  que já leu conteúdo de terceiros (arquivo, página, memória), onde vira `confirm`: o endereço
+  carrega o que estiver nele, e foi um texto de fora que pode tê-lo escolhido.
 
 Nada aqui é decidido pelo modelo nem por conteúdo de página (P1, P6): os conjuntos vêm da
 configuração do dono, e a regra só **aperta** ou devolve o que ele mesmo já autorizou.
@@ -74,8 +76,9 @@ def decidir_abertura(
     sites_sem_confirmar: frozenset[str],
     navegadores: frozenset[str] = frozenset(),
     navegador_principal: str = "",
+    contaminado: bool = False,
 ) -> RegraDeMemoria | None:
-    """O que a regra decide antes da matriz comum. `None` = siga o comum (`confirm`)."""
+    """O que a regra decide antes da matriz comum. `None` = siga o comum (o tier do manifesto)."""
     if tool_id == "apps.launch":
         if nome_de_app(str(args.get("nome", ""))) in apps_autorizados:
             return RegraDeMemoria("allow", "app no registro que o dono autorizou")
@@ -102,4 +105,13 @@ def decidir_abertura(
             return RegraDeMemoria("deny", str(erro))
         if dominio_liberado(dominio(url), sites_sem_confirmar):
             return RegraDeMemoria("allow", f"{dominio(url)} está entre os sites que o dono liberou")
+        if contaminado:
+            # Abrir site é livre (dono, 2026-10-18), mas o endereço leva o que estiver nele. Se o
+            # turno leu conteúdo de terceiros, um endereço escolhido por esse conteúdo (injeção)
+            # poderia carregar dado do dono: aí só abre com o "sim" dele.
+            return RegraDeMemoria(
+                "confirm",
+                f"o turno leu conteúdo de terceiros e {dominio(url)} não é um site que o dono "
+                "liberou: confirma antes de abrir",
+            )
     return None

@@ -25,6 +25,7 @@ import jsonschema
 
 from jarvis.barramento.envelope import uuid7
 from jarvis.executor import arquivos
+from jarvis.executor.desfazer import RegistroDeDesfazeres, aviso_falado
 from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
 from jarvis.executor.navegadores import AbridorDeNavegador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
@@ -50,6 +51,7 @@ FERRAMENTAS_LIGADAS: Final = frozenset(
         "apps.launch",
         "sites.open",
         "browser.launch",
+        "acao.desfazer",
     }
 )
 """As que têm corpo aqui. Manifesto sem corpo (lixeira, instalar) não aparece para o modelo."""
@@ -68,6 +70,13 @@ FERRAMENTAS_DE_MEMORIA: Final = frozenset(
 )
 """As `memoria.*` (ADR-0026): o corpo é do `FerramentasDeMemoria`, e só existem para o modelo
 quando há livro aberto (o histórico persistente) — sem ele, a persona não promete o que não há."""
+
+FONTES_DE_TERCEIROS: Final = frozenset(
+    {"files.list_dir", "files.read_text", "files.search_in_roots", "memoria.buscar_historico"}
+)
+"""Tools cujo resultado é texto que **outra pessoa** escreveu (nome de arquivo, conteúdo, conversa
+antiga). Depois de uma delas, o turno é `contaminado`: o que o PDP deixaria livre e que leva
+dado para fora (abrir site) passa a pedir o "sim" do dono — injeção não escolhe o destino."""
 
 Cancelado = Callable[[], bool]
 
@@ -101,11 +110,27 @@ class ResultadoDeFerramenta:
     dados: Mapping[str, Any] = field(default_factory=dict)
     motivo: str = ""
     call_id: str = ""
+    aviso: str = ""
+    """O aviso falado de uma tool `moderado`: o cérebro o **fala** na hora (o dono ouve o que foi
+    feito sem ter sido consultado) e o modelo é avisado de que o dono já ouviu."""
+    acao_id: str = ""
+    """Se a ação dá para desfazer, o id que `acao.desfazer` aceita."""
+
+    @property
+    def detalhe_de_auditoria(self) -> str:
+        if self.motivo or not self.aviso:
+            return self.motivo
+        desfazer = f" — desfazer: {self.acao_id}" if self.acao_id else ""
+        return f"moderado: avisado «{self.aviso}»{desfazer}"
 
     def para_o_modelo(self) -> str:
         corpo: dict[str, Any] = {"tool_id": self.tool_id, "status": self.status}
         if self.motivo:
             corpo["motivo"] = self.motivo
+        if self.aviso:
+            corpo["aviso_ao_dono"] = f"já dito em voz ao dono: «{self.aviso}» — não repita"
+        if self.acao_id:
+            corpo["acao_id"] = self.acao_id
         if self.dados:
             corpo["dados"] = self.dados
         texto = json.dumps(corpo, ensure_ascii=False)
@@ -134,6 +159,13 @@ class ExecutorDeFerramentas:
     destino_onde: Onde = Onde.LOCAL
     destino_motor: str = ""
     """Quem vai ler o resultado: o D20 filtra o que da memória pode ir para este motor."""
+    desfazeres: RegistroDeDesfazeres = field(default_factory=RegistroDeDesfazeres)
+    contaminado: bool = False
+    """O turno em curso já leu conteúdo de terceiros (`FONTES_DE_TERCEIROS`)."""
+
+    def novo_turno(self) -> None:
+        """Turno novo do dono: o que se leu de terceiros no anterior não contamina este."""
+        self.contaminado = False
 
     @property
     def pasta_do_jarvis(self) -> Path:
@@ -234,6 +266,7 @@ class ExecutorDeFerramentas:
             session_id=session_id,
             call_id=chamada,
             proveniencia=proveniencia,
+            contaminado=self.contaminado,
         )
         decisao = self.pdp.decidir(pedido)
         if decisao.veredito is Veredito.CONFIRM:
@@ -264,8 +297,49 @@ class ExecutorDeFerramentas:
         resultado = self._rodar(
             tool_id, argumentos, decisao, caminho, cancelado, chamada, proveniencia
         )
-        self.pdp.auditoria.anexar_resultado(decisao.decision_id, resultado.status, resultado.motivo)
+        if resultado.status == "ok":
+            resultado = self._depois_do_efeito(tool_id, argumentos, resultado)
+        self.pdp.auditoria.anexar_resultado(
+            decisao.decision_id, resultado.status, resultado.detalhe_de_auditoria
+        )
         return resultado
+
+    def _depois_do_efeito(
+        self, tool_id: str, args: Mapping[str, Any], resultado: ResultadoDeFerramenta
+    ) -> ResultadoDeFerramenta:
+        """O que o tier pede depois que a tool rodou: contaminar o turno (leitura de terceiros),
+        e, na **moderada**, montar o aviso falado e guardar como desfazer."""
+        if tool_id in FONTES_DE_TERCEIROS:
+            self.contaminado = True
+        manifesto = self.manifestos[tool_id]
+        if manifesto.get("tier") != "moderado":
+            return resultado
+        acao = self._registrar_desfazer(tool_id, resultado.dados)
+        return ResultadoDeFerramenta(
+            tool_id,
+            resultado.status,
+            dados=resultado.dados,
+            call_id=resultado.call_id,
+            aviso=aviso_falado(manifesto, args, resultado.dados),
+            acao_id=acao,
+        )
+
+    def _registrar_desfazer(self, tool_id: str, dados: Mapping[str, Any]) -> str:
+        """Como voltar atrás do que acabou de ser feito, se der. `""` = não dá."""
+        registro = self.desfazeres
+        if tool_id in ("files.write_draft", "calendar.create_draft_event"):
+            nome = Path(str(dados["caminho"])).name
+            return registro.registrar(
+                tool_id, f"o rascunho {nome}", "lixeira", str(dados["caminho"])
+            ).acao_id
+        livro = {
+            "memoria.lembrar": ("assertion_id", "a anotação"),
+            "memoria.criar_no": ("entity_id", "o registro novo na memória"),
+            "memoria.criar_aresta": ("edge_id", "a ligação na memória"),
+        }.get(tool_id)
+        if livro is not None and self.memoria is not None and not dados.get("existente"):
+            return registro.registrar(tool_id, livro[1], "retratar", str(dados[livro[0]])).acao_id
+        return ""
 
     def _rodar(
         self,
@@ -301,6 +375,25 @@ class ExecutorDeFerramentas:
             return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
         return ResultadoDeFerramenta(tool_id, "ok", dados=dados, call_id=chamada)
 
+    def _desfazer(self, acao_id: str, grant: Grant) -> dict[str, Any]:
+        """Volta atrás de uma ação moderada. Nada é apagado: o arquivo vai para a lixeira do
+        Jarvis, a memória é retratada (ADR-0026: deixa de valer, continua no livro)."""
+        desfazer = self.desfazeres.achar(acao_id)
+        if desfazer is None:
+            raise ValueError(
+                "não há ação para desfazer com esse id" if acao_id else "não há nada para desfazer"
+            )
+        if desfazer.tipo == "lixeira":
+            raiz = self.pdp.abrir_para(grant, ".")
+            relativo = desfazer.alvo.removeprefix(str(self.pasta_do_jarvis)).lstrip("/")
+            arquivos.recolher_para_a_lixeira(raiz, relativo)
+        elif self.memoria is not None:
+            self.memoria.livro.retratar(desfazer.alvo)
+        else:
+            raise ValueError("a memória não está aberta: não dá para retratar")
+        self.desfazeres.retirar(desfazer)
+        return {"desfeito": desfazer.descricao}
+
     def _memoria(
         self,
         tool_id: str,
@@ -308,7 +401,7 @@ class ExecutorDeFerramentas:
         decisao: Decisao,
         proveniencia: Proveniencia | None,
     ) -> dict[str, Any]:
-        """Corpo das `memoria.*`: aqui a decisão já é `allow` (se houve confirmação, foi do dono)."""
+        """Corpo das `memoria.*`: a decisão já é `allow` (a confirmação, se houve, foi do dono)."""
         assert self.memoria is not None
         return self.memoria.executar(
             Chamada(
@@ -331,6 +424,8 @@ class ExecutorDeFerramentas:
     ) -> dict[str, Any]:
         if tool_id == "files.search_in_roots":
             return self._procurar(str(args["consulta"]), cancelado)
+        if tool_id == "acao.desfazer":
+            return self._desfazer(str(args.get("acao_id", "")), grant)
         if tool_id == "apps.launch":
             app = self.registro_de_apps.resolver(str(args["nome"]))
             return {"app": app.nome, "pid": self.lancar_app(app)}
@@ -380,6 +475,8 @@ class ExecutorDeFerramentas:
             return str(self.pasta_do_jarvis / arquivos.PASTA_DE_RASCUNHOS)
         if tool_id == "calendar.create_draft_event":
             return str(self.pasta_do_jarvis / arquivos.PASTA_DE_AGENDA)
+        if tool_id == "acao.desfazer":
+            return str(self.pasta_do_jarvis)  # o código escolhe: nunca um caminho do modelo
         if tool_id in ("files.list_dir", "files.read_text"):
             bruto = str(args["path"]).strip()
             if bruto == "~" or bruto.startswith("~/"):

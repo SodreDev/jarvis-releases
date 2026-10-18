@@ -33,6 +33,7 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
+  tier: {tier}
   risco: {risk_class} · confirmação: {confirmation} · egress: {data_egress}
   modo mínimo: {access_level_min} · elevação: {requires_elevation} · raízes: {roots}
 {postcondition}
@@ -47,6 +48,7 @@ ID: Final = "{id}"
 CAPABILITY: Final = "{capability}"
 RISK_CLASS: Final = "{risk_class}"
 CONFIRMATION: Final = "{confirmation}"
+TIER: Final = "{tier}"
 DATA_EGRESS: Final = "{data_egress}"
 ACCESS_LEVEL_MIN: Final = "{access_level_min}"
 REQUIRES_ELEVATION: Final = {requires_elevation}
@@ -126,6 +128,7 @@ def gerar_stub(manifesto: dict[str, Any]) -> str:
             capability=manifesto["capability"],
             risk_class=manifesto["risk_class"],
             confirmation=manifesto["confirmation"],
+            tier=manifesto["tier"],
             data_egress=manifesto["data_egress"],
             access_level_min=manifesto["access_level_min"],
             requires_elevation=bool(manifesto["requires_elevation"]),

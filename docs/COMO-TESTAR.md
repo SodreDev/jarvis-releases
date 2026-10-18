@@ -138,6 +138,27 @@ aparece acima da barra de conversa, com o motivo.
    janela offscreen com motor roteirizado: app marcado pela aba abre sem faixa, nome parcial
    também, não marcado é negado com sugestão, site fora da lista confirma e só abre depois do
    sim. O lançador e o abridor de site são falsos nesses testes: nada abre de verdade.
+4. **Nome falado “à brasileira”.** Para cada app marcado em Configuração → Aplicativos, o
+   Whisper local recebe o nome instalado como dica e o Jarvis compara a transcrição com os
+   nomes, `GenericName`, `Keywords` e `Exec` do `.desktop`. Assim, com Discord, Spotify, VS Code,
+   Chrome, Brave, Obsidian ou TeamSpeak marcados, tente “abre **discórdi**”, “**espótifai**”, “vi
+   esse côdi”, “**cróme**”, “**brêive**”, “**obisídian**” e “**tim speak**”. Só um app já marcado
+   pode ser escolhido; abaixo do limiar, nada abre. Se houver empate (por exemplo Discord e
+   Discord Canary), a conversa diz “você quis dizer …?” e não lança nenhum até você dizer o nome
+   completo.
+
+   Quando você confirmar uma pronúncia que o Jarvis não acertou, guarde-a sem editar o repo nem
+   a configuração:
+
+   ```bash
+   uv run jarvis-voz corrigir-app --fala "bate-papo roxo" --para "Discord"
+   ```
+
+   `--para` precisa identificar um app já marcado; a correção fica em
+   `$XDG_STATE_HOME/jarvis/apps/aliases.json` (ou `~/.local/state/jarvis/apps/aliases.json`) e
+   nunca autoriza app novo. Para a regressão local, sem microfone nem rede: `uv run pytest
+   tests/unit/apps/test_resolvedor.py tests/unit/executor/test_ferramentas.py -q`. O corpus e
+   os números publicados estão em [F1-17](medicoes/f1-17-pronuncia-apps.md).
 
 ### 0.0d Os consertos de 2026-10-17 (madrugada, 2ª leva): abrir app, protocolo, navegador, tela e "é comigo?"
 
@@ -197,7 +218,7 @@ acesso = "padrao"
 raizes = []
 # Apps que ele pode abrir pelo nome (o id do .desktop, sem ".desktop"):
 apps_autorizados = ["org.kde.dolphin", "org.kde.kcalc", "org.kde.kate"]
-# Sites que abrem sem perguntar (o resto pede confirmação na faixa):
+# Sites liberados: abrem sempre, mesmo depois de o Jarvis ler um arquivo ou página (§0.4):
 sites_sem_confirmar = ["wikipedia.org"]
 ```
 
@@ -216,10 +237,10 @@ Se aparecer `[local]` e `eco`, o arquivo não foi lido.
 | `lê o arquivo ~/Documentos/<um .txt seu>` | resume o que o arquivo diz. Binário ou maior que 64 KiB: ele diz que não leu tudo. |
 | `procura um arquivo com "orçamento" no nome` | os caminhos achados, nas raízes do modo. |
 | `lê ~/.ssh/id_rsa` | **negado**, e ele diz isso. Nada do arquivo chega ao modelo. |
-| `anota: comprar café e pão` | aparece a faixa **CONFIRMAR** acima da barra, com o nome do rascunho e "responda em 30 s". **Permitir** grava; **não**, ou 30 s sem resposta, não grava — e ele diz qual dos dois. |
-| `marca dentista dia 20 às 14h30` | a faixa pede confirmação; permitido, grava um `.ics` (sem convite, nada sai da máquina). |
+| `anota: comprar café e pão` | grava o rascunho **sem perguntar** e **fala** "Gravei o rascunho … na pasta do Jarvis" (tool moderada, §0.4). "Desfaz" manda o arquivo para a lixeira do Jarvis. |
+| `marca dentista dia 20 às 14h30` | grava um `.ics` (sem convite, nada sai da máquina), sem perguntar, e avisa em voz. |
 | `abre o Dolphin` | abre (está em `apps_autorizados`). `abre o Firefox`, se não estiver na lista: **negado**, com os parecidos que estão. |
-| `abre a Wikipédia sobre Marte` | abre no seu navegador padrão sem perguntar (domínio liberado). Outro site: faixa de confirmação. `javascript:`/`file:`: negado. |
+| `abre a Wikipédia sobre Marte` | abre no seu navegador sem perguntar. Qualquer site abre sem perguntar — **menos** se, neste mesmo turno, ele leu um arquivo ou página e o site não está em `sites_sem_confirmar` (aí a faixa pede o seu sim). `javascript:`/`file:`: negado. |
 | durante qualquer um: **Esc** ou **interromper** | para a fala e a geração; com a faixa aberta, é "não". |
 
 **Onde ficam as coisas:** rascunhos em `~/.local/state/jarvis/voz/area/rascunhos/` (eventos em
@@ -300,6 +321,42 @@ não grava o que ele mesmo inventou).
 **Não verificado:** o `claude -p` **de verdade** seguindo a persona (os testes provam que o texto
 chega ao `--system-prompt`, não que o modelo o obedece); a latência com a persona maior (é ~400
 palavras, contra ~70 do prompt antigo — meça o tempo até a primeira fala).
+
+### 0.4 Controle por voz sem pedir permissão para o simples (2026-10-18)
+
+Pedido do dono: comandos simples não pedem permissão; só o perigoso. Cada tool do catálogo
+(`catalogo/*.yaml`) declara um **`tier`**, validado na carga e imposto pelo PDP:
+
+| Tier | O que cai aqui | O que acontece |
+|---|---|---|
+| **livre** | abrir app/site/navegador; listar, ler e buscar arquivo nas raízes liberadas; buscar na memória; estado do Jarvis | roda na hora, sem pergunta e sem aviso |
+| **moderado** | gravar rascunho; rascunho de evento; anotar na memória; `acao.desfazer` | roda **sem perguntar**, o Jarvis **fala** o que fez, a auditoria registra e dá para **desfazer** |
+| **perigoso** | apagar (de vez ou lixeira), atualizar/retratar memória, instalar pacote — e, quando existirem, enviar, gastar, sobrescrever, fora das raízes | **continua pedindo** o seu sim na faixa; a IA nunca confirma por você |
+
+As regras de segurança não mudaram: `~/.ssh`, cofres, `.env` e perfis de navegador seguem **negados**
+(não confirmáveis), e nada fora das raízes liberadas roda. Se a IA tentar passar `confirmado: true`
+ou parecido, o argumento é recusado (o lint barra esses nomes no catálogo).
+
+**Como conferir** (com `s2 = "claude"`):
+
+1. `anota: comprar café` → grava e **fala** o aviso, sem faixa. Depois `desfaz` → "Desfiz o rascunho
+   …"; o arquivo vai para `~/.local/state/jarvis/voz/area/lixeira/` (**nada é apagado de verdade**).
+2. `abre o Dolphin` → abre sem faixa. `abre o site exemplo.com` → abre sem faixa.
+3. `lê o arquivo ~/Documentos/x.txt e abre o site que está nele` (o arquivo contém um endereço):
+   a leitura é livre, mas o site **pede o seu sim**, porque o endereço veio de um texto de fora. Em
+   outro turno, o mesmo site abre direto.
+4. `apaga aquela anotação que você fez` → a faixa pede confirmação. Sem resposta em 30 s, não apaga.
+5. A auditoria (`~/.local/state/jarvis/voz/auditoria.sqlite`, tabelas `audit_log` e `audit_result`)
+   tem cada decisão; as moderadas trazem "moderado: avisado «…» — desfazer: a-xxxxxxxx" e o turno
+   contaminado marca `sessao_contaminada = 1`.
+
+**Para quem mexe no catálogo:** uma tool nova precisa de `tier` (e, se moderada, de `aviso_falado`
+com `{campos}` que existam e de `undo`). `tests/unit/politica/test_tiers.py` fixa o tier esperado
+de **cada** tool: tool nova sem decisão ali derruba a suíte.
+
+**Não verificado:** o `claude -p` de verdade escolhendo bem entre as tools e respeitando o `aviso_ao_dono`
+(os testes usam motor roteirizado); o desfazer de pasta/cópia/movimento (chega com as tools de
+arquivo, item seguinte); Windows (o desfazer usa `rename` sob descritor, que lá não existe ainda).
 
 ---
 

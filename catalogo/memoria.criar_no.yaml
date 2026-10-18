@@ -44,7 +44,9 @@ idempotent: false
 idempotency: required
 data_egress: none
 pii_touch: content
-confirmation: once_per_batch
+confirmation: never
+tier: moderado
+aviso_falado: 'Anotei {nome} como {tipo}.'
 access_level_min: jarvis
 roots: []
 requires_elevation: false

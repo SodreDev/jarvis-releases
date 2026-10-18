@@ -3,7 +3,7 @@ id: files.write_draft
 title: Gravar um rascunho
 description: 'Grava um texto novo como rascunho na pasta de rascunhos do Jarvis, e só lá. Use quando o
   dono pedir para anotar, redigir ou guardar um texto. Nunca sobrescreve: se o nome existir, grava com
-  outro. Não escreve fora da pasta do Jarvis e sempre pede a confirmação do dono.'
+  outro. Não escreve fora da pasta do Jarvis; avisa o dono em voz depois de gravar e dá para desfazer.'
 input_schema:
   type: object
   additionalProperties: false
@@ -36,7 +36,9 @@ idempotent: false
 idempotency: required
 data_egress: none
 pii_touch: content
-confirmation: per_action
+confirmation: never
+tier: moderado
+aviso_falado: 'Gravei o rascunho {nome} na pasta do Jarvis.'
 access_level_min: jarvis
 roots:
 - jarvis_root

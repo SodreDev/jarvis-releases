@@ -7,7 +7,8 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
-  risco: escrita_recuperavel · confirmação: once_per_batch · egress: none
+  tier: perigoso
+  risco: escrita_recuperavel · confirmação: per_action · egress: none
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
   pós-condição verificada pelo executor: antiga superseded com valid_to; a nova ativa a substitui
 """
@@ -20,7 +21,8 @@ from typing import Any, Final
 ID: Final = "memoria.atualizar"
 CAPABILITY: Final = "memoria.write.correcao"
 RISK_CLASS: Final = "escrita_recuperavel"
-CONFIRMATION: Final = "once_per_batch"
+CONFIRMATION: Final = "per_action"
+TIER: Final = "perigoso"
 DATA_EGRESS: Final = "none"
 ACCESS_LEVEL_MIN: Final = "jarvis"
 REQUIRES_ELEVATION: Final = False

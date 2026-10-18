@@ -31,6 +31,7 @@ idempotency: not_required
 data_egress: none
 pii_touch: path_only
 confirmation: never
+tier: livre
 access_level_min: jarvis
 roots: []
 requires_elevation: false

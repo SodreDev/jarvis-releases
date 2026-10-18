@@ -158,6 +158,8 @@ class Cerebro:
         self._pendentes.clear()
         self.conversa.turnos.append(Mensagem("dono", texto_do_dono))
         self.turno_corrente = None
+        if self.ferramentas is not None:
+            self.ferramentas.novo_turno()
         if self.livro is not None:
             episodio = self.livro.gravar_turno(
                 session_id=self.id_da_conversa or self.session_id,
@@ -232,6 +234,11 @@ class Cerebro:
                 resultado = self._chamar(pedido, cancelado)
                 resposta.ferramentas.append(resultado)
                 resultados.append(Mensagem("ferramenta", resultado.para_o_modelo()))
+                if resultado.aviso:
+                    # Tool moderada: o aviso é do código, e sai agora, em voz (dono, 2026-10-18).
+                    resposta.gerado += resultado.aviso + " "
+                    for pedaco in fatiador.alimentar(resultado.aviso + " "):
+                        self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             if visto_cancelamento is None and cancelado():
                 visto_cancelamento = time.monotonic()
         else:

@@ -7,7 +7,8 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
-  risco: transitorio_reversivel · confirmação: once_per_batch · egress: none
+  tier: livre
+  risco: transitorio_reversivel · confirmação: never · egress: none
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
   pós-condição verificada pelo executor: processo do app iniciado numa sessão própria, com o argv do
     .desktop
@@ -21,7 +22,8 @@ from typing import Any, Final
 ID: Final = "apps.launch"
 CAPABILITY: Final = "apps.launch"
 RISK_CLASS: Final = "transitorio_reversivel"
-CONFIRMATION: Final = "once_per_batch"
+CONFIRMATION: Final = "never"
+TIER: Final = "livre"
 DATA_EGRESS: Final = "none"
 ACCESS_LEVEL_MIN: Final = "jarvis"
 REQUIRES_ELEVATION: Final = False

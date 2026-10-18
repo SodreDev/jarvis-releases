@@ -33,7 +33,7 @@ from jarvis.politica.canonicalizacao import (
     Sistema,
     canonicalizar,
 )
-from jarvis.politica.catalogo import Capacidade, allowlist_do_turno
+from jarvis.politica.catalogo import RISCOS_QUE_SEMPRE_CONFIRMAM, Capacidade, allowlist_do_turno
 from jarvis.politica.descritor import AberturaRecusada, Identidade, RaizAberta, abrir_raiz
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, decidir_memoria
 from jarvis.politica.modos import Modo, Raiz, motivo_de_negacao, raizes_do_modo
@@ -44,22 +44,6 @@ class Veredito(StrEnum):
     CONFIRM = "confirm"
     DENY = "deny"
 
-
-RISCOS_QUE_SEMPRE_CONFIRMAM: Final[frozenset[str]] = frozenset(
-    {
-        "apagar_permanente",
-        "sobrescrita_sem_desfazer",
-        "lote_acima_do_teto",
-        "renomear_em_massa",
-        "egress",
-        "representacao_do_dono",
-        "instalar_ou_executar_baixado",
-        "mudanca_de_sistema",
-        "elevacao",
-        "fora_do_diretorio_do_dono",
-    }
-)
-"""O que continua exigindo confirmação **mesmo no `total`** (§5.5, P13)."""
 
 TETO_DE_RAIZES_ABERTAS: Final = 128
 """Cada grant com raiz segura um descritor até expirar: o teto é o orçamento de `fd`.
@@ -81,6 +65,9 @@ class Pedido:
     call_id: str = ""
     proveniencia: Proveniencia | None = None
     """Só para `memoria.*` (ADR-0026): o turno de origem, montado pelo `s2`, nunca pelo modelo."""
+    contaminado: bool = False
+    """Este turno já leu conteúdo de terceiros (arquivo, página, memória): quem diz é o executor,
+    que viu os resultados passarem — nunca o modelo. Aperta o que é livre e sai da máquina."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,7 +185,20 @@ class Pdp:
                 sites_sem_confirmar=self.sites_sem_confirmar,
                 navegadores=self.navegadores,
                 navegador_principal=self.navegador_principal,
+                contaminado=pedido.contaminado,
             )
+        if regra is not None and regra.veredito == "confirm":
+            # A regra apertou o que o tier deixaria livre (ex.: site fora da lista, depois de o
+            # turno ler uma página): confirma — e só o "sim" do dono na janela solta.
+            if confirmado_pelo_dono:
+                return self._registrar(
+                    pedido,
+                    Veredito.ALLOW,
+                    f"confirmado pelo dono na janela — {regra.motivo}",
+                    None,
+                    capacidade,
+                )
+            return self._registrar(pedido, Veredito.CONFIRM, regra.motivo, None, capacidade)
         if regra is not None:
             # ADR-0026: a política de memória decide antes da matriz comum — nega o que não tem
             # origem, e o grant de turno libera só o que é fala literal do dono neste turno.
@@ -236,6 +236,10 @@ class Pdp:
         confirmar: str | None = None
         if capacidade.risk_class in RISCOS_QUE_SEMPRE_CONFIRMAM:
             confirmar = f"risco {capacidade.risk_class} confirma em qualquer modo"
+        elif capacidade.tier == "perigoso":
+            confirmar = (
+                "perigoso: só com a confirmação do dono (irreversível, envia, gasta, instala)"
+            )
         elif capacidade.confirmation != "never":
             confirmar = f"manifesto pede confirmação ({capacidade.confirmation})"
         if confirmar is not None:
@@ -248,9 +252,11 @@ class Pdp:
                     capacidade,
                 )
             return self._registrar(pedido, Veredito.CONFIRM, confirmar, canonico, capacidade)
-        return self._registrar(
-            pedido, Veredito.ALLOW, "dentro do catálogo e da raiz", canonico, capacidade
-        )
+        motivo = {
+            "livre": "livre: dentro do catálogo e da raiz",
+            "moderado": "moderado: sem confirmação; o Jarvis avisa em voz, a auditoria registra",
+        }.get(capacidade.tier, "dentro do catálogo e da raiz")
+        return self._registrar(pedido, Veredito.ALLOW, motivo, canonico, capacidade)
 
     def _raiz_de(self, caminho: CaminhoCanonico) -> Raiz | None:
         candidatas = [r for r in self.raizes() if caminho.dentro_de(r.caminho)]
@@ -296,6 +302,7 @@ class Pdp:
             grant_id="",
             veredito=str(veredito),
             motivo=motivo,
+            sessao_contaminada=pedido.contaminado,
         )
         grant: Grant | None = None
         if veredito is Veredito.ALLOW:

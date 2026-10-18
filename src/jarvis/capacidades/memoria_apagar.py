@@ -7,6 +7,7 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
+  tier: perigoso
   risco: apagar_permanente · confirmação: per_action · egress: none
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
   pós-condição verificada pelo executor: varredura de bruto, FTS, índice e grafo não acha o alvo
@@ -21,6 +22,7 @@ ID: Final = "memoria.apagar"
 CAPABILITY: Final = "memoria.write.exclusao"
 RISK_CLASS: Final = "apagar_permanente"
 CONFIRMATION: Final = "per_action"
+TIER: Final = "perigoso"
 DATA_EGRESS: Final = "none"
 ACCESS_LEVEL_MIN: Final = "jarvis"
 REQUIRES_ELEVATION: Final = False

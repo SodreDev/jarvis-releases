@@ -7,7 +7,8 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
-  risco: egress · confirmação: per_action · egress: network:navegador
+  tier: livre
+  risco: transitorio_reversivel · confirmação: never · egress: local
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
   pós-condição verificada pelo executor: o navegador configurado (ou o portal do desktop) aceitou
     abrir a URL
@@ -20,9 +21,10 @@ from typing import Any, Final
 
 ID: Final = "sites.open"
 CAPABILITY: Final = "sites.open"
-RISK_CLASS: Final = "egress"
-CONFIRMATION: Final = "per_action"
-DATA_EGRESS: Final = "network:navegador"
+RISK_CLASS: Final = "transitorio_reversivel"
+CONFIRMATION: Final = "never"
+TIER: Final = "livre"
+DATA_EGRESS: Final = "local"
 ACCESS_LEVEL_MIN: Final = "jarvis"
 REQUIRES_ELEVATION: Final = False
 IDEMPOTENCY: Final = "required"

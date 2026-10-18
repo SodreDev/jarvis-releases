@@ -36,6 +36,11 @@ PALAVRAS_DE_CANIVETE: Final[tuple[str, ...]] = (
     "argv livre",
     "o que o usuário pedir",
 )
+PADRAO_DE_AUTOCONFIRMACAO: Final = re.compile(
+    r"confirm|autoriz|aprov|forc[ae]|sudo|bypass|sem_pergunt|pular|override|permiss", re.IGNORECASE
+)
+"""Nome de argumento que parece dar ao **modelo** o poder de se autorizar. A confirmação do dono é
+um parâmetro do executor, preenchido só depois do "sim" na janela — nenhuma tool o recebe."""
 CAMPOS_DE_POLITICA_NOSSOS: Final[tuple[str, ...]] = (
     "risk_class",
     "confirmation",
@@ -91,6 +96,18 @@ def lintar_manifesto(manifesto: dict[str, Any], arquivo: str) -> list[Achado]:
                 "descrição precisa dizer quando usar E o que a tool não faz (§4)",
             )
         )
+
+    for nome in manifesto["input_schema"].get("properties", {}):
+        if PADRAO_DE_AUTOCONFIRMACAO.search(str(nome)):
+            achados.append(
+                Achado(
+                    arquivo,
+                    identificador,
+                    "autoconfirmacao",
+                    f"argumento {nome!r} parece deixar o modelo confirmar ou contornar a política: "
+                    "só o dono confirma, na janela",
+                )
+            )
 
     origem = manifesto.get("mcp_origin")
     if origem is not None:

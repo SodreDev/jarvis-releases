@@ -7,6 +7,7 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
+  tier: livre
   risco: leitura · confirmação: never · egress: none
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
   pós-condição verificada pelo executor: os turnos devolvidos são da mesma sessão, em ordem
@@ -21,6 +22,7 @@ ID: Final = "memoria.ler_mensagem"
 CAPABILITY: Final = "memoria.read.mensagem"
 RISK_CLASS: Final = "leitura"
 CONFIRMATION: Final = "never"
+TIER: Final = "livre"
 DATA_EGRESS: Final = "none"
 ACCESS_LEVEL_MIN: Final = "jarvis"
 REQUIRES_ELEVATION: Final = False

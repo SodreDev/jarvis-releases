@@ -7,6 +7,7 @@ Recusa, nunca ignora: manifesto sem `postcondition`, `risk_class`, `tests` ou
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Final
 
@@ -14,6 +15,7 @@ import jsonschema
 import yaml
 
 from jarvis.dados import caminho
+from jarvis.politica.catalogo import RISCOS_QUE_SEMPRE_CONFIRMAM
 
 ARQUIVO_SCHEMA: Final = caminho("schemas/manifesto.v1.json")
 PASTA_CATALOGO: Final = caminho("catalogo")
@@ -73,10 +75,7 @@ def _validar_coerencia(manifesto: dict[str, Any], origem: str) -> None:
         raise ManifestoInvalido(
             f"{origem}: {identificador} tem efeito reversível e não aponta `undo` (§4)"
         )
-    if manifesto["side_effect"] != "none" and manifesto["confirmation"] == "never":
-        raise ManifestoInvalido(
-            f"{origem}: {identificador} tem efeito persistente com confirmation: never"
-        )
+    _validar_tier(manifesto, origem)
     if manifesto["risk_class"] == "leitura" and manifesto["side_effect"] != "none":
         raise ManifestoInvalido(f"{origem}: {identificador} é 'leitura' mas tem efeito")
     if manifesto["requires_elevation"] and manifesto["confirmation"] != "per_action":
@@ -85,6 +84,7 @@ def _validar_coerencia(manifesto: dict[str, Any], origem: str) -> None:
         )
     egress = str(manifesto["data_egress"])
     if egress.startswith("network:") and manifesto["risk_class"] not in (
+        "consulta_publica",
         "egress",
         "representacao_do_dono",
         "instalar_ou_executar_baixado",
@@ -106,6 +106,76 @@ def _validar_coerencia(manifesto: dict[str, Any], origem: str) -> None:
     if faltando:
         raise ManifestoInvalido(
             f"{origem}: {identificador} sem os testes obrigatórios: {sorted(faltando)}"
+        )
+
+
+def _validar_tier(manifesto: dict[str, Any], origem: str) -> None:
+    """O tier é o campo de risco do controle por voz (dono, 2026-10-18) e tem de bater com o resto.
+
+    - **perigoso** pergunta: `confirmation` não pode ser `never`;
+    - **livre** e **moderado** nunca perguntam (`confirmation: never`) — e por isso **não** podem
+      ter risco que confirma em qualquer modo (apagar, enviar, gastar, instalar, elevar…), nem
+      pedir elevação: o que tem de perguntar é `perigoso`, e o PDP também confere em tempo de
+      execução;
+    - **livre** é leitura ou efeito passageiro (abrir, tocar), sem escrita persistente;
+    - **moderado** escreve, mas só o que se desfaz: reversível, com `undo`, sem sair da máquina, e
+      com a frase que o Jarvis fala (`aviso_falado`) citando só campos que existem.
+    """
+    identificador = str(manifesto["id"])
+    tier = manifesto["tier"]
+    confirmacao = manifesto["confirmation"]
+    if tier == "perigoso":
+        if confirmacao == "never":
+            raise ManifestoInvalido(
+                f"{origem}: {identificador} é perigoso e tem confirmation: never — ele pergunta"
+            )
+        return
+    if confirmacao != "never":
+        raise ManifestoInvalido(
+            f"{origem}: {identificador} é {tier} e tem confirmation: {confirmacao} — só o tier "
+            "perigoso pergunta (e livre/moderado nunca)"
+        )
+    if manifesto["risk_class"] in RISCOS_QUE_SEMPRE_CONFIRMAM or manifesto["requires_elevation"]:
+        raise ManifestoInvalido(
+            f"{origem}: {identificador} tem risco {manifesto['risk_class']} (que confirma em "
+            f"qualquer modo) e não pode ser {tier}: é perigoso"
+        )
+    if tier == "livre":
+        if manifesto["side_effect"] == "persistent":
+            raise ManifestoInvalido(
+                f"{origem}: {identificador} é livre mas escreve de forma persistente: é moderado"
+            )
+        if manifesto["risk_class"] not in ("leitura", "consulta_publica", "transitorio_reversivel"):
+            raise ManifestoInvalido(
+                f"{origem}: {identificador} é livre e tem risco {manifesto['risk_class']}"
+            )
+        return
+    # moderado
+    if manifesto["risk_class"] not in ("escrita_recuperavel", "transitorio_reversivel"):
+        raise ManifestoInvalido(
+            f"{origem}: {identificador} é moderado e tem risco {manifesto['risk_class']}"
+        )
+    if manifesto["side_effect"] == "persistent" and not (
+        manifesto["reversible"] and manifesto.get("undo")
+    ):
+        raise ManifestoInvalido(
+            f"{origem}: {identificador} é moderado, escreve e não é reversível com `undo`: "
+            "o que não se desfaz é perigoso"
+        )
+    if str(manifesto["data_egress"]) not in ("none", "local"):
+        raise ManifestoInvalido(f"{origem}: {identificador} é moderado e manda dado para fora")
+    aviso = manifesto.get("aviso_falado")
+    if not aviso:
+        raise ManifestoInvalido(f"{origem}: {identificador} é moderado e não tem `aviso_falado`")
+    campos = set(manifesto["input_schema"].get("properties", {})) | set(
+        manifesto["output_schema"].get("properties", {})
+    )
+    campos |= set(manifesto["output_schema"].get("required", []))
+    citados = set(re.findall(r"\{(\w+)\}", str(aviso)))
+    if not citados <= campos:
+        raise ManifestoInvalido(
+            f"{origem}: {identificador}: `aviso_falado` cita {sorted(citados - campos)}, que não "
+            "são argumento nem resultado da tool"
         )
 
 

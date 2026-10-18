@@ -31,7 +31,8 @@ idempotent: false
 idempotency: required
 data_egress: none
 pii_touch: content
-confirmation: once_per_batch
+confirmation: per_action
+tier: perigoso
 access_level_min: jarvis
 roots: []
 requires_elevation: false

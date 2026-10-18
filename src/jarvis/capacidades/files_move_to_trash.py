@@ -7,7 +7,8 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
-  risco: escrita_recuperavel · confirmação: once_per_batch · egress: none
+  tier: perigoso
+  risco: escrita_recuperavel · confirmação: per_action · egress: none
   modo mínimo: padrao · elevação: False · raízes: workspace_root
   pós-condição verificada pelo executor: arquivo ausente no caminho original E presente na lixeira
 """
@@ -20,7 +21,8 @@ from typing import Any, Final
 ID: Final = "files.move_to_trash"
 CAPABILITY: Final = "files.write.trash"
 RISK_CLASS: Final = "escrita_recuperavel"
-CONFIRMATION: Final = "once_per_batch"
+CONFIRMATION: Final = "per_action"
+TIER: Final = "perigoso"
 DATA_EGRESS: Final = "none"
 ACCESS_LEVEL_MIN: Final = "padrao"
 REQUIRES_ELEVATION: Final = False

@@ -3,7 +3,7 @@ id: sites.open
 title: Abrir um site
 description: Abre um endereço http ou https no navegador principal que o dono configurou (ou no padrão
   do desktop, se ele não configurou). Use quando o dono pedir para abrir uma página; só diga `navegador`
-  se ele pedir um navegador específico e for um dos que ele configurou. Domínio fora da lista que o dono liberou pede confirmação na tela. Não lê a página,
+  se ele pedir um navegador específico e for um dos que ele configurou. Abre sem perguntar; só confirma, na tela, se neste turno você leu um arquivo ou página e o endereço não é de um site que o dono liberou. Não lê a página,
   não controla o navegador, não abre outro esquema (arquivo, javascript, dados) e não aceita URL com senha.
 input_schema:
   type: object
@@ -27,14 +27,15 @@ preconditions:
 - url http(s) com host e sem credencial
 postcondition: o navegador configurado (ou o portal do desktop) aceitou abrir a URL
 capability: sites.open
-risk_class: egress
+risk_class: transitorio_reversivel
 side_effect: ephemeral
 reversible: false
 idempotent: false
 idempotency: required
-data_egress: network:navegador
+data_egress: local
 pii_touch: metadata
-confirmation: per_action
+confirmation: never
+tier: livre
 access_level_min: jarvis
 roots: []
 requires_elevation: false

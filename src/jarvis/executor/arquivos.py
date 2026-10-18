@@ -11,6 +11,7 @@ Nada aqui tem shell, `subprocess` ou `eval` (aceite F0-03 d, varrido no código)
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import unicodedata
@@ -203,9 +204,45 @@ def gravar_rascunho(
                 os.close(fd)
             return {
                 "caminho": _junto(_junto(str(raiz.caminho), pasta), candidato),
+                "nome": candidato,
                 "bytes": len(dados),
             }
     raise AberturaRecusada("99 rascunhos com o mesmo nome: escolha outro")
+
+
+def recolher_para_a_lixeira(
+    raiz: RaizAberta, relativo: str, *, lixeira: str = "lixeira"
+) -> dict[str, Any]:
+    """Tira um arquivo da pasta e o põe na lixeira **do Jarvis** (na mesma raiz). Nunca apaga.
+
+    É o "desfazer" do que o Jarvis criou: o arquivo continua existindo, só sai de onde estava, e o
+    dono decide o fim dele. O `rename` é sob o descritor da raiz, nos dois lados (§5.5).
+    """
+    relativo = relativo.strip("/")
+    pasta, _, nome = relativo.rpartition("/")
+    if not nome:
+        raise AberturaRecusada("sem nome de arquivo para recolher")
+    if relativo == lixeira or relativo.startswith(lixeira + "/"):
+        raise AberturaRecusada("isso já está na lixeira")
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(lixeira, 0o700, dir_fd=raiz.fd)
+    agora = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+    with (
+        raiz.abrir(pasta or ".", diretorio=True) as origem,
+        raiz.abrir(lixeira, diretorio=True) as destino,
+    ):
+        os.stat(nome, dir_fd=origem.fd, follow_symlinks=False)  # FileNotFoundError se já saiu
+        for tentativa in range(1, 100):
+            novo = f"{agora}-{nome}" if tentativa == 1 else f"{agora}-{tentativa}-{nome}"
+            try:
+                os.stat(novo, dir_fd=destino.fd, follow_symlinks=False)
+            except FileNotFoundError:
+                os.rename(nome, novo, src_dir_fd=origem.fd, dst_dir_fd=destino.fd)
+                return {
+                    "recolhido": relativo,
+                    "lixeira": _junto(str(raiz.caminho), f"{lixeira}/{novo}"),
+                }
+    raise AberturaRecusada("lixeira cheia de nomes iguais")
 
 
 def evento_ics(titulo: str, inicio: str, *, duracao_min: int = 60, local: str = "") -> str:

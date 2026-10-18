@@ -29,7 +29,8 @@ idempotent: false
 idempotency: required
 data_egress: none
 pii_touch: none
-confirmation: once_per_batch
+confirmation: never
+tier: livre
 access_level_min: jarvis
 roots: []
 requires_elevation: false

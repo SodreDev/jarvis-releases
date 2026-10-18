@@ -7,7 +7,8 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
-  risco: escrita_recuperavel · confirmação: per_action · egress: none
+  tier: moderado
+  risco: escrita_recuperavel · confirmação: never · egress: none
   modo mínimo: jarvis · elevação: False · raízes: jarvis_root
   pós-condição verificada pelo executor: arquivo .ics novo na pasta de rascunhos de agenda, sem
     convidados
@@ -21,7 +22,8 @@ from typing import Any, Final
 ID: Final = "calendar.create_draft_event"
 CAPABILITY: Final = "calendar.write.draft"
 RISK_CLASS: Final = "escrita_recuperavel"
-CONFIRMATION: Final = "per_action"
+CONFIRMATION: Final = "never"
+TIER: Final = "moderado"
 DATA_EGRESS: Final = "none"
 ACCESS_LEVEL_MIN: Final = "jarvis"
 REQUIRES_ELEVATION: Final = False

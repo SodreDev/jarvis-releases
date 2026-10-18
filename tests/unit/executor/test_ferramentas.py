@@ -127,8 +127,10 @@ def test_a_busca_para_quando_o_dono_interrompe(casa: Path, auditoria: LogDeAudit
     assert resultado.status == "cancelado"
 
 
-# --- escrita só na pasta do Jarvis, com confirmação -----------------------------------------
-def test_rascunho_sem_o_sim_do_dono_nao_existe(casa: Path, auditoria: LogDeAuditoria) -> None:
+# --- escrita só na pasta do Jarvis: moderada, roda sem perguntar e avisa -------------------------
+def test_rascunho_e_moderado_roda_sem_perguntar_e_avisa(
+    casa: Path, auditoria: LogDeAuditoria
+) -> None:
     perguntas: list[Confirmacao] = []
 
     def negar(pergunta: Confirmacao) -> bool:
@@ -142,9 +144,10 @@ def test_rascunho_sem_o_sim_do_dono_nao_existe(casa: Path, auditoria: LogDeAudit
         cancelado=NUNCA,
         confirmar=negar,
     )
-    assert resultado.status == "negado"
-    assert perguntas and "«lista»" in perguntas[0].detalhe
-    assert list((casa.parent / "area" / "rascunhos").glob("*.md")) == []
+    assert resultado.status == "ok"
+    assert perguntas == [], "tool moderada não pergunta (dono, 2026-10-18)"
+    assert resultado.aviso == "Gravei o rascunho lista.md na pasta do Jarvis."
+    assert [p.name for p in (casa.parent / "area" / "rascunhos").glob("*.md")] == ["lista.md"]
 
 
 def test_rascunho_com_o_sim_grava_novo_e_nunca_sobrescreve(
@@ -401,10 +404,9 @@ def test_site_so_http_e_dominio_liberado_abre_sem_perguntar(
     )
     assert js.status == senha.status == "negado"
     assert livre.status == "ok"
-    assert outro.status == "negado" and [p.detalhe for p in perguntas] == [
-        "abrir exemplo.com no seu navegador"
-    ]
-    assert abertos == ["https://pt.wikipedia.org/wiki/Jarvis"]
+    assert outro.status == "ok", "abrir site é livre (dono, 2026-10-18)"
+    assert perguntas == []
+    assert abertos == ["https://pt.wikipedia.org/wiki/Jarvis", "https://exemplo.com"]
 
 
 def test_argumento_a_mais_e_tool_inventada_sao_recusados(
@@ -430,5 +432,6 @@ def test_o_catalogo_do_modelo_so_tem_o_que_tem_corpo(casa: Path, auditoria: LogD
         "apps.launch",
         "sites.open",
         "browser.launch",
+        "acao.desfazer",
     }
     assert not any(i.startswith("memoria.") for i in ids)

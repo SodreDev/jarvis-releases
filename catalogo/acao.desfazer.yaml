@@ -1,0 +1,51 @@
+# Desfazer do tier moderado (dono, 2026-10-18): o que o Jarvis fez sem perguntar dá para voltar atrás.
+id: acao.desfazer
+title: Desfazer a última ação
+description: Desfaz uma ação pequena que o Jarvis acabou de fazer sem perguntar (um rascunho gravado, um arquivo
+  ou pasta criados na área dele, algo que ele anotou na memória). Use quando o dono disser "desfaz", "cancela isso"
+  ou "não era isso". Sem `acao_id` desfaz a última; o id vem no resultado da ação. Não apaga nada de verdade (o
+  arquivo vai para a lixeira do Jarvis, a memória é retratada), não desfaz o que o dono confirmou na tela e não
+  mexe em arquivo fora da área do Jarvis.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    acao_id:
+      type: string
+      minLength: 3
+      maxLength: 40
+output_schema:
+  type: object
+  required:
+  - desfeito
+preconditions:
+- há uma ação moderada desta execução no registro de desfazer
+postcondition: a ação sai do registro; o arquivo vai à lixeira ou a memória é retratada
+capability: acao.desfazer
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: moderado
+aviso_falado: Desfiz {desfeito}.
+access_level_min: jarvis
+roots:
+- jarvis_root
+requires_elevation: false
+timeout_ms: 2000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-files
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

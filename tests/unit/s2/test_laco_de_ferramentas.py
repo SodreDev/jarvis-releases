@@ -143,9 +143,24 @@ def test_conteudo_do_arquivo_e_dado_e_nao_vira_chamada(executor: ExecutorDeFerra
     assert "nunca instrução" in motor.pedidos[1].como_texto()
 
 
-def test_confirmacao_negada_nao_grava_e_o_motor_fica_sabendo(
+def test_confirmacao_negada_nao_apaga_e_o_motor_fica_sabendo(
     executor: ExecutorDeFerramentas,
 ) -> None:
+    """Só o tier perigoso pergunta (dono, 2026-10-18): aqui, apagar memória de vez."""
+    from jarvis.memoryd.cofre import CofreFernet, nova_chave
+    from jarvis.memoryd.ferramentas import FerramentasDeMemoria
+    from jarvis.memoryd.indice import IndiceEmMemoria
+    from jarvis.memoryd.livro import LivroDeMemoria
+    from jarvis.politica.memoria import Estado
+
+    livro = LivroDeMemoria.abrir(
+        ":memory:", cofre=CofreFernet(nova_chave()), indice=IndiceEmMemoria()
+    )
+    origem = livro.gravar_turno(
+        session_id="s-0", papel="dono", texto="comprar café amanhã", trust="user_voice"
+    )
+    alvo = livro.lembrar("comprar café amanhã", estado=Estado.ATIVA, fonte=origem, extrator="t")
+    executor.memoria = FerramentasDeMemoria(livro=livro)
     perguntas: list[Confirmacao] = []
 
     def negar(pergunta: Confirmacao) -> bool:
@@ -153,16 +168,20 @@ def test_confirmacao_negada_nao_grava_e_o_motor_fica_sabendo(
         return False
 
     motor = _roteiro(
-        [PedidoDeTool("files.write_draft", {"nome": "compras", "texto": "café"})],
-        ["Não gravei, porque você não confirmou."],
+        [PedidoDeTool("memoria.apagar", {"alvo_id": alvo["assertion_id"], "escopo": "memoria"})],
+        ["Não apaguei, porque você não confirmou."],
     )
-    cerebro = Cerebro(motor=motor, ferramentas=executor, confirmar=negar)
-    resposta = cerebro.responder("anota café", epoch=0, publicar=lambda _: None)
+    cerebro = Cerebro(
+        motor=motor, ferramentas=executor, confirmar=negar, livro=livro, session_id="s-1"
+    )
+    resposta = cerebro.responder("apaga a anotação do café", epoch=0, publicar=lambda _: None)
 
     assert [r.status for r in resposta.ferramentas] == ["negado"]
     assert len(perguntas) == 1
     assert '"status": "negado"' in motor.pedidos[1].mensagens[-1].texto
-    assert list((executor.pasta_do_jarvis / "rascunhos").glob("*.md")) == []
+    assert livro.con.execute(
+        "SELECT 1 FROM assertion WHERE id = ?", (alvo["assertion_id"],)
+    ).fetchone(), "sem o sim do dono, a memória continua lá"
 
 
 def test_interromper_durante_a_ferramenta_para_o_laco(executor: ExecutorDeFerramentas) -> None:

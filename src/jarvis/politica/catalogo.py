@@ -29,9 +29,26 @@ PADROES_DE_CANIVETE: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"^shell\."),
 )
 CAMPOS_DE_POLITICA: Final[frozenset[str]] = frozenset(
-    {"access_level_min", "requires_elevation", "roots", "risk_class", "confirmation"}
+    {"access_level_min", "requires_elevation", "roots", "risk_class", "confirmation", "tier"}
 )
 """Campos que **só** o repositório define: não vêm do LLM nem de servidor remoto (§4)."""
+
+RISCOS_QUE_SEMPRE_CONFIRMAM: Final[frozenset[str]] = frozenset(
+    {
+        "apagar_permanente",
+        "sobrescrita_sem_desfazer",
+        "lote_acima_do_teto",
+        "renomear_em_massa",
+        "egress",
+        "representacao_do_dono",
+        "instalar_ou_executar_baixado",
+        "mudanca_de_sistema",
+        "elevacao",
+        "fora_do_diretorio_do_dono",
+    }
+)
+"""O que continua exigindo confirmação **mesmo no `total`** (§5.5, P13) — e que, por isso, só pode
+ser de tier `perigoso` (o validador recusa o resto)."""
 
 PALAVRAS_DE_CONTROLE_DE_ACESSO: Final[tuple[str, ...]] = (
     "access_level",
@@ -55,6 +72,9 @@ class Capacidade:
     capability: str
     risk_class: str
     confirmation: str
+    tier: str
+    """`livre`, `moderado` ou `perigoso` (dono, 2026-10-18): quem decide se pergunta, só avisa ou
+    não diz nada. Vem do manifesto — nunca do modelo."""
     access_level_min: Modo
     requires_elevation: bool
     roots: tuple[str, ...]
@@ -96,6 +116,7 @@ def carregar(arquivo: Path) -> Capacidade:
         capability=str(dados["capability"]),
         risk_class=str(dados["risk_class"]),
         confirmation=str(dados["confirmation"]),
+        tier=str(dados["tier"]),
         access_level_min=Modo(str(dados["access_level_min"])),
         requires_elevation=bool(dados["requires_elevation"]),
         roots=tuple(dados["roots"] or ()),

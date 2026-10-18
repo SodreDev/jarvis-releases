@@ -208,6 +208,7 @@ def test_a_varredura_pega_uma_capacidade_plantada_que_mexe_no_nivel(tmp_path: Pa
         "capability: config.write.access_level\n"
         "risk_class: mudanca_de_sistema\n"
         "confirmation: per_action\n"
+        "tier: perigoso\n"
         "access_level_min: jarvis\n"
         "requires_elevation: false\n"
         "side_effect: persistent\n"
@@ -233,7 +234,8 @@ def test_capacidade_canivete_suico_e_recusada(tmp_path: Path) -> None:
     manifesto = tmp_path / "y.yaml"
     manifesto.write_text(
         "id: system.run_command\ncapability: system.exec\nrisk_class: leitura\n"
-        "confirmation: never\naccess_level_min: jarvis\nrequires_elevation: false\nroots: []\n",
+        "confirmation: never\ntier: livre\naccess_level_min: jarvis\n"
+        "requires_elevation: false\nroots: []\n",
         encoding="utf-8",
     )
 
@@ -356,6 +358,7 @@ def _pdp_com_raiz_real(raiz: Path, auditoria: LogDeAuditoria) -> Pdp:
         "capability: files.read.text\n"
         "risk_class: leitura\n"
         "confirmation: never\n"
+        "tier: livre\n"
         "access_level_min: padrao\n"
         "requires_elevation: false\n"
         "side_effect: none\n"

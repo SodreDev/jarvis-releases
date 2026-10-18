@@ -174,6 +174,7 @@ def promovida(**mudancas: Any) -> dict[str, Any]:
         "side_effect": "none",
         "idempotency": "not_required",
         "confirmation": "never",
+        "tier": "livre",
         "roots": [],
         "access_level_min": "jarvis",
         "mcp_origin": {

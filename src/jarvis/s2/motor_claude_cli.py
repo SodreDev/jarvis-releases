@@ -62,8 +62,10 @@ MARCA_DE_FERRAMENTA: Final = "<<ferramenta>>"
 então a proposta de chamada chega como uma linha que começa com esta marca e traz um JSON."""
 
 INSTRUCAO_DE_FERRAMENTAS: Final = (
-    "Você pode PROPOR ferramentas; quem decide se roda é o código do Jarvis, e coisas como "
-    "gravar ou abrir site podem pedir a confirmação do dono. Para propor, responda com uma "
+    "Você pode PROPOR ferramentas; quem decide se roda é o código do Jarvis. As simples rodam na "
+    "hora; as pequenas e desfazíveis rodam e o Jarvis já avisa o dono em voz (o resultado traz "
+    "`aviso_ao_dono`: não repita); só as perigosas pedem a confirmação do dono na tela. Para "
+    "propor, responda com uma "
     "linha que começa exatamente com " + MARCA_DE_FERRAMENTA + " seguida de um JSON "
     '{"tool_id": "...", "args": {...}} — uma linha por chamada, sem markdown, sem explicar o '
     'JSON. Pode dizer uma frase curta antes ("deixa eu ver"). Depois você recebe os '

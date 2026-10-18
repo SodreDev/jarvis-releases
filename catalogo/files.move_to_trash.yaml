@@ -19,7 +19,8 @@ idempotent: false
 idempotency: required
 data_egress: none
 pii_touch: path_only
-confirmation: once_per_batch
+confirmation: per_action
+tier: perigoso
 access_level_min: padrao
 roots: [workspace_root]
 requires_elevation: false

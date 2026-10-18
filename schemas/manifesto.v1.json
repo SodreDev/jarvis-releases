@@ -10,7 +10,7 @@
     "postcondition", "capability", "risk_class", "side_effect", "reversible", "idempotent",
     "idempotency", "data_egress", "pii_touch", "confirmation", "access_level_min", "roots",
     "requires_elevation", "timeout_ms", "cancellable", "platforms", "executor", "trust_input",
-    "tests", "version"
+    "tests", "version", "tier"
   ],
   "properties": {
     "id": {
@@ -36,7 +36,7 @@
     "capability": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" },
     "risk_class": {
       "enum": [
-        "leitura", "transitorio_reversivel", "escrita_recuperavel", "apagar_permanente", "sobrescrita_sem_desfazer",
+        "leitura", "consulta_publica", "transitorio_reversivel", "escrita_recuperavel", "apagar_permanente", "sobrescrita_sem_desfazer",
         "lote_acima_do_teto", "renomear_em_massa", "egress", "representacao_do_dono",
         "instalar_ou_executar_baixado", "mudanca_de_sistema", "elevacao",
         "fora_do_diretorio_do_dono"
@@ -54,6 +54,16 @@
     },
     "pii_touch": { "enum": ["none", "path_only", "metadata", "content", "sensitive"] },
     "confirmation": { "enum": ["never", "once_per_batch", "per_action", "handoff"] },
+    "tier": {
+      "enum": ["livre", "moderado", "perigoso"],
+      "description": "Controle por voz (dono, 2026-10-18). livre: roda sem confirmação nem aviso (abrir, ler, consultar, mídia). moderado: roda sem confirmação, mas o Jarvis avisa em voz (`aviso_falado`), a auditoria registra e, se der, desfaz (`acao.desfazer`). perigoso: irreversível, sai da pasta do Jarvis, gasta, envia ou instala — sempre pede a confirmação do dono, que a IA nunca dá por ele. Campo NOSSO, como risk_class: não vem do LLM nem de servidor remoto."
+    },
+    "aviso_falado": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 200,
+      "description": "A frase que o Jarvis fala depois que uma tool `moderado` roda. Modelo com {campo}: os argumentos e o resultado da chamada entram no lugar. Obrigatória no tier moderado."
+    },
     "access_level_min": { "enum": ["jarvis", "padrao", "concedido", "total"] },
     "roots": {
       "type": "array",

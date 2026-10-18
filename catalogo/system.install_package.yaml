@@ -20,6 +20,7 @@ idempotency: required
 data_egress: network:repositorio-da-distro
 pii_touch: none
 confirmation: per_action
+tier: perigoso
 access_level_min: total
 roots: []
 requires_elevation: true

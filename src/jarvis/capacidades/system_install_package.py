@@ -7,6 +7,7 @@ Para mudar a assinatura, mude o manifesto e gere de novo:
     uv run --frozen python tools/manifesto.py codegen
 
 Política desta capacidade (decidida no repositório, nunca pelo modelo):
+  tier: perigoso
   risco: mudanca_de_sistema · confirmação: per_action · egress: network:repositorio-da-distro
   modo mínimo: total · elevação: True · raízes: (nenhuma)
   pós-condição verificada pelo executor: pacote presente na versão informada
@@ -21,6 +22,7 @@ ID: Final = "system.install_package"
 CAPABILITY: Final = "system.write.packages"
 RISK_CLASS: Final = "mudanca_de_sistema"
 CONFIRMATION: Final = "per_action"
+TIER: Final = "perigoso"
 DATA_EGRESS: Final = "network:repositorio-da-distro"
 ACCESS_LEVEL_MIN: Final = "total"
 REQUIRES_ELEVATION: Final = True

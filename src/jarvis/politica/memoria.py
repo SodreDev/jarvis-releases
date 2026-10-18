@@ -82,7 +82,8 @@ class AlcanceDeMemoria:
 @dataclass(frozen=True, slots=True)
 class RegraDeMemoria:
     veredito: str
-    """`allow` ou `deny` — `confirm` fica com o manifesto, pelo caminho comum do PDP."""
+    """`allow`, `deny` ou (só nas regras de abertura) `confirm`. Na memória, o `confirm` fica com
+    o tier do manifesto, pelo caminho comum do PDP."""
     motivo: str
 
 
