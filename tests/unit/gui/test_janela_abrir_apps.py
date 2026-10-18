@@ -189,7 +189,7 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
     sem_chaveiro: None,
 ) -> None:
     """Uma conversa, quatro pedidos: marcado abre sem faixa (inclusive por nome parcial), não
-    marcado é negado com sugestão, e site fora da lista pede o sim do dono."""
+    marcado é negado com sugestão, e site abre sem faixa (abrir site é livre desde 2026-10-18)."""
     vistos.clear()
     maquina = Maquina(tmp_path)
     laco, ponte = _montar(
@@ -215,7 +215,7 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
     assert "Discord" in negado["motivo"], json.dumps(negado, ensure_ascii=False)
 
     assert maquina.sites_abertos == []
-    assert _falar(aplicativo, tela, laco, "abre o exemplo", sim=True), "site fora da lista confirma"
+    assert not _falar(aplicativo, tela, laco, "abre o exemplo"), "abrir site é livre: sem faixa"
     assert maquina.sites_abertos == ["https://exemplo.com.br/a"]
 
     tela.pararConversa()

@@ -358,6 +358,49 @@ de **cada** tool: tool nova sem decisão ali derruba a suíte.
 (os testes usam motor roteirizado); o desfazer de pasta/cópia/movimento (chega com as tools de
 arquivo, item seguinte); Windows (o desfazer usa `rename` sob descritor, que lá não existe ainda).
 
+### 0.5 Tarefas em segundo plano (2026-10-18)
+
+Pedido do dono (ADR-0022): comando longo roda em **subagente assíncrono** enquanto o Jarvis segue
+conversando. Fatia mínima: `tarefa.iniciar(descricao, tool, parametros)` cria uma **tarefa** (linha
+de execução própria), devolve o id na hora e o Jarvis continua; a conclusão entra pela fila de
+avisos (ADR-0025) e a tarefa aparece no card **Tarefas**.
+
+**Como conferir** (com `s2 = "claude"`; hoje o "comando longo" é a busca em muitas pastas):
+
+1. Peça: "procura o arquivo orçamento nas minhas pastas, em segundo plano". O Jarvis diz uma frase,
+   o sistema **fala** "Comecei a tarefa: … Aviso quando terminar" e o card **Tarefas** aparece
+   com o nome, `rodando · passo 1/1`, uma barra de progresso e o botão **parar**.
+2. Converse com ele enquanto isso ("que dia é hoje?"): ele responde normal; a tarefa não para.
+3. **Parar** cancela (em menos de 1 s): o card vira `cancelada` e entra um aviso "foi cancelada" no
+   card Notificações. Sem clicar, ao terminar vira `pronta` (barra verde) e o aviso "terminou" chega
+   na fila — o Jarvis o diz quando você não estiver falando.
+4. "Como está a tarefa?" → `tarefa.estado`; "cancela a tarefa" → `tarefa.cancelar`; "desfaz" logo
+   depois de iniciar também cancela (`acao.desfazer`).
+
+**O que está imposto (e testado):** cada passo passa pelo **mesmo PDP** da conversa (auditoria com o
+id da tarefa em `call_id`); passo perigoso pede o seu sim na **mesma faixa** e a tarefa espera
+sozinha (a conversa não trava; o estado vira `esperando o seu sim`); a tarefa **não** roda
+`tarefa.*` (profundidade 1) nem `acao.desfazer`; no máximo **2** ao mesmo tempo; fechar a sessão
+cancela todas; resultado que chega depois do cancelamento não entra no estado. Cada tarefa tem a
+**sua** contaminação (o que ela leu de terceiros não aperta a conversa, e a que nasce de um turno
+contaminado herda).
+
+**Motor da tarefa — só você escolhe**, em `~/.config/jarvis/jarvis-voz.toml`:
+
+```toml
+tarefa_motor = "direto"   # padrão: roda a ferramenta pedida, um passo
+# tarefa_motor = "agente"  # o motor de conversa (s2) planeja os passos; se o s2 é de nuvem, a tarefa vai junto
+```
+
+Nenhuma tool tem argumento de motor (há teste para isso). No modo `agente`, o resumo final é de
+um modelo e entra na fila **marcado como terceiros**.
+
+**Limites honestos desta fatia:** as tarefas vivem na memória — fechar o Jarvis as cancela e nada é
+retomado (a ADR pede "falha com motivo reinício" num banco; aqui nem há banco); um único modelo de
+tarefa (qualquer ferramenta permitida pelo modo); `memoria.*` dentro de tarefa é negada (tarefa não
+tem o turno de origem que a política de memória exige); o `agente` com `claude -p` real não foi
+exercitado (os testes usam motor roteirizado).
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

@@ -195,6 +195,7 @@ class Ponte(QObject):
     dedoGlobal = Signal(bool)
     avisoDoAtalho = Signal(str)
     avisosMudaram = Signal()
+    tarefasMudaram = Signal()
     respostaParcial = Signal(str)
     confirmacaoPedida = Signal(str, str)
     """(id, frase) de uma confirmação de ferramenta pedida pelo laço (ADR-0028)."""
@@ -245,6 +246,9 @@ class Ponte(QObject):
         self.dedoGlobal.connect(self._aplicar_dedo)
         self.avisoDoAtalho.connect(self._avisar_do_atalho)
         self.avisosMudaram.connect(self._ligar_card_de_avisos)
+        self.tarefasMudaram.connect(self._ligar_card_de_tarefas)
+        self._card_de_tarefas = ""
+        """O módulo `tarefas` que **este** código criou para as tarefas reais (não o de exemplo)."""
         self.respostaParcial.connect(self._guardar_parcial)
         self.confirmacaoPedida.connect(self._mostrar_confirmacao)
         self.confirmacaoEncerrada.connect(self._tirar_confirmacao)
@@ -667,6 +671,7 @@ class Ponte(QObject):
             ao_estado=self._mudar_estado,
             ao_terminar=self._fim_da_conversa,
             ao_mudar_avisos=self.avisosMudaram.emit,
+            ao_mudar_tarefas=self.tarefasMudaram.emit,
             ao_pedaco=self.respostaParcial.emit,
             ao_pedir_confirmacao=self._pedir_confirmacao,
             ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,
@@ -687,6 +692,12 @@ class Ponte(QObject):
             self._sessao.interromper()  # o turno em curso é da conversa que acabou
         self._transcricao = []
         self.conversaMudou.emit()
+
+    @Slot(str)
+    def pararTarefa(self, tarefa_id: str) -> None:
+        """O "parar" do card de tarefas. Parar é sempre permitido: o laço só confere se existe."""
+        if self._sessao is not None:
+            self._sessao.parar_tarefa(tarefa_id)
 
     @Slot()
     def pararConversa(self) -> None:
@@ -1144,6 +1155,41 @@ class Ponte(QObject):
                 )
         if visto:
             # Renovar o card não é novidade para o dono: não vira frase na tela.
+            self._historico_visto = len(self._espaco.historico)
+
+    def _ligar_card_de_tarefas(self) -> None:
+        """As tarefas em segundo plano no card `tarefas`, pelo `updateWidget` (ADR-0022).
+
+        O módulo é criado na **primeira** tarefa em andamento (com os dados reais, sem o selo de
+        demonstração) e depois só renovado. Se o dono o fechou, ele só volta quando outra tarefa
+        começar — fechar o card não cancela tarefa, e o aviso de conclusão vem de qualquer jeito.
+        """
+        dados = self._sessao.dados_das_tarefas() if self._sessao else {"itens": []}
+        visto = len(self._espaco.historico) == self._historico_visto
+        if self._card_de_tarefas in self._espaco.widgets:
+            self._espaco.aplicar(
+                Acao(tipo=Tipo.ATUALIZAR, widget=self._card_de_tarefas, dados=dados),
+                dados_reais=True,
+            )
+        elif any(i.get("estado") in {"executando", "espera"} for i in dados["itens"]):
+            # Um canto de 3×2 (ou 2×2, o mínimo): o tamanho padrão do módulo não cabe ao lado
+            # do núcleo e dos cards de demonstração, e o card tem de aparecer sem tirar ninguém.
+            for colunas, linhas in ((3, 2), (2, 2)):
+                criada = self._espaco.aplicar(
+                    Acao(
+                        tipo=Tipo.CRIAR,
+                        componente="tarefas",
+                        titulo="Tarefas",
+                        area=Area(coluna=0, linha=0, colunas=colunas, linhas=linhas),
+                        dados=dados,
+                        motivo="uma tarefa começou em segundo plano",
+                    ),
+                    dados_reais=True,
+                )
+                if criada.aceita:
+                    self._card_de_tarefas = criada.widget
+                    break
+        if visto:
             self._historico_visto = len(self._espaco.historico)
 
     def _publicar(self) -> None:

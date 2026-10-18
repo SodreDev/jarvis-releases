@@ -53,3 +53,18 @@ def test_valor_sem_pe_nem_cabeca_e_recusado_dizendo_o_porque(
     escrever(Configuracao(**mudancas), arquivo)  # type: ignore[arg-type]
     with pytest.raises(ConfiguracaoInvalida, match=trecho):
         ler(arquivo)
+
+
+# --- motor das tarefas em segundo plano: escolha do dono (ADR-0022) -------------------------
+def test_tarefa_motor_vai_e_volta_pelo_toml_e_valor_desconhecido_e_recusado(tmp_path: Path) -> None:
+    from jarvis.voz.config import Configuracao, ConfiguracaoInvalida, escrever, ler
+
+    arquivo = tmp_path / "jarvis-voz.toml"
+    assert Configuracao().tarefa_motor == "direto", "o padrão não manda a tarefa para modelo nenhum"
+
+    escrever(Configuracao(tarefa_motor="agente"), arquivo)
+
+    assert ler(arquivo).tarefa_motor == "agente"
+    arquivo.write_text('tarefa_motor = "sub-gpt"\n', "utf-8")
+    with pytest.raises(ConfiguracaoInvalida, match="tarefa_motor"):
+        ler(arquivo)

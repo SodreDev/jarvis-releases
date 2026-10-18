@@ -87,6 +87,8 @@ class SessaoDeVoz:
     """A resposta em stream: o texto acumulado a cada pedaço de fala (ADR-0025). Da thread de
     trabalho, como as outras."""
     """A fila de avisos do laço mudou (ADR-0025). Chamada da thread de trabalho."""
+    ao_mudar_tarefas: Callable[[], None] = lambda: None
+    """Uma tarefa em segundo plano mudou (ADR-0022). Chamada da linha **da tarefa**."""
     escuta: Escuta | None = None
     """O modo de escuta vivo, de quem abriu a sessão (a ponte). Trocá-lo vale no próximo tique
     do laço, sem reiniciar nada (ADR-0021). `None` = o laço monta um da configuração."""
@@ -136,6 +138,7 @@ class SessaoDeVoz:
         aplicativo.teclado = self.teclado
         aplicativo.ao_mudar_estado = self.ao_estado
         aplicativo.ao_mudar_avisos = self.ao_mudar_avisos
+        aplicativo.ao_mudar_tarefas = self.ao_mudar_tarefas
         aplicativo.ao_pedaco = self.ao_pedaco
         aplicativo.ao_pedir_confirmacao = self.ao_pedir_confirmacao
         aplicativo.ao_fim_da_confirmacao = self.ao_fim_da_confirmacao
@@ -197,6 +200,16 @@ class SessaoDeVoz:
         if self.aplicativo is None:
             return False
         return self.aplicativo.responder_confirmacao(identificador, sim)
+
+    def dados_das_tarefas(self) -> dict[str, list[dict[str, str]]]:
+        """Os itens do card `tarefas`; antes de haver laço, não há tarefa."""
+        if self.aplicativo is None:
+            return {"itens": []}
+        return self.aplicativo.dados_das_tarefas()
+
+    def parar_tarefa(self, tarefa_id: str) -> bool:
+        """O "parar" do card: o dono, com o dedo."""
+        return self.aplicativo is not None and self.aplicativo.parar_tarefa(tarefa_id)
 
     def dados_dos_avisos(self) -> dict[str, list[dict[str, str]]]:
         """O card `notificacoes`: a fila do laço, ou vazia antes de haver laço."""

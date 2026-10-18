@@ -18,6 +18,7 @@ Regras que este módulo materializa:
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -133,6 +134,9 @@ class Pdp:
     """ADR-0026, M4: só vira verdade quando os seis gates da §6.6 passarem (aceite (a) da F3)."""
     _raizes: dict[str, RaizAberta] = field(default_factory=dict, repr=False)
     """Raiz aberta de cada grant vivo, por `grant_id`. É aqui que o descritor tem dono."""
+    _trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    """A conversa e as tarefas em segundo plano decidem ao mesmo tempo: grants e raízes abertas
+    são do PDP, e quem os mexe (decidir, abrir, expirar) o faz um de cada vez."""
 
     # --- catálogo -----------------------------------------------------------------
     def allowlist(self) -> tuple[str, ...]:
@@ -152,6 +156,10 @@ class Pdp:
 
     # --- decisão ------------------------------------------------------------------
     def decidir(self, pedido: Pedido, *, confirmado_pelo_dono: bool = False) -> Decisao:
+        with self._trava:
+            return self._decidir(pedido, confirmado_pelo_dono=confirmado_pelo_dono)
+
+    def _decidir(self, pedido: Pedido, *, confirmado_pelo_dono: bool = False) -> Decisao:
         """`allow | confirm | deny` para o pedido, registrado antes de devolver.
 
         `confirmado_pelo_dono` só é verdadeiro quando o **dono** respondeu "sim" na janela a uma
@@ -330,6 +338,10 @@ class Pdp:
 
     # --- abertura sob a raiz do grant ---------------------------------------------
     def abrir_para(self, grant: Grant, relativo: str, *, escrever: bool = False) -> RaizAberta:
+        with self._trava:
+            return self._abrir_para(grant, relativo, escrever=escrever)
+
+    def _abrir_para(self, grant: Grant, relativo: str, *, escrever: bool = False) -> RaizAberta:
         """Devolve a raiz **aberta no grant**, conferida; o alvo abre relativo a ela.
 
         Nada é reaberto pelo texto do caminho: o descritor é o do instante da decisão, guardado

@@ -31,6 +31,14 @@ LIXEIRA: Final = "lixeira"
 """Pasta, dentro da área do Jarvis, para onde vai o que o dono mandou desfazer."""
 
 
+@dataclass(slots=True)
+class Contaminacao:
+    """ "Este fluxo já leu conteúdo de terceiros": o turno da conversa tem a sua, e cada tarefa em
+    segundo plano tem a dela — uma não contamina a outra."""
+
+    valor: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class Desfazer:
     """Como voltar atrás de uma ação moderada."""

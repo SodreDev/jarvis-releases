@@ -1,0 +1,62 @@
+# Subagentes assíncronos (ADR-0022, fatia mínima; dono, 2026-10-18): o que demora roda em segundo plano.
+id: tarefa.iniciar
+title: Iniciar uma tarefa em segundo plano
+description: Começa uma tarefa em segundo plano e devolve o id na hora, para o Jarvis seguir conversando; a conclusão
+  chega como aviso e a tarefa aparece no card "tarefas". Use para o que demora (procurar em muitas pastas, ler
+  várias páginas). Diga `tool` (uma ferramenta do catálogo) e os `parametros` dela. Cada passo passa pela mesma política
+  da conversa e o que for perigoso pede o sim do dono. Não aceita outra tarefa dentro, não escolhe o motor e não
+  roda comando livre.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - descricao
+  - tool
+  properties:
+    descricao:
+      type: string
+      minLength: 3
+      maxLength: 120
+    tool:
+      type: string
+      minLength: 3
+      maxLength: 64
+    parametros:
+      type: object
+output_schema:
+  type: object
+  required:
+  - tarefa_id
+  - estado
+preconditions:
+- menos de 2 tarefas rodando
+- a ferramenta existe nesta sessão e o modo de acesso a permite
+postcondition: a tarefa existe, roda em linha própria e é cancelável; o id voltou sem esperar o fim
+capability: tarefa.iniciar
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: true
+undo: tarefa.cancelar
+idempotent: false
+idempotency: required
+data_egress: local
+pii_touch: none
+confirmation: never
+tier: moderado
+aviso_falado: 'Comecei a tarefa: {descricao}. Aviso quando terminar.'
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 1000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-tarefas
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

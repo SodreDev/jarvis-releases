@@ -22,6 +22,7 @@ QtObject {
     readonly property color textoForte: "#e8f4fb"
     readonly property color alerta: "#e0a44a"
     readonly property color positivo: "#5fd3a0"
+    readonly property color perigo: "#e5736a"
 
     readonly property int raioModulo: 2
     readonly property int espacamento: 14

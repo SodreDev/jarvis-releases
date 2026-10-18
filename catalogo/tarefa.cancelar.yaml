@@ -1,0 +1,49 @@
+id: tarefa.cancelar
+title: Cancelar uma tarefa
+description: Cancela uma tarefa em segundo plano que ainda está rodando, pelo id que `tarefa.iniciar` devolveu. Use quando
+  o dono pedir para parar, cancelar ou desistir de uma tarefa. Não desfaz o que passos já terminados fizeram (para isso
+  existe acao.desfazer) e não mexe em tarefa que já terminou.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - tarefa_id
+  properties:
+    tarefa_id:
+      type: string
+      minLength: 3
+      maxLength: 40
+output_schema:
+  type: object
+  required:
+  - tarefa_id
+  - estado
+preconditions:
+- a tarefa existe
+postcondition: a tarefa recebe o cancelamento e vira cancelada na próxima checagem do passo em curso
+capability: tarefa.cancelar
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: true
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 1000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-tarefas
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

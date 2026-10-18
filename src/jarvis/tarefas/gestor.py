@@ -1,0 +1,386 @@
+"""O gestor de tarefas (ADR-0022, fatia mínima; pedido do dono de 2026-10-18).
+
+Comando longo não prende a conversa: `tarefa.iniciar` cria uma **tarefa** — uma linha de execução
+própria —, devolve o id na hora e o Jarvis segue falando. O que a ADR manda, e está aqui:
+
+- **cada passo passa pelo mesmo PDP** (`ExecutorDeFerramentas.executar`): a tarefa não tem caminho
+  para uma ferramenta que não seja o da conversa. Passo perigoso pede o "sim" do dono na mesma
+  faixa da janela, e a tarefa espera; a conversa segue;
+- **a allowlist da tarefa só encolhe**: o que o modo de acesso permite, sem `tarefa.*` (profundidade
+  1) nem `acao.desfazer`;
+- **cancelável**: o botão "parar" da janela, `tarefa.cancelar` ou o fim da sessão. Resultado que
+  chega depois do cancelamento é descartado (fica na auditoria, não no estado);
+- **a conclusão entra pela fila de avisos** (ADR-0025) como `Notification`, e a tarefa aparece no
+  card `tarefas` (nome, estado, progresso, "parar");
+- **o motor é escolha do dono** (`tarefa_motor` na configuração), nunca do modelo: `direto` roda a
+  ferramenta pedida; `agente` deixa um motor de conversa planejar os passos, ainda assim cada um
+  proposto, nunca executado, por ele;
+- **sem ressurreição** (P9): as tarefas vivem na memória do processo. Fechar o Jarvis as cancela, e
+  nada é retomado sozinho. Teto de **2** tarefas ao mesmo tempo (ADR-0022, regra 8).
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any, Final, Protocol
+
+import jsonschema
+
+from jarvis.barramento.envelope import uuid7
+from jarvis.executor.desfazer import Contaminacao
+from jarvis.s2.motor import PedidoDeTool
+
+if TYPE_CHECKING:
+    from jarvis.executor.ferramentas import (
+        Confirmacao,
+        ExecutorDeFerramentas,
+        ResultadoDeFerramenta,
+    )
+
+MAXIMO_DE_TAREFAS_AO_MESMO_TEMPO: Final = 2
+MAXIMO_DE_PASSOS: Final = 6
+PRAZO_DA_TAREFA_S: Final = 300.0
+TAREFAS_NO_CARD: Final = 8
+FORA_DA_ALLOWLIST: Final = ("tarefa.", "acao.desfazer")
+"""Profundidade 1: tarefa não cria tarefa. E desfazer é do dono na conversa, não de uma tarefa."""
+MOTORES_DE_TAREFA: Final = ("direto", "agente")
+
+
+class EstadoDaTarefa(StrEnum):
+    RODANDO = "rodando"
+    ESPERANDO_O_DONO = "esperando_o_dono"
+    CONCLUIDA = "concluida"
+    FALHOU = "falhou"
+    CANCELADA = "cancelada"
+
+    @property
+    def final(self) -> bool:
+        return self in (EstadoDaTarefa.CONCLUIDA, EstadoDaTarefa.FALHOU, EstadoDaTarefa.CANCELADA)
+
+
+@dataclass(frozen=True, slots=True)
+class FimDaTarefa:
+    """O motor não tem mais passo: a tarefa acabou, com este resumo."""
+
+    resumo: str
+    de_terceiros: bool = False
+    """O resumo foi escrito por um modelo a partir do que a tarefa leu: é dado, não fala própria."""
+
+
+Passo = PedidoDeTool | FimDaTarefa
+
+
+class MotorDeTarefa(Protocol):
+    """Quem decide o próximo passo. Só **propõe**: executar é do executor, com o PDP."""
+
+    @property
+    def nome(self) -> str: ...
+
+    @property
+    def na_nuvem(self) -> bool: ...
+
+    def proximo(
+        self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
+    ) -> Passo: ...
+
+
+@dataclass(slots=True)
+class Tarefa:
+    id: str
+    descricao: str
+    tool_id: str
+    parametros: Mapping[str, Any]
+    motor: str
+    na_nuvem: bool = False
+    estado: EstadoDaTarefa = EstadoDaTarefa.RODANDO
+    passo: int = 0
+    passos_previstos: int = 0
+    """0 = não se sabe (motor `agente`)."""
+    resumo: str = ""
+    motivo: str = ""
+    de_terceiros: bool = False
+    criada_em: float = field(default_factory=time.monotonic)
+    terminou_em: float | None = None
+    cancelada: threading.Event = field(default_factory=threading.Event, repr=False)
+    contaminacao: Contaminacao = field(default_factory=Contaminacao, repr=False)
+
+    @property
+    def progresso(self) -> int:
+        """Em %, para o card. Sem total conhecido, anda devagar até 90 e só fecha ao terminar."""
+        if self.estado is EstadoDaTarefa.CONCLUIDA:
+            return 100
+        if self.passos_previstos:
+            return min(99, int(100 * self.passo / self.passos_previstos))
+        return min(90, 15 * self.passo)
+
+    def para_o_modelo(self) -> dict[str, Any]:
+        corpo: dict[str, Any] = {
+            "tarefa_id": self.id,
+            "descricao": self.descricao,
+            "estado": str(self.estado),
+            "progresso_pct": self.progresso,
+        }
+        if self.motivo:
+            corpo["motivo"] = self.motivo
+        return corpo
+
+
+@dataclass(slots=True)
+class MotorDireto:
+    """Roda a ferramenta que foi pedida, num passo só."""
+
+    nome: str = "direto"
+    na_nuvem: bool = False
+
+    def proximo(
+        self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
+    ) -> Passo:
+        if not feitos:
+            return PedidoDeTool(tarefa.tool_id, dict(tarefa.parametros))
+        ultimo = feitos[-1]
+        if ultimo.status == "ok":
+            return FimDaTarefa(f"{tarefa.tool_id} terminou")
+        raise ErroDeTarefa(ultimo.motivo or f"{tarefa.tool_id}: {ultimo.status}")
+
+
+class ErroDeTarefa(RuntimeError):
+    """A tarefa não deu certo; a frase diz por quê."""
+
+
+class TarefaRecusada(ValueError):
+    """`tarefa.iniciar` recusou antes de criar: a frase volta ao modelo."""
+
+
+Concluida = Callable[[Tarefa], None]
+ConfirmarDaTarefa = Callable[["Confirmacao", Callable[[], bool]], bool]
+FabricaDeMotor = Callable[[], MotorDeTarefa]
+
+
+@dataclass(slots=True)
+class GestorDeTarefas:
+    executor: ExecutorDeFerramentas
+    confirmar: ConfirmarDaTarefa
+    """Pede o "sim" na janela e espera; recebe a pergunta e a função "a tarefa foi cancelada?"."""
+    fabrica_de_motor: FabricaDeMotor = MotorDireto
+    session_id: str = ""
+    ao_mudar: Callable[[], None] = lambda: None
+    """O card mudou (estado, passo, fim): a janela o renova. Chamada da linha da tarefa."""
+    ao_concluir: Concluida = lambda _t: None
+    """A tarefa terminou (de qualquer jeito): quem liga aqui põe o `Notification` na fila."""
+    maximo_ao_mesmo_tempo: int = MAXIMO_DE_TAREFAS_AO_MESMO_TEMPO
+    prazo_s: float = PRAZO_DA_TAREFA_S
+    tarefas: dict[str, Tarefa] = field(default_factory=dict)
+    _trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    _linhas: dict[str, threading.Thread] = field(default_factory=dict, repr=False)
+
+    # --- o que o modelo pede (tarefa.*) ---------------------------------------------------
+    def iniciar(
+        self,
+        descricao: str,
+        tool_id: str,
+        parametros: Mapping[str, Any],
+        *,
+        contaminado: bool = False,
+    ) -> Tarefa:
+        self._conferir(tool_id, parametros)
+        with self._trava:
+            rodando = [t for t in self.tarefas.values() if not t.estado.final]
+            if len(rodando) >= self.maximo_ao_mesmo_tempo:
+                raise TarefaRecusada(
+                    f"já há {len(rodando)} tarefas rodando (o teto é "
+                    f"{self.maximo_ao_mesmo_tempo}): espere uma terminar ou cancele uma"
+                )
+            motor = self.fabrica_de_motor()
+            tarefa = Tarefa(
+                id=f"t-{uuid7()[-8:]}",
+                descricao=" ".join(descricao.split())[:120],
+                tool_id=tool_id,
+                parametros=dict(parametros),
+                motor=motor.nome,
+                na_nuvem=motor.na_nuvem,
+                passos_previstos=1 if motor.nome == "direto" else 0,
+                contaminacao=Contaminacao(contaminado),
+            )
+            self.tarefas[tarefa.id] = tarefa
+            linha = threading.Thread(
+                target=self._correr, args=(tarefa, motor), name=f"jarvis-{tarefa.id}", daemon=True
+            )
+            self._linhas[tarefa.id] = linha
+        linha.start()
+        self.ao_mudar()
+        return tarefa
+
+    def cancelar(self, tarefa_id: str) -> Tarefa:
+        tarefa = self.tarefas.get(tarefa_id)
+        if tarefa is None:
+            raise TarefaRecusada(f"não existe a tarefa {tarefa_id!r}")
+        if not tarefa.estado.final:
+            tarefa.cancelada.set()
+        return tarefa
+
+    def cancelar_todas(self) -> int:
+        """O fim da sessão e o botão de privacidade: nada fica rodando sem o dono saber."""
+        vivas = [t for t in self.tarefas.values() if not t.estado.final]
+        for tarefa in vivas:
+            tarefa.cancelada.set()
+        return len(vivas)
+
+    def estado(self, tarefa_id: str = "") -> list[Tarefa]:
+        if tarefa_id:
+            achada = self.tarefas.get(tarefa_id)
+            if achada is None:
+                raise TarefaRecusada(f"não existe a tarefa {tarefa_id!r}")
+            return [achada]
+        return sorted(self.tarefas.values(), key=lambda t: t.criada_em, reverse=True)
+
+    def encerrar(self, segundos: float = 5.0) -> None:
+        """Cancela tudo e espera as linhas acabarem — antes de fechar o que elas usam."""
+        self.cancelar_todas()
+        for linha in list(self._linhas.values()):
+            linha.join(timeout=segundos)
+
+    def esperar(self, tarefa_id: str, segundos: float = 5.0) -> bool:
+        """Para o teste e para o fim da sessão: a linha da tarefa terminou?"""
+        linha = self._linhas.get(tarefa_id)
+        if linha is not None:
+            linha.join(timeout=segundos)
+        return linha is None or not linha.is_alive()
+
+    # --- o card -----------------------------------------------------------------------------
+    def dados_do_card(self) -> dict[str, list[dict[str, str]]]:
+        """Os itens do card `tarefas` (nome, estado, progresso e o id do botão "parar")."""
+        itens: list[dict[str, str]] = []
+        for tarefa in self.estado()[:TAREFAS_NO_CARD]:
+            itens.append(
+                {
+                    "id": tarefa.id,
+                    "titulo": tarefa.descricao,
+                    "detalhe": _detalhe(tarefa),
+                    "estado": _ESTADO_DO_CARD[tarefa.estado],
+                    "progresso": str(tarefa.progresso),
+                }
+            )
+        return {"itens": itens}
+
+    # --- a linha da tarefa --------------------------------------------------------------------
+    def _conferir(self, tool_id: str, parametros: Mapping[str, Any]) -> None:
+        """Recusa na porta o que a tarefa nunca poderia rodar: o modelo ouve o porquê na hora."""
+        if tool_id.startswith(FORA_DA_ALLOWLIST):
+            raise TarefaRecusada(
+                f"{tool_id} não roda dentro de tarefa (tarefa não cria tarefa nem desfaz ação)"
+            )
+        if not self.executor.disponivel(tool_id):
+            raise TarefaRecusada(f"{tool_id} não existe nesta sessão ou o modo atual não a permite")
+        try:
+            jsonschema.validate(dict(parametros), self.executor.manifestos[tool_id]["input_schema"])
+        except jsonschema.ValidationError as erro:
+            raise TarefaRecusada(
+                f"parâmetros fora do contrato de {tool_id}: {erro.message}"
+            ) from None
+
+    def _correr(self, tarefa: Tarefa, motor: MotorDeTarefa) -> None:
+        feitos: list[ResultadoDeFerramenta] = []
+        limite = time.monotonic() + self.prazo_s
+        try:
+            self._passos(tarefa, motor, feitos, limite)
+        except ErroDeTarefa as erro:
+            self._terminar(tarefa, EstadoDaTarefa.FALHOU, motivo=str(erro))
+        except Exception as erro:  # a tarefa cai com a frase; a conversa não
+            self._terminar(tarefa, EstadoDaTarefa.FALHOU, motivo=f"{type(erro).__name__}: {erro}")
+
+    def _passos(
+        self,
+        tarefa: Tarefa,
+        motor: MotorDeTarefa,
+        feitos: list[ResultadoDeFerramenta],
+        limite: float,
+    ) -> None:
+        for numero in range(1, MAXIMO_DE_PASSOS + 1):
+            if tarefa.cancelada.is_set():
+                return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+            if time.monotonic() > limite:
+                raise ErroDeTarefa(f"passou de {self.prazo_s:.0f} s: o prazo é nosso")
+            passo = motor.proximo(tarefa, feitos, tarefa.cancelada.is_set)
+            if tarefa.cancelada.is_set():
+                return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+            if isinstance(passo, FimDaTarefa):
+                tarefa.resumo, tarefa.de_terceiros = passo.resumo, passo.de_terceiros
+                return self._terminar(tarefa, EstadoDaTarefa.CONCLUIDA)
+            if passo.tool_id.startswith(FORA_DA_ALLOWLIST):
+                # O motor propôs fora da allowlist da tarefa: nem chega ao PDP (e fica registrado).
+                feitos.append(_negado(passo.tool_id, "tarefa não roda isto (allowlist da tarefa)"))
+                continue
+            tarefa.passo = numero
+            self.ao_mudar()
+            resultado = self.executor.executar(
+                passo.tool_id,
+                passo.args,
+                cancelado=tarefa.cancelada.is_set,
+                confirmar=self._confirmar_da(tarefa),
+                session_id=self.session_id,
+                call_id=f"{tarefa.id}-{numero}",
+                contaminacao=tarefa.contaminacao,
+            )
+            if tarefa.cancelada.is_set():
+                # Chegou depois do cancelamento: vai para a auditoria, não para o estado.
+                return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+            feitos.append(resultado)
+        raise ErroDeTarefa(f"{MAXIMO_DE_PASSOS} passos sem terminar")
+
+    def _confirmar_da(self, tarefa: Tarefa) -> Callable[[Confirmacao], bool]:
+        def perguntar(pergunta: Confirmacao) -> bool:
+            tarefa.estado = EstadoDaTarefa.ESPERANDO_O_DONO
+            self.ao_mudar()
+            try:
+                return self.confirmar(pergunta, tarefa.cancelada.is_set)
+            finally:
+                if not tarefa.estado.final:
+                    tarefa.estado = EstadoDaTarefa.RODANDO
+                self.ao_mudar()
+
+        return perguntar
+
+    def _terminar(self, tarefa: Tarefa, estado: EstadoDaTarefa, *, motivo: str = "") -> None:
+        with self._trava:
+            tarefa.estado = estado
+            tarefa.motivo = motivo or tarefa.motivo
+            tarefa.terminou_em = time.monotonic()
+        self.ao_mudar()
+        try:
+            self.ao_concluir(tarefa)
+        except Exception:  # aviso que falha não derruba a linha: o card já mostra o fim
+            return
+
+
+def _negado(tool_id: str, motivo: str) -> ResultadoDeFerramenta:
+    from jarvis.executor.ferramentas import ResultadoDeFerramenta
+
+    return ResultadoDeFerramenta(tool_id, "negado", motivo=motivo)
+
+
+_ESTADO_DO_CARD: Final = {
+    EstadoDaTarefa.RODANDO: "executando",
+    EstadoDaTarefa.ESPERANDO_O_DONO: "espera",
+    EstadoDaTarefa.CONCLUIDA: "resultado",
+    EstadoDaTarefa.FALHOU: "falhou",
+    EstadoDaTarefa.CANCELADA: "cancelada",
+}
+
+
+def _detalhe(tarefa: Tarefa) -> str:
+    quando = {
+        EstadoDaTarefa.RODANDO: "rodando",
+        EstadoDaTarefa.ESPERANDO_O_DONO: "esperando o seu sim",
+        EstadoDaTarefa.CONCLUIDA: "pronta",
+        EstadoDaTarefa.FALHOU: f"falhou: {tarefa.motivo}"[:80],
+        EstadoDaTarefa.CANCELADA: "cancelada",
+    }[tarefa.estado]
+    onde = " · nuvem" if tarefa.na_nuvem else ""
+    passos = f" · passo {tarefa.passo}" + (
+        f"/{tarefa.passos_previstos}" if tarefa.passos_previstos else ""
+    )
+    return f"{quando}{passos if not tarefa.estado.final else ''} · motor {tarefa.motor}{onde}"

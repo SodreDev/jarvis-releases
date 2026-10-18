@@ -148,7 +148,12 @@ class Configuracao:
     navegador_principal: str = ""
     """A família (de `navegadores`) onde `sites.open` abre quando o pedido não nomeia outro."""
     sites_sem_confirmar: tuple[str, ...] = ()
-    """Domínios que `sites.open` abre sem perguntar (com subdomínios). Vazio = sempre pergunta."""
+    """Domínios que `sites.open` abre mesmo depois de o turno ler conteúdo de terceiros (com
+    subdomínios). Abrir site é livre; esta lista só tira a confirmação desse caso."""
+    tarefa_motor: str = "direto"
+    """Quem conduz as tarefas em segundo plano (ADR-0022): `direto` roda a ferramenta pedida;
+    `agente` deixa o motor de conversa (`s2`) planejar os passos — e, se o `s2` é de nuvem, a
+    tarefa também vai para a nuvem. **Só o dono escolhe**: nenhuma tool tem este campo."""
 
     def para_dict(self) -> dict[str, Any]:
         return {
@@ -178,6 +183,7 @@ class Configuracao:
             "navegadores": list(self.navegadores),
             "navegador_principal": self.navegador_principal,
             "sites_sem_confirmar": list(self.sites_sem_confirmar),
+            "tarefa_motor": self.tarefa_motor,
         }
 
     @property
@@ -259,8 +265,12 @@ apps_extras = {lista(configuracao.apps_extras)}
 # Navegadores, "família=caminho" (binário ou .desktop), e qual é o principal.
 navegadores = {lista(configuracao.navegadores)}
 navegador_principal = {aspas(configuracao.navegador_principal)}
-# Sites que abrem sem perguntar (o resto pede confirmação na tela). Ex.: ["wikipedia.org"]
+# Abrir site é livre; estes continuam livres mesmo depois de o Jarvis ler um arquivo ou página
+# (nesse caso, qualquer outro pede o seu sim). Ex.: ["wikipedia.org"]
 sites_sem_confirmar = {lista(configuracao.sites_sem_confirmar)}
+# Quem conduz as tarefas em segundo plano: "direto" (roda a ferramenta pedida) ou "agente"
+# (o motor de conversa planeja os passos; se ele é de nuvem, a tarefa vai junto).
+tarefa_motor = {aspas(configuracao.tarefa_motor)}
 """
 
 
@@ -318,6 +328,11 @@ def validar(configuracao: Configuracao) -> Configuracao:
     if configuracao.enderecamento:
         exigir("enderecamento", configuracao.enderecamento, "decisao")
 
+    if configuracao.tarefa_motor not in ("direto", "agente"):
+        raise ConfiguracaoInvalida(
+            f"tarefa_motor = {configuracao.tarefa_motor!r} não existe. Os que existem: "
+            "direto, agente"
+        )
     if configuracao.voz_elevenlabs and not FORMA_DO_ID_DE_VOZ.fullmatch(
         configuracao.voz_elevenlabs
     ):
@@ -457,6 +472,7 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         navegadores=_lista(dados, "navegadores"),
         navegador_principal=_texto(dados, "navegador_principal", ""),
         sites_sem_confirmar=tuple(s.lower() for s in _lista(dados, "sites_sem_confirmar")),
+        tarefa_motor=_texto(dados, "tarefa_motor", "direto"),
     )
     return validar(configuracao)
 

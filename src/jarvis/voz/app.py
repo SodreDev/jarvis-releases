@@ -59,7 +59,7 @@ from jarvis.audio_io.playback import FilaDePlayback, Pedaco
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
 from jarvis.audio_io.sumidouros import SumidouroDeAudio
 from jarvis.audio_io.vad import Vad, vad_do_ambiente
-from jarvis.barramento.envelope import Envelope, uuid7
+from jarvis.barramento.envelope import Envelope, Trust, uuid7
 from jarvis.decisao.enderecamento import DetectorDeEnderecamento, Motivo
 from jarvis.decisao.openrouter import ClassificadorOpenRouter
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
@@ -81,6 +81,14 @@ from jarvis.s2.cerebro import Cerebro, Resposta
 from jarvis.s2.motor import INTERVALO_DE_CONSULTA_S, Mensagem, MotivoDoFim, MotorDeConversa
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
+from jarvis.tarefas.gestor import (
+    EstadoDaTarefa,
+    GestorDeTarefas,
+    MotorDeTarefa,
+    MotorDireto,
+    Tarefa,
+)
+from jarvis.tarefas.motores import MotorDeAgente
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import ASR_PADRAO, Configuracao
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
@@ -354,6 +362,9 @@ class Aplicativo:
     ao_mudar_avisos: Callable[[], None] | None = None
     """A fila de avisos mudou (ADR-0025): a janela renova o card. Como `ao_mudar_estado`, é
     chamada da thread do laço — quem liga aqui emite sinal e volta."""
+    ao_mudar_tarefas: Callable[[], None] | None = None
+    """Uma tarefa em segundo plano mudou (ADR-0022): a janela renova o card `tarefas`. Chamada da
+    linha da **tarefa**, não da do laço: quem liga aqui emite sinal e volta."""
 
     detector: DetectorDeEnderecamento | None = field(default=None, repr=False)
     """Diz, na escuta contínua, se a fala transcrita é para o Jarvis (ADR-0029). `None` = desligado
@@ -485,7 +496,78 @@ class Aplicativo:
         self._cerebro.ferramentas = self.ferramentas
         self._cerebro.confirmar = self._confirmar
         self._sincronizar_conversa(self._cerebro)
+        if self.ferramentas.tarefas is None:
+            self.ferramentas.tarefas = self._montar_tarefas(self.ferramentas)
         self._aquecer()
+
+    # --- tarefas em segundo plano (ADR-0022) ----------------------------------------------
+    def _montar_tarefas(self, executor: ExecutorDeFerramentas) -> GestorDeTarefas:
+        """O gestor de tarefas. O **motor** da tarefa é escolha do dono (`tarefa_motor`): o
+        modelo pede a tarefa, nunca diz quem a conduz."""
+
+        def fabrica() -> MotorDeTarefa:
+            if self.configuracao.tarefa_motor == "agente" and self._motor is not None:
+                return MotorDeAgente(motor=self._motor, catalogo=executor.catalogo_para_o_modelo)
+            return MotorDireto()
+
+        return GestorDeTarefas(
+            executor=executor,
+            confirmar=self._confirmar_da_tarefa,
+            fabrica_de_motor=fabrica,
+            session_id=self.session_id,
+            ao_mudar=self._tarefas_mudaram,
+            ao_concluir=self._tarefa_concluida,
+        )
+
+    def _tarefas_mudaram(self) -> None:
+        if self.ao_mudar_tarefas is not None:
+            self.ao_mudar_tarefas()
+
+    def dados_das_tarefas(self) -> dict[str, list[dict[str, str]]]:
+        """O que o card `tarefas` mostra: nome, estado, progresso e o id do "parar"."""
+        gestor = self.ferramentas.tarefas if self.ferramentas is not None else None
+        return gestor.dados_do_card() if gestor is not None else {"itens": []}
+
+    def parar_tarefa(self, tarefa_id: str) -> bool:
+        """O botão "parar" do card — o dono, com o dedo, não passa pela política."""
+        gestor = self.ferramentas.tarefas if self.ferramentas is not None else None
+        if gestor is None or tarefa_id not in gestor.tarefas:
+            return False
+        gestor.cancelar(tarefa_id)
+        return True
+
+    def _tarefa_concluida(self, tarefa: Tarefa) -> None:
+        """A conclusão entra pela fila de avisos (ADR-0025) como `Notification`: o Jarvis decide
+        se fala e quando, sem cortar fala em andamento. O texto é **nosso** (a descrição e o
+        estado), exceto o resumo de um motor `agente`, que é de terceiros e vem marcado."""
+        if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
+            tipo, resumo = "concluida", f"a tarefa «{tarefa.descricao}» terminou"
+            if tarefa.resumo and tarefa.de_terceiros:
+                resumo += f": {tarefa.resumo}"
+        elif tarefa.estado is EstadoDaTarefa.FALHOU:
+            tipo, resumo = "falhou", f"a tarefa «{tarefa.descricao}» falhou: {tarefa.motivo}"
+        else:
+            tipo, resumo = "evento", f"a tarefa «{tarefa.descricao}» foi cancelada"
+        self.receber_aviso(
+            notificacao(
+                self.session_id,
+                f"tarefa-{tarefa.id}",
+                tipo=tipo,
+                origem=f"tarefa · {tarefa.descricao[:40]}",
+                resumo=resumo,
+                trust=Trust.THIRD_PARTY if tarefa.de_terceiros else Trust.SYSTEM,
+            )
+        )
+
+    def _confirmar_da_tarefa(self, pergunta: Confirmacao, cancelada: Callable[[], bool]) -> bool:
+        """O "sim" do dono para um passo perigoso de uma tarefa: a mesma faixa da conversa, mas a
+        tarefa **espera sozinha** — o estado do núcleo e o epoch da fala não são dela."""
+        return self._confirmar(pergunta, tarefa_cancelada=cancelada)
+
+    def _cancelar_tarefas(self) -> None:
+        gestor = self.ferramentas.tarefas if self.ferramentas is not None else None
+        if gestor is not None:
+            gestor.cancelar_todas()
 
     def _sincronizar_conversa(self, cerebro: Cerebro) -> None:
         """Põe no cérebro a conversa corrente do dono: o livro e os últimos turnos que ele ouviu.
@@ -649,7 +731,9 @@ class Aplicativo:
         self.ferramentas = self._montar_ferramentas()
         self._cerebro.ferramentas = self.ferramentas
 
-    def _confirmar(self, pergunta: Confirmacao) -> bool:
+    def _confirmar(
+        self, pergunta: Confirmacao, *, tarefa_cancelada: Callable[[], bool] | None = None
+    ) -> bool:
         """Pede à janela e espera o dono — da linha do cérebro, sem travar a fala nem a tela.
 
         Não há "sim" sem o dono: sem janela, é não; prazo vencido, é não; o dono interrompeu o
@@ -660,20 +744,28 @@ class Aplicativo:
             self.escrever_na_tela(f"  (precisa da sua confirmação na janela: {pergunta.detalhe})")
             return False
         epoch = self.epoch
+        da_tarefa = tarefa_cancelada is not None
         evento = threading.Event()
         resposta: list[bool] = []
         self._confirmacoes[pergunta.id] = (evento, resposta)
         # Enquanto a pergunta está na tela a vez é do dono: o núcleo não diz "falando" à toa.
-        self._mudar(self._repouso)
+        # (Pergunta de tarefa não mexe no núcleo: a conversa segue, e a tarefa espera sozinha.)
+        if not da_tarefa:
+            self._mudar(self._repouso)
         self.ao_pedir_confirmacao(pergunta)
         limite = time.monotonic() + pergunta.prazo_s
         try:
             while not evento.wait(INTERVALO_DE_CONSULTA_S * 10):
-                if self.epoch > epoch or time.monotonic() > limite:
+                if time.monotonic() > limite:
+                    return False
+                if tarefa_cancelada is not None:
+                    if tarefa_cancelada():
+                        return False
+                elif self.epoch > epoch:
                     return False
             return bool(resposta and resposta[0])
         finally:
-            if self.epoch == epoch:
+            if not da_tarefa and self.epoch == epoch:
                 self._mudar(Estado.PENSANDO)
             self._confirmacoes.pop(pergunta.id, None)
             if self.ao_fim_da_confirmacao is not None:
@@ -962,6 +1054,7 @@ class Aplicativo:
                     self.escrever_na_tela(f"Jarvis: {turno.respondeu}")
                 self.escrever_na_tela(turno.resumo())
         finally:
+            self._cancelar_tarefas()
             if sumidouro is not None:
                 sumidouro.fechar()
         self._mudar(Estado.PARADO)
@@ -1100,6 +1193,7 @@ class Aplicativo:
                     self._turno_de_audio(bytes(audio), transcritor, fila)
                     audio = bytearray()
         finally:
+            self._cancelar_tarefas()
             self._publicar_estado(captura, aberta=False)
             captura.fechar()
             sumidouro.fechar()

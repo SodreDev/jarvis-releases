@@ -61,12 +61,16 @@ class Forma(StrEnum):
 
 
 CHAVES_DE_ITEM: Final[frozenset[str]] = frozenset(
-    {"titulo", "detalhe", "fonte", "instante", "estado", "imagem"}
+    {"titulo", "detalhe", "fonte", "instante", "estado", "imagem", "id", "progresso"}
 )
 """O que um item de lista pode ter. `imagem` é caminho de arquivo que a tela **só** lê se
-existir — e nenhum componente de imagem nasce sem confirmação do dono."""
+existir — e nenhum componente de imagem nasce sem confirmação do dono. `id` e `progresso`
+(texto, de 0 a 100) são do card de tarefas: o "parar" devolve o `id` à janela, que só o repassa
+ao laço — parar é sempre permitido, então um `id` inventado não ganha poder nenhum."""
 
-ESTADOS_DE_ITEM: Final[frozenset[str]] = frozenset({"visto", "executando", "resultado", "espera"})
+ESTADOS_DE_ITEM: Final[frozenset[str]] = frozenset(
+    {"visto", "executando", "resultado", "espera", "falhou", "cancelada"}
+)
 """Distinguir visto × em execução × resultado é pedido do dono, então é campo, não cor solta."""
 
 CHAVES_DE_AVISO: Final[frozenset[str]] = frozenset(

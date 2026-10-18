@@ -44,6 +44,8 @@ TIER_ESPERADO: dict[str, str] = {
     "memoria.buscar_historico": "livre",
     "memoria.ler_mensagem": "livre",
     "system.read.status": "livre",
+    "tarefa.cancelar": "livre",
+    "tarefa.estado": "livre",
     # moderado
     "files.write_draft": "moderado",
     "calendar.create_draft_event": "moderado",
@@ -51,6 +53,7 @@ TIER_ESPERADO: dict[str, str] = {
     "memoria.criar_no": "moderado",
     "memoria.criar_aresta": "moderado",
     "acao.desfazer": "moderado",
+    "tarefa.iniciar": "moderado",
     # perigoso
     "files.move_to_trash": "perigoso",
     "memoria.apagar": "perigoso",
@@ -218,6 +221,11 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
             {"origem": "Ana", "relacao": "faz aniversário em", "destino": "março"},
         ),
         "acao.desfazer": _pedido(pdp, "acao.desfazer", {}, area),
+        "tarefa.iniciar": _pedido(
+            pdp, "tarefa.iniciar", {"descricao": "achar notas", "tool": "files.search_in_roots"}
+        ),
+        "tarefa.cancelar": _pedido(pdp, "tarefa.cancelar", {"tarefa_id": "t-1"}),
+        "tarefa.estado": _pedido(pdp, "tarefa.estado", {}),
         "files.move_to_trash": _pedido(
             pdp, "files.move_to_trash", {"path": "x"}, f"{area}/rascunhos"
         ),

@@ -19,13 +19,13 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import jsonschema
 
 from jarvis.barramento.envelope import uuid7
 from jarvis.executor import arquivos
-from jarvis.executor.desfazer import RegistroDeDesfazeres, aviso_falado
+from jarvis.executor.desfazer import Contaminacao, RegistroDeDesfazeres, aviso_falado
 from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
 from jarvis.executor.navegadores import AbridorDeNavegador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
@@ -37,6 +37,9 @@ from jarvis.politica.descritor import AberturaRecusada, RaizAberta, abrir_raiz
 from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.pdp import Decisao, Grant, Pdp, Pedido, Veredito
 from jarvis.voz.interface import Onde
+
+if TYPE_CHECKING:
+    from jarvis.tarefas.gestor import GestorDeTarefas
 
 PRAZO_DE_CONFIRMACAO_S: Final = 30.0
 LIMITE_PARA_O_MODELO: Final = 6000
@@ -55,6 +58,9 @@ FERRAMENTAS_LIGADAS: Final = frozenset(
     }
 )
 """As que têm corpo aqui. Manifesto sem corpo (lixeira, instalar) não aparece para o modelo."""
+FERRAMENTAS_DE_TAREFA: Final = frozenset({"tarefa.iniciar", "tarefa.cancelar", "tarefa.estado"})
+"""As `tarefa.*` (ADR-0022): o corpo é do gestor de tarefas, e só existem para o modelo quando o
+laço montou um — sem ele, não se promete tarefa em segundo plano."""
 FERRAMENTAS_DE_MEMORIA: Final = frozenset(
     {
         "memoria.buscar",
@@ -155,17 +161,27 @@ class ExecutorDeFerramentas:
     prazo_de_confirmacao_s: float = PRAZO_DE_CONFIRMACAO_S
     manifestos: dict[str, dict[str, Any]] = field(default_factory=carregar_catalogo)
     memoria: FerramentasDeMemoria | None = None
+    tarefas: GestorDeTarefas | None = None
+    """Quem roda as tarefas em segundo plano. Liga as `tarefa.*` ao modelo."""
     """O livro do dono, quando há (a conversa persistente). Liga as `memoria.*` ao modelo."""
     destino_onde: Onde = Onde.LOCAL
     destino_motor: str = ""
     """Quem vai ler o resultado: o D20 filtra o que da memória pode ir para este motor."""
     desfazeres: RegistroDeDesfazeres = field(default_factory=RegistroDeDesfazeres)
-    contaminado: bool = False
+    turno: Contaminacao = field(default_factory=Contaminacao)
     """O turno em curso já leu conteúdo de terceiros (`FONTES_DE_TERCEIROS`)."""
+
+    @property
+    def contaminado(self) -> bool:
+        return self.turno.valor
+
+    @contaminado.setter
+    def contaminado(self, valor: bool) -> None:
+        self.turno.valor = valor
 
     def novo_turno(self) -> None:
         """Turno novo do dono: o que se leu de terceiros no anterior não contamina este."""
-        self.contaminado = False
+        self.turno.valor = False
 
     @property
     def pasta_do_jarvis(self) -> Path:
@@ -191,12 +207,18 @@ class ExecutorDeFerramentas:
             if self._ligada(tool_id)
         )
 
+    def disponivel(self, tool_id: str) -> bool:
+        """Existe nesta sessão **e** o modo de acesso a permite: o que uma tarefa pode rodar."""
+        return self._ligada(tool_id) and tool_id in self.pdp.allowlist()
+
     def _ligada(self, tool_id: str) -> bool:
         """Tem corpo aqui, manifesto no catálogo e (se for de memória) um livro aberto."""
         if tool_id not in self.manifestos:
             return False
         if tool_id in FERRAMENTAS_DE_MEMORIA:
             return self.memoria is not None
+        if tool_id in FERRAMENTAS_DE_TAREFA:
+            return self.tarefas is not None
         return tool_id in FERRAMENTAS_LIGADAS
 
     def _descricao(self, tool_id: str) -> str:
@@ -224,7 +246,9 @@ class ExecutorDeFerramentas:
         session_id: str = "",
         call_id: str = "",
         proveniencia: Proveniencia | None = None,
+        contaminacao: Contaminacao | None = None,
     ) -> ResultadoDeFerramenta:
+        marca = contaminacao if contaminacao is not None else self.turno
         chamada = call_id or f"c-{uuid7()}"
         if not self._ligada(tool_id):
             return ResultadoDeFerramenta(
@@ -266,7 +290,7 @@ class ExecutorDeFerramentas:
             session_id=session_id,
             call_id=chamada,
             proveniencia=proveniencia,
-            contaminado=self.contaminado,
+            contaminado=marca.valor,
         )
         decisao = self.pdp.decidir(pedido)
         if decisao.veredito is Veredito.CONFIRM:
@@ -298,19 +322,23 @@ class ExecutorDeFerramentas:
             tool_id, argumentos, decisao, caminho, cancelado, chamada, proveniencia
         )
         if resultado.status == "ok":
-            resultado = self._depois_do_efeito(tool_id, argumentos, resultado)
+            resultado = self._depois_do_efeito(tool_id, argumentos, resultado, marca)
         self.pdp.auditoria.anexar_resultado(
             decisao.decision_id, resultado.status, resultado.detalhe_de_auditoria
         )
         return resultado
 
     def _depois_do_efeito(
-        self, tool_id: str, args: Mapping[str, Any], resultado: ResultadoDeFerramenta
+        self,
+        tool_id: str,
+        args: Mapping[str, Any],
+        resultado: ResultadoDeFerramenta,
+        marca: Contaminacao,
     ) -> ResultadoDeFerramenta:
         """O que o tier pede depois que a tool rodou: contaminar o turno (leitura de terceiros),
         e, na **moderada**, montar o aviso falado e guardar como desfazer."""
         if tool_id in FONTES_DE_TERCEIROS:
-            self.contaminado = True
+            marca.valor = True
         manifesto = self.manifestos[tool_id]
         if manifesto.get("tier") != "moderado":
             return resultado
@@ -327,6 +355,10 @@ class ExecutorDeFerramentas:
     def _registrar_desfazer(self, tool_id: str, dados: Mapping[str, Any]) -> str:
         """Como voltar atrás do que acabou de ser feito, se der. `""` = não dá."""
         registro = self.desfazeres
+        if tool_id == "tarefa.iniciar":
+            return registro.registrar(
+                tool_id, "a tarefa em segundo plano", "cancelar_tarefa", str(dados["tarefa_id"])
+            ).acao_id
         if tool_id in ("files.write_draft", "calendar.create_draft_event"):
             nome = Path(str(dados["caminho"])).name
             return registro.registrar(
@@ -375,6 +407,23 @@ class ExecutorDeFerramentas:
             return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
         return ResultadoDeFerramenta(tool_id, "ok", dados=dados, call_id=chamada)
 
+    def _tarefa(self, tool_id: str, args: Mapping[str, Any]) -> dict[str, Any]:
+        """Corpo das `tarefa.*`. Recusa do gestor (teto, ferramenta fora da allowlist) volta como
+        erro com a frase, e o modelo a repassa ao dono."""
+        assert self.tarefas is not None
+        if tool_id == "tarefa.iniciar":
+            tarefa = self.tarefas.iniciar(
+                str(args["descricao"]),
+                str(args["tool"]),
+                dict(args.get("parametros", {})),
+                contaminado=self.contaminado,
+            )
+            return tarefa.para_o_modelo() | {"motor": tarefa.motor}
+        if tool_id == "tarefa.cancelar":
+            return self.tarefas.cancelar(str(args["tarefa_id"])).para_o_modelo()
+        feitas = self.tarefas.estado(str(args.get("tarefa_id", "")))
+        return {"tarefas": [t.para_o_modelo() for t in feitas[:8]]}
+
     def _desfazer(self, acao_id: str, grant: Grant) -> dict[str, Any]:
         """Volta atrás de uma ação moderada. Nada é apagado: o arquivo vai para a lixeira do
         Jarvis, a memória é retratada (ADR-0026: deixa de valer, continua no livro)."""
@@ -387,6 +436,8 @@ class ExecutorDeFerramentas:
             raiz = self.pdp.abrir_para(grant, ".")
             relativo = desfazer.alvo.removeprefix(str(self.pasta_do_jarvis)).lstrip("/")
             arquivos.recolher_para_a_lixeira(raiz, relativo)
+        elif desfazer.tipo == "cancelar_tarefa" and self.tarefas is not None:
+            self.tarefas.cancelar(desfazer.alvo)
         elif self.memoria is not None:
             self.memoria.livro.retratar(desfazer.alvo)
         else:
@@ -426,6 +477,8 @@ class ExecutorDeFerramentas:
             return self._procurar(str(args["consulta"]), cancelado)
         if tool_id == "acao.desfazer":
             return self._desfazer(str(args.get("acao_id", "")), grant)
+        if tool_id in FERRAMENTAS_DE_TAREFA:
+            return self._tarefa(tool_id, args)
         if tool_id == "apps.launch":
             app = self.registro_de_apps.resolver(str(args["nome"]))
             return {"app": app.nome, "pid": self.lancar_app(app)}
