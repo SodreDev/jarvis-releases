@@ -5,10 +5,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 RAIZ = Path(__file__).resolve().parents[3]
 EXTENSAO = RAIZ / "extensao"
+TESTE_RECONEXAO = Path(__file__).with_name("background_reconexao.test.mjs")
 
 
 def _json(nome: str) -> dict[str, object]:
@@ -72,3 +77,18 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
     assert "campo_sensivel" in conteudo
     assert "selector" not in conteudo  # o alvo é o texto visível, nunca um seletor CSS
     assert "time[datetime]" in conteudo
+
+
+def test_reconexao_do_service_worker_com_porta_e_timer_falsos() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js não está disponível para o teste comportamental da extensão")
+
+    resultado = subprocess.run(
+        [node, "--test", str(TESTE_RECONEXAO)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert resultado.returncode == 0, resultado.stdout + resultado.stderr

@@ -489,7 +489,22 @@ nativo vêm no release (§2.4), mas **você** os carrega no navegador.
 
 O navegador é quem lança o host (`jarvis-native-host`, Native Messaging por `stdin`/`stdout`); o
 host abre um **socket Unix** (`$XDG_RUNTIME_DIR/jarvis/navegador/`, pasta 0700, socket 0600) para o
-Jarvis. **Não existe porta de rede.**
+Jarvis. **Não existe porta de rede.** Esse ciclo não depende de o aplicativo Jarvis estar aberto:
+
+1. ao abrir o navegador, a extensão chama `connectNative`; o Chrome/Firefox lança o host, que cria
+   e possui o socket;
+2. ao abrir o Jarvis, ele entra nesse socket como cliente e passa a usar a ponte;
+3. ao fechar o Jarvis, extensão e host continuam ociosos e locais até o navegador fechar.
+
+O Jarvis nunca tenta iniciar o host: pela API de Native Messaging, esse processo sempre é filho do
+navegador. Se o pipe/host cair, `onDisconnect` registra em DevTools a mensagem real de
+`runtime.lastError` e agenda uma única reconexão: a base começa em 250 ms, dobra com jitter de 15% e tem
+teto de 30 s. Há no máximo uma porta e um timer; não há `alarm`, heartbeat ou polling. Tráfego
+recebido (ou uma conexão que durou 60 s) reinicia o atraso. Assim o navegador relança o próprio host
+sem pedir que o usuário recarregue a extensão. Esse é o ciclo documentado pelo Chrome para
+[`connectNative`](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+e para a
+[vida do service worker](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle).
 
 | Como instalou | O manifesto do host | A extensão para carregar |
 |---|---|---|
@@ -532,6 +547,10 @@ python3 -m http.server 8077 --bind 127.0.0.1      # só neste terminal, só em 1
 ```
 
 Abra `http://127.0.0.1:8077/` no navegador com a extensão carregada e peça ao Jarvis:
+
+Antes de abrir o Jarvis, confira que o socket já apareceu. Depois abra o Jarvis e faça os pedidos
+abaixo. Ao fechar somente o Jarvis, o socket deve continuar lá; ele pertence ao host lançado pelo
+navegador. Não recarregue a extensão entre essas etapas.
 
 | Pedido | O que deve acontecer |
 |---|---|
@@ -612,9 +631,11 @@ Prefira o portal; use o `uinput` só onde o portal não existe.
 Tudo acima foi provado com fakes — **o seu desktop fecha esta conta**:
 
 - **navegador real:** a extensão nunca foi carregada num Firefox ou Chromium de verdade por este
-  código; o host foi provado com `pipes` e um socket numa pasta temporária, e a extensão com
-  checagem estática (`node --check`) e testes de contrato. Não se sabe como o Chrome/Firefox
-  se comporta com o service worker dormindo, nem se `connectNative` sobe o host no seu perfil;
+  código; o host foi provado com `pipes` e um socket numa pasta temporária. A extensão tem
+  checagem estática (`node --check`) e a reconexão foi exercitada com `Port`, relógio e timers
+  falsos, inclusive porta/timer únicos, backoff, teto e recuperação. Ainda não se verificou como o
+  Chrome/Firefox real se comporta com o service worker dormindo, se `connectNative` sobe o host no
+  perfil do dono nem se o socket reaparece depois de uma queda real;
 - **portal real:** o `RemoteDesktop` foi falado contra um portal **falso** num `dbus-daemon`
   privado. O diálogo do Plasma, a revogação e o teclado de verdade nunca foram exercitados; não se
   sabe como o KWin trata maiúscula e acentuada por *keysym*;

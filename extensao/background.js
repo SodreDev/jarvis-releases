@@ -7,8 +7,14 @@ const api = globalThis.browser ?? globalThis.chrome;
 const NATIVE_HOST = "br.com.granafacil.jarvis";
 const MAX_ID = 80;
 const MAX_URL = 2_048;
+const RECONNECT_BASE_MS = 250;
+const RECONNECT_MAX_MS = 30_000;
+const RECONNECT_JITTER = 0.15;
+const RECONNECT_STABLE_MS = 60_000;
 
 let nativePort;
+let reconnectTimer;
+let reconnectAttempt = 0;
 
 function erro(codigo, mensagem) {
   return { codigo, mensagem };
@@ -145,43 +151,94 @@ async function receberDoHost(bruto) {
   return { id, ok: true, result: await executar(pedido.method, comoObjeto(pedido.params)) };
 }
 
-function responder(mensagem) {
-  if (nativePort) {
-    nativePort.postMessage(mensagem);
+function detalheDaFalha(causa) {
+  if (causa && typeof causa.message === "string" && causa.message) {
+    return causa.message;
+  }
+  return String(causa);
+}
+
+function atrasoDaReconexao(tentativa) {
+  const expoente = Math.min(tentativa, 30);
+  const atrasoBase = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** expoente);
+  const fator = 1 - RECONNECT_JITTER + Math.random() * RECONNECT_JITTER * 2;
+  return Math.round(Math.min(RECONNECT_MAX_MS, atrasoBase * fator));
+}
+
+function agendarReconexao(motivo) {
+  if (nativePort || reconnectTimer !== undefined) {
+    return;
+  }
+  const tentativa = reconnectAttempt;
+  const atrasoMs = atrasoDaReconexao(tentativa);
+  reconnectAttempt = Math.min(reconnectAttempt + 1, 30);
+  console.warn("Jarvis: host nativo desconectou; reconexão agendada", {
+    motivo,
+    tentativa: tentativa + 1,
+    atrasoMs,
+  });
+  // Um único timer one-shot: sem heartbeat, alarm ou polling para manter o worker acordado.
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    ligarAoHost();
+  }, atrasoMs);
+}
+
+function responder(porta, mensagem) {
+  if (porta !== nativePort) {
+    return;
+  }
+  try {
+    porta.postMessage(mensagem);
+  } catch (causa) {
+    console.warn("Jarvis: não foi possível responder ao host nativo", detalheDaFalha(causa));
   }
 }
 
 function ligarAoHost() {
-  if (nativePort) {
+  if (nativePort || reconnectTimer !== undefined) {
     return;
   }
+  let porta;
   try {
-    nativePort = api.runtime.connectNative(NATIVE_HOST);
+    porta = api.runtime.connectNative(NATIVE_HOST);
   } catch (causa) {
-    console.warn("Jarvis: host nativo indisponível", causa);
-    nativePort = undefined;
+    agendarReconexao(detalheDaFalha(causa));
     return;
   }
-  nativePort.onMessage.addListener((pedido) => {
-    receberDoHost(pedido).then(responder).catch((causa) => {
-      const id = typeof pedido?.id === "string" ? pedido.id : null;
-      const detalhe = comoObjeto(causa);
-      responder({
-        id,
-        ok: false,
-        error: {
-          codigo: typeof detalhe.codigo === "string" ? detalhe.codigo : "falha",
-          mensagem: typeof detalhe.mensagem === "string" ? detalhe.mensagem : "falha na extensão",
-        },
+  nativePort = porta;
+  const conectadaEm = Date.now();
+  porta.onMessage.addListener((pedido) => {
+    if (porta !== nativePort) {
+      return;
+    }
+    reconnectAttempt = 0;
+    receberDoHost(pedido)
+      .then((mensagem) => responder(porta, mensagem))
+      .catch((causa) => {
+        const id = typeof pedido?.id === "string" ? pedido.id : null;
+        const detalhe = comoObjeto(causa);
+        responder(porta, {
+          id,
+          ok: false,
+          error: {
+            codigo: typeof detalhe.codigo === "string" ? detalhe.codigo : "falha",
+            mensagem:
+              typeof detalhe.mensagem === "string" ? detalhe.mensagem : "falha na extensão",
+          },
+        });
       });
-    });
   });
-  nativePort.onDisconnect.addListener(() => {
-    const motivo = api.runtime.lastError?.message;
-    if (motivo) {
-      console.warn("Jarvis: host nativo desconectou", motivo);
+  porta.onDisconnect.addListener(() => {
+    const motivo = api.runtime.lastError?.message ?? "runtime.lastError sem detalhe";
+    if (porta !== nativePort) {
+      return;
     }
     nativePort = undefined;
+    if (Date.now() - conectadaEm >= RECONNECT_STABLE_MS) {
+      reconnectAttempt = 0;
+    }
+    agendarReconexao(motivo);
   });
 }
 

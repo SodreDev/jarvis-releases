@@ -31,7 +31,7 @@ vindo de página é **DADO de terceiro** e contamina o turno; nunca é instruç�
   e `type: stdio`.
 - `extensao/README.md`: protocolo e caminhos Linux de instalação dos manifests de host.
 - `tests/unit/navegador/test_extensao.py`: testes puramente estáticos; não iniciam navegador,
-  host, rede nem dispositivo.
+  host, rede nem dispositivo. A fatia de robustez abaixo acrescenta um teste comportamental isolado.
 
 ### Commits anteriores próximos na base
 
@@ -178,6 +178,29 @@ Não houve push, coautoria ou alteração fora dos arquivos dos dois commits.
   continua fora do escopo.
 - Arquivos compartilhados que este trabalho tocou: ver a fatia 3 acima. As próximas podem tocar `catalogo/`, `capacidades/`, `executor/` e talvez `politica/`;
   faça diffs estreitos, avise no ping e nunca use `git add -A`.
+
+## Correção de robustez — reconexão do host nativo (2026-10-19)
+
+- Decisão final do dono: a arquitetura da fatia 3 permanece. A extensão chama `connectNative`, o
+  navegador lança o host e esse host possui o socket Unix mesmo com o Jarvis fechado. O Jarvis
+  apenas entra como cliente ao abrir; ele nunca lança nem possui o host/socket.
+- `extensao/background.js` agora reage a `onDisconnect` com uma única tentativa pendente por vez.
+  O backoff tem base de 250 ms, dobra com jitter de 15% e para de crescer em 30 s. Há no máximo uma
+  porta e um timer; não foram adicionados alarm, heartbeat ou mensagem para manter o service worker
+  vivo. Tráfego recebido ou uma conexão de 60 s reinicia o atraso.
+- A mensagem real de `runtime.lastError` é capturada dentro de `onDisconnect` e registrada com o
+  número da tentativa e o atraso. Respostas assíncronas ficam presas à porta que recebeu o pedido,
+  portanto uma resposta atrasada nunca é enviada por uma porta nova.
+- A validação de origem continua no host, o vocabulário/protocolo da extensão não mudou e todas as
+  confirmações, contaminação por terceiros e decisões do PDP permanecem no Jarvis.
+- `background_reconexao.test.mjs` carrega o service worker real em uma VM com `Port`, relógio e
+  timers falsos. Ele cobre exclusividade de porta/timer, falha síncrona, motivo de desconexão,
+  backoff, jitter, teto e recuperação. `test_extensao.py` o integra à suíte quando Node.js existe.
+- Referência: documentação oficial do Chrome sobre
+  [`connectNative`](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+  e [ciclo do service worker](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle).
+- Não houve ensaio em navegador real nem geração de artefato nesta correção. O próximo teste do dono
+  precisa de um AppImage novo, gerado em diretório novo; não reutilizar o artefato anterior.
 
 ## Verificações já verdes
 
