@@ -92,21 +92,68 @@ Não houve push, coautoria ou alteração fora dos arquivos dos dois commits.
   interruptor_de_entrada.parar()` / `.liberar()` já existem) e a tela de configuração das duas
   flags; atalho global de parada.
 
-## Falta na fatia 5 — release e manual
+## Fatia 5 — release e manual (retomada em 2026-10-18)
 
-1. Alterar `tools/empacotar.py` sem quebrar AppImage, `.deb` ou `.rpm`:
-   - incluir `extensao/` e os manifests de host na árvore do release;
-   - instalar/criar o lançador absoluto `jarvis-native-host` e substituir o marcador de `path`;
-   - manter a chave privada de assinatura da extensão fora do repositório e do artefato. A chave
-     pública em `extensao/manifest.json` apenas fixa o ID Chromium.
-2. Acrescentar a `docs/COMO-TESTAR.md` o procedimento de instalação e prova:
-   - carregar extensão no Chromium/Chrome e no Firefox;
-   - instalar o manifesto nativo no caminho Linux correto;
-   - testar lista/leitura/clique/digitação/rolagem em página local segura;
-   - demonstrar que não há porta de rede e que senha/pagamento pedem handoff/confirmação;
-   - documentar remoção/revogação do host/extensão.
-3. Não usar navegador real nos testes automatizados. Se houver prova headless inevitável, apenas
-   em Podman com `--name` e `--timeout`, nunca no perfil ou tela do dono.
+### Estado recebido da sessão anterior
+
+- Escopo: levar `extensao/` e o executável `jarvis-native-host` aos três formatos de release;
+  instalar manifests Linux de Native Messaging com `path` absoluto para Chromium/Chrome e
+  Firefox; documentar ativação, instalação, consentimento do portal e PARADA; provar tudo apenas
+  com testes e artefatos em diretório temporário, sem instalar nada no sistema.
+- Commits anteriores já concluídos e preservados: `c3644b8` (extensão), `f6d6bec` (lado Jarvis),
+  `218e4c0` (ligação configurável) e `1fc6450` (mouse/teclado virtual). A decisão da ADR veio antes,
+  em `1ebed7d`.
+- Alterações sem commit recebidas e ainda sob auditoria: `docs/COMO-TESTAR.md`,
+  `src/jarvis/navegador/host.py`, `tools/empacotar.py`; novos
+  `src/jarvis/navegador/instalar.py`, `tests/unit/navegador/test_empacotar_host.py` e
+  `tests/unit/navegador/test_instalar.py`. Este próprio handoff passa a integrar a fatia.
+- Direção já implementada no diff parcial: `extensao/` entrou em `DADOS`; há lançador isolado do
+  host e modo `--native-host` no AppRun; `.deb`/`.rpm` ganham manifests de sistema gerados a partir
+  dos modelos; AppImage ganha instalação por usuário com stub de caminho estável; o manual já tem
+  um roteiro de página local e declara limites de verificação real.
+- Validações ainda pendentes neste ponto: revisar integralmente os diffs e os caminhos de cada
+  formato; executar os testes novos e os relevantes do navegador; `ruff`, `mypy`, `node --check` e
+  `git diff --check`; gerar AppImage, `.deb` e `.rpm` somente sob diretório temporário e inspecionar
+  conteúdo, manifests e bits executáveis sem instalar.
+- Limite de verificação: navegador real, portal `RemoteDesktop` real e `/dev/uinput` real **não**
+  serão usados; instalação real dos pacotes e `tools/empacotar.py verificar` (que instala em
+  contêiner) também ficam fora. Só são autorizadas provas unitárias, estáticas e inspeção dos
+  artefatos gerados em diretório temporário.
+
+### Resultado concluído
+
+- `tools/empacotar.py` monta `extensao/` no AppDir, cria o executável isolado
+  `usr/bin/jarvis-native-host`, oferece `AppRun --native-host` no AppImage e gera manifests com
+  `path: /usr/bin/jarvis-native-host` para Chrome, Chromium e Firefox. O `.rpm` leva as duas
+  alternativas oficiais do Firefox (`/usr/lib/mozilla` e `/usr/lib64/mozilla`); o `.deb` leva
+  `/usr/lib/mozilla`.
+- `jarvis.navegador.instalar` valida os modelos, recusa caminho relativo, instala/remove somente o
+  manifesto do Jarvis nos diretórios por usuário e, no AppImage, cria um stub estável e copia a
+  extensão para `~/.local/share/jarvis/`. `host.main()` encaminha apenas `--instalar`/`--remover`;
+  argumentos normais do navegador continuam no protocolo do host.
+- `docs/COMO-TESTAR.md` explica as flags desligadas por padrão, host/extensão nos três formatos,
+  carregamento manual em Chromium/Chrome e Firefox, prova numa página local, consentimento do
+  portal, PARADA e liberação, reserva `uinput` e remoção.
+- Artefatos gerados somente em `/tmp/jarvis-fatia5.92NJgx`: AppImage 360,1 MB, `.deb` 407,6 MB e
+  `.rpm` 420,4 MB. O AppImage foi extraído; `.deb` e `.rpm` foram listados/lidos sem instalação.
+  Foram conferidos extensão, host executável, caminhos e conteúdo dos manifests. O host dentro do
+  AppImage devolveu 2 para origem inválida e 0 para a origem Chromium autorizada com `stdin` já
+  fechado, usando apenas runtime/socket temporários.
+- Verificações verdes: testes focados de instalador/empacotador/host; suíte de navegador, entrada,
+  executor, tiers e ligação ao app; `ruff format --check`, `ruff check`, `mypy`, `node --check` e
+  verificações de diff. Nenhum pacote foi instalado.
+- Limites finais explícitos: navegador real, portal `RemoteDesktop` real e `/dev/uinput` real
+  **NÃO foram verificados ao vivo**; pacotes também não foram instalados e a verificação em
+  contêiner não foi rodada. O commit local único desta fatia usa o assunto
+  `Navegador controlável: empacotar extensão e host nativo (fatia 5)`; não houve push.
+
+### Regras que permanecem
+
+- Manter a chave privada de assinatura da extensão fora do repositório e do artefato. A chave
+  pública em `extensao/manifest.json` apenas fixa o ID Chromium.
+- Não usar navegador real nos testes automatizados nem perfil/tela do dono.
+- Preservar `browser.*` desligadas por padrão, confirmações de ação sensível e bloqueio absoluto
+  de senha/cartão.
 
 ## Decisões e armadilhas
 
@@ -125,11 +172,10 @@ Não houve push, coautoria ou alteração fora dos arquivos dos dois commits.
   chave pública para manter o ID estável.
 - O serviço worker MV3 pode dormir. Estado de pedido, cancelamento e política devem morar no
   Jarvis/host, não na extensão.
-- A árvore está suja por trabalho alheio. No momento deste handoff, não tocar nem incluir no
-  commit mudanças em `.claude/`, `catalogo/sites.open.yaml`, `docs/COMO-TESTAR.md`,
-  `src/jarvis/capacidades/sites_open.py`, `src/jarvis/executor/`, `src/jarvis/s2/`,
-  `src/jarvis/voz/`, seus testes relacionados e `catalogo/web.canal_videos.yaml`. Especialmente,
-  a ordem proíbe tocar `src/jarvis/s2/`, cérebro e tarefas.
+- A árvore está suja por trabalho externo. Nesta retomada, não tocar nem incluir no commit
+  `.claude/orchestrator-rules.md` nem `.orchestrator/`. `docs/COMO-TESTAR.md` agora pertence
+  explicitamente à fatia 5; qualquer outro arquivo fora da lista de alterações recebidas acima
+  continua fora do escopo.
 - Arquivos compartilhados que este trabalho tocou: ver a fatia 3 acima. As próximas podem tocar `catalogo/`, `capacidades/`, `executor/` e talvez `politica/`;
   faça diffs estreitos, avise no ping e nunca use `git add -A`.
 

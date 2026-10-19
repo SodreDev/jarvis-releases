@@ -253,6 +253,10 @@ def principal(
 
 
 def main() -> int:  # pragma: no cover — liga o processo real
+    if sys.argv[1:2] in (["--instalar"], ["--remover"]):  # nunca é o que um navegador passa
+        from jarvis.navegador.instalar import main as instalar
+
+        return instalar()
     return principal(sys.argv[1:], sys.stdin.buffer, sys.stdout.buffer, os.environ)
 
 

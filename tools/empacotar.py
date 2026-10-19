@@ -11,10 +11,11 @@
 você passar): artefato de build não é código, e misturar os dois é como um `dist/` esquecido
 entra num commit.
 
-**Um AppDir, três embalagens.** O que varia entre AppImage, `.deb` e `.rpm` é a casca; o
-conteúdo é o mesmo: um Python relocável, as rodas do projeto, os dados (`licenses/`,
-`schemas/`, `tabelas/`, `catalogo/`), os textos de licença obrigatórios e um lançador. Montar
-três vezes seria manter três verdades.
+**Um AppDir, três embalagens.** O núcleo é o mesmo: um Python relocável, as rodas do projeto,
+os dados (`licenses/`, `schemas/`, `tabelas/`, `catalogo/`, `extensao/`), os textos de licença
+obrigatórios, o lançador do aplicativo e o host nativo. A única adição específica da casca são
+os manifests de Native Messaging nos caminhos de sistema de cada `.deb`/`.rpm`; no AppImage o
+dono os instala no próprio usuário. Montar o núcleo três vezes seria manter três verdades.
 
 **O que NÃO entra:** peso de modelo. A voz do piper (63,2 MB) e os modelos de ASR são baixados
 no primeiro uso, com tamanho dito e sha256 conferido (`jarvis.voz.modelos`).
@@ -50,7 +51,15 @@ GRUPOS: Final[tuple[str, ...]] = ("gui", "voz", "asr", "dispositivo", "memoria")
 `edge` fica de fora de propósito — é extra LGPL de um motor barrado por padrão (ADR-0017), e
 o que não é caminho de produto não é distribuído."""
 
-DADOS: Final[tuple[str, ...]] = ("licenses", "schemas", "tabelas", "catalogo", "NOTICE", "LICENSE")
+DADOS: Final[tuple[str, ...]] = (
+    "licenses",
+    "schemas",
+    "tabelas",
+    "catalogo",
+    "extensao",
+    "NOTICE",
+    "LICENSE",
+)
 """O que o produto lê em tempo de execução. `jarvis.dados` procura por aqui via JARVIS_DADOS."""
 
 TEXTOS_DE_LICENCA: Final[tuple[str, ...]] = (
@@ -116,12 +125,30 @@ export JARVIS_DADOS="${JARVIS_DADOS:-$RAIZ/share/jarvis}"
 exec "$RAIZ/lib/jarvis/python/bin/python3" -m jarvis.gui.principal "$@"
 """
 
-APPRUN: Final = """#!/bin/sh
-# AppRun do AppImage: o ponto de entrada que o runtime chama depois de montar a imagem.
+HOST_NATIVO: Final = """#!/bin/sh
+# Host nativo do Jarvis (ADR-0027): quem lança é o NAVEGADOR (Native Messaging), por stdin/stdout.
+# `-I` isola o Python do ambiente do usuário: nada de PYTHONPATH nem site-packages dele.
 set -eu
 AQUI=$(dirname "$(readlink -f "$0")")
+RAIZ=$(dirname "$AQUI")
+export JARVIS_DADOS="${JARVIS_DADOS:-$RAIZ/share/jarvis}"
+exec "$RAIZ/lib/jarvis/python/bin/python3" -I -m jarvis.navegador.host "$@"
+"""
+
+APPRUN: Final = """#!/bin/sh
+# AppRun do AppImage: o ponto de entrada que o runtime chama depois de montar a imagem.
+# `--native-host [--instalar|--remover]` é o modo host nativo: o stub que o `--instalar` grava
+# chama o AppImage assim, porque o ponto de montagem do AppImage não é um caminho fixo.
+set -eu
+AQUI=$(dirname "$(readlink -f "$0")")
+if [ "${1:-}" = "--native-host" ]; then
+    shift
+    exec "$AQUI/usr/bin/jarvis-native-host" "$@"
+fi
 exec "$AQUI/usr/bin/jarvis" "$@"
 """
+
+EXECUTAVEL_DO_HOST: Final = "/usr/bin/jarvis-native-host"
 
 
 class Falhou(RuntimeError):
@@ -157,6 +184,11 @@ class Lugares:
     @property
     def trabalho(self) -> Path:
         return self.destino / "trabalho"
+
+    @property
+    def nativo(self) -> Path:
+        """Os manifestos do host nativo, na árvore de sistema (`etc/…`, `usr/lib/…`) do pacote."""
+        return self.destino / "nativo"
 
 
 def rodar(
@@ -197,7 +229,7 @@ def tamanho(caminho: Path) -> str:
 
 # --- AppDir ---------------------------------------------------------------------------------
 def montar_appdir(lugares: Lugares, *, podar: bool = True) -> Path:
-    """A árvore instalável: Python relocável + rodas da trava + dados + lançador."""
+    """A árvore instalável: Python relocável + rodas + dados + lançadores do app e do host."""
     appdir = lugares.appdir
     if appdir.exists():
         shutil.rmtree(appdir)
@@ -289,10 +321,13 @@ def montar_appdir(lugares: Lugares, *, podar: bool = True) -> Path:
     shutil.copy2(icones / "256x256" / "apps" / f"{ID}.png", appdir / f"{ID}.png")
     shutil.copy2(icones / "256x256" / "apps" / f"{ID}.png", appdir / ".DirIcon")
 
-    print("5/6 lançador", flush=True)
+    print("5/6 lançador e host nativo", flush=True)
     lancador = lugares.usr / "bin" / "jarvis"
     lancador.write_text(LANCADOR, encoding="utf-8")
     lancador.chmod(0o755)
+    host = lugares.usr / "bin" / "jarvis-native-host"
+    host.write_text(HOST_NATIVO, encoding="utf-8")
+    host.chmod(0o755)
     apprun = appdir / "AppRun"
     apprun.write_text(APPRUN, encoding="utf-8")
     apprun.chmod(0o755)
@@ -382,8 +417,26 @@ def nfpm(lugares: Lugares) -> Path:
     return binario
 
 
+def manifestos_do_host(lugares: Lugares, formato: str) -> list[tuple[Path, str]]:
+    """Gera os manifestos do host nativo para a árvore de sistema do pacote e devolve
+    `(arquivo gerado, destino instalado)`. O `path` é `/usr/bin/jarvis-native-host`, absoluto como
+    o navegador exige; o `.deb` não leva o caminho `lib64` do Firefox (é coisa do Fedora)."""
+    from jarvis.navegador.instalar import destinos_do_sistema, instalar, modelo_do_release
+
+    if lugares.nativo.exists():
+        shutil.rmtree(lugares.nativo)
+    destinos = [
+        d
+        for d in destinos_do_sistema(lugares.nativo)
+        if formato == "rpm" or d.navegador != "firefox64"
+    ]
+    modelos = RAIZ / "extensao" / "host"
+    instalar(destinos, EXECUTAVEL_DO_HOST, lambda m: modelo_do_release(m, base=modelos))
+    return [(d.arquivo, "/" + str(d.arquivo.relative_to(lugares.nativo))) for d in destinos]
+
+
 def receita(lugares: Lugares, formato: str) -> Path:
-    """A receita do nfpm, escrita a partir do AppDir — uma por formato, do mesmo conteúdo."""
+    """A receita do nfpm: AppDir comum mais manifests nos caminhos próprios de cada formato."""
     dependencias = DEPENDENCIAS_DEB if formato == "deb" else DEPENDENCIAS_RPM
     linhas = [
         f'name: "{NOME}"',
@@ -413,6 +466,14 @@ def receita(lugares: Lugares, formato: str) -> Path:
         '    dst: "/usr/share/icons/hicolor"',
         f'  - src: "{lugares.usr}/share/licenses/jarvis"',
         '    dst: "/usr/share/licenses/jarvis"',
+        f'  - src: "{lugares.usr}/bin/jarvis-native-host"',
+        f'    dst: "{EXECUTAVEL_DO_HOST}"',
+        # Os manifestos do host nativo: sem eles o navegador não sabe lançar o host.
+        *[
+            linha
+            for arquivo, destino in manifestos_do_host(lugares, formato)
+            for linha in (f'  - src: "{arquivo}"', f'    dst: "{destino}"')
+        ],
         # Sem `type: license` aqui: no rpm esse tipo é por **arquivo**, e apontá-lo para uma
         # pasta faz o nfpm parar com "is a directory". Os textos vão como conteúdo normal,
         # que é o que a obrigação da ADR-0019 pede — estar lá dentro, no caminho declarado.
@@ -485,6 +546,23 @@ def em_container(
     )
 
 
+VERIFICAR_HOST: Final = (
+    "test -x /usr/bin/jarvis-native-host; "
+    "test -f /usr/share/jarvis/extensao/manifest.json; "
+    'grep -q \'"path": "/usr/bin/jarvis-native-host"\' '
+    "/etc/chromium/native-messaging-hosts/br.com.granafacil.jarvis.json; "
+    'grep -q \'"path": "/usr/bin/jarvis-native-host"\' '
+    "/usr/lib/mozilla/native-messaging-hosts/br.com.granafacil.jarvis.json; "
+    # origem que não é a extensão do Jarvis: o host recusa (código 2) sem abrir socket
+    "/usr/bin/jarvis-native-host chrome-extension://aaaa/ </dev/null && exit 1 || test $? -eq 2; "
+    # origem certa e stdin fechado: sobe, abre o socket e sai limpo (código 0)
+    "mkdir -p /tmp/rt && chmod 700 /tmp/rt && XDG_RUNTIME_DIR=/tmp/rt "
+    "/usr/bin/jarvis-native-host chrome-extension://eainnehpangdlhmjenljnbfkjjeckoli/ </dev/null"
+)
+"""O que o contêiner confere do host nativo depois de instalar o `.deb`/`.rpm`: o executável, a
+extensão, os manifestos com o `path` absoluto e o comportamento do host sem navegador nenhum."""
+
+
 def verificar(lugares: Lugares, *, quais: Sequence[str] = ("appimage", "deb", "rpm")) -> None:
     """Instala e **executa** cada artefato numa distro que não é esta máquina."""
     marca = int(time.time())
@@ -514,7 +592,7 @@ def verificar(lugares: Lugares, *, quais: Sequence[str] = ("appimage", "deb", "r
             "jarvis --versao; jarvis --diagnostico | head -20; "
             "jarvis --capturar /root/telas; ls -la /root/telas; "
             "test -f /usr/share/applications/dev.sodredev.Jarvis.desktop; "
-            "test -f /usr/share/licenses/jarvis/LGPL-3.0.txt",
+            "test -f /usr/share/licenses/jarvis/LGPL-3.0.txt; " + VERIFICAR_HOST,
             lugares,
         )
     if "rpm" in quais:
@@ -526,7 +604,7 @@ def verificar(lugares: Lugares, *, quais: Sequence[str] = ("appimage", "deb", "r
             "jarvis --versao; jarvis --diagnostico | head -20; "
             "jarvis --capturar /root/telas; ls -la /root/telas; "
             "test -f /usr/share/applications/dev.sodredev.Jarvis.desktop; "
-            "test -f /usr/share/licenses/jarvis/LGPL-3.0.txt",
+            "test -f /usr/share/licenses/jarvis/LGPL-3.0.txt; " + VERIFICAR_HOST,
             lugares,
         )
 
