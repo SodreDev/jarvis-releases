@@ -26,6 +26,15 @@ from jarvis.navegador.protocolo import (
 from jarvis.navegador.quadro import QuadroInvalido, escrever_quadro, ler_quadro
 
 
+def familia_do_host(principal: str) -> str:
+    """O navegador principal do dono (`firefox`, `chrome`, `brave`…) → a família do host: `firefox`
+    ou `chromium` (todo derivado do Chromium usa a mesma extensão). Vazio = qualquer um."""
+    nome = principal.strip().lower()
+    if not nome:
+        return ""
+    return "firefox" if nome.startswith(("firefox", "librewolf", "zen")) else "chromium"
+
+
 class NavegadorIndisponivel(RuntimeError):
     """Não há navegador com a extensão do Jarvis aberto (ou o host não respondeu)."""
 

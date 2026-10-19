@@ -72,6 +72,8 @@ from jarvis.executor.navegadores import AbridorDeNavegador, separar
 from jarvis.memoryd.conversa import ConversaPersistente
 from jarvis.memoryd.ferramentas import FerramentasDeMemoria
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
+from jarvis.navegador.cliente import ClienteDoNavegador, TransporteUnix, familia_do_host
+from jarvis.navegador.ferramentas import CorposDoNavegador
 from jarvis.politica.abertura import nome_de_app
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.canonicalizacao import Sistema, canonicalizar
@@ -770,9 +772,19 @@ class Aplicativo:
                 principal=self.configuracao.navegador_principal,
                 ambiente=self.ambiente,
             ),
+            navegador=self._corpos_do_navegador(),
         )
         executor.preparar()
         return executor
+
+    def _corpos_do_navegador(self) -> CorposDoNavegador | None:
+        """As `browser.*` só existem se o dono ligou (`navegador_controlado`). O socket é o do host
+        que o navegador lançou; sem navegador aberto, a tool diz isso em vez de falhar calada."""
+        if not self.configuracao.navegador_controlado:
+            return None
+        cliente = ClienteDoNavegador(TransporteUnix())
+        cliente.navegador = familia_do_host(self.configuracao.navegador_principal)
+        return CorposDoNavegador(cliente)
 
     # --- confirmação de ferramenta (ADR-0028) -------------------------------------------------
     def atualizar_acesso(self, configuracao: Configuracao) -> None:
@@ -788,6 +800,7 @@ class Aplicativo:
             navegadores=configuracao.navegadores,
             navegador_principal=configuracao.navegador_principal,
             sites_sem_confirmar=configuracao.sites_sem_confirmar,
+            navegador_controlado=configuracao.navegador_controlado,
         )
         if self._cerebro is None:
             return

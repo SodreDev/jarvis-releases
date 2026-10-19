@@ -150,6 +150,10 @@ class Configuracao:
     sites_sem_confirmar: tuple[str, ...] = ()
     """Domínios que `sites.open` abre mesmo depois de o turno ler conteúdo de terceiros (com
     subdomínios). Abrir site é livre; esta lista só tira a confirmação desse caso."""
+    navegador_controlado: bool = False
+    """O dono deixa o Jarvis ler e agir nas abas do navegador pela **extensão** (ADR-0027).
+    Desligado, as `browser.*` nem aparecem para o modelo. Ligar não instala nada: a extensão e o
+    host nativo vêm no release, e o dono os carrega no navegador (COMO-TESTAR §0.2)."""
     tarefa_motor: str = "direto"
     """Quem conduz as tarefas em segundo plano (ADR-0022): `direto` roda a ferramenta pedida;
     `agente` deixa o motor de conversa (`s2`) planejar os passos — e, se o `s2` é de nuvem, a
@@ -187,6 +191,7 @@ class Configuracao:
             "navegadores": list(self.navegadores),
             "navegador_principal": self.navegador_principal,
             "sites_sem_confirmar": list(self.sites_sem_confirmar),
+            "navegador_controlado": self.navegador_controlado,
             "tarefa_motor": self.tarefa_motor,
             "laco_max_passos": self.laco_max_passos,
             "laco_prazo_s": self.laco_prazo_s,
@@ -274,6 +279,9 @@ navegador_principal = {aspas(configuracao.navegador_principal)}
 # Abrir site é livre; estes continuam livres mesmo depois de o Jarvis ler um arquivo ou página
 # (nesse caso, qualquer outro pede o seu sim). Ex.: ["wikipedia.org"]
 sites_sem_confirmar = {lista(configuracao.sites_sem_confirmar)}
+# Deixa o Jarvis ler e agir nas abas do navegador pela extensão dele (ADR-0027). Precisa da extensão
+# carregada no navegador; enviar, pagar, banco e mensageiros sempre pedem o seu sim.
+navegador_controlado = {"true" if configuracao.navegador_controlado else "false"}
 # Quem conduz as tarefas em segundo plano: "direto" (roda a ferramenta pedida) ou "agente"
 # (o motor de conversa planeja os passos; se ele é de nuvem, a tarefa vai junto).
 tarefa_motor = {aspas(configuracao.tarefa_motor)}
@@ -494,6 +502,7 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         navegadores=_lista(dados, "navegadores"),
         navegador_principal=_texto(dados, "navegador_principal", ""),
         sites_sem_confirmar=tuple(s.lower() for s in _lista(dados, "sites_sem_confirmar")),
+        navegador_controlado=_logico(dados, "navegador_controlado"),
         tarefa_motor=_texto(dados, "tarefa_motor", "direto"),
         laco_max_passos=_inteiro(dados, "laco_max_passos", 12),
         laco_prazo_s=_numero(dados, "laco_prazo_s", 90.0),
