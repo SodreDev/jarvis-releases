@@ -147,3 +147,39 @@ precisam de conta; C fica fora.** Regras:
   <https://developer.chrome.com/blog/remote-debugging-port>
 - Chrome Extensions, `chrome.debugger`: <https://developer.chrome.com/docs/extensions/reference/api/debugger>
 - Discord, posição sobre self-bots: <https://support.discord.com/hc/articles/115002192352>
+
+## Emenda de 2026-10-18 — entrada virtual (fatia 4)
+
+Mouse e teclado virtuais servem onde o DOM não serve (sites que proíbem automação, como Instagram e
+WhatsApp Web) e fora do navegador. Escolhas, com a fonte de cada uma (acesso em 2026-10-18):
+
+| Peça | Escolha | Por quê |
+|---|---|---|
+| Wayland (padrão) | portal `org.freedesktop.portal.RemoteDesktop` por `jeepney` | `Start` mostra o diálogo de consentimento e a sessão é revogável; o `xdg-desktop-portal-kde` implementa `NotifyPointerMotion`, `NotifyPointerButton` e `NotifyKeyboardKeysym` (e `ConnectToEIS` via KWin). Não mistura `Notify*` com EIS. Fontes: <https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html>, `src/remotedesktop.cpp` do xdg-desktop-portal-kde |
+| X11 / sem portal | `uinput` do kernel, **reserva**, só se o dono ligar (`entrada_uinput`) | o backend KDE do portal só existe em Wayland (`CreateSession` recusa em X11). `uinput` não pede consentimento a ninguém: por isso é desligado por padrão e exige acesso a `/dev/uinput` dado pelo dono. Fonte: <https://docs.kernel.org/input/uinput.html> |
+| `uinput` sem biblioteca | `fcntl.ioctl` + `struct` da biblioteca padrão | zero dependência e zero licença nova; `UI_DEV_SETUP` (o que o kernel recomenda) com os números vindos da fórmula `_IOC` e conferidos em `linux/uinput.h` |
+| Foco da janela | `kdotool` (Apache-2.0, programa separado e opcional) no Wayland/KDE; `xprop` no X11 | evento de entrada cai na janela em foco, e o aplicativo precisa saber qual é. <https://github.com/jinliu/kdotool> |
+| **Recusados** | `ydotool` (AGPL-3.0), `xdotool`, `pynput` | `ydotool` é AGPL (Debian `copyright`: AGPL-3+; EL10: AGPL-3.0-only): não entra no caminho do produto. `python-evdev` (BSD-3-Clause) serviria, mas a biblioteca padrão basta |
+
+**Regras (tudo decidido pelo código, nada pela página nem pelo modelo):**
+1. Ordem: parada → argumentos → foco → risco → foco de novo → taxa → evento.
+2. **Foco desconhecido é recusa** e **o próprio Jarvis em foco é recusa**. Motivo: o "sim" do dono é
+   clicado na janela do Jarvis, que ganha o foco; um clique virtual com foco desconhecido poderia
+   cair no botão «confirmar» dele. Depois do "sim" o código devolve o foco à janela de origem
+   (`kdotool windowactivate`) e recusa se ele não voltar.
+3. **Perigoso (o "sim" do dono, por ação):** janela em foco de terminal, gerenciador de senhas,
+   autenticação (polkit, pinentry, título com «entrar»/«senha»), banco/pagamento ou mensageiro/e-mail
+   (por título); **Enter** ou quebra de linha (Enter envia); turno que leu conteúdo de terceiros.
+4. **Recusa sem pergunta:** digitar em gerenciador de senhas ou janela de autenticação; digitar
+   número de cartão (Luhn).
+5. Vocabulário fechado: mover (relativo, até 2000 px), clicar (3 botões, até 3x), digitar (até 500
+   caracteres) e apertar teclas de uma lista (letras, dígitos, enter, tab, esc, setas…) com
+   `ctrl`/`shift`/`alt`. Não existem `super`, `ctrl+alt`, F-teclas nem posição absoluta.
+6. **Limite de taxa** (40 ações por minuto) e **interruptor de parada** que o dono aciona (botão,
+   ou o arquivo `PARADA` em `<sessão>/entrada/`) e só ele solta; parar fecha a sessão do portal.
+
+**Não verificado ao vivo** (só fakes: portal num `dbus-daemon` privado, `uinput` com dispositivo
+falso, `kdotool`/`xprop` com lançador falso): o diálogo do KDE de verdade, o `restore`/revogação, o
+keysym de maiúscula/acentuada no KWin, o `kdotool windowactivate` devolvendo o foco, e o `uinput`
+num X11 real. **Limites conhecidos:** o ponteiro só move relativo (posição absoluta pede captura de
+tela/ScreenCast, fora desta fatia); o `uinput` só digita o que tem a mesma tecla em US e ABNT2.

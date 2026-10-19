@@ -33,6 +33,8 @@ PROGRAMAS: Final[frozenset[str]] = frozenset(
         "xclip",
         "notify-send",
         "wmctrl",
+        "kdotool",
+        "xprop",
     }
 )
 """Tudo o que o executor pode chamar por aqui. Acrescentar é decisão de revisão, não de runtime."""

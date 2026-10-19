@@ -1,0 +1,58 @@
+# Entrada virtual (ADR-0027, fatia 4): mouse e teclado sintetizados pelo sistema, sob o foco da janela.
+id: input.mouse.move
+title: Mover o mouse
+description: >-
+  Move o ponteiro do mouse de forma relativa (dx para a direita, dy para baixo), até 2000 pixels por eixo por
+  vez. Use para chegar perto de um botão que o dono descreveu, olhando a tela antes e depois. Não move para uma
+  posição absoluta, não clica e não arrasta. Vale para a janela que está em foco, conferida pelo código antes de
+  cada ação: terminal, banco, mensageiro, gerenciador de senhas e janela desconhecida pedem o sim do dono, e o
+  próprio Jarvis em foco é recusado. Tem limite de taxa e o dono pode parar tudo. Prefira browser.* quando a
+  página deixar; use isto onde o site proíbe automação.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    dx:
+      type: integer
+      minimum: -2000
+      maximum: 2000
+    dy:
+      type: integer
+      minimum: -2000
+      maximum: 2000
+output_schema:
+  type: object
+  required:
+  - dx
+  - dy
+preconditions:
+- o dono ligou a entrada virtual na configuração e deu o consentimento do sistema
+- a janela em foco é a que o dono quer controlar
+postcondition: o ponteiro andou dx e dy pixels relativos pelo backend de entrada do sistema, com a janela em foco conferida antes
+capability: input.mouse.move
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: local
+pii_touch: none
+confirmation: never
+tier: moderado
+aviso_falado: Mexi o mouse.
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 10000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-entrada
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

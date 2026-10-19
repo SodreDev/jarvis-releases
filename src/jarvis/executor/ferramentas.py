@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Any, Final
 import jsonschema
 
 from jarvis.barramento.envelope import uuid7
+from jarvis.entrada.controle import FERRAMENTA_DE_CONFIRMACAO as CONFIRMACAO_DE_ENTRADA
+from jarvis.entrada.controle import FERRAMENTAS_DE_ENTRADA, ControleDeEntrada
 from jarvis.executor import arquivos, desktop
 from jarvis.executor.comandos import ComandoIndisponivel
 from jarvis.executor.desfazer import LIXEIRA, Contaminacao, RegistroDeDesfazeres, aviso_falado
@@ -35,7 +37,9 @@ from jarvis.manifesto.validador import carregar_catalogo
 from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
 from jarvis.memoryd.livro import AlvoInexistente
 from jarvis.navegador.ferramentas import (
-    FERRAMENTA_DE_CONFIRMACAO,
+    FERRAMENTA_DE_CONFIRMACAO as CONFIRMACAO_DO_NAVEGADOR,
+)
+from jarvis.navegador.ferramentas import (
     FERRAMENTAS_DO_NAVEGADOR,
     AcaoRecusada,
     CorposDoNavegador,
@@ -187,6 +191,8 @@ class ExecutorDeFerramentas:
     """O livro do dono, quando há (a conversa persistente). Liga as `memoria.*` ao modelo."""
     navegador: CorposDoNavegador | None = None
     """O cliente da extensão do navegador (ADR-0027). Sem ele, as `browser.*` não existem."""
+    entrada: ControleDeEntrada | None = None
+    """Mouse e teclado virtuais (ADR-0027, fatia 4). Sem ele, as `input.*` não existem."""
     destino_onde: Onde = Onde.LOCAL
     destino_motor: str = ""
     """Quem vai ler o resultado: o D20 filtra o que da memória pode ir para este motor."""
@@ -253,6 +259,8 @@ class ExecutorDeFerramentas:
             return self.tarefas is not None
         if tool_id in FERRAMENTAS_DO_NAVEGADOR:
             return self.navegador is not None
+        if tool_id in FERRAMENTAS_DE_ENTRADA:
+            return self.entrada is not None
         if tool_id in PRECISAM_DE_AGENDA:
             return self.portas().agenda is not None
         return tool_id in FERRAMENTAS_LIGADAS or tool_id in CORPOS or tool_id in DE_ARQUIVOS
@@ -365,7 +373,15 @@ class ExecutorDeFerramentas:
                 motivo = self._sugestao_de_app(str(argumentos["nome"]), motivo)
             return ResultadoDeFerramenta(tool_id, "negado", motivo=motivo, call_id=chamada)
         resultado = self._rodar(
-            tool_id, argumentos, decisao, caminho, cancelado, chamada, proveniencia, marca, confirmar
+            tool_id,
+            argumentos,
+            decisao,
+            caminho,
+            cancelado,
+            chamada,
+            proveniencia,
+            marca,
+            confirmar,
         )
         if resultado.status == "ok":
             resultado = self._depois_do_efeito(tool_id, argumentos, resultado, marca)
@@ -458,6 +474,8 @@ class ExecutorDeFerramentas:
                 dados = self._memoria(tool_id, args, decisao, proveniencia)
             elif tool_id in FERRAMENTAS_DO_NAVEGADOR:
                 dados = self._navegador(tool_id, args, chamada, cancelado, confirmar, marca)
+            elif tool_id in FERRAMENTAS_DE_ENTRADA:
+                dados = self._entrada_virtual(tool_id, args, chamada, cancelado, confirmar, marca)
             else:
                 dados = self._corpo(
                     tool_id, args, decisao.grant, caminho, cancelado, chamada, marca
@@ -479,20 +497,19 @@ class ExecutorDeFerramentas:
             return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
         return ResultadoDeFerramenta(tool_id, "ok", dados=dados, call_id=chamada)
 
-    def _navegador(
+    def _exigir_do_dono(
         self,
+        ferramenta_de_confirmacao: str,
         tool_id: str,
-        args: Mapping[str, Any],
         chamada: str,
         cancelado: Cancelado,
         confirmar: Confirmar,
-        marca: Contaminacao | None,
-    ) -> dict[str, Any]:
-        """Corpo das `browser.*`. O risco depende do que está sob o clique, então o corpo inspeciona
-        o alvo e, se for perigoso (enviar, pagar, banco…), volta aqui por `exigir`: um segundo
-        pedido ao PDP, de manifesto `perigoso`, que **só** o "sim" do dono na janela solta."""
-        assert self.navegador is not None
-        contaminado = bool(marca and marca.valor) or self.contaminado
+        contaminado: bool,
+    ) -> Callable[[str, str], None]:
+        """O "sim" por ação das tools cujo risco depende do que está sob o clique (navegador,
+        entrada virtual): um segundo pedido ao PDP, de manifesto `perigoso`, que **só** o "sim" do
+        dono na janela solta. Cada pergunta é uma linha da auditoria; ninguém passa o parâmetro
+        `confirmado_pelo_dono` a não ser esta função, depois da resposta da janela."""
         perguntas = 0
 
         def exigir(detalhe: str, motivo: str) -> None:
@@ -500,7 +517,7 @@ class ExecutorDeFerramentas:
             perguntas += 1
             id_da_pergunta = f"{chamada}-s{perguntas}"
             pedido = Pedido(
-                FERRAMENTA_DE_CONFIRMACAO,
+                ferramenta_de_confirmacao,
                 {"acao": tool_id, "detalhe": detalhe[:300]},
                 call_id=id_da_pergunta,
                 contaminado=contaminado,
@@ -524,12 +541,51 @@ class ExecutorDeFerramentas:
             if decisao.veredito is not Veredito.ALLOW:
                 raise AcaoRecusada(decisao.motivo)
 
+        return exigir
+
+    def _navegador(
+        self,
+        tool_id: str,
+        args: Mapping[str, Any],
+        chamada: str,
+        cancelado: Cancelado,
+        confirmar: Confirmar,
+        marca: Contaminacao | None,
+    ) -> dict[str, Any]:
+        """Corpo das `browser.*`: inspeciona o alvo e, se for perigoso (enviar, pagar, banco…),
+        volta por `exigir`."""
+        assert self.navegador is not None
+        contaminado = bool(marca and marca.valor) or self.contaminado
         return self.navegador.executar(
             tool_id,
             args,
             contaminado=contaminado,
             liberados=self.pdp.sites_sem_confirmar,
-            exigir=exigir,
+            exigir=self._exigir_do_dono(
+                CONFIRMACAO_DO_NAVEGADOR, tool_id, chamada, cancelado, confirmar, contaminado
+            ),
+            cancelado=cancelado,
+        )
+
+    def _entrada_virtual(
+        self,
+        tool_id: str,
+        args: Mapping[str, Any],
+        chamada: str,
+        cancelado: Cancelado,
+        confirmar: Confirmar,
+        marca: Contaminacao | None,
+    ) -> dict[str, Any]:
+        """Corpo das `input.*`: lê o foco, recusa ou pergunta, e só então sintetiza o evento."""
+        assert self.entrada is not None
+        contaminado = bool(marca and marca.valor) or self.contaminado
+        return self.entrada.executar(
+            tool_id,
+            args,
+            contaminado=contaminado,
+            exigir=self._exigir_do_dono(
+                CONFIRMACAO_DE_ENTRADA, tool_id, chamada, cancelado, confirmar, contaminado
+            ),
             cancelado=cancelado,
         )
 

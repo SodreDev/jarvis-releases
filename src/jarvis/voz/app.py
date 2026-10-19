@@ -64,6 +64,10 @@ from jarvis.audio_io.vad import Vad, vad_do_ambiente
 from jarvis.barramento.envelope import Envelope, Trust, uuid7
 from jarvis.decisao.enderecamento import DetectorDeEnderecamento, Motivo
 from jarvis.decisao.openrouter import ClassificadorOpenRouter
+from jarvis.entrada.controle import ControleDeEntrada
+from jarvis.entrada.escolha import backend_do_ambiente
+from jarvis.entrada.foco import foco_do_ambiente
+from jarvis.entrada.limite import Interruptor
 from jarvis.executor import desktop
 from jarvis.executor.alarmes import Alarme, agenda_compartilhada
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
@@ -390,6 +394,9 @@ class Aplicativo:
     conversa: ConversaPersistente | None = field(default=None, repr=False)
     """A conversa que sobrevive ao reinício (ADR-0026). `None` = só na memória, como o terminal e
     a suíte sempre fizeram: quem quer persistir (a janela) passa uma aberta."""
+    interruptor_de_entrada: Interruptor = field(init=False, repr=False)
+    """O botão de parar do mouse e do teclado virtuais: a janela o aciona, e só ela o libera."""
+    _entrada: tuple[tuple[bool], ControleDeEntrada] | None = field(default=None, repr=False)
     _auditoria: LogDeAuditoria | None = field(default=None, repr=False)
     _confirmacoes: dict[str, tuple[threading.Event, list[bool]]] = field(
         default_factory=dict, repr=False
@@ -403,6 +410,7 @@ class Aplicativo:
 
     def __post_init__(self) -> None:
         self.avisos = FilaDeAvisos(session_id=self.session_id)
+        self.interruptor_de_entrada = Interruptor(self.raiz / "entrada")
 
     # --- avisos (ADR-0025) ---------------------------------------------------------------
     def receber_aviso(self, envelope: Envelope) -> None:
@@ -773,6 +781,7 @@ class Aplicativo:
                 ambiente=self.ambiente,
             ),
             navegador=self._corpos_do_navegador(),
+            entrada=self._controle_de_entrada(),
         )
         executor.preparar()
         return executor
@@ -785,6 +794,28 @@ class Aplicativo:
         cliente = ClienteDoNavegador(TransporteUnix())
         cliente.navegador = familia_do_host(self.configuracao.navegador_principal)
         return CorposDoNavegador(cliente)
+
+    def _controle_de_entrada(self) -> ControleDeEntrada | None:
+        """Mouse e teclado virtuais só existem se o dono ligou (`entrada_virtual`). O controle é
+        guardado: reconstruir o executor não reabre o diálogo do sistema nem solta a parada."""
+        if not self.configuracao.entrada_virtual:
+            return None
+        chave = (self.configuracao.entrada_uinput,)
+        if self._entrada is None or self._entrada[0] != chave:
+            if self._entrada is not None:
+                self._entrada[1].backend.fechar()
+            ambiente = self.ambiente if self.ambiente is not None else os.environ
+            backend = backend_do_ambiente(
+                ambiente, uinput_liberado=self.configuracao.entrada_uinput
+            )
+            controle = ControleDeEntrada(
+                backend=backend,
+                foco=foco_do_ambiente(ambiente),
+                interruptor=self.interruptor_de_entrada,
+            )
+            self.interruptor_de_entrada.ao_parar(backend.fechar)
+            self._entrada = (chave, controle)
+        return self._entrada[1]
 
     # --- confirmação de ferramenta (ADR-0028) -------------------------------------------------
     def atualizar_acesso(self, configuracao: Configuracao) -> None:
@@ -801,6 +832,8 @@ class Aplicativo:
             navegador_principal=configuracao.navegador_principal,
             sites_sem_confirmar=configuracao.sites_sem_confirmar,
             navegador_controlado=configuracao.navegador_controlado,
+            entrada_virtual=configuracao.entrada_virtual,
+            entrada_uinput=configuracao.entrada_uinput,
         )
         if self._cerebro is None:
             return

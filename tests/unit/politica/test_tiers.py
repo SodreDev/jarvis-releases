@@ -90,6 +90,11 @@ TIER_ESPERADO: dict[str, str] = {
     "browser.scroll": "moderado",
     "browser.navigate": "moderado",
     "browser.acao_sensivel": "perigoso",
+    "input.mouse.move": "moderado",
+    "input.mouse.click": "moderado",
+    "input.key.type": "moderado",
+    "input.key.press": "moderado",
+    "input.acao_sensivel": "perigoso",
 }
 
 
@@ -305,6 +310,13 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "browser.navigate": _pedido(pdp, "browser.navigate", {"url": "https://exemplo.org/"}),
         "browser.acao_sensivel": _pedido(
             pdp, "browser.acao_sensivel", {"acao": "browser.click", "detalhe": "Enviar"}
+        ),
+        "input.mouse.move": _pedido(pdp, "input.mouse.move", {"dx": 10, "dy": 0}),
+        "input.mouse.click": _pedido(pdp, "input.mouse.click", {"botao": "esquerdo"}),
+        "input.key.type": _pedido(pdp, "input.key.type", {"texto": "oi"}),
+        "input.key.press": _pedido(pdp, "input.key.press", {"tecla": "ctrl+l"}),
+        "input.acao_sensivel": _pedido(
+            pdp, "input.acao_sensivel", {"acao": "input.key.press", "detalhe": "enter"}
         ),
     }
 

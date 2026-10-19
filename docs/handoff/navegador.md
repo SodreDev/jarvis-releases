@@ -73,23 +73,24 @@ Não houve push, coautoria ou alteração fora dos arquivos dos dois commits.
   por texto visível (elemento sem texto/rótulo não é alcançável); com dois navegadores abertos o
   cliente usa o socket mais recente (`ClienteDoNavegador.navegador` fixa `firefox`/`chromium`).
 
-## Falta na fatia 4 — mouse e teclado virtuais
+## Fatia 4 — mouse e teclado virtuais (feita)
 
-1. Pesquisar **fontes oficiais** antes de escolher a implementação para Fedora KDE Wayland e X11.
-2. Criar `src/jarvis/entrada/` com porta injetável e fakes.
-3. Decisão de implementação a verificar e registrar:
-   - padrão Wayland: `xdg-desktop-portal` `org.freedesktop.portal.RemoteDesktop`, pois a sessão
-     tem consentimento explícito, é revogável e o compositor controla a permissão;
-   - fallback: `uinput`/`evdev`, isolado e permitido somente com a configuração/ACL explícita do
-     dono; para X11, preferir a via controlada disponível e não elevar privilégio para contornar
-     o compositor;
-   - justificar a licença de cada biblioteca. Não colocar GPL no caminho distribuído; se algo GPL
-     for indispensável, isolá-lo em processo separado e declará-lo.
-4. Implementar `input.mouse.move`, `input.mouse.click`, `input.key.type`, `input.key.press`:
-   - tier moderado por padrão, limite de taxa e interruptor global de parada;
-   - antes do efeito, verificar janela em foco; gerenciador de senhas, terminal e banco tornam a
-     ação perigosa e confirmada por ação;
-   - testes somente com fakes, nunca `uinput`, portal, tela, mouse ou teclado reais do dono.
+- `src/jarvis/entrada/`: `teclas.py` (tabelas fechadas), `porta.py` (`BackendDeEntrada`),
+  `portal_remoto.py` (portal `RemoteDesktop`, jeepney), `uinput.py` (reserva, stdlib), `escolha.py`
+  (Wayland: portal → uinput; X11: uinput → portal), `foco.py` (kdotool/xprop + classificação),
+  `limite.py` (taxa 40/min e `Interruptor`), `controle.py` (a ordem das travas).
+- Catálogo: `input.mouse.move`, `input.mouse.click`, `input.key.type`, `input.key.press` (moderado)
+  e `input.acao_sensivel` (perigoso, só o código consulta). Fontes, licenças e regras na emenda da
+  ADR-0027 (2026-10-18). Config nova do dono: `entrada_virtual` e `entrada_uinput` (padrão: desligadas).
+- Compartilhados tocados: `executor/ferramentas.py` (campo `entrada`, `_ligada`, despacho,
+  `_exigir_do_dono` — o fecho da confirmação que o navegador já usava virou método comum),
+  `executor/comandos.py` (+`kdotool`, +`xprop` na lista de programas), `voz/app.py` e `voz/config.py`
+  (flags, `interruptor_de_entrada`, controle guardado entre remontagens), `test_tiers.py`.
+- **Decisão a revisar com o dono:** foco desconhecido é *recusa*, não pergunta (ver emenda). Em
+  KDE/Wayland sem `kdotool` a entrada virtual fica inerte e a frase diz o que instalar.
+- **Pendente (fora do meu escopo):** botão «parar entrada virtual» na janela (`Aplicativo.
+  interruptor_de_entrada.parar()` / `.liberar()` já existem) e a tela de configuração das duas
+  flags; atalho global de parada.
 
 ## Falta na fatia 5 — release e manual
 

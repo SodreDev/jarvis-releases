@@ -26,11 +26,11 @@ def test_categoria_do_site(url: str, esperada: str) -> None:
 
 
 def test_cartao_so_com_digito_verificador_valido() -> None:
-    assert risco._parece_cartao("4111 1111 1111 1111")
-    assert risco._parece_cartao("4111-1111-1111-1111")
-    assert not risco._parece_cartao("4111 1111 1111 1112")
-    assert not risco._parece_cartao("123456")
-    assert not risco._parece_cartao("meu cartão")
+    assert risco.parece_cartao("4111 1111 1111 1111")
+    assert risco.parece_cartao("4111-1111-1111-1111")
+    assert not risco.parece_cartao("4111 1111 1111 1112")
+    assert not risco.parece_cartao("123456")
+    assert not risco.parece_cartao("meu cartão")
 
 
 def test_a_pagina_nao_afrouxa_o_que_o_codigo_apertou() -> None:

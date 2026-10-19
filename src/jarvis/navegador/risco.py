@@ -172,7 +172,7 @@ def _palavra_de_risco(*textos: str) -> str:
     return ""
 
 
-def _parece_cartao(texto: str) -> bool:
+def parece_cartao(texto: str) -> bool:
     digitos = re.sub(r"[ -]", "", texto.strip())
     if not (digitos.isdigit() and 13 <= len(digitos) <= 19):
         return False
@@ -260,7 +260,7 @@ def avaliar_digitacao(
     *,
     contaminado: bool,
 ) -> Avaliacao:
-    if dados.get("sensivel") or _ROTULO_SECRETO.search(nome_de_app(alvo)) or _parece_cartao(texto):
+    if dados.get("sensivel") or _ROTULO_SECRETO.search(nome_de_app(alvo)) or parece_cartao(texto):
         return Avaliacao(
             recusa=(
                 "senha, código de verificação e cartão o dono digita; o Jarvis não preenche "

@@ -154,6 +154,13 @@ class Configuracao:
     """O dono deixa o Jarvis ler e agir nas abas do navegador pela **extensão** (ADR-0027).
     Desligado, as `browser.*` nem aparecem para o modelo. Ligar não instala nada: a extensão e o
     host nativo vêm no release, e o dono os carrega no navegador (COMO-TESTAR §0.2)."""
+    entrada_virtual: bool = False
+    """O dono deixa o Jarvis usar mouse e teclado virtuais (ADR-0027, fatia 4), pelo portal do
+    sistema: o compositor mostra um diálogo e o dono pode revogar. Desligado, as `input.*` nem
+    aparecem para o modelo."""
+    entrada_uinput: bool = False
+    """Reserva da entrada virtual pelo `uinput` do kernel (X11, ou compositor sem portal). **Não
+    pede consentimento a ninguém**: só vale se o dono a ligar e liberar o acesso a `/dev/uinput`."""
     tarefa_motor: str = "direto"
     """Quem conduz as tarefas em segundo plano (ADR-0022): `direto` roda a ferramenta pedida;
     `agente` deixa o motor de conversa (`s2`) planejar os passos — e, se o `s2` é de nuvem, a
@@ -192,6 +199,8 @@ class Configuracao:
             "navegador_principal": self.navegador_principal,
             "sites_sem_confirmar": list(self.sites_sem_confirmar),
             "navegador_controlado": self.navegador_controlado,
+            "entrada_virtual": self.entrada_virtual,
+            "entrada_uinput": self.entrada_uinput,
             "tarefa_motor": self.tarefa_motor,
             "laco_max_passos": self.laco_max_passos,
             "laco_prazo_s": self.laco_prazo_s,
@@ -282,6 +291,11 @@ sites_sem_confirmar = {lista(configuracao.sites_sem_confirmar)}
 # Deixa o Jarvis ler e agir nas abas do navegador pela extensão dele (ADR-0027). Precisa da extensão
 # carregada no navegador; enviar, pagar, banco e mensageiros sempre pedem o seu sim.
 navegador_controlado = {"true" if configuracao.navegador_controlado else "false"}
+# Mouse e teclado virtuais (ADR-0027): pelo portal do sistema, com diálogo de consentimento e
+# revogável. Terminal, banco, mensageiro e senhas pedem o seu sim; o seu botão de parar vale sempre.
+entrada_virtual = {"true" if configuracao.entrada_virtual else "false"}
+# Reserva pelo uinput do kernel (sem diálogo): só se você liberar o acesso a /dev/uinput.
+entrada_uinput = {"true" if configuracao.entrada_uinput else "false"}
 # Quem conduz as tarefas em segundo plano: "direto" (roda a ferramenta pedida) ou "agente"
 # (o motor de conversa planeja os passos; se ele é de nuvem, a tarefa vai junto).
 tarefa_motor = {aspas(configuracao.tarefa_motor)}
@@ -503,6 +517,8 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         navegador_principal=_texto(dados, "navegador_principal", ""),
         sites_sem_confirmar=tuple(s.lower() for s in _lista(dados, "sites_sem_confirmar")),
         navegador_controlado=_logico(dados, "navegador_controlado"),
+        entrada_virtual=_logico(dados, "entrada_virtual"),
+        entrada_uinput=_logico(dados, "entrada_uinput"),
         tarefa_motor=_texto(dados, "tarefa_motor", "direto"),
         laco_max_passos=_inteiro(dados, "laco_max_passos", 12),
         laco_prazo_s=_numero(dados, "laco_prazo_s", 90.0),
