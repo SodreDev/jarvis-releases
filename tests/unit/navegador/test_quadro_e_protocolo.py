@@ -1,0 +1,95 @@
+"""O quadro do Native Messaging e o vocabulário fechado: bytes em memória, nada de navegador."""
+
+from __future__ import annotations
+
+import io
+import struct
+from typing import Any
+
+import pytest
+
+from jarvis.navegador.protocolo import PedidoInvalido, validar_pedido, validar_resposta
+from jarvis.navegador.quadro import QuadroInvalido, codificar, ler_quadro
+
+
+def _quadro(corpo: bytes) -> io.BytesIO:
+    return io.BytesIO(struct.pack("=I", len(corpo)) + corpo)
+
+
+def test_o_quadro_vai_e_volta_e_o_fim_limpo_e_none() -> None:
+    fluxo = io.BytesIO(codificar({"id": "a", "texto": "ação"}, 1000))
+    assert ler_quadro(fluxo, 1000) == {"id": "a", "texto": "ação"}
+    assert ler_quadro(fluxo, 1000) is None
+
+
+@pytest.mark.parametrize(
+    "bytes_",
+    [
+        b"\x05\x00",  # cabeçalho cortado
+        struct.pack("=I", 50) + b"{}",  # corpo cortado
+        struct.pack("=I", 5000) + b"x" * 5000,  # maior que o limite
+        struct.pack("=I", 3) + b"[1]",  # JSON que não é objeto
+        struct.pack("=I", 2) + b"\xff\xfe",  # não é UTF-8
+        struct.pack("=I", 3) + b"{x}",  # não é JSON
+    ],
+)
+def test_quadro_truncado_grande_ou_torto_e_erro(bytes_: bytes) -> None:
+    with pytest.raises(QuadroInvalido):
+        ler_quadro(io.BytesIO(bytes_), 1000)
+
+
+def test_mensagem_grande_demais_nao_sai() -> None:
+    with pytest.raises(QuadroInvalido):
+        codificar({"x": "a" * 2000}, 1000)
+
+
+def _pedido(metodo: str, **params: Any) -> dict[str, Any]:
+    return {"id": "j1-1", "method": metodo, "params": params}
+
+
+def test_pedidos_do_vocabulario_passam() -> None:
+    assert validar_pedido(_pedido("tabs.list")).method == "tabs.list"
+    assert validar_pedido(_pedido("page.click", tabId=7, alvo="Próxima")).params["tabId"] == 7
+    pedido = validar_pedido(_pedido("page.type", alvo="Busca", texto="oi", limpar=True))
+    assert pedido.params["limpar"] is True
+    assert validar_pedido(_pedido("tabs.navigate", url="https://exemplo.org/a?b=1")).id == "j1-1"
+
+
+@pytest.mark.parametrize(
+    "bruto",
+    [
+        _pedido("tabs.open", url="https://exemplo.org"),  # método que o Jarvis não usa
+        _pedido("page.eval", codigo="1+1"),  # canivete suíço
+        _pedido("page.click", selector="#enviar", alvo="x"),  # seletor CSS não existe
+        _pedido("page.click"),  # falta o alvo
+        _pedido("page.click", alvo="   "),
+        _pedido("page.click", alvo="a" * 501),
+        _pedido("page.read", tabId=True),  # booleano não é inteiro
+        _pedido("page.read", tabId=-1),
+        _pedido("page.scroll", pixels=2001),
+        _pedido("page.type", alvo="x", texto="y" * 10_001),
+        _pedido("tabs.navigate", url="javascript:alert(1)"),
+        _pedido("tabs.navigate", url="file:///etc/passwd"),
+        _pedido("tabs.navigate", url="https://u:p@exemplo.org/"),
+        _pedido("tabs.navigate", url="https://exemplo.org/ a"),
+        {"id": "com espaço", "method": "tabs.list", "params": {}},
+        {"id": "a", "method": "tabs.list", "params": []},
+        ["não é objeto"],
+    ],
+)
+def test_pedido_fora_do_vocabulario_e_recusado(bruto: object) -> None:
+    with pytest.raises(PedidoInvalido):
+        validar_pedido(bruto)
+
+
+def test_resposta_so_tem_o_formato_do_contrato() -> None:
+    assert validar_resposta({"id": "a", "ok": True, "result": {"x": 1}, "extra": 1}) == {
+        "id": "a",
+        "ok": True,
+        "result": {"x": 1},
+    }
+    erro = validar_resposta({"id": "a", "ok": False, "error": {"codigo": "c" * 99, "mensagem": 3}})
+    assert len(erro["error"]["codigo"]) == 60
+    for ruim in ({"id": "a"}, {"id": "a", "ok": True}, {"id": "a", "ok": False}, "texto"):
+        with pytest.raises(PedidoInvalido):
+            validar_resposta(ruim)

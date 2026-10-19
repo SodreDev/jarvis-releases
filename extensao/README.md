@@ -11,16 +11,25 @@ No Firefox, o ID é `jarvis-browser@granafacil.local`.
 
 ## Protocolo da ponte
 
-O host envia uma linha JSON com `{ "id", "method", "params" }`; a extensão responde
-`{ "id", "ok", "result" }` ou `{ "id", "ok": false, "error" }`. Os métodos aceitos são:
+O navegador lança o host (`jarvis-native-host`) quando a extensão chama `connectNative`; os dois
+trocam quadros do Native Messaging (tamanho de 32 bits na ordem nativa + JSON UTF-8) por
+`stdin`/`stdout`. O host envia `{ "id", "method", "params" }`; a extensão responde
+`{ "id", "ok", "result" }` ou `{ "id", "ok": false, "error" }`. O host é quem escuta o Jarvis, num
+**socket Unix** (`$XDG_RUNTIME_DIR/jarvis/navegador/<navegador>-<pid>.sock`, pasta 0700, socket
+0600, par conferido por `SO_PEERCRED`) — não há porta de rede. Os métodos que o Jarvis usa são:
 
-- `tabs.list`, `tabs.active`, `tabs.open` (`url`, `reutilizar`), `tabs.navigate` (`url`, `tabId`);
+- `tabs.list`, `tabs.current` (`tabId` opcional), `tabs.navigate` (`url`, `tabId`);
 - `page.read`, `page.inspect`, `page.click`, `page.type`, `page.scroll`.
+
+`tabs.active` e `tabs.open` continuam na extensão, mas o host não os repassa. O alvo de
+`page.inspect`, `page.click` e `page.type` é `alvo`: o **texto ou rótulo visível** do elemento
+(não existe seletor CSS). `page.type` leva `texto` (o que digitar) e `limpar`.
 
 `page.read` devolve URL, título, texto visível, links (`texto`, `href`, `data` de `<time datetime>`)
 e as datas visíveis. O DOM é sempre conteúdo de terceiro; o host do Jarvis o encaminha como
-`DADO`, nunca como instrução. `page.inspect` é interno: permite ao Jarvis classificar formulário,
-envio e campo sensível antes de efetivar `click` ou `type`.
+`DADO`, nunca como instrução. `page.inspect` é interno: devolve tag, texto, se é campo, se é sensível, se envia formulário
+(`metodoDoFormulario`, `formularioDeBusca`, `formularioSensivel`) e o destino de um link, para o
+Jarvis classificar o risco antes de efetivar `click` ou `type`.
 
 O conteúdo rejeita automaticamente campos de senha, cartão e OTP. A política completa, inclusive
 as confirmações por ação, fica no Jarvis; a extensão nunca recebe uma autorização da página.
@@ -45,8 +54,9 @@ sem abrir porta de rede:
    O arquivo do host deve ter permissão de leitura para o navegador; o executável indicado em
    `path` deve ser absoluto e executável. Em instalações corporativas, o administrador pode usar
    os diretórios de sistema equivalentes do navegador.
-3. Abra uma página `http` ou `https`. O host nativo se conecta somente quando o Jarvis o executa;
-   sem ele a extensão permanece inerte. `about:`, `file:`, páginas de extensão e páginas internas
+3. Abra uma página `http` ou `https`. O navegador lança o host ao carregar a extensão; o host só
+   atende o Jarvis do mesmo usuário, e sem o Jarvis a extensão permanece inerte.
+   `about:`, `file:`, páginas de extensão e páginas internas
    do navegador nunca são lidas ou controladas.
 
 Não carregue uma extensão de origem diferente: o manifesto do host fixa os IDs acima. Não há

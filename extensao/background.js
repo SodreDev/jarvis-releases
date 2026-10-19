@@ -105,6 +105,8 @@ async function executar(method, params) {
       const tabs = await api.tabs.query({});
       return { abas: tabs.map(resumoDaAba) };
     }
+    case "tabs.current":
+      return { aba: resumoDaAba(await abaDoPedido(params)) };
     case "tabs.active": {
       const tab = await abaAtiva();
       return { aba: resumoDaAba(tab), pagina: await mensagemDaPagina({ tabId: tab.id }, "ler") };

@@ -55,6 +55,7 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
     for metodo in (
         "tabs.list",
         "tabs.active",
+        "tabs.current",
         "tabs.open",
         "tabs.navigate",
         "page.read",
@@ -69,4 +70,5 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
     assert "fetch(" not in fundo
     assert 'addEventListener("message"' not in conteudo
     assert "campo_sensivel" in conteudo
+    assert "selector" not in conteudo  # o alvo é o texto visível, nunca um seletor CSS
     assert "time[datetime]" in conteudo

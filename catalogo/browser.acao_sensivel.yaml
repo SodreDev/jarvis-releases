@@ -1,0 +1,56 @@
+# Navegador controlável (ADR-0027, aceita pelo dono em 2026-10-18; fatia 3).
+id: browser.acao_sensivel
+title: Confirmar uma ação sensível no navegador
+description: >-
+  Pedido interno do Jarvis ao PDP, nunca do modelo: registra e confirma com o dono uma ação no navegador que
+  envia mensagem, paga, apaga, dá acesso a conta ou acontece em banco, mensageiro ou e-mail. Sempre pede o sim
+  do dono, uma vez por ação, e nenhuma instrução de página muda isso. Não aparece para o modelo e não executa
+  nada por si.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - acao
+  - detalhe
+  properties:
+    acao:
+      type: string
+      minLength: 3
+      maxLength: 40
+    detalhe:
+      type: string
+      minLength: 1
+      maxLength: 300
+output_schema:
+  type: object
+  required:
+  - confirmado
+preconditions:
+- o dono está presente na janela
+postcondition: o dono confirmou na janela esta ação, e só esta, antes de qualquer efeito
+capability: browser.acao_sensivel
+risk_class: representacao_do_dono
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: network:web
+pii_touch: sensitive
+confirmation: per_action
+tier: perigoso
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 35000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-navegador
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

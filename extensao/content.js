@@ -30,6 +30,14 @@ function textoDoElemento(elemento) {
   return normalizar(elemento.innerText || elemento.textContent || "");
 }
 
+function formularioSensivel(formulario) {
+  return Boolean(
+    formulario?.querySelector(
+      "input[type=password], input[autocomplete^=cc-], input[autocomplete=one-time-code]",
+    ),
+  );
+}
+
 function dadosDoElemento(elemento) {
   const formulario = elemento.closest("form");
   const campo = elemento instanceof HTMLInputElement || elemento instanceof HTMLTextAreaElement;
@@ -37,6 +45,7 @@ function dadosDoElemento(elemento) {
   const sensivel =
     (elemento instanceof HTMLInputElement && elemento.type === "password") ||
     /(?:^|\s)(?:cc-|one-time-code|current-password|new-password)/iu.test(autocomplete);
+  const ancora = elemento.closest("a[href]");
   return {
     tag: elemento.tagName.toLowerCase(),
     texto: textoDoElemento(elemento).slice(0, 500),
@@ -47,18 +56,13 @@ function dadosDoElemento(elemento) {
         ? elemento.type === "submit" || elemento.type === "image"
         : false,
     acaoDoFormulario: formulario?.action ?? "",
+    metodoDoFormulario: formulario ? formulario.method.toLowerCase() : "",
+    formularioDeBusca: Boolean(
+      formulario?.matches("[role=search]") || formulario?.querySelector("input[type=search]"),
+    ),
+    formularioSensivel: formularioSensivel(formulario),
+    destinoDoLink: ancora ? ancora.href.slice(0, 2_048) : "",
   };
-}
-
-function validarSeletor(seletor) {
-  if (typeof seletor !== "string" || !seletor || seletor.length > 512 || /[\u0000-\u001f]/u.test(seletor)) {
-    falhar("alvo_invalido", "seletor ausente ou inválido");
-  }
-  try {
-    return document.querySelector(seletor);
-  } catch {
-    falhar("alvo_invalido", "seletor CSS inválido");
-  }
 }
 
 function candidatosClicaveis() {
@@ -91,7 +95,11 @@ function porTexto(texto, candidatos) {
   }
   const porRotulo = candidatos.filter((elemento) => {
     const rotulo = normalizar(
-      elemento.getAttribute("aria-label") || elemento.getAttribute("placeholder") || "",
+      elemento.getAttribute("aria-label") ||
+        elemento.getAttribute("placeholder") ||
+        elemento.labels?.[0]?.textContent ||
+        elemento.getAttribute("title") ||
+        "",
     ).toLocaleLowerCase();
     return rotulo === procurado;
   });
@@ -105,14 +113,8 @@ function porTexto(texto, candidatos) {
 }
 
 function resolverAlvo(params, candidatos) {
-  if (typeof params.selector === "string") {
-    const elemento = validarSeletor(params.selector);
-    if (!elemento || !visivel(elemento)) {
-      falhar("alvo_ausente", "o seletor não encontrou um elemento visível");
-    }
-    return elemento;
-  }
-  return porTexto(params.texto, candidatos);
+  // O alvo é sempre o texto ou rótulo visível: seletor CSS vindo do Jarvis não existe (ADR-0027).
+  return porTexto(params.alvo, candidatos);
 }
 
 function leitura() {

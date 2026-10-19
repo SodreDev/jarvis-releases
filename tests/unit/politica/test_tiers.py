@@ -82,6 +82,13 @@ TIER_ESPERADO: dict[str, str] = {
     "files.create_dir": "moderado",
     "files.copy": "moderado",
     "files.move": "moderado",
+    "browser.tabs": "livre",
+    "browser.read": "livre",
+    "browser.click": "moderado",
+    "browser.type": "moderado",
+    "browser.scroll": "moderado",
+    "browser.navigate": "moderado",
+    "browser.acao_sensivel": "perigoso",
 }
 
 
@@ -285,6 +292,15 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         ),
         "files.move": _pedido(
             pdp, "files.move", {"origem": "a", "destino": "b"}, f"{lar}/Documentos/b.txt"
+        ),
+        "browser.tabs": _pedido(pdp, "browser.tabs", {}),
+        "browser.read": _pedido(pdp, "browser.read", {}),
+        "browser.click": _pedido(pdp, "browser.click", {"alvo": "Próxima"}),
+        "browser.type": _pedido(pdp, "browser.type", {"alvo": "Busca", "texto": "gatos"}),
+        "browser.scroll": _pedido(pdp, "browser.scroll", {"pixels": 600}),
+        "browser.navigate": _pedido(pdp, "browser.navigate", {"url": "https://exemplo.org/"}),
+        "browser.acao_sensivel": _pedido(
+            pdp, "browser.acao_sensivel", {"acao": "browser.click", "detalhe": "Enviar"}
         ),
     }
 
