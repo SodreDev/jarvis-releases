@@ -78,6 +78,7 @@ TIER_ESPERADO: dict[str, str] = {
     "timer.alarm.list": "livre",
     "timer.alarm.cancel": "livre",
     "web.buscar": "livre",
+    "web.canal_videos": "livre",
     "web.ler": "livre",
     "files.create_dir": "moderado",
     "files.copy": "moderado",
@@ -283,6 +284,9 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "timer.alarm.list": _pedido(pdp, "timer.alarm.list", {}),
         "timer.alarm.cancel": _pedido(pdp, "timer.alarm.cancel", {"alarme_id": "al-1"}),
         "web.buscar": _pedido(pdp, "web.buscar", {"consulta": "capital da França"}),
+        "web.canal_videos": _pedido(
+            pdp, "web.canal_videos", {"canal": "https://www.youtube.com/@exemplo"}
+        ),
         "web.ler": _pedido(pdp, "web.ler", {"url": "https://pt.wikipedia.org/wiki/Paris"}),
         "files.create_dir": _pedido(
             pdp, "files.create_dir", {"path": "x"}, f"{lar}/Documentos/nova"

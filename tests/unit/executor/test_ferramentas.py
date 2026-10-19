@@ -547,6 +547,7 @@ def test_o_catalogo_do_modelo_so_tem_o_que_tem_corpo(casa: Path, auditoria: LogD
         "clipboard.text.write",
         "notify.desktop.send",
         "web.buscar",
+        "web.canal_videos",
         "web.ler",
     }
     assert not any(i.startswith("memoria.") for i in ids)

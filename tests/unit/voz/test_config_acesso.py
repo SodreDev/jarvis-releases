@@ -68,3 +68,22 @@ def test_tarefa_motor_vai_e_volta_pelo_toml_e_valor_desconhecido_e_recusado(tmp_
     arquivo.write_text('tarefa_motor = "sub-gpt"\n', "utf-8")
     with pytest.raises(ConfiguracaoInvalida, match="tarefa_motor"):
         ler(arquivo)
+
+
+# --- laço de ferramentas: teto de passos e prazo escolhidos pelo dono ------------------------
+def test_teto_e_prazo_do_laco_vao_e_voltam_pelo_toml_e_valor_absurdo_e_recusado(
+    tmp_path: Path,
+) -> None:
+    from jarvis.voz.config import Configuracao, ConfiguracaoInvalida, escrever, ler
+
+    arquivo = tmp_path / "jarvis-voz.toml"
+    assert (Configuracao().laco_max_passos, Configuracao().laco_prazo_s) == (12, 90.0)
+
+    escrever(Configuracao(laco_max_passos=5, laco_prazo_s=30.0), arquivo)
+
+    lida = ler(arquivo)
+    assert (lida.laco_max_passos, lida.laco_prazo_s) == (5, 30.0)
+    for texto in ("laco_max_passos = 0\n", "laco_max_passos = 99\n", "laco_prazo_s = 1\n"):
+        arquivo.write_text(texto, "utf-8")
+        with pytest.raises(ConfiguracaoInvalida, match="laco_"):
+            ler(arquivo)

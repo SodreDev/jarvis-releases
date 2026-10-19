@@ -154,6 +154,10 @@ class Configuracao:
     """Quem conduz as tarefas em segundo plano (ADR-0022): `direto` roda a ferramenta pedida;
     `agente` deixa o motor de conversa (`s2`) planejar os passos — e, se o `s2` é de nuvem, a
     tarefa também vai para a nuvem. **Só o dono escolhe**: nenhuma tool tem este campo."""
+    laco_max_passos: int = 12
+    """Teto de chamadas de ferramenta encadeadas num turno (1 a 50). Só o dono escolhe."""
+    laco_prazo_s: float = 90.0
+    """Teto, em segundos, do encadeamento inteiro de um turno (5 a 600). Só o dono escolhe."""
 
     def para_dict(self) -> dict[str, Any]:
         return {
@@ -184,6 +188,8 @@ class Configuracao:
             "navegador_principal": self.navegador_principal,
             "sites_sem_confirmar": list(self.sites_sem_confirmar),
             "tarefa_motor": self.tarefa_motor,
+            "laco_max_passos": self.laco_max_passos,
+            "laco_prazo_s": self.laco_prazo_s,
         }
 
     @property
@@ -271,6 +277,9 @@ sites_sem_confirmar = {lista(configuracao.sites_sem_confirmar)}
 # Quem conduz as tarefas em segundo plano: "direto" (roda a ferramenta pedida) ou "agente"
 # (o motor de conversa planeja os passos; se ele é de nuvem, a tarefa vai junto).
 tarefa_motor = {aspas(configuracao.tarefa_motor)}
+# Laço de ferramentas: quantas chamadas encadeadas num turno (1 a 50) e quantos segundos (5 a 600).
+laco_max_passos = {configuracao.laco_max_passos}
+laco_prazo_s = {configuracao.laco_prazo_s}
 """
 
 
@@ -293,6 +302,13 @@ def _numero(dados: Mapping[str, Any], chave: str, padrao: float) -> float:
     if isinstance(valor, bool) or not isinstance(valor, int | float):
         raise ConfiguracaoInvalida(f"{chave}: esperava número, veio {type(valor).__name__}")
     return float(valor)
+
+
+def _inteiro(dados: Mapping[str, Any], chave: str, padrao: int) -> int:
+    valor = dados.get(chave, padrao)
+    if isinstance(valor, bool) or not isinstance(valor, int):
+        raise ConfiguracaoInvalida(f"{chave}: esperava inteiro, veio {type(valor).__name__}")
+    return int(valor)
 
 
 def _logico(dados: Mapping[str, Any], chave: str) -> bool:
@@ -328,6 +344,12 @@ def validar(configuracao: Configuracao) -> Configuracao:
     if configuracao.enderecamento:
         exigir("enderecamento", configuracao.enderecamento, "decisao")
 
+    if not 1 <= configuracao.laco_max_passos <= 50:
+        raise ConfiguracaoInvalida(
+            f"laco_max_passos = {configuracao.laco_max_passos} fora de 1 a 50"
+        )
+    if not 5 <= configuracao.laco_prazo_s <= 600:
+        raise ConfiguracaoInvalida(f"laco_prazo_s = {configuracao.laco_prazo_s} fora de 5 a 600")
     if configuracao.tarefa_motor not in ("direto", "agente"):
         raise ConfiguracaoInvalida(
             f"tarefa_motor = {configuracao.tarefa_motor!r} não existe. Os que existem: "
@@ -473,6 +495,8 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         navegador_principal=_texto(dados, "navegador_principal", ""),
         sites_sem_confirmar=tuple(s.lower() for s in _lista(dados, "sites_sem_confirmar")),
         tarefa_motor=_texto(dados, "tarefa_motor", "direto"),
+        laco_max_passos=_inteiro(dados, "laco_max_passos", 12),
+        laco_prazo_s=_numero(dados, "laco_prazo_s", 90.0),
     )
     return validar(configuracao)
 

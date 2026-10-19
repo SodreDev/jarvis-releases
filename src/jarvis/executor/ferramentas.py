@@ -92,6 +92,7 @@ FONTES_DE_TERCEIROS: Final = frozenset(
         "files.search_in_roots",
         "memoria.buscar_historico",
         "web.buscar",
+        "web.canal_videos",
         "web.ler",
         "clipboard.text.read",
         "browser.tabs",
@@ -684,11 +685,19 @@ class ExecutorDeFerramentas:
         if tool_id == "sites.open":
             url = validar_url(str(args["url"]))
             pedido = str(args.get("navegador", "")).strip()
+            reutilizar_aba = bool(args.get("reutilizar_aba", True))
             if self.navegadores is not None and (self.navegadores.principal or pedido):
-                usado = self.navegadores.abrir(url, pedido)
-                return {"url": url, "dominio": dominio(url), "navegador": usado}
+                usado, reutilizou = self.navegadores.abrir(
+                    url, pedido, reutilizar_aba=reutilizar_aba
+                )
+                return {
+                    "url": url,
+                    "dominio": dominio(url),
+                    "navegador": usado,
+                    "reutilizou_aba": reutilizou,
+                }
             self.abrir_site(url)
-            return {"url": url, "dominio": dominio(url)}
+            return {"url": url, "dominio": dominio(url), "reutilizou_aba": False}
         assert caminho is not None
         relativo = self._relativo(grant, caminho)
         raiz = self.pdp.abrir_para(grant, relativo)

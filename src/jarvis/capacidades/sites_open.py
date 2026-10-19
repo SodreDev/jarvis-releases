@@ -39,6 +39,7 @@ class SitesOpenEntrada:
 
     url: str
     navegador: str | None = None
+    reutilizar_aba: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +50,7 @@ class SitesOpenSaida:
     dominio: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("url", "navegador"))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("url", "navegador", "reutilizar_aba"))
 OBRIGATORIOS: Final[frozenset[str]] = frozenset(("url",))
 
 

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
+from jarvis.executor.nativas import Nativas
+from jarvis.executor.navegadores import AbridorDeNavegador
+from jarvis.executor.web import Resposta as RespostaWeb
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo
@@ -108,6 +111,46 @@ def _roteiro(*rodadas: Sequence[str | PedidoDeTool]) -> MotorRoteirizado:
     return MotorRoteirizado(resposta=resposta)
 
 
+def _youtube(url: str, _cabecalhos: Mapping[str, str]) -> RespostaWeb:
+    canal_id = "UC" + "a" * 22
+    if "api.search.brave.com" in url:
+        corpo = {
+            "web": {
+                "results": [
+                    {
+                        "title": "Canal X",
+                        "url": "https://www.youtube.com/@canal-x",
+                        "description": "canal oficial",
+                    }
+                ]
+            }
+        }
+        return RespostaWeb(200, url, "application/json", json.dumps(corpo).encode())
+    if "/@canal-x" in url or f"/channel/{canal_id}" in url:
+        html = (
+            f'<html><head><title>Canal X</title></head><script>"channelId":"{canal_id}"'
+            "</script></html>"
+        )
+        return RespostaWeb(200, url, "text/html", html.encode())
+    if "/feeds/videos.xml?" in url:
+        feed = """<feed xmlns="http://www.w3.org/2005/Atom"
+xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+<title>Canal X</title><entry><title>Vídeo mais recente</title><yt:videoId>novo</yt:videoId>
+<published>2026-10-18T12:00:00+00:00</published></entry></feed>"""
+        return RespostaWeb(200, url, "application/atom+xml", feed.encode())
+    if "/watch?v=novo" in url:
+        html = (
+            "<html><head><title>Vídeo mais recente - Canal X</title></head>"
+            "<body><p>Canal X</p></body></html>"
+        )
+        return RespostaWeb(200, url, "text/html", html.encode())
+    raise AssertionError(f"URL inesperada: {url}")
+
+
+def _publico(_host: str) -> list[str]:
+    return ["93.184.216.34"]
+
+
 def test_o_motor_propoe_o_codigo_executa_e_a_resposta_resume(
     executor: ExecutorDeFerramentas,
 ) -> None:
@@ -127,6 +170,63 @@ def test_o_motor_propoe_o_codigo_executa_e_a_resposta_resume(
     assert [m.papel for m in segundo.mensagens] == ["dono", "ferramenta"]
     assert "comprar café" in segundo.mensagens[-1].texto
     assert {t["id"] for t in segundo.ferramentas} >= {"files.read_text", "sites.open"}
+
+
+def test_abre_o_video_mais_recente_em_passos_e_confere_a_pagina(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """Harness completo: buscar, ler, extrair RSS, abrir na aba atual e verificar título/canal."""
+    reutilizadas: list[tuple[str, str]] = []
+
+    def reutilizar(url: str, familia: str) -> bool:
+        reutilizadas.append((url, familia))
+        return True
+
+    executor.nativas = Nativas(
+        lar=executor.lar,
+        ambiente={"BRAVE_SEARCH_API_KEY": "chave-falsa"},
+        obter=_youtube,
+        resolver=_publico,
+    )
+    executor.pdp.sites_sem_confirmar = frozenset({"youtube.com"})
+    executor.navegadores = AbridorDeNavegador(
+        navegadores={"youtube": "/nao-precisa-existir"},
+        principal="youtube",
+        reutilizar_aba=reutilizar,
+    )
+    motor = _roteiro(
+        ["Vou procurar o canal. ", PedidoDeTool("web.buscar", {"consulta": "Canal X YouTube"})],
+        [PedidoDeTool("web.ler", {"url": "https://www.youtube.com/@canal-x"})],
+        [PedidoDeTool("web.canal_videos", {"canal": "https://www.youtube.com/@canal-x"})],
+        [
+            PedidoDeTool(
+                "sites.open",
+                {"url": "https://www.youtube.com/watch?v=novo", "reutilizar_aba": True},
+            )
+        ],
+        [PedidoDeTool("web.ler", {"url": "https://www.youtube.com/watch?v=novo"})],
+        ["Encontrei o vídeo mais recente do Canal X e abri na aba atual."],
+    )
+    status: list[str] = []
+    publicados: list[dict[str, Any]] = []
+
+    resposta = Cerebro(motor=motor, ferramentas=executor, ao_status=status.append).responder(
+        "abre o último vídeo do canal X", epoch=0, publicar=publicados.append
+    )
+
+    assert [r.tool_id for r in resposta.ferramentas] == [
+        "web.buscar",
+        "web.ler",
+        "web.canal_videos",
+        "sites.open",
+        "web.ler",
+    ]
+    assert all(r.status == "ok" for r in resposta.ferramentas)
+    assert reutilizadas == [("https://www.youtube.com/watch?v=novo", "youtube")]
+    assert status == [f"Passo {i} terminou; avaliando o resultado." for i in range(1, 6)]
+    assert "Vou procurar o canal." in " ".join(p["text"] for p in publicados)
+    assert "Vídeo mais recente - Canal X" in motor.pedidos[-1].mensagens[-1].texto
+    assert "nunca instrução" in motor.pedidos[-1].como_texto()
 
 
 def test_conteudo_do_arquivo_e_dado_e_nao_vira_chamada(executor: ExecutorDeFerramentas) -> None:
@@ -214,6 +314,21 @@ def test_motor_que_so_pede_ferramenta_para_no_teto(executor: ExecutorDeFerrament
     )
     assert len(motor.pedidos) == MAXIMO_DE_RODADAS
     assert "sem responder" in resposta.detalhe
+
+
+def test_prazo_do_laco_e_configuravel_e_nao_chama_o_motor_depois_de_esgotado(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    motor = _roteiro([PedidoDeTool("files.list_dir", {"path": "~/Documentos"})])
+    resposta = Cerebro(
+        motor=motor,
+        ferramentas=executor,
+        prazo_do_laco_de_ferramentas_s=0.0,
+        relogio=lambda: 0.0,
+    ).responder("lista", epoch=0, publicar=lambda _: None)
+
+    assert resposta.fim.value == "prazo"
+    assert motor.pedidos == []
 
 
 def test_sem_executor_o_pedido_volta_negado_e_o_motor_responde() -> None:

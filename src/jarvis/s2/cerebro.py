@@ -49,15 +49,21 @@ from jarvis.s2.motor import (
 from jarvis.s2.persona import prompt_de_sistema
 from jarvis.voz.interface import Cancelado, nunca_cancelado
 
-MAXIMO_DE_RODADAS: Final = 4
-"""Quantas vezes o motor pode pedir ferramenta num turno antes de ter de responder (ADR-0028)."""
-MAXIMO_DE_CHAMADAS_POR_RODADA: Final = 3
+MAXIMO_DE_PASSOS: Final = 12
+"""Chamadas de ferramenta que um turno pode encadear antes de ter de responder."""
+PRAZO_DO_LACO_DE_FERRAMENTAS_S: Final = 90.0
+"""Orçamento total do laço agêntico; inclui pensar e executar as ferramentas."""
+# Nome preservado para quem importava o teto antigo. Agora cada rodada tem exatamente um passo:
+# o resultado volta ao motor antes de ele poder propor o próximo.
+MAXIMO_DE_RODADAS: Final = MAXIMO_DE_PASSOS
 TURNOS_NO_CONTEXTO: Final = 12
 """Orçamento fixo de conversa no contexto (regra 5): os últimos turnos estáveis. O resumo do que
 ficou para trás é trabalho de segundo plano, fora desta fatia."""
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
+AvisarStatus = Callable[[str], None]
+"""Enfileira um status curto; a fronteira de voz decide quando (e se) ele será falado."""
 
 
 @dataclass(slots=True)
@@ -127,6 +133,14 @@ class Cerebro:
     ao_lembrar: Callable[[MemoriaDoTurno], None] | None = None
     """Chamada da linha do cérebro quando a consulta termina, antes do motor: é por onde a tela
     mostra "lembrei: …". Quem liga aqui guarda e volta."""
+    maximo_de_passos: int = MAXIMO_DE_PASSOS
+    """Teto configurável de chamadas no encadeamento de ferramentas deste turno."""
+    prazo_do_laco_de_ferramentas_s: float = PRAZO_DO_LACO_DE_FERRAMENTAS_S
+    """Teto configurável, em segundos, para o encadeamento inteiro."""
+    ao_status: AvisarStatus | None = None
+    """Porta para a fila de avisos: status nunca é publicado por cima da fala em curso."""
+    relogio: Callable[[], float] = time.monotonic
+    """Relógio injetável para medir o prazo do laço sem tornar o teste lento."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
 
     @property
@@ -206,8 +220,26 @@ class Cerebro:
         )
         catalogo = self.ferramentas.catalogo_para_o_modelo() if self.ferramentas else ()
         resultados: list[Mensagem] = []
-        for _rodada in range(MAXIMO_DE_RODADAS):
+        limite_do_laco = self.relogio() + self.prazo_do_laco_de_ferramentas_s
+
+        def prazo_esgotado() -> bool:
+            return self.relogio() >= limite_do_laco
+
+        def cancelado_no_laco() -> bool:
+            return cancelado() or prazo_esgotado()
+
+        for passo in range(1, self.maximo_de_passos + 1):
             if visto_cancelamento is not None:
+                break
+            if cancelado_no_laco():
+                if cancelado():
+                    visto_cancelamento = time.monotonic()
+                else:
+                    resposta.fim = MotivoDoFim.PRAZO
+                    resposta.detalhe = (
+                        f"o laço de ferramentas passou de "
+                        f"{self.prazo_do_laco_de_ferramentas_s:.0f} s"
+                    )
                 break
             da_vez = Contexto(
                 sistema=contexto.sistema,
@@ -215,8 +247,15 @@ class Cerebro:
                 ferramentas=catalogo,
             )
             pedidos, visto_cancelamento = self._rodada(
-                da_vez, modo, cancelado, fatiador, resposta, publicar, comeco
+                da_vez, modo, cancelado_no_laco, fatiador, resposta, publicar, comeco
             )
+            if prazo_esgotado() and not cancelado():
+                visto_cancelamento = None
+                resposta.fim = MotivoDoFim.PRAZO
+                resposta.detalhe = (
+                    f"o laço de ferramentas passou de {self.prazo_do_laco_de_ferramentas_s:.0f} s"
+                )
+                break
             if (
                 visto_cancelamento is not None
                 or not pedidos
@@ -227,22 +266,40 @@ class Cerebro:
             # palavra que esperava o espaço seguinte é fechada, e só então a ferramenta roda.
             for pedaco in fatiador.alimentar(" "):
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
-            for pedido in pedidos[:MAXIMO_DE_CHAMADAS_POR_RODADA]:
+            # Uma por vez: o próximo pedido só pode nascer depois que o modelo viu este
+            # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
+            pedido = pedidos[0]
+            if cancelado_no_laco():
                 if cancelado():
                     visto_cancelamento = time.monotonic()
-                    break
-                resultado = self._chamar(pedido, cancelado)
-                resposta.ferramentas.append(resultado)
-                resultados.append(Mensagem("ferramenta", resultado.para_o_modelo()))
-                if resultado.aviso:
-                    # Tool moderada: o aviso é do código, e sai agora, em voz (dono, 2026-10-18).
-                    resposta.gerado += resultado.aviso + " "
-                    for pedaco in fatiador.alimentar(resultado.aviso + " "):
-                        self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
-            if visto_cancelamento is None and cancelado():
+                else:
+                    resposta.fim = MotivoDoFim.PRAZO
+                    resposta.detalhe = (
+                        f"o laço de ferramentas passou de "
+                        f"{self.prazo_do_laco_de_ferramentas_s:.0f} s"
+                    )
+                break
+            resultado = self._chamar(pedido, cancelado_no_laco)
+            resposta.ferramentas.append(resultado)
+            resultados.append(Mensagem("ferramenta", resultado.para_o_modelo()))
+            self._status(f"Passo {passo} terminou; avaliando o resultado.")
+            if resultado.aviso:
+                # Tool moderada: o aviso é do código, e sai agora, em voz (dono, 2026-10-18).
+                resposta.gerado += resultado.aviso + " "
+                for pedaco in fatiador.alimentar(resultado.aviso + " "):
+                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+            if prazo_esgotado() and not cancelado():
+                resposta.fim = MotivoDoFim.PRAZO
+                resposta.detalhe = (
+                    f"o laço de ferramentas passou de {self.prazo_do_laco_de_ferramentas_s:.0f} s"
+                )
+                break
+            if cancelado():
                 visto_cancelamento = time.monotonic()
         else:
-            resposta.detalhe = f"o motor pediu ferramenta {MAXIMO_DE_RODADAS} vezes sem responder"
+            resposta.detalhe = (
+                f"o motor pediu ferramenta {self.maximo_de_passos} vezes sem responder"
+            )
         if visto_cancelamento is None and cancelado():
             visto_cancelamento = time.monotonic()
         if visto_cancelamento is not None or resposta.fim is MotivoDoFim.CANCELADO:
@@ -315,6 +372,15 @@ class Cerebro:
             session_id=self.session_id,
             proveniencia=self.proveniencia,
         )
+
+    def _status(self, texto: str) -> None:
+        """Entrega progresso à fila sem deixar uma falha dela derrubar o turno."""
+        if self.ao_status is None:
+            return
+        try:
+            self.ao_status(texto)
+        except Exception:
+            return
 
     def avisar(
         self,

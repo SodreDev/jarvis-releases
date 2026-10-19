@@ -109,6 +109,22 @@ def test_modo_texto_responde_e_sintetiza(tmp_path: Path) -> None:
     assert any("Jarvis: Você disse: bom dia" in linha for linha in saidas)
 
 
+def test_status_do_laco_entra_na_fila_de_avisos_sem_virar_fala_direta(tmp_path: Path) -> None:
+    app = aplicativo_de(tmp_path)
+    app.abrir(com_asr=False)
+    assert app._cerebro is not None and app._cerebro.ao_status is not None
+
+    app._cerebro.ao_status("Passo 2 terminou; avaliando o resultado.")
+
+    avisos = app.dados_dos_avisos()["avisos"]
+    assert avisos[0]["origem"] == "raciocínio"
+    assert avisos[0]["entrega"] == "na_fila"
+    assert (app._cerebro.maximo_de_passos, app._cerebro.prazo_do_laco_de_ferramentas_s) == (
+        app.configuracao.laco_max_passos,
+        app.configuracao.laco_prazo_s,
+    )
+
+
 def test_modo_texto_fala_de_verdade_quando_ha_onde_tocar(tmp_path: Path) -> None:
     # Bug do dono (2026-10-17): a janela cai no modo texto quando o ASR escolhido não roda, e
     # o modo texto sintetizava a resposta e a jogava fora — a voz "nunca saía".

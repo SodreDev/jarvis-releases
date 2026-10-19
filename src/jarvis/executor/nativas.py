@@ -121,6 +121,7 @@ CORPOS: Final[dict[str, Corpo]] = {
     "timer.alarm.list": _alarme_list,
     "timer.alarm.cancel": _alarme_cancel,
     "web.buscar": lambda n, a: web.buscar(str(a["consulta"]), n.obter, n.ambiente, n.resolver),
+    "web.canal_videos": lambda n, a: web.canal_videos(str(a["canal"]), n.obter, n.resolver),
     "web.ler": lambda n, a: web.ler_pagina(str(a["url"]), n.obter, n.resolver),
 }
 """`tool_id` → corpo. O que está aqui é "ligado" no executor; `timer.*` só com agenda."""

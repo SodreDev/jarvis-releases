@@ -419,6 +419,18 @@ class Aplicativo:
         self.avisos.decidido(identificador, Entrega.SO_CARD)
         self._avisos_mudaram()
 
+    def _status_do_laco(self, resumo: str) -> None:
+        """Progresso do encadeamento vai para a fila, nunca direto à fala em andamento."""
+        self.receber_aviso(
+            notificacao(
+                self.session_id,
+                f"raciocinio-{uuid7()}",
+                tipo="evento",
+                origem="raciocínio",
+                resumo=resumo,
+            )
+        )
+
     def dados_dos_avisos(self) -> dict[str, list[dict[str, str]]]:
         """O que o card `notificacoes` mostra, no contrato `avisos` do componente."""
         return self.avisos.dados_do_card(time.monotonic())
@@ -504,6 +516,9 @@ class Aplicativo:
             self.ferramentas = self._montar_ferramentas()
         self._cerebro.ferramentas = self.ferramentas
         self._cerebro.confirmar = self._confirmar
+        self._cerebro.ao_status = self._status_do_laco
+        self._cerebro.maximo_de_passos = self.configuracao.laco_max_passos
+        self._cerebro.prazo_do_laco_de_ferramentas_s = self.configuracao.laco_prazo_s
         self._sincronizar_conversa(self._cerebro)
         if self.ferramentas.tarefas is None:
             self.ferramentas.tarefas = self._montar_tarefas(self.ferramentas)

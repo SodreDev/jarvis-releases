@@ -144,14 +144,34 @@ def test_abre_no_principal_ou_no_que_o_pedido_nomeia(instalados: tuple[Path, Pat
         principal="brave",
         lancar=lancar,
     )
-    assert abridor.abrir("https://exemplo.com") == "brave"
-    assert abridor.abrir("https://exemplo.com", "Firefox") == "firefox"
+    assert abridor.abrir("https://exemplo.com") == ("brave", False)
+    assert abridor.abrir("https://exemplo.com", "Firefox") == ("firefox", False)
     assert chamadas == [
         (f"{bins}/brave-stable", "https://exemplo.com"),
         (f"{bins}/firefox", "https://exemplo.com"),
     ]
     with pytest.raises(AppRecusado, match="não está configurado"):
         abridor.abrir("https://exemplo.com", "opera")
+
+
+def test_reutiliza_a_aba_atual_quando_o_controlador_do_navegador_oferece_isso() -> None:
+    reutilizadas: list[tuple[str, str]] = []
+    lancados: list[tuple[str, ...]] = []
+
+    def reutilizar(url: str, familia: str) -> bool:
+        reutilizadas.append((url, familia))
+        return True
+
+    abridor = AbridorDeNavegador(
+        navegadores={"brave": "/nao-precisa-existir"},
+        principal="brave",
+        lancar=_anotando(lancados),
+        reutilizar_aba=reutilizar,
+    )
+
+    assert abridor.abrir("https://www.youtube.com/watch?v=novo") == ("brave", True)
+    assert reutilizadas == [("https://www.youtube.com/watch?v=novo", "brave")]
+    assert lancados == []
 
 
 def test_binario_que_sumiu_diz_para_escolher_de_novo(tmp_path: Path) -> None:
@@ -227,6 +247,7 @@ def test_sites_open_vai_para_o_navegador_principal_e_nao_para_o_portal(
     )
 
     assert principal.status == "ok" and principal.dados["navegador"] == "brave"
+    assert principal.dados["reutilizou_aba"] is False
     assert outro.status == "ok" and outro.dados["navegador"] == "firefox"
     assert pelo_portal == [], "com navegador configurado o portal não é usado"
     assert lancados == [

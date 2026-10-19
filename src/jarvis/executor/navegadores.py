@@ -51,6 +51,9 @@ MARCADORES_DO_FLATPAK: Final = frozenset({"@@u", "@@U", "@@"})
 SUFIXOS_DE_NOME: Final = ("web browser", "browser", "navegador web", "navegador")
 """Tirados do nome para achar a família («Brave Web Browser (Beta)» é o Brave)."""
 
+ReutilizarAba = Callable[[str, str], bool]
+"""Controlador opcional de uma aba já aberta: URL e família, `True` só se navegou nela."""
+
 
 @dataclass(frozen=True, slots=True)
 class Opcao:
@@ -170,6 +173,8 @@ class AbridorDeNavegador:
     principal: str
     lancar: Callable[..., int] = lancar_argv
     ambiente: Mapping[str, str] | None = None
+    reutilizar_aba: ReutilizarAba | None = None
+    """Quando há um controlador de navegador, ele navega a aba atual sem criar outra."""
 
     def familias(self) -> tuple[str, ...]:
         return tuple(self.navegadores)
@@ -181,9 +186,17 @@ class AbridorDeNavegador:
             raise AppRecusado(f"navegador {alvo!r} não está configurado (há: {validos})")
         return alvo
 
-    def abrir(self, url: str, navegador: str = "") -> str:
-        """Abre `url` e devolve a família usada. `AppRecusado` se o binário sumiu."""
+    def abrir(
+        self, url: str, navegador: str = "", *, reutilizar_aba: bool = True
+    ) -> tuple[str, bool]:
+        """Abre `url`; devolve família e se a aba atual foi reutilizada.
+
+        Sem controlador da aba, mantém o lançamento atual do navegador. Não há atalho de linha
+        de comando portátil que prometa trocar a aba ativa, portanto nunca fingimos reutilização.
+        """
         familia = self.escolher(navegador)
+        if reutilizar_aba and self.reutilizar_aba is not None and self.reutilizar_aba(url, familia):
+            return familia, True
         argv = argv_da_entrada(self.navegadores[familia])
         if not argv:
             raise AppRecusado(
@@ -191,7 +204,7 @@ class AbridorDeNavegador:
                 "escolha o binário de novo em Configuração → Navegadores"
             )
         self.lancar((*argv, url), ambiente=self.ambiente)
-        return familia
+        return familia, False
 
     def abrir_sozinho(self, navegador: str = "") -> tuple[str, int]:
         """Abre só o navegador, sem URL. Devolve a família usada e o pid."""

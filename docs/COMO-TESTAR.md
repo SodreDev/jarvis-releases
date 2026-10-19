@@ -257,6 +257,32 @@ Se aparecer `[local]` e `eco`, o arquivo não foi lido.
 - Windows: listar/ler/rascunho são o mesmo código, mas não rodaram lá; abrir app no Windows
   ainda não foi implementado (ele diz isso).
 
+### 0.1b Vídeo mais recente de um canal (laço multi-passo)
+
+Com `s2 = "claude"`, experimente: `abre o último vídeo do canal X`. O Jarvis deve dizer uma
+frase curta como “vou procurar o canal”, pesquisar e ler o resultado, consultar o feed público
+do canal, abrir o vídeo mais novo e depois ler a página do vídeo para confirmar título e canal.
+Ele só diz que abriu depois dessa conferência; se não bater, tenta outro resultado.
+
+Quando o navegador tiver um controlador de aba ligado, o vídeo substitui a aba atual. Sem esse
+controlador, a abertura continua no comportamento seguro já existente do navegador e o resultado
+informa que a aba não foi reutilizada. O cartão de notificações mostra o progresso entre etapas;
+ele fica na fila e nunca interrompe a fala em curso.
+
+Os tetos do encadeamento são do dono, em `jarvis-voz.toml`: `laco_max_passos` (padrão 12, de 1 a
+50) e `laco_prazo_s` (padrão 90, de 5 a 600). Estourou um dos dois, o turno termina dizendo isso,
+sem chamar o motor de novo; interromper o Jarvis também corta o laço.
+
+Para conferir sem rede, navegador real ou microfone:
+
+```bash
+uv run --frozen pytest tests/unit/s2/test_laco_de_ferramentas.py tests/unit/executor/test_web.py tests/unit/executor/test_navegadores.py -q
+```
+
+O harness usa um motor roteirizado e clientes web/navegador falsos: prova a sequência
+pesquisar → ler → RSS → abrir → verificar, a revalidação de redirecionamento do feed e a
+reutilização da aba quando a integração do navegador a oferece.
+
 ### 0.2 A conversa continua depois de fechar (2026-10-18)
 
 Pedido do dono: a conversa não persistia ao reiniciar. Agora persiste — o histórico cifrado já
