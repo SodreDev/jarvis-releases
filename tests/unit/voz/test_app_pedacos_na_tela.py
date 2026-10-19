@@ -21,7 +21,8 @@ from jarvis.voz.app import Aplicativo
 from jarvis.voz.config import Configuracao
 
 FRASES = 12
-REPRODUCAO_S = 0.15
+LOTES_ESPERADOS = FRASES // 2
+REPRODUCAO_S = 0.3
 """Quanto o "alto-falante" leva para consumir cada pedaço (real: 2 a 4 s por frase)."""
 
 
@@ -54,8 +55,8 @@ def test_o_texto_chega_a_tela_no_ritmo_da_geracao_e_nao_da_reproducao(
     laco.rodar_texto(["conta uma história"])
     total = time.monotonic() - inicio
 
-    assert len(marcas) >= FRASES
-    reproducao = FRASES * REPRODUCAO_S
+    assert len(marcas) == LOTES_ESPERADOS
+    reproducao = LOTES_ESPERADOS * REPRODUCAO_S
     assert total >= reproducao * 0.9, "o teste só vale com a reprodução lenta de verdade"
     assert marcas[-1] < reproducao / 2, (
         f"o último pedaço só chegou à tela em {marcas[-1]:.2f} s de {reproducao:.2f} s de fala: "

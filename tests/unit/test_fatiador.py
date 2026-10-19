@@ -11,6 +11,7 @@ import pytest
 from jarvis.agentd.tts import fatiar
 from jarvis.fatiador import (
     PALAVRAS_DO_PRIMEIRO_PEDACO,
+    PALAVRAS_MINIMAS_POR_PEDACO,
     PALAVRAS_POR_PEDACO,
     Corte,
     FatiadorDeFala,
@@ -51,18 +52,73 @@ def test_o_fatiar_do_tts_e_o_mesmo_fatiador() -> None:
     assert fatiar(texto) == [(p.inicio, p.texto) for p in fatiar_tudo(texto)]
 
 
-def test_o_primeiro_pedaco_e_curto_e_os_outros_respeitam_o_limite() -> None:
-    texto = " ".join(f"palavra{i}" for i in range(30))
+def test_lotes_tem_pelo_menos_14_palavras_e_so_o_ultimo_pode_ser_menor() -> None:
+    texto = " ".join(f"palavra{i}" for i in range(47))
     pedacos = fatiar_tudo(texto)
-    assert len(pedacos[0].texto.split()) == PALAVRAS_DO_PRIMEIRO_PEDACO
-    assert all(len(p.texto.split()) <= PALAVRAS_POR_PEDACO for p in pedacos[1:])
+
+    tamanhos = [len(p.texto.split()) for p in pedacos]
+    assert tamanhos[:-1] == [PALAVRAS_DO_PRIMEIRO_PEDACO, PALAVRAS_POR_PEDACO]
+    assert all(tamanho >= PALAVRAS_MINIMAS_POR_PEDACO for tamanho in tamanhos[:-1])
+    assert tamanhos[-1] < PALAVRAS_MINIMAS_POR_PEDACO
     assert pedacos[0].corte is Corte.LIMITE
 
 
-def test_pontuacao_corta_antes_do_limite_e_diz_o_tipo() -> None:
-    pedacos = fatiar_tudo("Sim. Pode ser, mas depois das três horas da tarde de amanhã")
-    assert [p.texto for p in pedacos][:2] == ["Sim.", "Pode ser,"]
-    assert [p.corte for p in pedacos][:2] == [Corte.FRASE, Corte.VIRGULA]
+def test_pontuacao_so_corta_depois_do_minimo_e_antes_do_teto() -> None:
+    palavras = ["Sim.", *(f"palavra{i}" for i in range(1, 15)), "chegou,"]
+    pedacos = fatiar_tudo(" ".join(palavras))
+
+    assert len(pedacos[0].texto.split()) == 16
+    assert pedacos[0].texto.endswith("chegou,")
+    assert pedacos[0].corte is Corte.VIRGULA
+
+
+def test_hifen_e_token_excepcionalmente_longo_continuam_atomicos() -> None:
+    longo = "identificador" * 8
+    tokens = ["sexta-feira", longo, *(f"palavra{i}" for i in range(36))]
+
+    emitidos = [token for pedaco in fatiar_tudo(" ".join(tokens)) for token in pedaco.texto.split()]
+
+    assert emitidos == tokens
+    assert "sexta-feira" in emitidos
+    assert longo in emitidos
+
+
+def test_token_longo_e_hifen_atomicos_em_deltas_de_um_caractere_na_fronteira() -> None:
+    longo = "identificador" * 8
+    tokens = [*(f"palavra{i}" for i in range(17)), longo, "sexta-feira", "fim."]
+    texto = "\t".join(tokens)
+
+    pedacos = fatiar_em_deltas(texto)
+
+    assert pedacos == fatiar_tudo(texto)
+    assert [t for p in pedacos for t in p.texto.split()] == tokens
+    assert pedacos[0].texto.split()[-1] == longo
+    assert pedacos[1].texto.split()[0] == "sexta-feira"
+
+
+@pytest.mark.parametrize("quantidade", [0, 1, 13, 14, 17, 18, 19, 28, 36, 37, 100])
+def test_piso_e_residual_independem_do_tamanho_e_da_pontuacao(quantidade: int) -> None:
+    tokens = [f"palavra{i}." for i in range(quantidade)]
+    texto = " \n".join(tokens)
+    fatiador = FatiadorDeFala()
+    antes_do_fim = fatiador.alimentar(texto + " ")
+    assert all(len(p.texto.split()) >= 14 for p in antes_do_fim)
+
+    pedacos = [p for p in antes_do_fim + fatiador.fechar() if p.texto]
+
+    assert [t for p in pedacos for t in p.texto.split()] == tokens
+    assert all(len(p.texto.split()) >= 14 for p in pedacos[:-1])
+
+
+def test_lote_menor_espera_o_fim_do_stream() -> None:
+    fatiador = FatiadorDeFala()
+    texto = " ".join(f"palavra{i}" for i in range(PALAVRAS_MINIMAS_POR_PEDACO - 1))
+
+    assert fatiador.alimentar(texto + " ") == []
+    final = [p for p in fatiador.fechar() if p.texto]
+
+    assert [p.texto for p in final] == [texto]
+    assert final[0].corte is Corte.FIM
 
 
 def test_numero_com_virgula_nao_e_partido_no_meio_do_stream() -> None:
@@ -76,21 +132,17 @@ def test_numero_com_virgula_nao_e_partido_no_meio_do_stream() -> None:
 def test_a_palavra_so_sai_quando_chega_o_espaco_depois_dela() -> None:
     fatiador = FatiadorDeFala()
     assert fatiador.alimentar("Depois de quint") == []
-    assert [p.texto for p in fatiador.alimentar("a vem")] == ["Depois de quinta"]
+    assert fatiador.alimentar("a vem") == []
+    assert [p.texto for p in fatiador.fechar() if p.texto] == ["Depois de quinta vem"]
 
 
-@pytest.mark.parametrize(
-    ("texto", "ultimo"),
-    [("Depois de quinta vem sexta.", ""), ("Depois de quinta vem sexta", "vem sexta")],
-)
-def test_fechar_sempre_devolve_o_ultimo_com_corte_fim(texto: str, ultimo: str) -> None:
-    """Se o texto acabou numa pontuação, o último pedaço sai vazio: esperar para saber que era o
-    último atrasaria a primeira palavra."""
+@pytest.mark.parametrize("texto", ["Depois de quinta vem sexta.", "Depois de quinta vem sexta"])
+def test_fechar_devolve_o_residual_curto_com_corte_fim(texto: str) -> None:
     fatiador = FatiadorDeFala()
-    fatiador.alimentar(texto)
+    assert fatiador.alimentar(texto) == []
     final = fatiador.fechar()[-1]
     assert final.corte is Corte.FIM
-    assert final.texto == ultimo
+    assert final.texto == texto
     assert fatiador.fechar() == []
     with pytest.raises(RuntimeError, match="fechado"):
         fatiador.alimentar("mais")

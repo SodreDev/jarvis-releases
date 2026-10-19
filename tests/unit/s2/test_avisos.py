@@ -69,6 +69,49 @@ def test_cancelado_durante_o_aviso_o_motor_nem_e_chamado() -> None:
     assert motor.pedidos == [], "o motor não pode gerar depois do cancelamento"
 
 
+def test_residuais_de_avisos_nao_se_misturam_nem_herdam_o_id_seguinte() -> None:
+    longo = AvisoLiberado(
+        "longo", "concluida", "tarefa", " ".join(f"resultado{i}" for i in range(40))
+    )
+    motor = MotorRoteirizado(resposta="Resposta curta do motor.")
+    cerebro = Cerebro(motor=motor)
+    publicados: list[dict[str, Any]] = []
+
+    cerebro.responder("oi", epoch=0, publicar=publicados.append, avisos=[TAREFA, longo, DECISAO])
+
+    for aviso in (TAREFA, longo, DECISAO):
+        lotes = [p for p in publicados if aviso.notif_id in p.get("notif_ids", [])]
+        assert " ".join(p["text"] for p in lotes) == frase_do_aviso(aviso)
+        assert all(p["notif_ids"] == [aviso.notif_id] for p in lotes)
+        assert all(len(p["text"].split()) >= 14 for p in lotes[:-1])
+    assert " ".join(p["text"] for p in publicados if not p.get("notif_ids")).strip() == (
+        "Resposta curta do motor."
+    )
+    assert [p["seq"] for p in publicados] == list(range(len(publicados)))
+    assert sum(p["last"] for p in publicados) == 1
+
+
+def test_cancelar_apos_aviso_curto_nao_publica_o_seguinte_nem_chama_o_motor() -> None:
+    motor = MotorRoteirizado()
+    cerebro = Cerebro(motor=motor)
+    publicados: list[dict[str, Any]] = []
+
+    resposta = cerebro.responder(
+        "oi",
+        epoch=0,
+        publicar=publicados.append,
+        cancelado=lambda: bool(publicados),
+        avisos=[TAREFA, DECISAO],
+    )
+
+    assert resposta.cancelada
+    assert motor.pedidos == []
+    assert len(publicados) == 1
+    assert publicados[0]["text"] == frase_do_aviso(TAREFA)
+    assert publicados[0]["notif_ids"] == ["n1"]
+    assert not publicados[0]["last"]
+
+
 def test_entregue_e_o_aviso_que_tocou_inteiro() -> None:
     """Regra 15: cortado no meio do aviso, ele volta; tocado inteiro, conta como entregue."""
     cerebro = Cerebro(motor=MotorRoteirizado(resposta="Tudo certo por aqui, nada mais."))

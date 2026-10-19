@@ -56,7 +56,10 @@ def test_seq_fora_de_ordem_e_defeito_e_nao_ruido() -> None:
 
 def test_do_cerebro_ao_alto_falante_e_de_volta_a_conversa() -> None:
     """O caminho inteiro: pedaços → síntese → fila → tocado → `Cerebro.ouvido`."""
-    texto = "Depois de quinta vem sexta-feira, e depois o sábado."
+    texto = (
+        "Depois de quinta vem sexta-feira, e depois o sábado chega com tempo para descansar "
+        "antes do domingo fechar a semana com muita calma em casa."
+    )
     cerebro = Cerebro(motor=MotorRoteirizado(resposta=texto))
     publicados: list[dict[str, Any]] = []
     resposta = cerebro.responder("e depois de quinta?", epoch=1, publicar=publicados.append)
@@ -74,6 +77,7 @@ def test_do_cerebro_ao_alto_falante_e_de_volta_a_conversa() -> None:
     assert fala.texto == texto
     assert len(entregues) == len([p for p in publicados if p["text"]])
 
-    metade = fala.trechos[1].fim_em_amostras
+    assert len(fala.trechos) >= 2
+    metade = fala.trechos[0].fim_em_amostras
     cerebro.ouvido(resposta.response_id, fala.texto_ate(metade), interrompida=True)
-    assert cerebro.conversa.turnos[-1].texto == "Depois de quinta vem sexta-feira,"
+    assert cerebro.conversa.turnos[-1].texto == fala.trechos[0].texto

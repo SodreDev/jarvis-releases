@@ -8,6 +8,7 @@ import pytest
 
 from jarvis.agentd.tts import (
     PALAVRAS_DO_PRIMEIRO_PEDACO,
+    PALAVRAS_MINIMAS_POR_PEDACO,
     MotorDeTts,
     MotorParametrico,
     SintetizadorEmStreaming,
@@ -20,7 +21,10 @@ from jarvis.audio_io.playback import FilaDePlayback, Pedaco
 from jarvis.audio_io.sumidouros import SumidouroEmMemoria
 
 SESSAO = "0193f0a0-0000-7000-8000-000000000000"
-TEXTO = "Achei três arquivos, o maior é o relatório de junho na pasta de documentos."
+TEXTO = (
+    "Achei três arquivos, o maior é o relatório de junho na pasta de documentos e também "
+    "localizei uma planilha antiga com os valores mensais que você pediu para conferir hoje."
+)
 
 REGISTRO_CC_BY_SA = """
 data_da_verificacao = "2026-10-15"
@@ -58,13 +62,12 @@ def test_o_motor_parametrico_cumpre_a_interface() -> None:
     assert isinstance(MotorParametrico(), MotorDeTts)
 
 
-def test_o_primeiro_pedaco_e_o_mais_curto() -> None:
-    """Ele é o que atrasa o SLO-5 e o que se joga fora quando o Cancel chega."""
+def test_lotes_normais_tem_contexto_e_o_residual_so_sai_no_fim() -> None:
     fatias = [texto for _, texto in fatiar(TEXTO)]
 
-    assert len(fatias[0].split()) <= PALAVRAS_DO_PRIMEIRO_PEDACO + 1
-    assert len(fatias[0]) < len(fatias[1])
-    assert fatias[0].endswith(","), "cortar na pontuação dá prosódia melhor"
+    assert len(fatias[0].split()) >= PALAVRAS_MINIMAS_POR_PEDACO
+    assert len(fatias[0].split()) <= PALAVRAS_DO_PRIMEIRO_PEDACO
+    assert all(len(fatia.split()) >= PALAVRAS_MINIMAS_POR_PEDACO for fatia in fatias[:-1])
     assert " ".join(fatias).split() == TEXTO.split(), "o texto inteiro é coberto, sem perda"
 
 

@@ -648,6 +648,45 @@ Tudo acima foi provado com fakes — **o seu desktop fecha esta conta**:
   (`tools/empacotar.py verificar`) foi estendida para o host, mas não rodada;
 - **Windows:** nada disto foi pensado para Windows ainda (Native Messaging lá usa o registro).
 
+### 0.8 TTS contínuo em vez de fala “bloco por bloco” (2026-10-19)
+
+O TTS continua usando a mesma interface para piper, ElevenLabs, Edge e o motor paramétrico, mas
+agora a camada compartilhada trabalha como pipeline. Cada lote normal tem de chegar a **14
+palavras**; depois disso, a primeira pontuação fecha o lote, com teto de 18 palavras para o buffer
+não crescer sem limite. Só o residual do fim pode ter menos de 14. “Palavra” é qualquer token sem
+espaço: `sexta-feira` é uma palavra, e um identificador com mais de 30 caracteres continua inteiro.
+
+Enquanto o lote N toca, até três sínteses futuras ficam numa janela limitada; N+1 e N+2 já podem
+estar em curso. Providers podem terminar fora de ordem, mas o áudio só entra no playback na ordem
+do texto. Barge-in ou avanço do epoch fecha o produtor, cancela o que ainda não começou, esvazia o
+playback e descarta qualquer resultado tardio. Motor local continua tendo síntese atômica dentro de
+um lote: o cálculo em voo pode terminar, mas o resultado do epoch morto não é publicado.
+
+Avisos continuam saindo antes da resposta e conservam seus identificadores: cada aviso é uma fala
+completa, cujo residual final também pode ter menos de 14 palavras. Um aviso só conta como entregue
+se tocou inteiro. O teclado também continua responsivo enquanto a síntese do primeiro lote espera.
+
+Para conferir sem dispositivo real:
+
+```bash
+uv run --frozen pytest tests/unit/test_fatiador.py tests/unit/agentd/test_pipeline_tts.py -q
+uv run --frozen pytest tests/unit/s2/test_avisos.py tests/unit/voz/test_app_pipeline_tts.py -q
+uv run --frozen pytest tests/integration/test_cancelamento_stream.py -q
+```
+
+Os testes usam sintetizador, player, fila, relógio e epoch falsos; cobrem lote mínimo/residual,
+hífen e token longo, duas sínteses futuras antes do fim do áudio atual, ordem, backpressure e
+cancelamento sem áudio tardio. A orientação externa é coerente com esse desenho: a ElevenLabs
+recomenda streaming para reduzir tempo percebido e documenta explicitamente o equilíbrio entre
+buffer/contexto, naturalidade e latência nas páginas de
+[otimização de latência](https://elevenlabs.io/docs/eleven-api/guides/how-to/best-practices/latency-optimization),
+[TTS em tempo real](https://elevenlabs.io/docs/eleven-api/guides/how-to/websockets/realtime-tts) e
+[conceitos de streaming](https://elevenlabs.io/docs/eleven-api/concepts/audio-streaming).
+
+**Ainda não medido:** continuidade acústica, naturalidade e latência no piper/ElevenLabs/Edge com
+alto-falante real. Os testes provam o encanamento e as invariantes, não que a voz já soa natural no
+hardware e na rede do dono.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

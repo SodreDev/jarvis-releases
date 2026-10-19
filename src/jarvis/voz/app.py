@@ -45,6 +45,7 @@ from jarvis.agentd.asr import MotorWhisper, TranscritorIncremental
 from jarvis.agentd.fala_em_stream import trechos_do_stream
 from jarvis.agentd.fila_de_avisos import Entrega, FilaDeAvisos, notificacao
 from jarvis.agentd.tts import (
+    MAXIMO_DE_SINTESES_PENDENTES,
     Fala,
     MotorParametrico,
     MotorPiperOnnx,
@@ -944,13 +945,29 @@ class Aplicativo:
         epoch = self.epoch
         self._turno_cancelado = False
         cancelado = self.cancelado_de(epoch)
+        parar_geracao = threading.Event()
+
+        def geracao_cancelada() -> bool:
+            return parar_geracao.is_set() or cancelado()
+
         self._mudar(Estado.PENSANDO)
         comeco = time.monotonic()
-        pedacos: queue.Queue[dict[str, object] | None] = queue.Queue()
+        pedacos: queue.Queue[dict[str, object] | None] = queue.Queue(
+            maxsize=MAXIMO_DE_SINTESES_PENDENTES
+        )
         resultado: dict[str, Resposta] = {}
         falha: list[str] = []
         exibido: list[str] = []
         primeiro_texto_ms: list[float] = []
+
+        def colocar_no_stream(pedaco: dict[str, object] | None) -> bool:
+            while not geracao_cancelada():
+                try:
+                    pedacos.put(pedaco, timeout=INTERVALO_DE_CONSULTA_S)
+                    return True
+                except queue.Full:
+                    continue
+            return False
 
         def publicar(pedaco: dict[str, object]) -> None:
             """Na linha do cérebro, no instante em que o pedaço nasce: a tela segue a geração.
@@ -959,44 +976,51 @@ class Aplicativo:
             seguinte depois de **tocar** o anterior — o texto aparecia no ritmo da fala (um
             pedaço por segundo, achado do dono em 2026-10-17), embora a resposta estivesse pronta
             em milissegundos. O que o dono ouve continua sendo o que o tocador consome."""
-            if pedaco["text"] and not cancelado():
+            if not colocar_no_stream(pedaco):
+                return
+            if pedaco["text"] and not geracao_cancelada():
                 if not primeiro_texto_ms:
                     primeiro_texto_ms.append((time.monotonic() - comeco) * 1000.0)
                 exibido.append(str(pedaco["text"]))
                 if self.ao_pedaco is not None:
                     self.ao_pedaco(" ".join(exibido))
-            pedacos.put(pedaco)
 
         def gerar() -> None:
             try:
                 resultado["r"] = cerebro.responder(
-                    texto, epoch=epoch, publicar=publicar, cancelado=cancelado
+                    texto, epoch=epoch, publicar=publicar, cancelado=geracao_cancelada
                 )
             except Exception as erro:  # o turno degrada e diz; a linha não leva o laço junto
                 falha.append(f"{type(erro).__name__}: {erro}")
             finally:
-                pedacos.put(None)
+                colocar_no_stream(None)
 
         linha = threading.Thread(target=gerar, name="jarvis-cerebro", daemon=True)
         linha.start()
 
         def do_cerebro() -> Iterator[dict[str, object]]:
             while True:
+                if geracao_cancelada():
+                    return
                 try:
                     pedaco = pedacos.get(timeout=INTERVALO_DE_CONSULTA_S)
                 except queue.Empty:
-                    self._olhar_o_teclado()  # pensando também se interrompe
-                    if cancelado():
+                    if geracao_cancelada():
                         return
                     continue
-                if pedaco is None:
+                if pedaco is None or geracao_cancelada():
                     return
                 yield pedaco
 
-        fala, turno = self._tocar(
-            trechos_do_stream(do_cerebro(), epoch=epoch), epoch=epoch, fila=fila
-        )
-        linha.join(timeout=ESPERA_DO_CEREBRO_S)
+        try:
+            fala, turno = self._tocar(
+                trechos_do_stream(do_cerebro(), epoch=epoch), epoch=epoch, fila=fila
+            )
+        finally:
+            # Recusa da fila ou erro na síntese também precisam acordar publicar() quando
+            # o produtor está bloqueado, mesmo sem alteração do epoch local.
+            parar_geracao.set()
+            linha.join(timeout=ESPERA_DO_CEREBRO_S)
         resposta = resultado.get("r")
         if falha or (
             resposta is not None and resposta.fim in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO)
@@ -1011,7 +1035,7 @@ class Aplicativo:
             cerebro.ouvido(
                 resposta.response_id,
                 fala.texto_ate(tocadas),
-                interrompida=cancelado(),
+                interrompida=turno.cancelado,
                 played_ms=int(1000 * tocadas / TAXA_PADRAO),
             )
         if self.conversa is not None:
@@ -1027,7 +1051,7 @@ class Aplicativo:
             primeiro_token_ms=(resposta.ms_ate_primeiro_token or 0.0) if resposta else 0.0,
             tts_ms=turno.tts_ms,
             amostras_tocadas=turno.amostras_tocadas,
-            cancelado=cancelado() or not respondeu,
+            cancelado=cancelado() or turno.cancelado or not respondeu,
             epoch=epoch,
         )
 
@@ -1043,62 +1067,84 @@ class Aplicativo:
         fila: FilaDePlayback | None,
         texto: str | None = None,
     ) -> tuple[Fala, Turno]:
-        """Sintetiza os trechos conforme chegam e toca, olhando o teclado entre os quadros.
+        """Antecipa os próximos trechos e toca em ordem, olhando o teclado entre os quadros.
 
         O estado vira `falando` no **primeiro pedaço de áudio** pronto — não antes: entre o fim
-        da fala do dono e esse pedaço, o Jarvis está pensando, e a tela diz isso.
+        da fala do dono e esse pedaço, o Jarvis está pensando, e a tela diz isso. Enquanto um
+        pedaço toca, o agendador compartilhado pode sintetizar os próximos sem bloquear esta
+        linha; a fila de playback continua sendo a autoridade da ordem e do epoch.
         """
         assert self._tts is not None
+        if self.epoch == epoch:
+            self._mudar(Estado.PENSANDO)
         sintetizador = SintetizadorEmStreaming(
             motor=self._tts,
             session_id=self.session_id,
             epoch=epoch,
             cancelado=self.cancelado_de(epoch),
+            ao_esperar=self._olhar_o_teclado,
         )
         textos: list[str] = []
 
         def anotando() -> Iterator[tuple[int, str]]:
-            for inicio, trecho in trechos:
-                textos.append(trecho)
-                yield inicio, trecho
+            try:
+                for inicio, trecho in trechos:
+                    textos.append(trecho)
+                    yield inicio, trecho
+            finally:
+                fechar = getattr(trechos, "close", None)
+                if fechar is not None:
+                    fechar()
 
         comeco = time.monotonic()
         primeiro: float = 0.0
         tocadas = 0
         tocados: list[Pedaco] = []
         mapa: list[Trecho] = []
-        for pedaco, trecho in sintetizador.pedacos_do_stream(anotando()):
-            if primeiro == 0.0:
-                primeiro = (time.monotonic() - comeco) * 1000.0
-                self._mudar(Estado.FALANDO)
-            if fila is None:
-                # Sem fila (modo texto sem áudio), o que se mede é a síntese: o pedaço conta
-                # como produzido, e fica claro no relatório que ninguém o tocou.
-                tocadas += pedaco.n_amostras
+        recusado = False
+        fluxo = sintetizador.pedacos_do_stream(anotando())
+        try:
+            for pedaco, trecho in fluxo:
+                if primeiro == 0.0:
+                    primeiro = (time.monotonic() - comeco) * 1000.0
+                    self._mudar(Estado.FALANDO)
+                if fila is None:
+                    # Sem fila (modo texto sem áudio), o que se mede é a síntese: o pedaço conta
+                    # como produzido, e fica claro no relatório que ninguém o tocou.
+                    tocadas += pedaco.n_amostras
+                    tocados.append(pedaco)
+                    mapa.append(trecho)
+                    self._olhar_o_teclado()
+                    if self.epoch > epoch:
+                        break
+                    continue
+                if not fila.enfileirar(pedaco):
+                    recusado = True
+                    break
                 tocados.append(pedaco)
                 mapa.append(trecho)
-                self._olhar_o_teclado()
+                # Drena o pedaço quadro a quadro, olhando o teclado entre eles: é aqui que a
+                # barra interrompe **no meio** do pedaço, e não só entre pedaços.
+                while fila.pedacos_na_fila and self.epoch == epoch:
+                    antes = fila.sumidouro.amostras_consumidas
+                    fila.tick()
+                    tocadas += fila.sumidouro.amostras_consumidas - antes
+                    self._olhar_o_teclado()
                 if self.epoch > epoch:
                     break
-                continue
-            if not fila.enfileirar(pedaco):
-                continue
-            tocados.append(pedaco)
-            mapa.append(trecho)
-            # Drena o pedaço quadro a quadro, olhando o teclado entre eles: é aqui que a
-            # barra interrompe **no meio** do pedaço, e não só entre pedaços.
-            while fila.pedacos_na_fila and self.epoch == epoch:
-                antes = fila.sumidouro.amostras_consumidas
-                fila.tick()
-                tocadas += fila.sumidouro.amostras_consumidas - antes
-                self._olhar_o_teclado()
-            if self.epoch > epoch:
+        finally:
+            fechar = getattr(fluxo, "close", None)
+            if fechar is not None:
+                fechar()
+            if fila is not None and self.epoch > epoch:
+                # Vale também durante a espera pelo primeiro áudio, sem entrar no playback.
                 fila.cancelar(reason="barge_in", epoch_novo=self.epoch)
-                break
+        cancelado = self.epoch > epoch or recusado
         fala = Fala(
             texto=texto if texto is not None else " ".join(textos),
             pedacos=tuple(tocados),
             trechos=tuple(mapa),
+            cancelada_em=len(tocados) if cancelado else None,
         )
         return fala, Turno(
             falou="",
@@ -1106,7 +1152,7 @@ class Aplicativo:
             primeiro_pedaco_ms=primeiro,
             tts_ms=(time.monotonic() - comeco) * 1000.0,
             amostras_tocadas=tocadas,
-            cancelado=self.epoch > epoch,
+            cancelado=cancelado,
             epoch=epoch,
         )
 

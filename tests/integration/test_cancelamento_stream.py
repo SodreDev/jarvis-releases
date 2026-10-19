@@ -33,14 +33,15 @@ from jarvis.voz.interface import cancelado_por_epoch
 
 pytestmark = pytest.mark.cancelamento
 
-RESPOSTA = (
-    "Depois de quinta vem sexta-feira. E depois de sexta vem o sábado, que é o dia em que "
-    "quase todo mundo descansa um pouco mais, e o domingo, que fecha a semana com calma."
+RESPOSTA = " ".join(
+    f"Na etapa {indice} vem uma explicação clara para manter toda a resposta organizada e "
+    "fácil de acompanhar."
+    for indice in range(12)
 )
 QUADROS_POR_PEDACO = 6
 """Quantos quadros de 20 ms tocam a cada pedaço que chega: o motor gera enquanto o TTS fala."""
-ATRASO_ENTRE_DELTAS_S = 0.005
-"""~5 ms por delta de 4 caracteres: o motor ainda está gerando enquanto os primeiros pedaços
+ATRASO_ENTRE_DELTAS_S = 0.0005
+"""~0,5 ms por delta de 4 caracteres: o motor ainda está gerando enquanto os primeiros pedaços
 tocam, que é o caso que a ADR-0025 existe para tratar."""
 PONTOS_NA_GERACAO = 10
 PONTOS_NO_PLAYBACK = 10

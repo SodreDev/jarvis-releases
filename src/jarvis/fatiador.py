@@ -1,16 +1,17 @@
 """Onde a fala pode ser cortada: a regra única de fronteira para o TTS (ADR-0025, regra 7).
 
-O TTS sintetiza por pedaços, e o primeiro pedaço é curto de propósito — ele é o que atrasa a
-primeira palavra (SLO-5) e o que se joga fora num barge-in. Até a ADR-0025 essa regra morava só
-no `fatiar()` do `agentd/tts.py`, que recebe o **texto inteiro**. Com o cérebro respondendo em
-stream, o `s2` precisa cortar o texto **enquanto ele chega**, e duas regras de corte (uma em
-cada processo) seriam dois lugares para divergir. Por isso a regra mora aqui, incremental, e o
-`fatiar()` é este mesmo fatiador alimentado de uma vez.
+O TTS sintetiza por lotes com contexto suficiente para não soar palavra por palavra. Até a
+ADR-0025 essa regra morava só no `fatiar()` do `agentd/tts.py`, que recebe o **texto inteiro**.
+Com o cérebro respondendo em stream, o `s2` precisa cortar o texto **enquanto ele chega**, e
+duas regras de corte (uma em cada processo) seriam dois lugares para divergir. Por isso a regra
+mora aqui, incremental, e o `fatiar()` é este mesmo fatiador alimentado de uma vez.
 
-A regra: o primeiro pedaço tem até 3 palavras, os seguintes até 8, e o pedaço termina antes do
-limite na primeira palavra que acabe em pontuação de corte. Uma palavra só conta quando está
-**completa** — seguida de espaço, ou no fim do texto —, porque o stream entrega pedaço de
-palavra: "3," pode virar "3,5" no delta seguinte, e cortar ali partiria o número.
+A regra: um lote normal só sai depois de 14 palavras. A partir daí, a primeira pontuação útil
+fecha o lote; sem pontuação, 18 palavras são o teto que impede buffer sem limite. Lote menor
+só sai quando o stream fecha. Uma palavra só conta quando está **completa** — seguida de espaço,
+ou no fim do texto —, porque o stream entrega pedaço de palavra: "3," pode virar "3,5" no delta
+seguinte, e cortar ali partiria o número. Palavra é todo token sem espaço: hífen e token
+excepcionalmente longo continuam atômicos, sem corte por caractere.
 """
 
 from __future__ import annotations
@@ -20,9 +21,11 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Final
 
-PALAVRAS_DO_PRIMEIRO_PEDACO: Final = 3
-"""O primeiro pedaço é curto de propósito: ele é o que atrasa o SLO-5 e o que se joga fora."""
-PALAVRAS_POR_PEDACO: Final = 8
+PALAVRAS_MINIMAS_POR_PEDACO: Final = 14
+"""Fora do último residual, nenhum lote sacrifica contexto abaixo deste piso."""
+PALAVRAS_DO_PRIMEIRO_PEDACO: Final = 18
+"""Teto do primeiro lote; mantido como nome público para os consumidores existentes."""
+PALAVRAS_POR_PEDACO: Final = 18
 PONTUACAO_DE_FRASE: Final = (".", "!", "?")
 PONTUACAO_DE_VIRGULA: Final = (",", ";", ":")
 PONTUACAO_DE_CORTE: Final = PONTUACAO_DE_VIRGULA + PONTUACAO_DE_FRASE
@@ -52,6 +55,7 @@ class PedacoDeFala:
 class FatiadorDeFala:
     """Recebe o texto aos poucos e devolve pedaços assim que uma fronteira é certa."""
 
+    minimo: int = PALAVRAS_MINIMAS_POR_PEDACO
     primeiro: int = PALAVRAS_DO_PRIMEIRO_PEDACO
     seguintes: int = PALAVRAS_POR_PEDACO
     _texto: str = ""
@@ -109,6 +113,8 @@ class FatiadorDeFala:
             self._palavras.append((inicio, palavra))
             corte = _corte_de(palavra)
             limite = self.primeiro if self._emitidos == 0 else self.seguintes
+            if len(self._palavras) < self.minimo:
+                continue
             if corte is not None:
                 pedacos.append(self._emitir(corte))
             elif len(self._palavras) >= limite:

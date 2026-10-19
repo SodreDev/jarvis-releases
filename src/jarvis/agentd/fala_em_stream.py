@@ -1,8 +1,8 @@
 """O lado do TTS do stream: `ResponseChunk` do epoch corrente → síntese → fila (ADR-0025, regra 10).
 
 O cérebro corta o texto na fronteira; aqui cada pedaço vira um trecho do
-`SintetizadorEmStreaming`, que já sabe parar no cancelamento e descartar o pedaço em voo. O que
-este módulo acrescenta é só a montagem dos trechos a partir dos eventos:
+`SintetizadorEmStreaming`, que antecipa uma janela limitada, mantém a ordem e sabe parar no
+cancelamento. O que este módulo acrescenta é só a montagem dos trechos a partir dos eventos:
 
 - pedaço de **outro epoch** ou de **outra resposta** é ignorado (§3.3 regra 6; a borda do
   barramento já descarta o epoch velho, e isto é a segunda trava, local);
@@ -31,22 +31,28 @@ def trechos_do_stream(
     esperado = 0
     posicao = 0
     resposta = response_id
-    for pedaco in pedacos:
-        if int(pedaco["epoch"]) != epoch:
-            continue
-        if resposta is None:
-            resposta = str(pedaco["response_id"])
-        elif pedaco["response_id"] != resposta:
-            continue
-        if int(pedaco["seq"]) != esperado:
-            raise StreamForaDeOrdem(f"esperava seq {esperado}, veio {pedaco['seq']}")
-        esperado += 1
-        texto = str(pedaco["text"])
-        if texto:
-            yield posicao, texto
-            posicao += len(texto) + 1
-        if pedaco["last"]:
-            return
+    entrada = iter(pedacos)
+    try:
+        for pedaco in entrada:
+            if int(pedaco["epoch"]) != epoch:
+                continue
+            if resposta is None:
+                resposta = str(pedaco["response_id"])
+            elif pedaco["response_id"] != resposta:
+                continue
+            if int(pedaco["seq"]) != esperado:
+                raise StreamForaDeOrdem(f"esperava seq {esperado}, veio {pedaco['seq']}")
+            esperado += 1
+            texto = str(pedaco["text"])
+            if texto:
+                yield posicao, texto
+                posicao += len(texto) + 1
+            if pedaco["last"]:
+                return
+    finally:
+        fechar = getattr(entrada, "close", None)
+        if fechar is not None:
+            fechar()
 
 
 def falar_stream_para(
@@ -62,14 +68,18 @@ def falar_stream_para(
     textos: list[str] = []
     recusados = 0
     stream = trechos_do_stream(pedacos, epoch=sintetizador.epoch)
-    for pedaco, trecho in sintetizador.pedacos_do_stream(
-        _anotando(stream, textos), chunk_id=chunk_id
-    ):
-        if not enfileirar(pedaco):
-            recusados += 1
-            continue
-        sintetizados.append(pedaco)
-        trechos.append(trecho)
+    fluxo = sintetizador.pedacos_do_stream(_anotando(stream, textos), chunk_id=chunk_id)
+    try:
+        for pedaco, trecho in fluxo:
+            if not enfileirar(pedaco):
+                recusados += 1
+                break
+            sintetizados.append(pedaco)
+            trechos.append(trecho)
+    finally:
+        fechar = getattr(fluxo, "close", None)
+        if fechar is not None:
+            fechar()
     return Fala(
         texto=" ".join(textos),
         pedacos=tuple(sintetizados),
@@ -79,9 +89,14 @@ def falar_stream_para(
 
 
 def _anotando(trechos: Iterator[tuple[int, str]], textos: list[str]) -> Iterator[tuple[int, str]]:
-    for inicio, texto in trechos:
-        textos.append(texto)
-        yield inicio, texto
+    try:
+        for inicio, texto in trechos:
+            textos.append(texto)
+            yield inicio, texto
+    finally:
+        fechar = getattr(trechos, "close", None)
+        if fechar is not None:
+            fechar()
 
 
 def avisos_tocados(

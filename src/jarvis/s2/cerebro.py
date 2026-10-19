@@ -215,9 +215,7 @@ class Cerebro:
             memoria=memoria,
         )
         fatiador = FatiadorDeFala()
-        visto_cancelamento = self._falar_avisos(
-            avisos, fatiador, resposta, publicar, comeco, cancelado
-        )
+        visto_cancelamento = self._falar_avisos(avisos, resposta, publicar, comeco, cancelado)
         catalogo = self.ferramentas.catalogo_para_o_modelo() if self.ferramentas else ()
         resultados: list[Mensagem] = []
         limite_do_laco = self.relogio() + self.prazo_do_laco_de_ferramentas_s
@@ -397,7 +395,7 @@ class Cerebro:
             response_id=f"r-{uuid7()}", turn_id=f"t-{uuid7()}", epoch=epoch, motor="avisos"
         )
         fatiador = FatiadorDeFala()
-        if self._falar_avisos(avisos, fatiador, resposta, publicar, comeco, cancelado) is None:
+        if self._falar_avisos(avisos, resposta, publicar, comeco, cancelado) is None:
             for pedaco in fatiador.fechar():
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
         else:
@@ -408,7 +406,6 @@ class Cerebro:
     def _falar_avisos(
         self,
         avisos: Sequence[AvisoLiberado],
-        fatiador: FatiadorDeFala,
         resposta: Resposta,
         publicar: Publicar,
         comeco: float,
@@ -416,11 +413,17 @@ class Cerebro:
     ) -> float | None:
         """Publica a frase de cada aviso; devolve o instante do cancelamento, se houve."""
         for aviso in avisos:
+            if cancelado():
+                return time.monotonic()
             frase = frase_do_aviso(aviso)
             resposta.gerado += frase + " "
-            # A frase termina em ponto, e o espaço depois fecha a última palavra: todos os
-            # pedaços do aviso saem aqui, e nenhum mistura aviso com a resposta do motor.
-            for pedaco in fatiador.alimentar(frase + " "):
+            # Cada aviso é uma fala completa: seu residual pode ser curto, mas precisa sair
+            # com o próprio notif_id antes do próximo aviso ou da resposta. Compartilhar o
+            # buffer perderia a identidade de avisos menores que o piso normal de 14 palavras.
+            fatiador = FatiadorDeFala()
+            for pedaco in fatiador.alimentar(frase) + fatiador.fechar():
+                if not pedaco.texto:
+                    continue
                 if cancelado():
                     return time.monotonic()
                 self._publicar(
