@@ -120,6 +120,8 @@ class Confirmacao:
     detalhe: str
     motivo: str
     prazo_s: float
+    argumentos: Mapping[str, Any] = field(default_factory=dict)
+    """Os argumentos exatos da chamada: é contra eles que um "sim" já dado é conferido."""
 
 
 Confirmar = Callable[[Confirmacao], bool]
@@ -166,6 +168,18 @@ class ResultadoDeFerramenta:
         if len(texto) > LIMITE_PARA_O_MODELO:
             texto = texto[:LIMITE_PARA_O_MODELO] + " …[truncado]"
         return texto
+
+
+@dataclass(frozen=True, slots=True)
+class Avaliacao:
+    """Uma chamada validada e julgada pelo PDP, ainda sem efeito (o que `avaliar` devolve)."""
+
+    tool_id: str
+    argumentos: dict[str, Any]
+    """Normalizados pelo código (nome de app resolvido, família do navegador)."""
+    caminho: str | None
+    pedido: Pedido
+    decisao: Decisao
 
 
 @dataclass(slots=True)
@@ -293,6 +307,39 @@ class ExecutorDeFerramentas:
         contaminacao: Contaminacao | None = None,
     ) -> ResultadoDeFerramenta:
         marca = contaminacao if contaminacao is not None else self.turno
+        avaliacao = self.avaliar(
+            tool_id,
+            args,
+            session_id=session_id,
+            call_id=call_id,
+            proveniencia=proveniencia,
+            contaminacao=marca,
+        )
+        if isinstance(avaliacao, ResultadoDeFerramenta):
+            return avaliacao
+        return self.concluir(
+            avaliacao,
+            cancelado=cancelado,
+            confirmar=confirmar,
+            proveniencia=proveniencia,
+            contaminacao=marca,
+        )
+
+    def avaliar(
+        self,
+        tool_id: str,
+        args: Mapping[str, Any],
+        *,
+        session_id: str = "",
+        call_id: str = "",
+        proveniencia: Proveniencia | None = None,
+        contaminacao: Contaminacao | None = None,
+    ) -> Avaliacao | ResultadoDeFerramenta:
+        """Passos 1 a 3: catálogo, contrato e o veredito do PDP — sem rodar nada.
+
+        Separado de `concluir` para o portão contextual (`jarvis.s2.portao`) olhar o pedido
+        **depois** do PDP e só apertar: o que o PDP nega nem chega ao Jev."""
+        marca = contaminacao if contaminacao is not None else self.turno
         chamada = call_id or f"c-{uuid7()}"
         if not self._ligada(tool_id):
             return ResultadoDeFerramenta(
@@ -346,16 +393,43 @@ class ExecutorDeFerramentas:
             proveniencia=proveniencia,
             contaminado=marca.valor,
         )
-        decisao = self.pdp.decidir(pedido)
+        return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
+
+    def pergunta_de(self, avaliacao: Avaliacao, motivo: str = "") -> Confirmacao:
+        """O que a janela (ou a voz) pergunta ao dono sobre esta chamada exata."""
+        return Confirmacao(
+            id=avaliacao.pedido.call_id,
+            tool_id=avaliacao.tool_id,
+            titulo=str(self.manifestos[avaliacao.tool_id]["title"]),
+            detalhe=self._detalhe(avaliacao.tool_id, avaliacao.argumentos),
+            motivo=motivo or avaliacao.decisao.motivo,
+            prazo_s=self.prazo_de_confirmacao_s,
+            argumentos=dict(avaliacao.argumentos),
+        )
+
+    def descartar(self, avaliacao: Avaliacao, status: str, motivo: str) -> None:
+        """A avaliação não vai rodar (o portão vetou, ou virou pendência): o grant é solto já,
+        em vez de segurar a raiz aberta até o TTL, e a auditoria diz por quê."""
+        if avaliacao.decisao.grant is not None:
+            self.pdp.liberar(avaliacao.decisao.grant.grant_id)
+        self.pdp.auditoria.anexar_resultado(avaliacao.decisao.decision_id, status, motivo)
+
+    def concluir(
+        self,
+        avaliacao: Avaliacao,
+        *,
+        cancelado: Cancelado,
+        confirmar: Confirmar = negar_sempre,
+        proveniencia: Proveniencia | None = None,
+        contaminacao: Contaminacao | None = None,
+    ) -> ResultadoDeFerramenta:
+        """Passos 4 a 6: a confirmação que o PDP pediu, o corpo e a auditoria."""
+        marca = contaminacao if contaminacao is not None else self.turno
+        tool_id, argumentos, caminho = avaliacao.tool_id, avaliacao.argumentos, avaliacao.caminho
+        pedido, decisao = avaliacao.pedido, avaliacao.decisao
+        chamada = pedido.call_id
         if decisao.veredito is Veredito.CONFIRM:
-            pergunta = Confirmacao(
-                id=chamada,
-                tool_id=tool_id,
-                titulo=str(self.manifestos[tool_id]["title"]),
-                detalhe=self._detalhe(tool_id, argumentos),
-                motivo=decisao.motivo,
-                prazo_s=self.prazo_de_confirmacao_s,
-            )
+            pergunta = self.pergunta_de(avaliacao)
             if cancelado() or not confirmar(pergunta):
                 self.pdp.auditoria.anexar_resultado(
                     decisao.decision_id, "negado", "dono não confirmou"

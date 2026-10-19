@@ -377,6 +377,16 @@ class Pdp:
             self.grants.pop(grant_id, None)
         return mortos
 
+    def liberar(self, grant_id: str) -> None:
+        """O grant não vai ser usado (o portão vetou a chamada ou ela virou pendência): sai já,
+        com a raiz fechada, em vez de esperar o TTL."""
+        with self._trava:
+            self._fechar_raiz(grant_id)
+            self.grants.pop(grant_id, None)
+            for call_id, grant in list(self.em_voo.items()):
+                if grant.grant_id == grant_id:
+                    self.em_voo.pop(call_id, None)
+
     def _fechar_raiz(self, grant_id: str) -> None:
         """Fecha o descritor de um grant **uma vez**: quem sai do dicionário não volta.
 

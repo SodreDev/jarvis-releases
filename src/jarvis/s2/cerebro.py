@@ -35,6 +35,7 @@ from jarvis.fatiador import Corte, FatiadorDeFala, PedacoDeFala
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
+from jarvis.s2.fluxo_de_acao import FluxoDeAcao
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
 from jarvis.s2.motor import (
     Contexto,
@@ -46,7 +47,9 @@ from jarvis.s2.motor import (
     PedidoDeTool,
     Pensar,
 )
+from jarvis.s2.pendencias import RegistroDePendencias
 from jarvis.s2.persona import prompt_de_sistema
+from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
 from jarvis.voz.interface import Cancelado, nunca_cancelado
 
 MAXIMO_DE_PASSOS: Final = 12
@@ -141,7 +144,33 @@ class Cerebro:
     """Porta para a fila de avisos: status nunca é publicado por cima da fala em curso."""
     relogio: Callable[[], float] = time.monotonic
     """Relógio injetável para medir o prazo do laço sem tornar o teste lento."""
+    portao: PortaoDeAcao | None = None
+    """O portão contextual (Jev) antes de cada ferramenta (`jarvis.s2.fluxo_de_acao`). Com ele, a
+    confirmação vira pendência que não prende o turno, o "sim" pode ser falado e a execução
+    confirmada vai para uma tarefa. `None` = o caminho de antes: só o PDP, e a janela bloqueia."""
+    pendencias: RegistroDePendencias = field(default_factory=RegistroDePendencias)
+    autorizacoes: AutorizacoesExplicitas = field(default_factory=AutorizacoesExplicitas)
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
+
+    @property
+    def fluxo(self) -> FluxoDeAcao | None:
+        if self.portao is None:
+            return None
+        return FluxoDeAcao(self.portao, self.pendencias, self.autorizacoes)
+
+    def resolver_pendencia(self, pendencia_id: str, sim: bool) -> bool:
+        """O clique do dono numa pendência (não bloqueante). Devolve se ela ainda valia."""
+        fluxo = self.fluxo
+        if fluxo is None or self.ferramentas is None:
+            return False
+        resultado = fluxo.resolver(self.ferramentas, pendencia_id, sim=sim)
+        if resultado is None:
+            return False
+        if resultado.status == "despachado":
+            self._status("Confirmado: está rodando em segundo plano; aviso quando terminar.")
+        elif sim and resultado.status != "ok":
+            self._status(f"Não deu para fazer o que você confirmou: {resultado.motivo}")
+        return True
 
     @property
     def proveniencia(self) -> Proveniencia:
@@ -170,6 +199,7 @@ class Cerebro:
         comeco = time.monotonic()
         # Resposta anterior sem `ouvido`: ninguém confirmou que tocou, então não existe (P4).
         self._pendentes.clear()
+        anteriores = tuple(self.conversa.turnos)
         self.conversa.turnos.append(Mensagem("dono", texto_do_dono))
         self.turno_corrente = None
         if self.ferramentas is not None:
@@ -182,8 +212,32 @@ class Cerebro:
                 trust=trust,
             )
             self.turno_corrente = TurnoCorrente(episodio, texto_do_dono, trust)
+        fluxo = self.fluxo
+        nota_da_pendencia = ""
+        if fluxo is not None and self.ferramentas is not None:
+            # A fala é lida primeiro contra a pergunta pendente (se houver uma válida): "sim"
+            # resolve **aquela** e o turno é só a confirmação; outro assunto a cancela.
+            leitura = fluxo.ler_a_resposta(
+                self.ferramentas, texto_do_dono, mensagens=anteriores, cancelado=cancelado
+            )
+            if leitura.frase:
+                return self._so_dizer(
+                    leitura.frase,
+                    epoch=epoch,
+                    turn_id=turn_id,
+                    publicar=publicar,
+                    cancelado=cancelado,
+                    comeco=comeco,
+                    ferramentas=[leitura.resultado] if leitura.resultado else [],
+                )
+            nota_da_pendencia = leitura.nota
+            self.autorizacoes.novo_turno(texto_do_dono)
         memoria = None
         contexto = self.conversa.contexto()
+        if nota_da_pendencia:
+            contexto = Contexto(
+                sistema=f"{contexto.sistema}\n\n{nota_da_pendencia}", mensagens=contexto.mensagens
+            )
         if self.livro is not None and self.lembrar_a_cada_turno:
             memoria = consultar(
                 self.livro,
@@ -277,7 +331,7 @@ class Cerebro:
                         f"{self.prazo_do_laco_de_ferramentas_s:.0f} s"
                     )
                 break
-            resultado = self._chamar(pedido, cancelado_no_laco)
+            resultado = self._chamar(pedido, cancelado_no_laco, texto_do_dono)
             resposta.ferramentas.append(resultado)
             resultados.append(Mensagem("ferramenta", resultado.para_o_modelo()))
             self._status(f"Passo {passo} terminou; avaliando o resultado.")
@@ -286,6 +340,9 @@ class Cerebro:
                 resposta.gerado += resultado.aviso + " "
                 for pedaco in fatiador.alimentar(resultado.aviso + " "):
                     self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+            if resultado.status == "pendente":
+                # A pergunta é a última coisa do turno: o laço de voz fica livre para o "sim".
+                break
             if prazo_esgotado() and not cancelado():
                 resposta.fim = MotivoDoFim.PRAZO
                 resposta.detalhe = (
@@ -306,6 +363,40 @@ class Cerebro:
             resposta.ms_cancelamento_ate_motor_parado = (
                 (parado - visto_cancelamento) * 1000.0 if visto_cancelamento is not None else 0.0
             )
+        else:
+            for pedaco in fatiador.fechar():
+                self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
+        self.autorizacoes.encerrar()
+        self._pendentes[resposta.response_id] = resposta
+        return resposta
+
+    def _so_dizer(
+        self,
+        frase: str,
+        *,
+        epoch: int,
+        turn_id: str,
+        publicar: Publicar,
+        cancelado: Cancelado,
+        comeco: float,
+        ferramentas: list[ResultadoDeFerramenta],
+    ) -> Resposta:
+        """Um turno sem motor: a frase é do código (a resposta do dono a uma pendência)."""
+        resposta = Resposta(
+            response_id=f"r-{uuid7()}",
+            turn_id=turn_id or f"t-{uuid7()}",
+            epoch=epoch,
+            motor="portao",
+            gerado=frase,
+            ferramentas=ferramentas,
+            ms_ate_contexto=_ms_desde(comeco),
+        )
+        fatiador = FatiadorDeFala()
+        for pedaco in fatiador.alimentar(frase):
+            if cancelado():
+                resposta.fim = MotivoDoFim.CANCELADO
+                break
+            self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
         else:
             for pedaco in fatiador.fechar():
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
@@ -357,10 +448,24 @@ class Cerebro:
             deltas.close()
         return pedidos, visto_cancelamento
 
-    def _chamar(self, pedido: PedidoDeTool, cancelado: Cancelado) -> ResultadoDeFerramenta:
+    def _chamar(
+        self, pedido: PedidoDeTool, cancelado: Cancelado, texto_do_dono: str = ""
+    ) -> ResultadoDeFerramenta:
         if self.ferramentas is None:
             return ResultadoDeFerramenta(
                 pedido.tool_id, "negado", motivo="nenhuma ferramenta está ligada nesta sessão"
+            )
+        fluxo = self.fluxo
+        if fluxo is not None:
+            return fluxo.chamar(
+                self.ferramentas,
+                pedido,
+                pedido_do_dono=texto_do_dono,
+                mensagens=self.conversa.turnos,
+                cancelado=cancelado,
+                confirmar=self.confirmar,
+                session_id=self.session_id,
+                proveniencia=self.proveniencia,
             )
         return self.ferramentas.executar(
             pedido.tool_id,
@@ -443,8 +548,11 @@ class Cerebro:
 
         Com histórico, o turno vai para o livro com o `played_ms` real: sem ele, o livro recusa.
         """
-        if self._pendentes.pop(response_id, None) is None:
+        resposta = self._pendentes.pop(response_id, None)
+        if resposta is None:
             return  # resposta velha, já substituída por um turno novo do dono
+        if interrompida:
+            self._esquecer_pergunta_nao_ouvida(resposta, texto_tocado)
         if not (texto_tocado or interrompida):
             return
         self.conversa.turnos.append(Mensagem("jarvis", texto_tocado, interrompida))
@@ -457,6 +565,17 @@ class Cerebro:
                 played_ms=played_ms,
                 interrompida=interrompida,
             )
+
+    def _esquecer_pergunta_nao_ouvida(self, resposta: Resposta, texto_tocado: str) -> None:
+        """O dono cortou a fala antes do fim da pergunta: ela não foi feita, e um "sim" dito por
+        cima não pode autorizar o que ele não ouviu. A pendência cai."""
+        aberta = self.pendencias.valida()
+        if aberta is None:
+            return
+        for resultado in resposta.ferramentas:
+            if resultado.call_id == aberta.id and resultado.aviso not in texto_tocado:
+                self.pendencias.cancelar()
+                return
 
     def _publicar(
         self,

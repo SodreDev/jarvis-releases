@@ -107,6 +107,8 @@ class Tarefa:
     terminou_em: float | None = None
     cancelada: threading.Event = field(default_factory=threading.Event, repr=False)
     contaminacao: Contaminacao = field(default_factory=Contaminacao, repr=False)
+    confirmar: Callable[[Confirmacao], bool] | None = field(default=None, repr=False)
+    """Quem responde primeiro às perguntas desta tarefa (o "sim" já dado); `None` = a janela."""
 
     @property
     def progresso(self) -> int:
@@ -185,7 +187,12 @@ class GestorDeTarefas:
         parametros: Mapping[str, Any],
         *,
         contaminado: bool = False,
+        motor: MotorDeTarefa | None = None,
+        confirmar: Callable[[Confirmacao], bool] | None = None,
     ) -> Tarefa:
+        """Cria e põe a tarefa para rodar. `motor` e `confirmar` são do **código** (a execução que
+        o dono já autorizou na conversa: motor direto, e o "sim" dele valendo só para aquela
+        chamada); o modelo, por `tarefa.iniciar`, nunca os escolhe."""
         self._conferir(tool_id, parametros)
         with self._trava:
             rodando = [t for t in self.tarefas.values() if not t.estado.final]
@@ -194,7 +201,7 @@ class GestorDeTarefas:
                     f"já há {len(rodando)} tarefas rodando (o teto é "
                     f"{self.maximo_ao_mesmo_tempo}): espere uma terminar ou cancele uma"
                 )
-            motor = self.fabrica_de_motor()
+            motor = motor if motor is not None else self.fabrica_de_motor()
             tarefa = Tarefa(
                 id=f"t-{uuid7()[-8:]}",
                 descricao=" ".join(descricao.split())[:120],
@@ -204,6 +211,7 @@ class GestorDeTarefas:
                 na_nuvem=motor.na_nuvem,
                 passos_previstos=1 if motor.nome == "direto" else 0,
                 contaminacao=Contaminacao(contaminado),
+                confirmar=confirmar,
             )
             self.tarefas[tarefa.id] = tarefa
             linha = threading.Thread(
@@ -336,6 +344,8 @@ class GestorDeTarefas:
             tarefa.estado = EstadoDaTarefa.ESPERANDO_O_DONO
             self.ao_mudar()
             try:
+                if tarefa.confirmar is not None and tarefa.confirmar(pergunta):
+                    return not tarefa.cancelada.is_set()
                 return self.confirmar(pergunta, tarefa.cancelada.is_set)
             finally:
                 if not tarefa.estado.final:

@@ -92,6 +92,7 @@ from jarvis.s2.cerebro import Cerebro, Resposta
 from jarvis.s2.motor import INTERVALO_DE_CONSULTA_S, Mensagem, MotivoDoFim, MotorDeConversa
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
+from jarvis.s2.portao import PortaoDeAcao
 from jarvis.tarefas.gestor import (
     EstadoDaTarefa,
     GestorDeTarefas,
@@ -523,6 +524,7 @@ class Aplicativo:
             self.detector = self._abrir_o_detector()
         if self._cerebro is None:
             self._cerebro = Cerebro(motor=self._motor, session_id=self.session_id)
+            self._ligar_o_portao(self._cerebro)
         if self.ferramentas is None:
             self.ferramentas = self._montar_ferramentas()
         self._cerebro.ferramentas = self.ferramentas
@@ -623,6 +625,8 @@ class Aplicativo:
         return self._confirmar(pergunta, tarefa_cancelada=cancelada)
 
     def _cancelar_tarefas(self) -> None:
+        if self._cerebro is not None:
+            self._cerebro.pendencias.cancelar()
         gestor = self.ferramentas.tarefas if self.ferramentas is not None else None
         if gestor is not None:
             gestor.cancelar_todas()
@@ -657,6 +661,44 @@ class Aplicativo:
             self.ferramentas.memoria = FerramentasDeMemoria(
                 livro=cerebro.livro, alcance=cerebro.alcance_de_memoria
             )
+
+    def _ligar_o_portao(self, cerebro: Cerebro) -> None:
+        """O portão contextual (Jev) antes de cada ferramenta — com o mesmo classificador que o
+        dono escolheu para o endereçamento. Sem ele, fica o caminho de antes (só o PDP).
+
+        A pendência de confirmação aparece na mesma faixa da janela e vence sozinha no prazo."""
+        cerebro.pendencias.ao_abrir = self._mostrar_pendencia
+        cerebro.pendencias.ao_fechar = self._tirar_pendencia
+        cerebro.pendencias.agendar = _agendar
+        if cerebro.portao is not None or not self.configuracao.enderecamento:
+            return
+        classificador = self.detector.classificador if self.detector is not None else None
+        if classificador is None:
+            escolhido = self.configuracao.enderecamento
+            if o_que_falta(escolhido, self.configuracao, ambiente=self.ambiente):
+                return
+            try:
+                aberto = ClassificadorOpenRouter(
+                    registrado=escolhido,
+                    nuvem_ligada=self.configuracao.nuvem_ligada,
+                    ambiente=self.ambiente,
+                )
+                aberto.abrir()
+            except (MotorRecusado, SegredoAusente, ErroDeRede) as erro:
+                self.escrever_na_tela(f"  (portão contextual das ferramentas desligado: {erro})")
+                return
+            classificador = aberto
+        cerebro.portao = PortaoDeAcao(classificador=classificador)
+
+    def _mostrar_pendencia(self, pergunta: Confirmacao) -> None:
+        if self.ao_pedir_confirmacao is not None:
+            self.ao_pedir_confirmacao(pergunta)
+        else:
+            self.escrever_na_tela(f"  (esperando o seu sim: {pergunta.detalhe})")
+
+    def _tirar_pendencia(self, identificador: str) -> None:
+        if self.ao_fim_da_confirmacao is not None:
+            self.ao_fim_da_confirmacao(identificador)
 
     def _abrir_o_detector(self) -> DetectorDeEnderecamento | None:
         """O detector de endereçamento que o dono escolheu — ou `None`, com a razão na tela.
@@ -885,7 +927,9 @@ class Aplicativo:
         """O clique do dono na janela. Devolve se ainda havia alguém esperando a resposta."""
         espera = self._confirmacoes.get(identificador)
         if espera is None:
-            return False
+            # Pendência do portão contextual: não há linha esperando; o clique a resolve aqui.
+            cerebro = self._cerebro
+            return cerebro is not None and cerebro.resolver_pendencia(identificador, sim)
         evento, resposta = espera
         resposta.append(sim)
         evento.set()
@@ -1525,3 +1569,10 @@ class Aplicativo:
                     f"  {motor.id} está escolhido e DESLIGADO: nada sai daqui, e ele não roda."
                 )
         self.escrever_na_tela("")
+
+
+def _agendar(segundos: float, funcao: Callable[[], None]) -> None:
+    """A pendência vence sozinha (e a faixa some) mesmo sem ninguém falar."""
+    relogio = threading.Timer(segundos, funcao)
+    relogio.daemon = True
+    relogio.start()

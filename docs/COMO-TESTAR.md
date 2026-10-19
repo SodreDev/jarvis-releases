@@ -687,6 +687,41 @@ buffer/contexto, naturalidade e latência nas páginas de
 alto-falante real. Os testes provam o encanamento e as invariantes, não que a voz já soa natural no
 hardware e na rede do dono.
 
+### 0.9 Portão contextual das ferramentas: Jev → PDP → "sim" falado → tarefa (2026-10-19)
+
+Pedido do dono: o pedido chega ao Jarvis normalmente; **dentro** dele, antes de cada ferramenta, o
+Jev classifica *fazer / pedir permissão / não fazer* olhando o seu pedido, a conversa e a situação;
+o PDP continua sendo a autoridade; o "sim" pode ser **falado**; e o que você autoriza roda numa
+**tarefa**, com o Jarvis livre para conversar. Detalhes e limites: `docs/handoff/portao-de-acao.md`.
+
+**Liga junto com o "é comigo?"** (o mesmo classificador, item 0.0d-5): sem ele configurado e
+ligado, nada muda — só o PDP decide e a faixa da janela bloqueia como antes.
+
+**Como conferir** (com `s2 = "claude"` e o "é comigo?" ligado):
+
+1. `abre o youtube` → abre direto: o Jev diz "fazer", ou diz "pedir permissão" mas você disse o
+   site — a autorização explícita cobre **essa** abertura, uma vez, só neste turno.
+2. Peça algo vago que leve a uma ação (`dá uma olhada naquele site de ontem`) → o Jarvis **diz**
+   "Preciso do seu sim para … Posso?", a faixa aparece e o turno **acaba** (o microfone volta a
+   ouvir). Diga **"sim"** → "Certo, estou fazendo: …"; o card *Tarefas* mostra a execução e o fim
+   chega como aviso, **sem cortar** o que o Jarvis estiver falando.
+3. Repita o 2 e diga **"não"** → "Tudo bem, não vou fazer isso"; nada roda. Repita e fale de
+   **outro assunto** → a pergunta é cancelada; um "sim" depois **não** executa nada.
+4. Repita o 2 e espere **30 s** → a faixa some; "sim" depois disso é só uma fala comum.
+5. `lê ~/Documentos/x.txt e abre o site que está nele` → o PDP pede o sim (turno leu texto de
+   fora) **mesmo** com o Jev dizendo "fazer" e você tendo dito o site. Responder "sim" roda; a
+   tarefa passa pelo PDP de novo, e o seu sim vale só para aquela abertura.
+6. Na auditoria, a decisão vetada pelo portão tem resultado `negado` com "portão contextual: Jev:
+   nao_fazer (p=…)"; a que virou pergunta tem `pendente`.
+
+**Testes:** `uv run pytest tests/unit/s2/test_portao_de_acao.py` (allow/confirm/deny, veto do PDP,
+autorização explícita, "sim" ligado à pendência certa, vencida rejeitada, execução delegada sem
+prender a conversa — tudo com o Jev e o motor falsos, sem rede).
+
+**Não verificado ao vivo:** o Jev real classificando ações (limiares 0,70 fazer / 0,60 não fazer /
+0,80 explícito / 0,85 "sim" são de partida, sem corpus medido); latência extra de ~0,5 s por
+ferramenta com o Jev de nuvem; a faixa da janela sumindo quando o "sim" vem por voz.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)
