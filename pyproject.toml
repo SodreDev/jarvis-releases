@@ -105,6 +105,9 @@ memoria = [
 jarvis = "jarvis.gui.principal:main"
 # O aplicativo de teste do dono no terminal (ADR-0017, ADR-0018): `uv run jarvis-voz`.
 jarvis-voz = "jarvis.voz.cli:main"
+# O host nativo da extensão (ADR-0027). No repositório, `uv run jarvis-native-host --instalar`
+# registra o host deste código no Firefox, Chrome, Chromium, Brave, Edge e Vivaldi do usuário.
+jarvis-native-host = "jarvis.navegador.host:main"
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]

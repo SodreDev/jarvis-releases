@@ -55,6 +55,11 @@ def test_caminhos_de_usuario_e_de_sistema_sao_os_da_documentacao(tmp_path: Path)
         "firefox": Path(".mozilla/native-messaging-hosts"),
         "chrome": Path(".config/google-chrome/NativeMessagingHosts"),
         "chromium": Path(".config/chromium/NativeMessagingHosts"),
+        # `<pasta de dados do navegador>/NativeMessagingHosts`: o Brave do dono não achava o host
+        # na pasta do Chrome ("Can't find manifest for native messaging host", 2026-10-19).
+        "brave": Path(".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"),
+        "edge": Path(".config/microsoft-edge/NativeMessagingHosts"),
+        "vivaldi": Path(".config/vivaldi/NativeMessagingHosts"),
     }
     sistema = {
         d.navegador: d.pasta.relative_to(tmp_path) for d in inst.destinos_do_sistema(tmp_path)
@@ -76,14 +81,15 @@ def test_instalar_grava_o_modelo_certo_em_cada_navegador_e_remover_so_apaga_o_no
     vizinho.write_text("{}", encoding="utf-8")
 
     escritos = inst.instalar(destinos, "/usr/bin/jarvis-native-host")
-    assert len(escritos) == 3
+    assert len(escritos) == 6
     por_nome = {d.navegador: json.loads(d.arquivo.read_text("utf-8")) for d in destinos}
     assert "allowed_extensions" in por_nome["firefox"]
-    assert por_nome["chromium"]["allowed_origins"] == [ORIGEM_CHROMIUM]
+    for chromium in ("chrome", "chromium", "brave", "edge", "vivaldi"):
+        assert por_nome[chromium]["allowed_origins"] == [ORIGEM_CHROMIUM]
     assert all(m["path"] == "/usr/bin/jarvis-native-host" for m in por_nome.values())
     assert stat.S_IMODE(destinos[0].arquivo.stat().st_mode) == 0o644
 
-    assert len(inst.remover(destinos)) == 3
+    assert len(inst.remover(destinos)) == 6
     assert inst.remover(destinos) == []  # idempotente
     assert vizinho.read_text("utf-8") == "{}"  # nada que não seja nosso é tocado
 
@@ -149,3 +155,67 @@ def test_cli_com_argumento_desconhecido_mostra_o_uso(tmp_path: Path) -> None:
     falas: list[str] = []
     assert inst.principal(["--tudo"], {}, tmp_path, saida=falas.append) == 2
     assert "uso:" in falas[0]
+
+
+def test_stub_do_repositorio_chama_o_host_deste_codigo_isolado(tmp_path: Path) -> None:
+    stub = inst.escrever_stub_de_desenvolvimento(tmp_path, "/home/x/Meu Repo/.venv/bin/python")
+    texto = stub.read_text("utf-8")
+    assert "exec '/home/x/Meu Repo/.venv/bin/python' -I -m jarvis.navegador.host \"$@\"" in texto
+    assert stub == tmp_path / inst.STUB_NO_USUARIO and os.access(stub, os.X_OK)
+    with pytest.raises(inst.InstalacaoRecusada, match="absoluto"):
+        inst.escrever_stub_de_desenvolvimento(tmp_path, "python3")
+
+
+def test_cli_no_repositorio_registra_o_host_do_codigo_e_copia_a_extensao(tmp_path: Path) -> None:
+    """`uv run jarvis-native-host --instalar` num clone: sem release, sem PATH, um comando só."""
+    repositorio = tmp_path / "repo"
+    (repositorio / "extensao" / "host").mkdir(parents=True)
+    (repositorio / "extensao" / "manifest.json").write_text('{"v": 2}', "utf-8")
+    antiga = tmp_path / "casa" / inst.EXTENSAO_NO_USUARIO / "manifest.json"
+    antiga.parent.mkdir(parents=True)
+    antiga.write_text('{"v": 1}', "utf-8")  # a cópia que o AppImage deixou
+    falas: list[str] = []
+
+    codigo = inst.principal(
+        ["--instalar"],
+        {},
+        tmp_path / "casa",
+        onde_esta_o_executavel=lambda _n: pytest.fail("no repositório o PATH não importa"),
+        saida=falas.append,
+        repositorio=repositorio,
+        python="/repo/.venv/bin/python",
+    )
+
+    assert codigo == 0
+    stub = tmp_path / "casa" / inst.STUB_NO_USUARIO
+    assert "-I -m jarvis.navegador.host" in stub.read_text("utf-8")
+    brave = tmp_path / "casa/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+    assert json.loads((brave / inst.ARQUIVO).read_text("utf-8"))["path"] == str(stub)
+    assert antiga.read_text("utf-8") == '{"v": 2}'  # a cópia carregada no navegador é a do código
+    texto = "\n".join(falas)
+    assert str(repositorio) in texto
+    assert "Carregar sem compactação" in texto and "about:debugging" in texto
+    assert "Recarregar" in texto and "navegador_controlado" in texto
+
+
+def test_o_appimage_vence_o_repositorio(tmp_path: Path) -> None:
+    falas: list[str] = []
+    codigo = inst.principal(
+        ["--instalar"],
+        {"APPIMAGE": "/opt/Jarvis.AppImage"},
+        tmp_path,
+        saida=falas.append,
+        repositorio=tmp_path / "nao-usado",
+        python="/repo/.venv/bin/python",
+    )
+    assert codigo == 0
+    assert "--native-host" in (tmp_path / inst.STUB_NO_USUARIO).read_text("utf-8")
+
+
+def test_navegador_em_flatpak_recebe_aviso_de_que_a_ponte_nao_funciona(tmp_path: Path) -> None:
+    (tmp_path / ".var/app/org.mozilla.firefox").mkdir(parents=True)
+    (tmp_path / ".var/app/org.chromium.Chromium").mkdir(parents=True)
+    assert inst.navegadores_em_flatpak(tmp_path) == ("Firefox", "Chromium")
+    passos = "\n".join(inst.proximos_passos(tmp_path / "ext", tmp_path))
+    assert "Firefox, Chromium em Flatpak" in passos
+    assert "Flatpak" not in "\n".join(inst.proximos_passos(tmp_path / "ext", tmp_path / "vazia"))
