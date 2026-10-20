@@ -17,6 +17,7 @@ import pytest
 from jarvis.decisao.fake import ClassificadorFalso
 from jarvis.decisao.interface import Pergunta, Resposta, RespostaEscolha, RespostaNoul
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
+from jarvis.politica.abertura import dominio_registravel
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo
@@ -32,7 +33,6 @@ from jarvis.s2.portao import (
     PortaoDeAcao,
     RespostaDoDono,
     cobre_literalmente,
-    dominio_registravel,
     resposta_literal,
 )
 from jarvis.tarefas.gestor import EstadoDaTarefa, GestorDeTarefas, Tarefa
@@ -338,7 +338,7 @@ def test_classificador_que_quebra_vira_pergunta_e_solta_o_grant(
     motor = _roteiro([PedidoDeTool("sites.open", {"url": YOUTUBE})], ["Preciso do seu sim."])
     jev = ClassificadorFalso(roteiro=_roteiro_quebrado)
 
-    resposta, _ = _dizer(_cerebro(executor, motor, jev), "abre o youtube")
+    resposta, _ = _dizer(_cerebro(executor, motor, jev), "dá uma olhada naquilo")
 
     assert [r.status for r in resposta.ferramentas] == ["pendente"]
     assert abertos == []
@@ -396,15 +396,15 @@ def test_deny_do_pdp_nem_chega_ao_jev(executor: ExecutorDeFerramentas) -> None:
 def test_confirm_do_pdp_vale_mesmo_com_fazer_do_jev(
     executor: ExecutorDeFerramentas, abertos: list[str]
 ) -> None:
-    """O turno leu um arquivo (conteúdo de terceiros): abrir site fora da lista é `confirm` no
-    PDP. O Jev dizer "fazer" com certeza, e o dono ter dito o site, não abre nada."""
+    """O turno leu um arquivo (conteúdo de terceiros) e o site saiu dele — o dono não o citou:
+    abrir é `confirm` no PDP, e o Jev dizer "fazer" com certeza não abre nada."""
     motor = _roteiro(
         [PedidoDeTool("files.read_text", {"path": "~/Documentos/notas.txt"})],
         [PedidoDeTool("sites.open", {"url": "https://exemplo.com.br"})],
         ["x"],
     )
     cerebro = _cerebro(executor, motor, _jev("fazer", 0.99, explicito=0.99))
-    resposta, _ = _dizer(cerebro, "lê as notas e abre exemplo.com.br")
+    resposta, _ = _dizer(cerebro, "lê as notas e abre o site que estiver nelas")
     assert [r.status for r in resposta.ferramentas] == ["ok", "pendente"]
     assert abertos == []
     pendencia = cerebro.pendencias.valida()
@@ -414,17 +414,54 @@ def test_confirm_do_pdp_vale_mesmo_com_fazer_do_jev(
 
 # --- autorização explícita: estreita, uma vez, no turno, com prazo ----------------------------
 def test_pedido_explicito_autoriza_a_acao_simples_uma_vez(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """Fora da navegação (que o objetivo já cobre), a autorização explícita vale uma vez."""
+    pedido = PedidoDeTool("files.list_dir", {"path": "~/Documentos"})
+    motor = _roteiro([pedido], [pedido], ["Listei."])
+    cerebro = _cerebro(executor, motor, _jev("pedir_permissao", 0.9, explicito=0.95))
+    resposta, _ = _dizer(cerebro, "lista os meus Documentos")
+    assert [r.status for r in resposta.ferramentas] == ["ok", "pendente"]
+
+
+def test_dentro_do_objetivo_o_jev_so_veta_e_a_navegacao_roda(
     executor: ExecutorDeFerramentas, abertos: list[str]
 ) -> None:
+    """Dono, 2026-10-20: "não fique perguntando". O dono citou o site: o "pedir permissão" do Jev
+    não vira pergunta, quantas vezes o objetivo precisar — e o veto do Jev continua valendo."""
     motor = _roteiro(
         [PedidoDeTool("sites.open", {"url": YOUTUBE})],
         [PedidoDeTool("sites.open", {"url": YOUTUBE})],
         ["Abri."],
     )
-    cerebro = _cerebro(executor, motor, _jev("pedir_permissao", 0.9, explicito=0.95))
+    cerebro = _cerebro(executor, motor, _jev("pedir_permissao", 0.9))
     resposta, _ = _dizer(cerebro, "abre o youtube")
-    assert [r.status for r in resposta.ferramentas] == ["ok", "pendente"]
-    assert abertos == [YOUTUBE], "a segunda abertura não herda a autorização da primeira"
+    assert [r.status for r in resposta.ferramentas] == ["ok", "ok"]
+    assert abertos == [YOUTUBE, YOUTUBE]
+    vetado = _cerebro(
+        executor,
+        _roteiro([PedidoDeTool("sites.open", {"url": YOUTUBE})], ["x"]),
+        _jev("nao_fazer", 0.9),
+    )
+    resposta, _ = _dizer(vetado, "abre o youtube")
+    assert [r.status for r in resposta.ferramentas] == ["negado"]
+
+
+def test_site_que_o_dono_citou_abre_mesmo_com_o_turno_contaminado(
+    executor: ExecutorDeFerramentas, abertos: list[str]
+) -> None:
+    """Antes, ler o arquivo tornava o turno contaminado e abrir até o site que o dono pediu
+    perguntava. Agora o site citado está dentro do objetivo."""
+    motor = _roteiro(
+        [PedidoDeTool("files.read_text", {"path": "~/Documentos/notas.txt"})],
+        [PedidoDeTool("sites.open", {"url": "https://exemplo.com.br"})],
+        ["x"],
+    )
+    resposta, _ = _dizer(
+        _cerebro(executor, motor, _jev("fazer", 0.99)), "lê as notas e abre exemplo.com.br"
+    )
+    assert [r.status for r in resposta.ferramentas] == ["ok", "ok"]
+    assert abertos == ["https://exemplo.com.br"]
 
 
 def test_pedido_explicito_nao_cobre_argumento_diferente(
@@ -637,7 +674,7 @@ def test_sim_depois_de_confirm_do_pdp_roda_com_o_pdp_de_novo(
         ["x"],
     )
     cerebro = _cerebro(executor, motor, _jev("fazer", 0.99))
-    _dizer(cerebro, "lê as notas e abre exemplo.com.br")
+    _dizer(cerebro, "lê as notas e abre o site que estiver nelas")
     resposta, _ = _dizer(cerebro, "sim")
     assert [r.status for r in resposta.ferramentas] == ["despachado"]
     _esperar_tarefas(executor)

@@ -15,6 +15,7 @@ from typing import Any, Final
 from jarvis.navegador import risco
 from jarvis.navegador.cliente import ClienteDoNavegador, NavegadorFalhou, NavegadorIndisponivel
 from jarvis.politica.abertura import UrlRecusada, dominio, validar_url
+from jarvis.politica.objetivo import Objetivo
 
 FERRAMENTAS_DO_NAVEGADOR: Final = frozenset(
     {
@@ -66,6 +67,7 @@ class CorposDoNavegador:
         liberados: frozenset[str],
         exigir: Exigir,
         cancelado: Callable[[], bool],
+        objetivo: Objetivo | None = None,
     ) -> dict[str, Any]:
         try:
             if tool_id == "browser.tabs":
@@ -73,13 +75,13 @@ class CorposDoNavegador:
             if tool_id == "browser.read":
                 return self._ler(args, exigir)
             if tool_id == "browser.navigate":
-                return self._navegar(args, contaminado, liberados, exigir)
+                return self._navegar(args, contaminado, liberados, exigir, objetivo)
             if tool_id == "browser.scroll":
                 return self._rolar(args)
             if tool_id == "browser.click":
-                return self._clicar(args, contaminado, liberados, exigir, cancelado)
+                return self._clicar(args, contaminado, liberados, exigir, cancelado, objetivo)
             if tool_id == "browser.type":
-                return self._digitar(args, contaminado, exigir, cancelado)
+                return self._digitar(args, contaminado, exigir, cancelado, objetivo)
         except NavegadorFalhou as erro:
             # O código entre parênteses é o da extensão (alvo_ausente, campo_sensivel…): ajuda o
             # modelo a escolher outro caminho e é o que a trilha de diagnóstico guarda.
@@ -152,6 +154,7 @@ class CorposDoNavegador:
         contaminado: bool,
         liberados: frozenset[str],
         exigir: Exigir,
+        objetivo: Objetivo | None = None,
     ) -> dict[str, Any]:
         try:
             url = validar_url(str(args["url"]))
@@ -161,7 +164,9 @@ class CorposDoNavegador:
         # A aba atual é o padrão (dono, 2026-10-20): link aberto em aba nova a cada passo enchia o
         # navegador. Aba nova só quando o dono pede.
         tab_id = None if nova_aba else self._aba(args)[0]
-        avaliacao = risco.avaliar_navegacao(url, contaminado=contaminado, liberados=liberados)
+        avaliacao = risco.avaliar_navegacao(
+            url, contaminado=contaminado, liberados=liberados, objetivo=objetivo
+        )
         if avaliacao.confirmar:
             exigir(f"navegar para {dominio(url)}", avaliacao.confirmar)
         if tab_id is None:
@@ -188,12 +193,13 @@ class CorposDoNavegador:
         liberados: frozenset[str],
         exigir: Exigir,
         cancelado: Callable[[], bool],
+        objetivo: Objetivo | None = None,
     ) -> dict[str, Any]:
         tab_id, url, _ = self._aba(args)
         alvo = str(args["alvo"])
         dados = self.cliente.inspecionar(tab_id, alvo)
         avaliacao = risco.avaliar_clique(
-            url, dados, alvo, contaminado=contaminado, liberados=liberados
+            url, dados, alvo, contaminado=contaminado, liberados=liberados, objetivo=objetivo
         )
         if avaliacao.confirmar:
             exigir(f"clicar em «{_curto(alvo, 80)}» em {dominio(url)}", avaliacao.confirmar)
@@ -208,13 +214,16 @@ class CorposDoNavegador:
         contaminado: bool,
         exigir: Exigir,
         cancelado: Callable[[], bool],
+        objetivo: Objetivo | None = None,
     ) -> dict[str, Any]:
         tab_id, url, _ = self._aba(args)
         alvo, texto = str(args["alvo"]), str(args["texto"])
         dados = self.cliente.inspecionar(tab_id, alvo)
         if not dados.get("campo"):
             raise ValueError(f"«{_curto(alvo, 80)}» não é um campo de texto")
-        avaliacao = risco.avaliar_digitacao(url, dados, alvo, texto, contaminado=contaminado)
+        avaliacao = risco.avaliar_digitacao(
+            url, dados, alvo, texto, contaminado=contaminado, objetivo=objetivo
+        )
         if avaliacao.recusa:
             raise ValueError(avaliacao.recusa)
         if avaliacao.confirmar:

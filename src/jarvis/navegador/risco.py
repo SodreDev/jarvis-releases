@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from jarvis.politica.abertura import dominio, dominio_liberado, nome_de_app
+from jarvis.politica.objetivo import Objetivo, dados_do_dono
 
 ROTULO_DAS_CATEGORIAS: Final[dict[str, str]] = {
     "senha": "gerenciador de senhas",
@@ -86,6 +87,10 @@ SUBDOMINIOS_DE_PAGAMENTO: Final = frozenset(
     {"checkout", "pagamento", "pagamentos", "payment", "pay"}
 )
 CATEGORIAS_QUE_NAO_SE_LE_SEM_PERGUNTAR: Final = frozenset({"senha", "banco", "pagamento"})
+CATEGORIAS_DE_CADA_ACAO: Final = frozenset({"senha", "banco", "pagamento"})
+"""Onde todo clique e todo texto pedem o sim: credencial e dinheiro (dono, 2026-10-20: "só o muito
+crítico"). Mensageiro e e-mail saíram daqui: abrir conversa e escrever não perguntam — enviar,
+responder, publicar e postar continuam perguntando pelas palavras de risco e pelo envio."""
 
 PALAVRAS_DE_RISCO: Final[dict[str, tuple[str, ...]]] = {
     "envia uma mensagem ou publicação": (
@@ -198,8 +203,30 @@ def avaliar_leitura(url: str) -> Avaliacao:
     return SEGUE
 
 
-def avaliar_navegacao(destino: str, *, contaminado: bool, liberados: frozenset[str]) -> Avaliacao:
+def _dado_para_fora(destino: str, objetivo: Objetivo | None) -> Avaliacao | None:
+    levados = objetivo.leva_dado_do_dono(destino) if objetivo is not None else []
+    if not levados:
+        return None
+    return Avaliacao(
+        confirmar=(
+            f"o endereço leva {', '.join(levados)} para {dominio(destino)}, que o dono não citou"
+        )
+    )
+
+
+def avaliar_navegacao(
+    destino: str,
+    *,
+    contaminado: bool,
+    liberados: frozenset[str],
+    objetivo: Objetivo | None = None,
+) -> Avaliacao:
     host = dominio(destino)
+    para_fora = _dado_para_fora(destino, objetivo)
+    if para_fora is not None:
+        return para_fora
+    if objetivo is not None and objetivo.dentro(destino):
+        return SEGUE  # citado pelo dono ou alcançado pelo caminho do objetivo
     if contaminado and not dominio_liberado(host, liberados):
         return Avaliacao(
             confirmar=(
@@ -227,9 +254,10 @@ def avaliar_clique(
     *,
     contaminado: bool,
     liberados: frozenset[str],
+    objetivo: Objetivo | None = None,
 ) -> Avaliacao:
     nome = categoria(url)
-    if nome:
+    if nome in CATEGORIAS_DE_CADA_ACAO:
         return Avaliacao(
             confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada clique pede o seu sim"
         )
@@ -240,7 +268,11 @@ def avaliar_clique(
     if motivo:
         return Avaliacao(confirmar=f"clicar em «{alvo}» {motivo}")
     destino = str(dados.get("destinoDoLink", ""))
-    if contaminado and destino:
+    if destino:
+        para_fora = _dado_para_fora(destino, objetivo)
+        if para_fora is not None:
+            return para_fora
+    if contaminado and destino and not (objetivo is not None and objetivo.dentro(destino)):
         host = dominio(destino)
         if host != dominio(url) and not dominio_liberado(host, liberados):
             return Avaliacao(
@@ -259,6 +291,7 @@ def avaliar_digitacao(
     texto: str,
     *,
     contaminado: bool,
+    objetivo: Objetivo | None = None,
 ) -> Avaliacao:
     if dados.get("sensivel") or _ROTULO_SECRETO.search(nome_de_app(alvo)) or parece_cartao(texto):
         return Avaliacao(
@@ -268,10 +301,20 @@ def avaliar_digitacao(
             )
         )
     nome = categoria(url)
-    if nome:
+    if nome in CATEGORIAS_DE_CADA_ACAO:
         return Avaliacao(
             confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada texto pede o seu sim"
         )
+    if objetivo is not None:
+        levados = [] if objetivo.citado(url) else dados_do_dono(texto)
+        if levados:
+            return Avaliacao(
+                confirmar=(
+                    f"o texto leva {', '.join(levados)} para {dominio(url)}, que o dono não citou"
+                )
+            )
+        if objetivo.dentro(url):
+            return SEGUE  # a página é do objetivo: escrever nela é o que o dono pediu
     if contaminado:
         return Avaliacao(
             confirmar=(

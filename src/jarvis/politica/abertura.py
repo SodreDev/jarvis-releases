@@ -22,10 +22,13 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Mapping
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlsplit
 
 from jarvis.politica.memoria import RegraDeMemoria
+
+if TYPE_CHECKING:
+    from jarvis.politica.objetivo import Objetivo
 
 ESQUEMAS: Final = frozenset({"http", "https"})
 TAMANHO_MAXIMO: Final = 2048
@@ -59,6 +62,24 @@ def dominio_liberado(host: str, liberados: frozenset[str]) -> bool:
     return any(host == d or host.endswith("." + d) for d in liberados)
 
 
+SEGUNDO_NIVEL: Final = frozenset(
+    {"com", "net", "org", "gov", "edu", "co", "ac", "mil", "gob", "nom"}
+)
+"""Sob um domínio de país de 2 letras, estes rótulos são parte do sufixo (`com.br`, `co.uk`,
+`gov.br`): o nome do site é o rótulo antes deles."""
+
+
+def dominio_registravel(host: str) -> str:
+    """`www.youtube.com` → `youtube.com`; `m.youtube.com.br` → `youtube.com.br`;
+    `youtube.evil.com` → `evil.com`. Aproximação sem a lista pública de sufixos (TLD e, sob TLD de
+    país, um segundo nível comum). Host de rótulo único ou IP não tem nome de site: vazio."""
+    rotulos = [r for r in host.lower().rstrip(".").split(".") if r]
+    if len(rotulos) < 2 or all(r.isdigit() for r in rotulos):
+        return ""
+    sufixo = 2 if len(rotulos[-1]) == 2 and rotulos[-2] in SEGUNDO_NIVEL else 1
+    return ".".join(rotulos[-(sufixo + 1) :]) if len(rotulos) > sufixo else ""
+
+
 def nome_de_app(texto: str) -> str:
     """Como o nome de um app é comparado: sem acento, sem caixa, sem espaço nas pontas."""
     return (
@@ -77,6 +98,7 @@ def decidir_abertura(
     navegadores: frozenset[str] = frozenset(),
     navegador_principal: str = "",
     contaminado: bool = False,
+    objetivo: Objetivo | None = None,
 ) -> RegraDeMemoria | None:
     """O que a regra decide antes da matriz comum. `None` = siga o comum (o tier do manifesto)."""
     if tool_id == "apps.launch":
@@ -105,6 +127,16 @@ def decidir_abertura(
             return RegraDeMemoria("deny", str(erro))
         if dominio_liberado(dominio(url), sites_sem_confirmar):
             return RegraDeMemoria("allow", f"{dominio(url)} está entre os sites que o dono liberou")
+        if objetivo is not None:
+            levados = objetivo.leva_dado_do_dono(url)
+            if levados:
+                return RegraDeMemoria(
+                    "confirm",
+                    f"o endereço leva {', '.join(levados)} para {dominio(url)}, que o dono não "
+                    "citou: confirma antes de abrir",
+                )
+            if objetivo.dentro(url):
+                return None  # dentro do objetivo (citado ou alcançado): o tier decide
         if contaminado:
             # Abrir site é livre (dono, 2026-10-18), mas o endereço leva o que estiver nele. Se o
             # turno leu conteúdo de terceiros, um endereço escolhido por esse conteúdo (injeção)

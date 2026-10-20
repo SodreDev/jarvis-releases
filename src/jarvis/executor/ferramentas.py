@@ -50,6 +50,7 @@ from jarvis.navegador.ferramentas import (
 from jarvis.politica.canonicalizacao import CaminhoRecusado, Sistema, canonicalizar
 from jarvis.politica.descritor import AberturaRecusada, RaizAberta, abrir_raiz
 from jarvis.politica.memoria import Proveniencia
+from jarvis.politica.objetivo import Objetivo, enderecos_do_resultado
 from jarvis.politica.pdp import Decisao, Grant, Pdp, Pedido, Veredito
 from jarvis.trilha import TrilhaDeDiagnostico, chaves, codigo_do_motivo
 from jarvis.voz.interface import Onde
@@ -217,6 +218,9 @@ class ExecutorDeFerramentas:
     para o modelo dizer a verdade em vez de negar a extensão. Sem ele, a tool não aparece."""
     entrada: ControleDeEntrada | None = None
     """Mouse e teclado virtuais (ADR-0027, fatia 4). Sem ele, as `input.*` não existem."""
+    objetivo: Objetivo | None = None
+    """O objetivo do turno (`jarvis.politica.objetivo`): nasce da fala do dono em `novo_turno` e
+    cresce com os endereços que as ferramentas devolvem. Sem ele, as regras de antes."""
     trilha: TrilhaDeDiagnostico | None = None
     """Onde cada chamada, veredito e pedido de permissão deixa os seus metadados (`jarvis.trilha`).
     Sem ela, nada é registrado — como antes."""
@@ -235,9 +239,11 @@ class ExecutorDeFerramentas:
     def contaminado(self, valor: bool) -> None:
         self.turno.valor = valor
 
-    def novo_turno(self) -> None:
-        """Turno novo do dono: o que se leu de terceiros no anterior não contamina este."""
+    def novo_turno(self, pedido_do_dono: str = "") -> None:
+        """Turno novo do dono: o que se leu de terceiros no anterior não contamina este, e o
+        objetivo é o que ele pediu agora (sem pedido, não há objetivo — as regras de antes)."""
         self.turno.valor = False
+        self.objetivo = Objetivo.do_pedido(pedido_do_dono) if pedido_do_dono.strip() else None
 
     @property
     def pasta_do_jarvis(self) -> Path:
@@ -437,6 +443,7 @@ class ExecutorDeFerramentas:
             call_id=chamada,
             proveniencia=proveniencia,
             contaminado=marca.valor,
+            objetivo=self.objetivo,
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
 
@@ -585,6 +592,10 @@ class ExecutorDeFerramentas:
         e, na **moderada**, montar o aviso falado e guardar como desfazer."""
         if tool_id in FONTES_DE_TERCEIROS:
             marca.valor = True
+        if self.objetivo is not None:
+            # O caminho do objetivo: o que ele abriu, os links e resultados que trouxe. É daqui
+            # que sai o "domínio novo alcançado" que não pergunta (dono, 2026-10-20).
+            self.objetivo.alcancar(enderecos_do_resultado(resultado.dados))
         manifesto = self.manifestos[tool_id]
         if manifesto.get("tier") != "moderado":
             return resultado
@@ -752,6 +763,7 @@ class ExecutorDeFerramentas:
                 CONFIRMACAO_DO_NAVEGADOR, tool_id, chamada, cancelado, confirmar, contaminado
             ),
             cancelado=cancelado,
+            objetivo=self.objetivo,
         )
 
     def _entrada_virtual(

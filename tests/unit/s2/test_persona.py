@@ -55,6 +55,12 @@ def test_a_persona_e_um_arquivo_versionado_lido_em_execucao() -> None:
         ("respostas curtas, faladas, sem markdown nem lista", "lido em voz alta"),
         ("sem markdown nem lista", "sem markdown, sem lista"),
         ("age em vez de perguntar quando o pedido é claro", "Quando o pedido é claro, faça"),
+        (
+            "objetivo até o fim, sem perguntar a cada passo",
+            "vá até o fim sem perguntar a cada passo",
+        ),
+        ("só o crítico pede o sim", "O sistema pede o sim do dono só no que é crítico"),
+        ("terminal e arquivos do sistema vão para tarefa", "delegue com tarefa.iniciar"),
         ("diz o que vai fazer em uma frase", "diga em uma frase o que vai fazer"),
         ("não inventa que fez o que a tool não confirmou", "Só diga que fez algo se o resultado"),
         ("usa memoria.* quando o dono pede para lembrar", "memoria.*"),

@@ -38,6 +38,7 @@ from jarvis.politica.catalogo import RISCOS_QUE_SEMPRE_CONFIRMAM, Capacidade, al
 from jarvis.politica.descritor import AberturaRecusada, Identidade, RaizAberta, abrir_raiz
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, decidir_memoria
 from jarvis.politica.modos import Modo, Raiz, motivo_de_negacao, raizes_do_modo
+from jarvis.politica.objetivo import Objetivo
 
 
 class Veredito(StrEnum):
@@ -69,6 +70,10 @@ class Pedido:
     contaminado: bool = False
     """Este turno já leu conteúdo de terceiros (arquivo, página, memória): quem diz é o executor,
     que viu os resultados passarem — nunca o modelo. Aperta o que é livre e sai da máquina."""
+    objetivo: Objetivo | None = None
+    """O objetivo do turno (`jarvis.politica.objetivo`): nasce da fala do dono e cresce com o que
+    as ferramentas do objetivo alcançaram — quem monta é o executor, nunca o modelo. Dentro dele,
+    navegar não pergunta mesmo com o turno contaminado; dado do dono para site não citado, sim."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +199,7 @@ class Pdp:
                 navegadores=self.navegadores,
                 navegador_principal=self.navegador_principal,
                 contaminado=pedido.contaminado,
+                objetivo=pedido.objetivo,
             )
         if regra is not None and regra.veredito == "confirm":
             # A regra apertou o que o tier deixaria livre (ex.: site fora da lista, depois de o

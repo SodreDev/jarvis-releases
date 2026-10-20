@@ -59,6 +59,7 @@ from jarvis.decisao.interface import (
     RespostaNoul,
 )
 from jarvis.memoryd.importacao import classe_de_pii, redigir
+from jarvis.politica.abertura import dominio_registravel
 from jarvis.s2.motor import Mensagem
 from jarvis.voz.interface import Cancelado, Onde, nunca_cancelado
 
@@ -344,24 +345,6 @@ class AutorizacoesExplicitas:
             return False
         self._usadas.add(chave)
         return True
-
-
-SEGUNDO_NIVEL: Final = frozenset(
-    {"com", "net", "org", "gov", "edu", "co", "ac", "mil", "gob", "nom"}
-)
-"""Sob um domínio de país de 2 letras, estes rótulos são parte do sufixo (`com.br`, `co.uk`,
-`gov.br`): o nome do site é o rótulo antes deles."""
-
-
-def dominio_registravel(host: str) -> str:
-    """`www.youtube.com` → `youtube.com`; `m.youtube.com.br` → `youtube.com.br`;
-    `youtube.evil.com` → `evil.com`. Aproximação sem a lista pública de sufixos (TLD e, sob TLD de
-    país, um segundo nível comum). Host de rótulo único ou IP não tem nome de site: vazio."""
-    rotulos = [r for r in host.lower().rstrip(".").split(".") if r]
-    if len(rotulos) < 2 or all(r.isdigit() for r in rotulos):
-        return ""
-    sufixo = 2 if len(rotulos[-1]) == 2 and rotulos[-2] in SEGUNDO_NIVEL else 1
-    return ".".join(rotulos[-(sufixo + 1) :]) if len(rotulos) > sufixo else ""
 
 
 def cobre_literalmente(argumentos: Mapping[str, Any], fala: str) -> bool:

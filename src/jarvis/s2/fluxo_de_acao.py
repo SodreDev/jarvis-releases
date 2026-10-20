@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 from jarvis.executor.ferramentas import (
     Cancelado,
@@ -33,6 +33,7 @@ from jarvis.executor.ferramentas import (
     negar_sempre,
 )
 from jarvis.politica.memoria import Proveniencia
+from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Veredito
 from jarvis.s2.motor import Mensagem, PedidoDeTool
 from jarvis.s2.pendencias import Pendencia, PendenciaOcupada, RegistroDePendencias
@@ -118,18 +119,20 @@ class FluxoDeAcao:
                     ),
                     call_id=chamada,
                 )
-            if (
-                classe is Classe.PEDIR_PERMISSAO
-                and veredito is Veredito.ALLOW
-                and self.autorizacoes.consumir(
+            if classe is Classe.PEDIR_PERMISSAO and veredito is Veredito.ALLOW:
+                if cabe_no_objetivo(executor.objetivo, tool_id, avaliacao.argumentos):
+                    # Dentro do objetivo do dono, navegar/ler/clicar/digitar/buscar não pergunta:
+                    # o Jev só veta (dono, 2026-10-20). O PDP e o risco dinâmico seguem valendo.
+                    classe = Classe.FAZER
+                    trilhar("objetivo")
+                elif self.autorizacoes.consumir(
                     tool_id,
                     pedido.args,
                     p_explicito=classificacao.p_explicito,
                     limiar=self.portao.limiar_explicito,
-                )
-            ):
-                classe = Classe.FAZER
-                trilhar("explicita")
+                ):
+                    classe = Classe.FAZER
+                    trilhar("explicita")
             elif veredito is Veredito.ALLOW and classe is Classe.FAZER:
                 trilhar("fazer")
             if veredito is Veredito.ALLOW and classe is Classe.FAZER:
@@ -295,6 +298,37 @@ def _sim_de_uso_unico(confirmada: Confirmacao) -> Confirmar:
         return True
 
     return responder
+
+
+NAVEGACAO_DO_OBJETIVO: Final = frozenset(
+    {
+        "browser.tabs",
+        "browser.read",
+        "browser.navigate",
+        "browser.click",
+        "browser.type",
+        "browser.scroll",
+        "sites.open",
+        "web.buscar",
+        "web.ler",
+        "web.canal_videos",
+    }
+)
+"""O que um objetivo de navegação faz a cada passo. Fora daqui (apagar, enviar, instalar, mexer em
+arquivo, teclado virtual), o "pedir permissão" do Jev continua virando pergunta."""
+
+
+def cabe_no_objetivo(
+    objetivo: Objetivo | None, tool_id: str, argumentos: Mapping[str, Any]
+) -> bool:
+    """A chamada é um passo de navegação e o endereço dela (se tem) está dentro do objetivo, sem
+    levar dado do dono para site que ele não citou."""
+    if objetivo is None or tool_id not in NAVEGACAO_DO_OBJETIVO:
+        return False
+    url = argumentos.get("url")
+    if isinstance(url, str) and url:
+        return objetivo.dentro(url) and not objetivo.leva_dado_do_dono(url)
+    return True
 
 
 def _situacao(

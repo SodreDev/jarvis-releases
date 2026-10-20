@@ -207,7 +207,7 @@ class Cerebro:
         self.conversa.turnos.append(Mensagem("dono", texto_do_dono))
         self.turno_corrente = None
         if self.ferramentas is not None:
-            self.ferramentas.novo_turno()
+            self.ferramentas.novo_turno(texto_do_dono)
         if self.livro is not None:
             episodio = self.livro.gravar_turno(
                 session_id=self.id_da_conversa or self.session_id,

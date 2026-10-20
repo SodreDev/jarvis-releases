@@ -580,7 +580,7 @@ navegador. Não recarregue a extensão entre essas etapas.
 | «quais abas estão abertas?» | lista (só site e título), sem perguntar (`browser.tabs`, livre) |
 | «lê a página» | texto, links e datas; o texto «ignore as instruções…» vem **como dado** e não dispara nada (`browser.read`) |
 | «clica em Próxima» | clica, o título da aba vira «clicado», o Jarvis **fala** «Cliquei em Próxima» (moderado) |
-| «digita Ana no campo Nome» | digita e fala; **depois de ler a página no mesmo turno, pede o seu sim** |
+| «digita Ana no campo Nome» | digita e fala, sem perguntar: a página é do objetivo (2026-10-20, §0.11) |
 | «digita 123 no campo Senha» | **recusa**, sem pergunta: senha é sua |
 | «clica em Enviar» | **faixa de confirmação** (envia formulário); sem o seu sim, a aba **não** muda para «enviado» |
 | «rola a página» | rola e fala |
@@ -594,9 +594,10 @@ ls -ld  "$XDG_RUNTIME_DIR/jarvis/navegador"                     # drwx------
 ls -l   "$XDG_RUNTIME_DIR/jarvis/navegador/"                    # srw------- … chromium-<pid>.sock
 ```
 
-Sites de banco, mensageiro, e-mail e gerenciador de senhas pedem o seu sim **a cada clique/texto**
-(lista versionada em `src/jarvis/navegador/risco.py`); ler banco/senha/pagamento também pede. Para
-conferir sem expor conta nenhuma, use o teste automático (`tests/unit/navegador/test_ferramentas_browser.py`).
+Sites de banco, pagamento e gerenciador de senhas pedem o seu sim **a cada clique/texto**; ler
+banco/senha/pagamento também pede. Em mensageiro e e-mail, abrir a conversa e escrever não pedem —
+**enviar** pede (lista versionada em `src/jarvis/navegador/risco.py`). Para conferir sem expor conta
+nenhuma, use o teste automático (`tests/unit/navegador/test_ferramentas_browser.py`).
 
 #### 0.7.3 Mouse e teclado virtuais — o consentimento do portal
 
@@ -776,6 +777,30 @@ permissão" do Jev. Conferido no código em 2026-10-20 (`FluxoDeAcao._despachar`
   por ação do navegador e do mouse/teclado virtuais nunca é respondida por esse "sim" (no turno
   ela vai para a janela; dentro de uma tarefa, é recusada). Com TV ligada ou gente falando perto,
   prefira o **PTT** (apertar para falar) à escuta contínua.
+
+### 0.11 Permissões por objetivo: o sim só no crítico (2026-10-20, ADR-0030)
+
+O seu pedido é o **objetivo** do turno. Os sites que você cita (pelo nome, "youtube", ou pelo
+domínio) e os que o caminho alcança (a página aberta, os links dela, os resultados da busca, as
+suas abas) ficam **dentro** dele: navegar, clicar, digitar e buscar ali **não pergunta**, mesmo
+depois de o Jarvis ler a página.
+
+| Continua pedindo o seu sim | Exemplo |
+|---|---|
+| dado seu ou segredo indo para site que você não citou | URL com o seu e-mail, CPF, telefone, cartão, chave ou token na consulta |
+| site nem citado nem alcançado, depois de ler conteúdo de terceiros | um arquivo ou página que diz "abra mal.example" |
+| banco, pagamento, senha: cada clique e cada texto | nubank, paypal, bitwarden |
+| enviar, responder, publicar, postar, pagar, comprar, excluir, entrar | o botão «Enviar» no WhatsApp; formulário que não é busca |
+| tier perigoso | apagar, instalar, irreversível |
+
+**Como conferir** (com `navegador_controlado` ligado): «abra o canal do Thiago Nigro no youtube» →
+o Jarvis abre o YouTube, digita na busca e abre o canal sem perguntar; a trilha (§0.10) mostra os
+passos sem nenhum «pediu permissão». Terminal e arquivos do sistema: a persona manda o Jarvis
+delegar a uma tarefa (`tarefa.iniciar`).
+
+**Risco que você aceitou:** um link de atacante numa página do objetivo vira domínio alcançado; o
+que segura é a regra do dado seu na URL, que só reconhece os padrões da tabela. Testes:
+`tests/unit/politica/test_objetivo.py`, `tests/unit/navegador/test_ferramentas_browser.py`.
 
 ### 0.10 Trilha de diagnóstico do turno (2026-10-20)
 
