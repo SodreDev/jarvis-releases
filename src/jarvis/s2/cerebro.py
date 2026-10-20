@@ -65,6 +65,9 @@ ficou para trás é trabalho de segundo plano, fora desta fatia."""
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
+Mostrar = Callable[[str], None]
+"""Recebe o texto da resposta como está agora, a cada delta: é o que a tela mostra. A fala vai em
+lotes de 14..18 palavras (`FatiadorDeFala`); a tela não espera o lote — segue a geração."""
 AvisarStatus = Callable[[str], None]
 """Enfileira um status curto; a fronteira de voz decide quando (e se) ele será falado."""
 
@@ -189,6 +192,7 @@ class Cerebro:
         modo: Modo = Modo.RAPIDO,
         trust: str = "user_voice",
         avisos: Sequence[AvisoLiberado] = (),
+        mostrar: Mostrar | None = None,
     ) -> Resposta:
         """Responde a um turno estável do dono, publicando os pedaços enquanto o motor gera.
 
@@ -229,6 +233,7 @@ class Cerebro:
                     cancelado=cancelado,
                     comeco=comeco,
                     ferramentas=[leitura.resultado] if leitura.resultado else [],
+                    mostrar=mostrar,
                 )
             nota_da_pendencia = leitura.nota
             self.autorizacoes.novo_turno(texto_do_dono)
@@ -269,7 +274,10 @@ class Cerebro:
             memoria=memoria,
         )
         fatiador = FatiadorDeFala()
-        visto_cancelamento = self._falar_avisos(avisos, resposta, publicar, comeco, cancelado)
+        crescer = _tela(resposta, mostrar)
+        visto_cancelamento = self._falar_avisos(
+            avisos, resposta, publicar, comeco, cancelado, crescer
+        )
         catalogo = self.ferramentas.catalogo_para_o_modelo() if self.ferramentas else ()
         resultados: list[Mensagem] = []
         limite_do_laco = self.relogio() + self.prazo_do_laco_de_ferramentas_s
@@ -299,7 +307,7 @@ class Cerebro:
                 ferramentas=catalogo,
             )
             pedidos, visto_cancelamento = self._rodada(
-                da_vez, modo, cancelado_no_laco, fatiador, resposta, publicar, comeco
+                da_vez, modo, cancelado_no_laco, fatiador, resposta, publicar, comeco, crescer
             )
             if prazo_esgotado() and not cancelado():
                 visto_cancelamento = None
@@ -338,6 +346,7 @@ class Cerebro:
             if resultado.aviso:
                 # Tool moderada: o aviso é do código, e sai agora, em voz (dono, 2026-10-18).
                 resposta.gerado += resultado.aviso + " "
+                crescer()
                 for pedaco in fatiador.alimentar(resultado.aviso + " "):
                     self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             if resultado.status == "pendente":
@@ -380,6 +389,7 @@ class Cerebro:
         cancelado: Cancelado,
         comeco: float,
         ferramentas: list[ResultadoDeFerramenta],
+        mostrar: Mostrar | None = None,
     ) -> Resposta:
         """Um turno sem motor: a frase é do código (a resposta do dono a uma pendência)."""
         resposta = Resposta(
@@ -391,6 +401,7 @@ class Cerebro:
             ferramentas=ferramentas,
             ms_ate_contexto=_ms_desde(comeco),
         )
+        _tela(resposta, mostrar)()
         fatiador = FatiadorDeFala()
         for pedaco in fatiador.alimentar(frase):
             if cancelado():
@@ -412,6 +423,7 @@ class Cerebro:
         resposta: Resposta,
         publicar: Publicar,
         comeco: float,
+        crescer: Callable[[], None],
     ) -> tuple[list[PedidoDeTool], float | None]:
         """Uma chamada ao motor: publica o texto em pedaços e junta os pedidos de ferramenta."""
         pedidos: list[PedidoDeTool] = []
@@ -434,6 +446,7 @@ class Cerebro:
                 if resposta.ms_ate_primeiro_token is None and delta.texto.strip():
                     resposta.ms_ate_primeiro_token = _ms_desde(comeco)
                 resposta.gerado += delta.texto
+                crescer()  # a tela, já: o lote de fala pode levar 14 palavras para fechar
                 for pedaco in fatiador.alimentar(delta.texto):
                     if cancelado():
                         visto_cancelamento = time.monotonic()
@@ -515,6 +528,7 @@ class Cerebro:
         publicar: Publicar,
         comeco: float,
         cancelado: Cancelado,
+        crescer: Callable[[], None] = lambda: None,
     ) -> float | None:
         """Publica a frase de cada aviso; devolve o instante do cancelamento, se houve."""
         for aviso in avisos:
@@ -522,6 +536,7 @@ class Cerebro:
                 return time.monotonic()
             frase = frase_do_aviso(aviso)
             resposta.gerado += frase + " "
+            crescer()
             # Cada aviso é uma fala completa: seu residual pode ser curto, mas precisa sair
             # com o próprio notif_id antes do próximo aviso ou da resposta. Compartilhar o
             # buffer perderia a identidade de avisos menores que o piso normal de 14 palavras.
@@ -605,6 +620,20 @@ class Cerebro:
             resposta.ms_ate_primeiro_pedaco = _ms_desde(comeco)
         resposta.publicados.append(payload)
         publicar(payload)
+
+
+def _tela(resposta: Resposta, mostrar: Mostrar | None) -> Callable[[], None]:
+    """O que a tela mostra quando o texto da resposta cresce: tudo até agora, com espaço
+    normalizado, e só quando mudou (delta só de espaço não redesenha a tela)."""
+    visto = [""]
+
+    def crescer() -> None:
+        texto = " ".join(resposta.gerado.split())
+        if mostrar is not None and texto and texto != visto[0]:
+            visto[0] = texto
+            mostrar(texto)
+
+    return crescer
 
 
 def envelope_do_pedaco(session_id: str, payload: dict[str, Any]) -> Envelope:

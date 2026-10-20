@@ -1045,12 +1045,8 @@ class Aplicativo:
         primeiro_texto_ms: list[float] = []
 
         def publicar(pedaco: dict[str, object]) -> None:
-            """Na linha do cérebro, no instante em que o pedaço nasce: a tela segue a geração.
-
-            Antes isto ficava no gerador que o tocador consome, e o tocador só puxa o pedaço
-            seguinte depois de **tocar** o anterior — o texto aparecia no ritmo da fala (um
-            pedaço por segundo, achado do dono em 2026-10-17), embora a resposta estivesse pronta
-            em milissegundos. O que o dono ouve continua sendo o que o tocador consome."""
+            """Na linha do cérebro, no instante em que o lote de fala nasce: vai para o tocador
+            sem esperar. O que o dono ouve continua sendo o que o tocador consome."""
             if geracao_cancelada():
                 return
             pedacos.put(pedaco)
@@ -1058,13 +1054,24 @@ class Aplicativo:
                 if not primeiro_texto_ms:
                     primeiro_texto_ms.append((time.monotonic() - comeco) * 1000.0)
                 exibido.append(str(pedaco["text"]))
-                if self.ao_pedaco is not None:
-                    self.ao_pedaco(" ".join(exibido))
+
+        def mostrar(texto_da_resposta: str) -> None:
+            """A tela, a cada delta do motor, na linha do cérebro: segue a geração.
+
+            Antes ela seguia o tocador (um pedaço por segundo, achado do dono em 2026-10-17) e,
+            com os lotes de fala de 14..18 palavras (7507cd5), crescia só de lote em lote — uma
+            resposta de 28 palavras aparecia em dois saltos."""
+            if self.ao_pedaco is not None and not geracao_cancelada():
+                self.ao_pedaco(texto_da_resposta)
 
         def gerar() -> None:
             try:
                 resultado["r"] = cerebro.responder(
-                    texto, epoch=epoch, publicar=publicar, cancelado=geracao_cancelada
+                    texto,
+                    epoch=epoch,
+                    publicar=publicar,
+                    cancelado=geracao_cancelada,
+                    mostrar=mostrar,
                 )
             except Exception as erro:  # o turno degrada e diz; a linha não leva o laço junto
                 falha.append(f"{type(erro).__name__}: {erro}")

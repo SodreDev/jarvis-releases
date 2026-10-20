@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Generator
+from itertools import pairwise
 from typing import Any
 
 import pytest
@@ -293,3 +294,22 @@ def test_o_primeiro_token_e_medido_antes_da_primeira_fronteira() -> None:
     assert resposta.ms_ate_primeiro_token is not None
     assert resposta.ms_ate_primeiro_pedaco is not None
     assert resposta.ms_ate_primeiro_token <= resposta.ms_ate_primeiro_pedaco
+
+
+def test_a_tela_cresce_a_cada_delta_enquanto_a_fala_sai_em_lotes() -> None:
+    """A fala vai em lotes de 14..18 palavras; a tela não espera o lote (7507cd5 a deixou
+    crescendo de lote em lote — 28 palavras em dois saltos)."""
+    texto = (
+        "Amanhã cedo vai fazer frio, perto de doze graus, e à tarde o sol abre. "
+        "Se for sair, leve um casaco leve e deixe o guarda-chuva em casa."
+    )
+    cerebro = Cerebro(motor=MotorRoteirizado(resposta=texto), session_id="s-1")
+    lotes: list[dict[str, Any]] = []
+    tela: list[str] = []
+
+    resposta = cerebro.responder("e o tempo?", epoch=1, publicar=lotes.append, mostrar=tela.append)
+
+    assert len([p for p in lotes if p["text"]]) == 2
+    assert len(tela) > 10, "a tela tem de crescer com os deltas, não com os lotes"
+    assert all(b.startswith(a) and b != a for a, b in pairwise(tela))
+    assert tela[-1] == " ".join(resposta.gerado.split()) == texto
