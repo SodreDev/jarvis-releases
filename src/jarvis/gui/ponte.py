@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
@@ -44,6 +44,7 @@ from jarvis.gui.componentes import CATALOGO
 from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
 from jarvis.gui.nucleo import SessaoDeVoz
 from jarvis.gui.workspace import Workspace
+from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.rede import ErroDeRede
 from jarvis.ui.atalhos import AtalhoIndisponivel
 from jarvis.ui.portal import AtalhoPortal, portal_disponivel
@@ -216,6 +217,7 @@ class Ponte(QObject):
         conversa: ConversaPersistente | None = None,
         pastas_de_apps: tuple[str, ...] | None = None,
         lar: Path | None = None,
+        sondar_navegador: Callable[[Configuracao], EstadoDaPonte] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -281,6 +283,7 @@ class Ponte(QObject):
             obter=lambda: self._configuracao,
             gravar=self._gravar_acesso,
             lar=lar,
+            sondar_navegador=sondar_navegador,
             parent=self,
             **extras_do_acesso,
         )
@@ -470,6 +473,7 @@ class Ponte(QObject):
             "apps_extras",
             "navegadores",
             "navegador_principal",
+            "navegador_controlado",
         )
         mudancas = {campo: getattr(nova, campo) for campo in campos}
         self._configuracao = self._configuracao.com(**mudancas)

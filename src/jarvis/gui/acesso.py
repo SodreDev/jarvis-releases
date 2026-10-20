@@ -18,6 +18,7 @@ from typing import Any
 
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
 
+from jarvis.navegador.estado import COMO_LIGAR, EstadoDaPonte, sondar
 from jarvis.voz import acesso
 from jarvis.voz.acesso import (
     PASTAS_DE_APLICATIVOS,
@@ -31,6 +32,16 @@ from jarvis.voz.acesso import (
     separar,
 )
 from jarvis.voz.config import Configuracao
+
+
+def estado_do_navegador(configuracao: Configuracao) -> EstadoDaPonte:
+    """O estado da ponte na sessão de verdade do dono: o `$XDG_RUNTIME_DIR` e a casa dele. Só a
+    janela de verdade passa isto à `PonteDeAcesso` (`principal.py`); o teste passa um falso."""
+    return sondar(
+        ligado=configuracao.navegador_controlado,
+        principal=configuracao.navegador_principal,
+        navegadores=separar(configuracao.navegadores),
+    )
 
 
 def _caminho_local(texto: str) -> str:
@@ -53,11 +64,15 @@ class PonteDeAcesso(QObject):
         lar: Path | None = None,
         pastas_de_apps: tuple[str, ...] = PASTAS_DE_APLICATIVOS,
         caminho_dos_binarios: str | None = None,
+        sondar_navegador: Callable[[Configuracao], EstadoDaPonte] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._obter = obter
         self._gravar = gravar
+        self._sondar_navegador = sondar_navegador
+        """O estado da ponte com o navegador (`jarvis.navegador.estado`). `None` = a tela não diz
+        nada sobre a conexão — é o que o teste quer: sondar olharia os sockets do dono."""
         self._lar = lar or Path.home()
         self._pastas_de_apps = pastas_de_apps
         self._caminho_dos_binarios = caminho_dos_binarios
@@ -188,6 +203,24 @@ class PonteDeAcesso(QObject):
             )
         return linhas
 
+    @Property(bool, notify=mudou)
+    def navegadorControlado(self) -> bool:
+        return self._obter().navegador_controlado
+
+    @Property(str, notify=mudou)
+    def estadoDaExtensao(self) -> str:
+        """Desligado, sem conexão ou conectado — e o próximo passo, se há. Ligar é a chave ao lado:
+        o passo "ligar" não se repete aqui."""
+        if self._sondar_navegador is None:
+            return ""
+        estado = self._sondar_navegador(self._obter())
+        passos = [p for p in estado.o_que_fazer() if p != COMO_LIGAR]
+        return (
+            f"{estado.frase()} {passos[0][:1].upper()}{passos[0][1:]}."
+            if passos
+            else estado.frase()
+        )
+
     # --- o que a tela pede ---------------------------------------------------------------
     def _aplicar(self, mudar: Callable[[Configuracao], Configuracao], ok: str) -> bool:
         try:
@@ -280,6 +313,17 @@ class PonteDeAcesso(QObject):
             return acesso.com_principal(configuracao, familia)
 
         return self._aplicar(mudar, f"{familia} é o navegador principal")
+
+    @Slot(bool, result=bool)
+    def definirNavegadorControlado(self, ligado: bool) -> bool:
+        """A chave do dono para as `browser.*` (ADR-0027). Grava na hora e o laço remonta as
+        ferramentas: vale no próximo pedido, sem reiniciar o Jarvis."""
+        return self._aplicar(
+            lambda c: c.com(navegador_controlado=ligado),
+            "o Jarvis pode ver e agir nas abas pela extensão"
+            if ligado
+            else "o Jarvis não controla mais o navegador",
+        )
 
     @Slot()
     def atualizar(self) -> None:

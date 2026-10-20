@@ -29,7 +29,8 @@ from PySide6.QtQuick import QQuickItem, QQuickView
 from PySide6.QtTest import QTest
 
 from jarvis.gui.ponte import Ponte
-from jarvis.voz.config import ler
+from jarvis.navegador.estado import EstadoDaPonte
+from jarvis.voz.config import Configuracao, ler
 from tests.unit.gui.test_janela import (  # noqa: F401 — fixtures
     abrir,
     aplicativo,
@@ -311,3 +312,70 @@ def test_mexer_no_acesso_com_a_conversa_aberta_vale_no_proximo_pedido(
     ponte._sessao = Sessao()  # type: ignore[assignment]
     tela.acesso.marcarApp("org.kde.kate", True)
     assert recarregou == [("org.kde.kate",)]
+
+
+def test_a_chave_do_navegador_controlado_liga_pelo_mouse_grava_e_diz_o_estado(
+    abrir: Callable[[Ponte], QQuickView],
+    aplicativo: QGuiApplication,
+    maquina: dict[str, Path],
+    tmp_path: Path,
+    sem_chaveiro: None,
+) -> None:
+    """Ligar as `browser.*` era editar o TOML à mão (dono, 2026-10-19). Agora é um clique, vale
+    na conversa aberta e a tela diz o estado da extensão — o estado que o teste dá, nunca os
+    sockets do dono."""
+
+    vivos: list[str] = []
+
+    def sondar(configuracao: Configuracao) -> EstadoDaPonte:
+        return EstadoDaPonte(
+            ligado=configuracao.navegador_controlado,
+            principal="brave",
+            vivos=tuple(vivos),
+            manifestos=(),
+        )
+
+    ponte = Ponte(
+        raiz=tmp_path / "sessao",
+        caminho_da_configuracao=maquina["config"],
+        ambiente={"CI": "1"},
+        pastas_de_apps=(str(maquina["apps"]),),
+        lar=maquina["lar"],
+        sondar_navegador=sondar,
+    )
+    janela = abrir(ponte)
+    janela.show()
+    _esperar(aplicativo, 0.5)
+    tela = cast(Any, ponte)
+    tela.abrirPainel("configuracao")
+    _esperar(aplicativo, 0.6)
+    recarregou: list[bool] = []
+
+    class Aplicativo:
+        def atualizar_acesso(self, configuracao: Any) -> None:
+            recarregou.append(configuracao.navegador_controlado)
+
+    class Sessao:
+        viva = True
+        aplicativo = Aplicativo()
+
+    ponte._sessao = Sessao()  # type: ignore[assignment]
+    _aba(janela, aplicativo, "Navegadores")
+    assert "desligado" in str(_item(janela, "estadoDaExtensao").property("text"))
+
+    _clicar(janela, aplicativo, _item(janela, "navegadorControlado-ligado"))
+
+    assert ler(maquina["config"]).navegador_controlado is True
+    assert recarregou == [True], "vale já no próximo pedido, sem reiniciar"
+    assert tela.acesso.navegadorControlado is True
+    estado = str(_item(janela, "estadoDaExtensao").property("text"))
+    assert "está ligado" in estado and "Falta o manifesto do host nativo para o brave" in estado
+    _capturar(janela, "acesso-4-navegador-controlado.png")
+
+    vivos.append("chromium")  # o dono carregou a extensão com a janela aberta
+    _clicar(janela, aplicativo, _item(janela, "conferirExtensao"))
+    assert "Conectado" in str(_item(janela, "estadoDaExtensao").property("text"))
+
+    _clicar(janela, aplicativo, _item(janela, "navegadorControlado-desligado"))
+    assert ler(maquina["config"]).navegador_controlado is False
+    assert recarregou == [True, False]

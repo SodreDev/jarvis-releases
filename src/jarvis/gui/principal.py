@@ -164,6 +164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from PySide6.QtQuick import QQuickView
 
     from jarvis.gui import foco
+    from jarvis.gui.acesso import estado_do_navegador
     from jarvis.gui.ponte import Ponte
     from jarvis.voz.conversa import abrir_conversa
 
@@ -176,7 +177,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     raiz = _raiz_de_sessao()
     # Capturar telas não toca o histórico do dono: o chaveiro e o disco ficam fora do ensaio.
     conversa = None if args.capturar is not None else abrir_conversa(raiz)
-    ponte = Ponte(raiz=raiz, caminho_da_configuracao=args.config, conversa=conversa)
+    ponte = Ponte(
+        raiz=raiz,
+        caminho_da_configuracao=args.config,
+        conversa=conversa,
+        # A tela de acesso diz se a extensão está conectada; a captura não sonda a sessão do dono.
+        sondar_navegador=None if args.capturar is not None else estado_do_navegador,
+    )
     janela = QQuickView()
     janela.setTitle(NOME)
     janela.setIcon(QIcon(str(ICONE_SVG)))

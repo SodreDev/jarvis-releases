@@ -39,7 +39,7 @@ from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from jarvis.agentd.asr import MotorWhisper, TranscritorIncremental
 from jarvis.agentd.fala_em_stream import trechos_do_stream
@@ -53,6 +53,7 @@ from jarvis.agentd.tts import (
     Trecho,
     fatiar,
 )
+from jarvis.ambiente import ambiente_ou_os
 from jarvis.apps.resolvedor import RepositorioDeAliases, dicas_de_apps
 from jarvis.audio_io.ambiente import Backend, backend_escolhido
 from jarvis.audio_io.backend import dispositivo_pedido, fonte_do_ambiente, sumidouro_do_ambiente
@@ -78,6 +79,7 @@ from jarvis.memoryd.conversa import ConversaPersistente
 from jarvis.memoryd.ferramentas import FerramentasDeMemoria
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
 from jarvis.navegador.cliente import ClienteDoNavegador, TransporteUnix, familia_do_host
+from jarvis.navegador.estado import EstadoDaPonte, sondar
 from jarvis.navegador.ferramentas import CorposDoNavegador
 from jarvis.politica.abertura import nome_de_app
 from jarvis.politica.auditoria import LogDeAuditoria
@@ -565,9 +567,13 @@ class Aplicativo:
         """O gestor de tarefas. O **motor** da tarefa é escolha do dono (`tarefa_motor`): o
         modelo pede a tarefa, nunca diz quem a conduz."""
 
+        def catalogo() -> tuple[dict[str, Any], ...]:
+            # O executor de agora: `atualizar_acesso` troca o executor e mantém este gestor.
+            return (self.ferramentas or executor).catalogo_para_o_modelo()
+
         def fabrica() -> MotorDeTarefa:
             if self.configuracao.tarefa_motor == "agente" and self._motor is not None:
-                return MotorDeAgente(motor=self._motor, catalogo=executor.catalogo_para_o_modelo)
+                return MotorDeAgente(motor=self._motor, catalogo=catalogo)
             return MotorDireto()
 
         return GestorDeTarefas(
@@ -824,19 +830,36 @@ class Aplicativo:
                 ambiente=self.ambiente,
             ),
             navegador=self._corpos_do_navegador(),
+            estado_do_navegador=self.estado_do_navegador,
             entrada=self._controle_de_entrada(),
         )
         executor.preparar()
         return executor
+
+    def _transporte_do_navegador(self) -> TransporteUnix:
+        """O socket do host em `$XDG_RUNTIME_DIR` **deste** ambiente. Antes valia sempre o
+        `os.environ` real: um teste podia falar com o navegador de verdade do dono."""
+        return TransporteUnix.do_ambiente(ambiente_ou_os(self.ambiente))
 
     def _corpos_do_navegador(self) -> CorposDoNavegador | None:
         """As `browser.*` só existem se o dono ligou (`navegador_controlado`). O socket é o do host
         que o navegador lançou; sem navegador aberto, a tool diz isso em vez de falhar calada."""
         if not self.configuracao.navegador_controlado:
             return None
-        cliente = ClienteDoNavegador(TransporteUnix())
+        cliente = ClienteDoNavegador(self._transporte_do_navegador())
         cliente.navegador = familia_do_host(self.configuracao.navegador_principal)
         return CorposDoNavegador(cliente)
+
+    def estado_do_navegador(self) -> EstadoDaPonte:
+        """O estado verdadeiro da ponte (`browser.estado`, `--diagnostico`): ligado ou não, com ou
+        sem extensão conectada, e o que falta — sem falar com a extensão nem com a página."""
+        return sondar(
+            ligado=self.configuracao.navegador_controlado,
+            principal=self.configuracao.navegador_principal,
+            navegadores=separar(self.configuracao.navegadores),
+            transporte=self._transporte_do_navegador(),
+            home=self.lar,
+        )
 
     def _controle_de_entrada(self) -> ControleDeEntrada | None:
         """Mouse e teclado virtuais só existem se o dono ligou (`entrada_virtual`). O controle é
@@ -880,8 +903,24 @@ class Aplicativo:
         )
         if self._cerebro is None:
             return
-        self.ferramentas = self._montar_ferramentas()
-        self._cerebro.ferramentas = self.ferramentas
+        antigo, novo = self.ferramentas, self._montar_ferramentas()
+        if antigo is not None:
+            # Muda o alcance (PDP, registro, navegador); o que é da conversa fica. Antes o executor
+            # novo nascia sem memória, tarefas e alarmes: mexer no acesso com a conversa aberta
+            # sumia com as memoria.*, tarefa.* e timer.* e quebrava o "sim" das pendências
+            # (bf9102c) até reiniciar. O gestor segue com as tarefas em curso e passa a usar o
+            # executor novo — o PDP novo — já no próximo passo.
+            novo.memoria = antigo.memoria
+            novo.nativas = antigo.nativas
+            novo.desfazeres = antigo.desfazeres
+            novo.turno = antigo.turno
+            novo.destino_onde = antigo.destino_onde
+            novo.destino_motor = antigo.destino_motor
+            if antigo.tarefas is not None:
+                antigo.tarefas.executor = novo
+                novo.tarefas = antigo.tarefas
+        self.ferramentas = novo
+        self._cerebro.ferramentas = novo
 
     def _confirmar(
         self, pergunta: Confirmacao, *, tarefa_cancelada: Callable[[], bool] | None = None

@@ -36,10 +36,12 @@ from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, domin
 from jarvis.manifesto.validador import carregar_catalogo
 from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
 from jarvis.memoryd.livro import AlvoInexistente
+from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.navegador.ferramentas import (
     FERRAMENTA_DE_CONFIRMACAO as CONFIRMACAO_DO_NAVEGADOR,
 )
 from jarvis.navegador.ferramentas import (
+    FERRAMENTA_DE_ESTADO,
     FERRAMENTAS_DO_NAVEGADOR,
     AcaoRecusada,
     CorposDoNavegador,
@@ -205,6 +207,9 @@ class ExecutorDeFerramentas:
     """O livro do dono, quando há (a conversa persistente). Liga as `memoria.*` ao modelo."""
     navegador: CorposDoNavegador | None = None
     """O cliente da extensão do navegador (ADR-0027). Sem ele, as `browser.*` não existem."""
+    estado_do_navegador: Callable[[], EstadoDaPonte] | None = None
+    """Quem diz o estado da ponte (`browser.estado`): existe **ligado ou desligado** o controle,
+    para o modelo dizer a verdade em vez de negar a extensão. Sem ele, a tool não aparece."""
     entrada: ControleDeEntrada | None = None
     """Mouse e teclado virtuais (ADR-0027, fatia 4). Sem ele, as `input.*` não existem."""
     destino_onde: Onde = Onde.LOCAL
@@ -271,6 +276,8 @@ class ExecutorDeFerramentas:
             return self.memoria is not None
         if tool_id in FERRAMENTAS_DE_TAREFA:
             return self.tarefas is not None
+        if tool_id == FERRAMENTA_DE_ESTADO:
+            return self.estado_do_navegador is not None
         if tool_id in FERRAMENTAS_DO_NAVEGADOR:
             return self.navegador is not None
         if tool_id in FERRAMENTAS_DE_ENTRADA:
@@ -281,6 +288,14 @@ class ExecutorDeFerramentas:
 
     def _descricao(self, tool_id: str) -> str:
         texto = " ".join(str(self.manifestos[tool_id]["description"]).split())
+        if tool_id == FERRAMENTA_DE_ESTADO:
+            # Só o que se sabe sem I/O: a conexão de agora é a tool que lê, quando chamada.
+            if self.navegador is None:
+                return (
+                    f"{texto} Agora o controle está DESLIGADO na configuração: as browser.* não "
+                    "existem até o dono ligar."
+                )
+            return f"{texto} Agora o controle está ligado na configuração."
         if tool_id == "browser.launch" and self.navegadores is not None:
             feitos = ", ".join(
                 f"{f} (principal)" if f == self.navegadores.principal else f
@@ -797,6 +812,9 @@ class ExecutorDeFerramentas:
             return self._desfazer(str(args.get("acao_id", "")), grant)
         if tool_id in FERRAMENTAS_DE_TAREFA:
             return self._tarefa(tool_id, args)
+        if tool_id == FERRAMENTA_DE_ESTADO:
+            assert self.estado_do_navegador is not None  # _ligada filtra antes
+            return self.estado_do_navegador().para_o_modelo()
         if tool_id in CORPOS:
             return CORPOS[tool_id](self.portas(), args)
         if tool_id in DE_ARQUIVOS:

@@ -1,0 +1,46 @@
+# Navegador controlável (ADR-0027). Pedido do dono (2026-10-19): perguntado sobre a extensão, o
+# Jarvis negava ter qualquer coisa — com o controle desligado, as browser.* nem apareciam. Esta
+# existe sempre e diz o estado verdadeiro, lido pelo código, sem falar com a extensão nem a página.
+id: browser.estado
+title: Estado da extensão do navegador
+description: >-
+  Diz se o controle do navegador pela extensão do Jarvis está ligado na configuração e se a extensão está conectada
+  agora (e em qual navegador), com o que falta fazer. Use quando o dono perguntar sobre a extensão, o controle do
+  navegador ou as abas, antes de dizer que não tem essa capacidade. Não lê página nem abas e não muda nada.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - situacao
+  - frase
+preconditions: []
+postcondition: situação desligado, sem_conexao ou conectado, lida da configuração e dos sockets do host
+capability: browser.estado
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-navegador
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

@@ -25,6 +25,9 @@ from typing import Final
 from jarvis.ambiente import ambiente_ou_os
 from jarvis.audio_io.ambiente import VARIAVEL_BACKEND, Backend
 from jarvis.audio_io.erros import ErroDeAudio
+from jarvis.executor.navegadores import separar
+from jarvis.navegador.cliente import TransporteUnix
+from jarvis.navegador.estado import sondar
 from jarvis.rede import ErroDeRede
 from jarvis.voz.app import Aplicativo, AplicativoIndisponivel
 from jarvis.voz.chaves import (
@@ -95,6 +98,19 @@ def diagnosticar(
     )
 
     linha("")
+    linha("navegador (extensão do Jarvis, ADR-0027) — sem falar com a extensão nem com a página:")
+    fonte = ambiente_ou_os(ambiente)
+    ponte = sondar(
+        ligado=configuracao.navegador_controlado,
+        principal=configuracao.navegador_principal,
+        navegadores=separar(configuracao.navegadores),
+        transporte=TransporteUnix.do_ambiente(fonte),
+        home=Path(fonte["HOME"]) if fonte.get("HOME") else Path.home(),
+    )
+    for texto in ponte.linhas():
+        linha(texto)
+
+    linha("")
     linha("motores registrados:")
     for motor in ler_motores():
         marca = "★" if motor.id in {configuracao.asr, configuracao.tts} else " "
@@ -121,7 +137,6 @@ def diagnosticar(
 
     linha("")
     linha("o que falta para cada motor rodar agora:")
-    fonte = ambiente_ou_os(ambiente)
     faltas = conferir(
         nuvem_ligada=configuracao.nuvem_ligada,
         ambiente=(

@@ -404,6 +404,42 @@ Item {
                               + "apontar o programa à mão."
                         alerta: true
                     }
+
+                    // Controle pela extensão (ADR-0027): a chave do dono para as browser.*
+                    Rotulo { text: "ver e agir nas abas pela extensão do Jarvis" }
+                    Flow {
+                        width: parent.width
+                        spacing: 8
+                        Botao {
+                            objectName: "navegadorControlado-ligado"
+                            texto: "deixar o Jarvis controlar as abas"
+                            ativo: vista.acesso ? vista.acesso.navegadorControlado : false
+                            onApertado: vista.acesso.definirNavegadorControlado(true)
+                        }
+                        Botao {
+                            objectName: "navegadorControlado-desligado"
+                            texto: "não controlar"
+                            ativo: vista.acesso ? !vista.acesso.navegadorControlado : false
+                            onApertado: vista.acesso.definirNavegadorControlado(false)
+                        }
+                        Botao {
+                            objectName: "conferirExtensao"
+                            visible: vista.acesso && vista.acesso.estadoDaExtensao !== ""
+                            texto: "conferir a extensão"
+                            onApertado: vista.acesso.atualizar()
+                        }
+                    }
+                    Nota {
+                        objectName: "estadoDaExtensao"
+                        width: parent.width
+                        visible: text !== ""
+                        text: vista.acesso ? vista.acesso.estadoDaExtensao : ""
+                        color: Tema.texto
+                    }
+                    Nota {
+                        width: parent.width
+                        text: "Enviar, pagar, banco, e-mail e mensageiros sempre pedem o seu sim."
+                    }
                     Repeater {
                         model: vista.acesso ? vista.acesso.navegadores : []
                         Rectangle {

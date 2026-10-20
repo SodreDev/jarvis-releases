@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import socket
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -68,6 +68,17 @@ class TransporteUnix:
         self._pasta = pasta or pasta_dos_sockets(os.environ, self._uid)
         self._prazo_s = prazo_s
 
+    @classmethod
+    def do_ambiente(cls, ambiente: Mapping[str, str]) -> TransporteUnix:
+        """O socket em `$XDG_RUNTIME_DIR` **deste** ambiente, não do `os.environ`: o do teste é uma
+        pasta temporária, e o teste nunca fala com o navegador de verdade do dono."""
+        uid = os.getuid()
+        return cls(pasta_dos_sockets(ambiente, uid), uid=uid)
+
+    @property
+    def pasta(self) -> Path:
+        return self._pasta
+
     def _soquetes(self, navegador: str) -> list[Path]:
         try:
             estado = self._pasta.lstat()
@@ -86,6 +97,26 @@ class TransporteUnix:
             if stat.S_ISSOCK(info.st_mode) and info.st_uid == self._uid:
                 achados.append((info.st_mtime, caminho))
         return [c for _, c in sorted(achados, reverse=True)]
+
+    def vivos(self, navegador: str = "") -> tuple[str, ...]:
+        """As famílias (`chromium`, `firefox`) com host que **aceita** conexão agora.
+
+        Conecta e solta sem mandar quadro: o host lê o fim do fluxo e fecha aquela conexão — nada
+        chega à extensão nem à página. O host só existe enquanto a extensão mantém a porta do
+        Native Messaging aberta (o navegador o encerra quando ela fecha), então socket que aceita
+        é extensão conectada; arquivo que sobrou de host morto recusa e não conta."""
+        familias: list[str] = []
+        for caminho in self._soquetes(navegador):
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conexao:
+                    conexao.settimeout(1.0)
+                    conexao.connect(str(caminho))
+            except OSError:
+                continue
+            familia = caminho.name.split("-", 1)[0]
+            if familia not in familias:
+                familias.append(familia)
+        return tuple(familias)
 
     def chamar(self, pedido: PedidoDaPonte, navegador: str = "") -> dict[str, Any]:
         for caminho in self._soquetes(navegador):

@@ -28,6 +28,9 @@ FERRAMENTAS_DO_NAVEGADOR: Final = frozenset(
 )
 FERRAMENTA_DE_CONFIRMACAO: Final = "browser.acao_sensivel"
 """Manifesto `perigoso` que o **código** consulta no PDP; o modelo nunca a vê nem a chama."""
+FERRAMENTA_DE_ESTADO: Final = "browser.estado"
+"""Livre e fora de `FERRAMENTAS_DO_NAVEGADOR`: existe com o controle desligado e não fala com a
+extensão — o corpo é o `jarvis.navegador.estado`, não este cliente."""
 
 LIMITE_DAS_ABAS: Final = 40
 LIMITE_DO_TEXTO: Final = 3_500
