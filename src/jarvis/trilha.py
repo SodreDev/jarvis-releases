@@ -167,6 +167,11 @@ def _linha(evento: Mapping[str, Any]) -> str:
             f"portão {evento.get('tool_id')}: {evento.get('decisao')} "
             f"(PDP {evento.get('pdp')}, {evento.get('jev')}, {_ms(evento.get('ms'))})"
         )
+    if tipo == "metodo":
+        return (
+            f"método {evento.get('metodo')} ({evento.get('motivo')})"
+            f" · {evento.get('de_fora', 0)} ferramenta(s) de fora"
+        )
     if tipo == "permissao":
         return (
             f"pediu permissão para {evento.get('tool_id')} ({evento.get('origem')}): "

@@ -944,6 +944,20 @@ tamanho do que saiu), para o contexto não crescer sem fim; o passo mais novo va
 `jarvis-voz --diagnostico`, a linha do fim do último turno diz «passos antigos podados N» quando
 houve. Testes: `tests/unit/s2/test_memoria_de_trabalho.py`.
 
+### 0.15 O método mais direto para cada pedido (2026-10-20, ADR-0035)
+
+O Jarvis escolhe **como** fazer antes de fazer, por uma tabela do código: pedido de site vai direto
+pela extensão (sem abrir o navegador como app, sem atalho de teclado); app vai pelo lançador e pelo
+foco; terminal e arquivos do sistema vão para uma tarefa em segundo plano; volume, hora, lembrete
+pelas ferramentas próprias. Se ele tentar o caminho longo, a ferramenta volta recusada dizendo o
+certo. Pedido misto («abre o Spotify e pesquisa no Google») não restringe nada, e o teclado e o
+mouse continuam valendo quando você os pede pelo nome («aperta ctrl+L») ou num site que proíbe
+automação (WhatsApp, Instagram).
+
+**Como conferir:** «abre o YouTube no canal do Primo Rico» → ele vai pela extensão; o
+`jarvis-voz --diagnostico` mostra «método navegador (cita_site) · N ferramenta(s) de fora» no último
+turno. Testes: `tests/unit/politica/test_metodo.py` (a tabela de casos inteira).
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

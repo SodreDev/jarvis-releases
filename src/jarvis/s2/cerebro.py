@@ -266,6 +266,12 @@ class Cerebro:
             self.autorizacoes.novo_turno(texto_do_dono)
         memoria = None
         contexto = self.conversa.contexto()
+        metodo = self.ferramentas.metodo if self.ferramentas is not None else None
+        if metodo is not None and metodo.nota():
+            # O roteador de método (ADR-0035): o caminho direto para este pedido, dito ao modelo.
+            contexto = Contexto(
+                sistema=f"{contexto.sistema}\n\n{metodo.nota()}", mensagens=contexto.mensagens
+            )
         if nota_da_pendencia:
             contexto = Contexto(
                 sistema=f"{contexto.sistema}\n\n{nota_da_pendencia}", mensagens=contexto.mensagens

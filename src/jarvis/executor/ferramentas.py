@@ -49,9 +49,11 @@ from jarvis.navegador.ferramentas import (
     AcaoRecusada,
     CorposDoNavegador,
 )
+from jarvis.politica.abertura import nome_de_app
 from jarvis.politica.canonicalizacao import CaminhoRecusado, Sistema, canonicalizar
 from jarvis.politica.descritor import AberturaRecusada, RaizAberta, abrir_raiz
 from jarvis.politica.memoria import Proveniencia
+from jarvis.politica.metodo import ContextoDoMetodo, Escolha, escolher_metodo
 from jarvis.politica.objetivo import Objetivo, enderecos_do_resultado
 from jarvis.politica.pdp import Decisao, Grant, Pdp, Pedido, Veredito
 from jarvis.trilha import TrilhaDeDiagnostico, chaves, codigo_do_motivo
@@ -285,6 +287,9 @@ class ExecutorDeFerramentas:
     objetivo: Objetivo | None = None
     """O objetivo do turno (`jarvis.politica.objetivo`): nasce da fala do dono em `novo_turno` e
     cresce com os endereços que as ferramentas devolvem. Sem ele, as regras de antes."""
+    metodo: Escolha | None = None
+    """O método do pedido de agora (`jarvis.politica.metodo`, ADR-0035): o que fica de fora do
+    turno. Sem ele (sem `novo_turno` com fala), nada fica de fora."""
     trilha: TrilhaDeDiagnostico | None = None
     """Onde cada chamada, veredito e pedido de permissão deixa os seus metadados (`jarvis.trilha`).
     Sem ela, nada é registrado — como antes."""
@@ -304,10 +309,32 @@ class ExecutorDeFerramentas:
         self.turno.valor = valor
 
     def novo_turno(self, pedido_do_dono: str = "") -> None:
-        """Turno novo do dono: o que se leu de terceiros no anterior não contamina este, e o
-        objetivo é o que ele pediu agora (sem pedido, não há objetivo — as regras de antes)."""
+        """Turno novo do dono: o que se leu de terceiros no anterior não contamina este, o
+        objetivo é o que ele pediu agora (sem pedido, não há objetivo — as regras de antes), e o
+        método é o que o roteador escolheu para esse pedido com o que está ligado (ADR-0035)."""
         self.turno.valor = False
         self.objetivo = Objetivo.do_pedido(pedido_do_dono) if pedido_do_dono.strip() else None
+        self.metodo = None
+        if pedido_do_dono.strip():
+            self.metodo = escolher_metodo(
+                pedido_do_dono,
+                ContextoDoMetodo(
+                    navegador=self.navegador is not None,
+                    entrada=self.entrada is not None,
+                    apps=frozenset(
+                        nome_de_app(nome)
+                        for app in self.registro_de_apps.autorizados.values()
+                        for nome in app.nomes
+                    ),
+                ),
+            )
+            if self.trilha is not None:
+                self.trilha.evento(
+                    "metodo",
+                    metodo=str(self.metodo.metodo),
+                    motivo=self.metodo.motivo,
+                    de_fora=len(self.metodo.evitar),
+                )
 
     @property
     def pasta_do_jarvis(self) -> Path:
@@ -466,6 +493,13 @@ class ExecutorDeFerramentas:
     ) -> Avaliacao | ResultadoDeFerramenta:
         marca = contaminacao if contaminacao is not None else self.turno
         chamada = call_id or f"c-{uuid7()}"
+        do_turno = contaminacao is None or contaminacao is self.turno
+        if do_turno and self.metodo is not None and tool_id in self.metodo.evitar:
+            # Só a chamada do próprio turno: a tarefa em segundo plano (que traz a contaminação
+            # dela) não segue o método do pedido de agora.
+            return ResultadoDeFerramenta(
+                tool_id, "negado", motivo=self.metodo.recusa(tool_id), call_id=chamada
+            )
         if not self._ligada(tool_id):
             sem_imagem = tool_id == FERRAMENTA_DA_TELA and self.navegador is not None
             return ResultadoDeFerramenta(
