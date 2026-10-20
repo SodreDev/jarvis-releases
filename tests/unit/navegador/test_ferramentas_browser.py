@@ -258,6 +258,7 @@ def test_enviar_pagar_apagar_e_entrar_sao_perigosos_e_pedem_o_sim(
     negado, perguntas = _rodar(executor, "browser.click", {"alvo": alvo}, sim=False)
     assert negado.status == "negado"
     assert len(perguntas) == 1
+    assert perguntas[0].por_acao  # nenhum "sim" dado antes (o do portão) responde a esta
     assert "page.click" not in pagina.metodos()  # o não do dono impede o efeito
 
     aceito, _ = _rodar(executor, "browser.click", {"alvo": alvo}, sim=True)

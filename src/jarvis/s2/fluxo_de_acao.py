@@ -248,7 +248,10 @@ def _sim_de_uso_unico(confirmada: Confirmacao) -> Confirmar:
 
     def responder(pergunta: Confirmacao) -> bool:
         nonlocal usado
-        if usado or pergunta.tool_id != confirmada.tool_id:
+        # A pergunta por ação (o alvo é envio, banco, terminal em foco…) traz `argumentos` vazios:
+        # sem esta trava, o "sim" a `input.mouse.click {}` respondia também a ela (revisão de
+        # 2026-10-19), e o clique saía sem o dono ver o que estava sob ele.
+        if usado or pergunta.por_acao or pergunta.tool_id != confirmada.tool_id:
             return False
         if dict(pergunta.argumentos) != dict(confirmada.argumentos):
             return False

@@ -124,6 +124,9 @@ class Confirmacao:
     prazo_s: float
     argumentos: Mapping[str, Any] = field(default_factory=dict)
     """Os argumentos exatos da chamada: é contra eles que um "sim" já dado é conferido."""
+    por_acao: bool = False
+    """Pergunta do risco dinâmico (`_exigir_do_dono`: o que está sob o clique, a janela em foco).
+    Nenhum "sim" dado antes responde a ela: o dono ainda não viu o que ela mostra."""
 
 
 Confirmar = Callable[[Confirmacao], bool]
@@ -620,6 +623,7 @@ class ExecutorDeFerramentas:
                     detalhe=detalhe,
                     motivo=motivo,
                     prazo_s=self.prazo_de_confirmacao_s,
+                    por_acao=True,
                 )
                 if cancelado() or not confirmar(pergunta):
                     self.pdp.auditoria.anexar_resultado(

@@ -471,6 +471,16 @@ def test_sim_de_uso_unico_so_casa_a_chamada_exata() -> None:
     assert not responder(Confirmacao("x", "sites.open", "t", "d", "m", 30.0, {"url": YOUTUBE}))
 
 
+def test_sim_de_uso_unico_nao_responde_a_pergunta_por_acao() -> None:
+    """O "sim" à pergunta do portão («posso clicar?») não vale para a do risco dinâmico («o foco
+    é um terminal: clicar?»): com argumentos vazios nas duas, ela casava (revisão, 2026-10-19)."""
+    feita = Confirmacao("c-1", "input.mouse.click", "t", "clicar", "m", 30.0, {})
+    responder = _sim_de_uso_unico(feita)
+    terminal = Confirmacao("c-1-s1", "input.mouse.click", "t", "Konsole", "m", 30.0, por_acao=True)
+    assert not responder(terminal)
+    assert responder(Confirmacao("c-1", "input.mouse.click", "t", "clicar", "m", 30.0, {}))
+
+
 @pytest.mark.parametrize(
     ("fala", "esperado"),
     [
