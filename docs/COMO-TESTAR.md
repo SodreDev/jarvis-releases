@@ -753,6 +753,27 @@ prender a conversa — tudo com o Jev e o motor falsos, sem rede).
 0,80 explícito / 0,85 "sim" são de partida, sem corpus medido); latência extra de ~0,5 s por
 ferramenta com o Jev de nuvem; a faixa da janela sumindo quando o "sim" vem por voz.
 
+**O risco do "sim" falado — leia antes de usar a escuta contínua (decisão sua: mantido como está).**
+O "sim" falado resolve a pergunta pendente **inteira**, inclusive quando quem pediu a confirmação
+foi o **PDP** (`confirm`: o que é perigoso, irreversível ou instala coisa) — não só o "pedir
+permissão" do Jev. Conferido no código em 2026-10-20 (`FluxoDeAcao._despachar` → tarefa com o
+"sim" de uso único → `Pdp.decidir(confirmado_pelo_dono=True)`). O que isso quer dizer na prática:
+
+- **Quem diz "sim" não é conferido.** Na escuta contínua (VAD, sem apertar tecla), depois de uma
+  pergunta do Jarvis o "é comigo?" recebe a dica de que ele perguntou algo; uma TV, um rádio ou
+  outra pessoa dizendo "pode", "faz" ou "manda ver" dentro dos 30 s pode confirmar. Os literais
+  aceitos sem rede são: sim, pode, pode sim, pode fazer, pode ir, confirmo, confirma, confirmado,
+  sim por favor, manda ver, faz, faça, faz sim; frases mais longas vão ao Jev e só valem com
+  p ≥ 0,85.
+- **No terminal (`jarvis-voz`) também**: antes, sem janela, a resposta era sempre "não".
+- **A auditoria escreve "confirmado pelo dono na janela"** mesmo quando o sim foi falado — o texto
+  da linha está impreciso; a decisão e a ferramenta exata estão certas.
+- O que já limita: uma pergunta por vez, só a ferramenta **e os argumentos exatos** da pergunta,
+  uso único, 30 s de prazo, "não"/outro assunto/interromper a pergunta a cancelam, e a pergunta
+  por ação do navegador e do mouse/teclado virtuais nunca é respondida por esse "sim" (no turno
+  ela vai para a janela; dentro de uma tarefa, é recusada). Com TV ligada ou gente falando perto,
+  prefira o **PTT** (apertar para falar) à escuta contínua.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)
