@@ -7,7 +7,8 @@
   "permissions": ["activeTab", "tabs", "nativeMessaging"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {

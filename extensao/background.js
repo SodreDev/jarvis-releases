@@ -81,14 +81,28 @@ async function mensagemDaPagina(params, comando) {
   if (typeof tab.id !== "number") {
     throw erro("sem_aba", "a aba escolhida não tem identificador");
   }
+  let resposta;
   try {
-    return await api.tabs.sendMessage(tab.id, { comando, params });
+    resposta = await api.tabs.sendMessage(tab.id, { comando, params });
   } catch {
     throw erro(
       "pagina_indisponivel",
-      "a página ainda não está pronta ou não permite a extensão nesta URL",
+      "a página não está pronta ou não aceita a extensão nesta URL; se a aba já estava aberta " +
+        "quando a extensão foi carregada, recarregue a aba",
     );
   }
+  // O conteúdo responde `{ ok, result }` ou `{ ok: false, error }`. Ao host vai só o `result` (ou
+  // o erro dele): repassar o envelope inteiro o aninhava dentro de outro `result`, e o Jarvis lia
+  // página vazia e um alvo sem campo nem formulário — o risco do clique ficava cego.
+  const corpo = comoObjeto(resposta);
+  if (corpo.ok === true) {
+    return comoObjeto(corpo.result);
+  }
+  const falha = comoObjeto(corpo.error);
+  throw erro(
+    typeof falha.codigo === "string" ? falha.codigo : "pagina_indisponivel",
+    typeof falha.mensagem === "string" ? falha.mensagem : "a página não respondeu à extensão",
+  );
 }
 
 async function abrirOuReutilizar(params) {
@@ -230,7 +244,9 @@ function ligarAoHost() {
       });
   });
   porta.onDisconnect.addListener(() => {
-    const motivo = api.runtime.lastError?.message ?? "runtime.lastError sem detalhe";
+    // O Chromium põe o motivo em `runtime.lastError`; o Firefox, em `porta.error`.
+    const motivo =
+      api.runtime.lastError?.message ?? porta.error?.message ?? "runtime.lastError sem detalhe";
     if (porta !== nativePort) {
       return;
     }

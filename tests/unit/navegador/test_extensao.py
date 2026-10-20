@@ -14,6 +14,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parents[3]
 EXTENSAO = RAIZ / "extensao"
 TESTE_RECONEXAO = Path(__file__).with_name("background_reconexao.test.mjs")
+TESTE_RESPOSTAS = Path(__file__).with_name("background_respostas.test.mjs")
 
 
 def _json(nome: str) -> dict[str, object]:
@@ -39,6 +40,15 @@ def test_manifesto_mv3_pina_ids_e_so_pede_paginas_http() -> None:
         "gecko": {"id": "jarvis-browser@granafacil.local", "strict_min_version": "121.0"}
     }
     assert _id_chromium(str(manifesto["key"])) == "eainnehpangdlhmjenljnbfkjjeckoli"
+
+
+def test_o_fundo_roda_no_chromium_e_no_firefox() -> None:
+    """O Firefox não tem service worker de extensão: só com `service_worker` ele recusa instalar
+    ("background.service_worker is currently disabled. Add background.scripts.", Firefox 158 em
+    contêiner, 2026-10-19). Com as duas chaves, o Chromium ≥ 121 usa o worker e ignora `scripts`,
+    e o Firefox ≥ 121 usa `scripts` (MDN, manifest.json/background) — o mesmo arquivo."""
+    fundo = _json("manifest.json")["background"]
+    assert fundo == {"service_worker": "background.js", "scripts": ["background.js"]}
 
 
 def test_manifestos_do_host_so_aceitam_a_extensao_fixada_e_usam_stdio() -> None:
@@ -79,13 +89,15 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
     assert "time[datetime]" in conteudo
 
 
-def test_reconexao_do_service_worker_com_porta_e_timer_falsos() -> None:
+@pytest.mark.parametrize("roteiro", [TESTE_RECONEXAO, TESTE_RESPOSTAS], ids=lambda p: p.stem)
+def test_comportamento_do_fundo_com_porta_e_abas_falsas(roteiro: Path) -> None:
+    """Reconexão (uma porta, um timer) e a forma do que vai ao host (resultado plano)."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js não está disponível para o teste comportamental da extensão")
 
     resultado = subprocess.run(
-        [node, "--test", str(TESTE_RECONEXAO)],
+        [node, "--test", str(roteiro)],
         check=False,
         capture_output=True,
         text=True,
