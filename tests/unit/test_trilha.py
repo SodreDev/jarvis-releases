@@ -75,3 +75,10 @@ def test_o_resumo_e_do_ultimo_turno_com_ferramenta_permissao_e_fim(tmp_path: Pat
 
 def test_sem_trilha_o_resumo_diz_que_nao_ha_turno(tmp_path: Path) -> None:
     assert "nenhum turno" in resumo_do_ultimo_turno(tmp_path / "nada")[0]
+
+
+def test_a_linha_do_fim_diz_quantos_passos_antigos_foram_podados(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento("turno.fim", fim="concluido", ms_total=10.0, ferramentas=7, resultados_podados=3)
+    assert any("passos antigos podados 3" in linha for linha in resumo_do_ultimo_turno(tmp_path))

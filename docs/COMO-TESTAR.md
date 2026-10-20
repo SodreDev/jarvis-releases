@@ -932,6 +932,18 @@ de resultados lá é local. Testes:
 uv run --frozen pytest tests/unit/executor/test_web.py tests/unit/navegador/test_busca.py -q
 ```
 
+### 0.14 O que ele lê fica no pedido, não na memória (2026-10-20, ADR-0034)
+
+Páginas, mapas, telas e resultados de busca que o Jarvis lê para cumprir um pedido valem **só para
+aquele pedido**: servem aos passos seguintes e somem no fim — não vão para a conversa, para o
+histórico nem para a memória longa. Se um fato curto valer para depois, ele o guarda de propósito
+(«anota que…», ou ele mesmo propõe `memoria.lembrar`).
+
+Num pedido longo (muitas páginas), os passos antigos vão ao modelo **podados** (endereço, título e o
+tamanho do que saiu), para o contexto não crescer sem fim; o passo mais novo vai inteiro. No
+`jarvis-voz --diagnostico`, a linha do fim do último turno diz «passos antigos podados N» quando
+houve. Testes: `tests/unit/s2/test_memoria_de_trabalho.py`.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

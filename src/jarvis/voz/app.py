@@ -1185,6 +1185,7 @@ class Aplicativo:
             caracteres_de_raciocinio=len(resposta.raciocinio) if resposta else 0,
             raciocinio_descartado=resposta.raciocinio_descartado if resposta else 0,
             narracao_retida=resposta.narracao_retida if resposta else 0,
+            resultados_podados=resposta.resultados_podados if resposta else 0,
             erro=falha[0] if falha else "",
         )
         return Turno(

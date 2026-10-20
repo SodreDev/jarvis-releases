@@ -63,6 +63,30 @@ if TYPE_CHECKING:
 PRAZO_DE_CONFIRMACAO_S: Final = 30.0
 LIMITE_PARA_O_MODELO: Final = 6000
 """Caracteres do resultado que voltam ao contexto do motor: o resto fica na auditoria."""
+LIMITE_DO_RESUMO: Final = 600
+"""O resultado podado de um passo antigo (`resumo_para_o_modelo`) cabe nisto."""
+CURTO_NO_RESUMO: Final = 160
+"""Texto até este tamanho fica no resumo como está (endereço, título, nome); maior vira tamanho."""
+
+
+def _podado(valor: object) -> object:
+    """Um valor do resultado no resumo: o pequeno fica, o volume vira só a medida dele."""
+    if isinstance(valor, bool | int | float) or valor is None:
+        return valor
+    if isinstance(valor, str):
+        return valor if len(valor) <= CURTO_NO_RESUMO else f"[podado: {len(valor)} caracteres]"
+    if isinstance(valor, list | tuple):
+        return f"[podado: {len(valor)} itens]"
+    if isinstance(valor, Mapping):
+        pequenos = {
+            str(k): v
+            for k, v in valor.items()
+            if isinstance(v, bool | int | float) or (isinstance(v, str) and len(v) <= 80)
+        }
+        return pequenos if len(pequenos) <= 6 else f"[podado: {len(valor)} campos]"
+    return "[podado]"
+
+
 FERRAMENTAS_LIGADAS: Final = frozenset(
     {
         "files.list_dir",
@@ -197,6 +221,22 @@ class ResultadoDeFerramenta:
         if len(texto) > LIMITE_PARA_O_MODELO:
             texto = texto[:LIMITE_PARA_O_MODELO] + " …[truncado]"
         return texto
+
+    def resumo_para_o_modelo(self) -> str:
+        """O resultado podado (memória de trabalho do turno, ADR-0034): o que identifica o passo —
+        ferramenta, status, motivo, aviso, endereço, título, números — e, no lugar do volume (texto
+        de página, mapa, links, scripts), só o tamanho do que saiu. É o que um passo antigo vira
+        quando o contexto do turno passa do orçamento."""
+        corpo: dict[str, Any] = {"tool_id": self.tool_id, "status": self.status, "podado": True}
+        if self.motivo:
+            corpo["motivo"] = self.motivo[:200]
+        if self.aviso:
+            corpo["aviso_ao_dono"] = f"já dito em voz ao dono: «{self.aviso}» — não repita"
+        if self.acao_id:
+            corpo["acao_id"] = self.acao_id
+        if self.dados:
+            corpo["dados"] = {chave: _podado(valor) for chave, valor in self.dados.items()}
+        return json.dumps(corpo, ensure_ascii=False)[:LIMITE_DO_RESUMO]
 
 
 @dataclass(frozen=True, slots=True)

@@ -22,6 +22,7 @@ from jarvis.s2.motor import (
     PedidoDeTool,
     Texto,
 )
+from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ErroDeTarefa, FimDaTarefa, Passo, Tarefa
 from jarvis.voz.interface import Onde
 
@@ -61,7 +62,8 @@ class MotorDeAgente:
             sistema=SISTEMA_DA_TAREFA,
             mensagens=(
                 Mensagem("dono", objetivo),
-                *(Mensagem("ferramenta", r.para_o_modelo()) for r in feitos),
+                # O que a tarefa leu é dela e só dela (ADR-0034): no contexto, dentro do orçamento.
+                *(Mensagem("ferramenta", t) for t in textos_no_contexto(feitos)[0]),
             ),
             ferramentas=tuple(
                 f for f in self.catalogo() if not str(f["id"]).startswith(FORA_DA_ALLOWLIST)

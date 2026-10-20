@@ -239,3 +239,9 @@ O teste (d) passa a ser o teste (d) da ADR-0025.
 - LangGraph, execução durável: <https://docs.langchain.com/oss/python/langgraph/durable-execution>;
   limite do checkpointer (fonte secundária):
   <https://hackernoon.com/durable-execution-for-ai-agents-langgraph-dbos-inngest-and-temporal-compared>
+
+## Emenda de 2026-10-20 — memória de trabalho da tarefa (ADR-0034)
+
+O motor `agente` monta o contexto de cada passo da tarefa pelo mesmo orçamento do cérebro: o
+resultado mais novo inteiro, os antigos inteiros enquanto couberem e, depois, podados. Os passos
+continuam morrendo com a tarefa — só o resumo final fica.

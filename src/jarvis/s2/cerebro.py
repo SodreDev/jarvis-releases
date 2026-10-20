@@ -14,6 +14,8 @@ para o contrato ser testado inteiro em memória:
 - **Cancelamento** (regra 9). Visto o cancelamento, nada mais daquele epoch é publicado, e o
   iterador do motor é fechado — é o `finally` dele que mata processo ou conexão. O tempo entre
   ver o cancelamento e o motor parado é medido e fica na `Resposta`.
+- **O que as ferramentas trazem é do turno** (ADR-0034). Cada rodada leva os resultados dentro de
+  um orçamento (os antigos podados), e nada deles vai para a conversa nem para o livro.
 - **Pensar não é falar** (ADR-0031, dono 2026-10-20). O `Raciocinio` do motor fica com o turno,
   com teto, e volta só para o motor na rodada seguinte; a fala é o resultado, uma pergunta
   necessária e no máximo um aviso curto antes da primeira ferramenta.
@@ -56,6 +58,7 @@ from jarvis.s2.motor import (
 from jarvis.s2.pendencias import RegistroDePendencias
 from jarvis.s2.persona import prompt_de_sistema
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
+from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.voz.interface import Cancelado, nunca_cancelado
 
 MAXIMO_DE_PASSOS: Final = 12
@@ -113,6 +116,9 @@ class Resposta:
     tamanho): morre com o turno."""
     raciocinio_descartado: int = 0
     """Caracteres de raciocínio que passaram do teto e não voltaram ao motor."""
+    resultados_podados: int = 0
+    """Passos antigos que foram ao motor podados numa rodada (o máximo do turno, ADR-0034): o volume
+    do que eles trouxeram ficou fora do contexto."""
     narracao_retida: int = 0
     """Trechos de narração de passo que não foram ditos (ADR-0031): o "achei, vou abrir" antes de
     uma ferramenta, depois da primeira, e o que o modelo disse depois de propor uma."""
@@ -300,7 +306,6 @@ class Cerebro:
             avisos, resposta, publicar, comeco, cancelado, crescer
         )
         catalogo = self.ferramentas.catalogo_para_o_modelo() if self.ferramentas else ()
-        resultados: list[Mensagem] = []
         # A tela mais nova que uma ferramenta deste turno capturou (ADR-0032): vai só ao motor que
         # a aceita, e só neste turno.
         imagens: tuple[Imagem, ...] = ()
@@ -325,9 +330,13 @@ class Cerebro:
                         f"{self.prazo_do_laco_de_ferramentas_s:.0f} s"
                     )
                 break
+            # A memória de trabalho do turno (ADR-0034): o passo mais novo inteiro, os antigos
+            # inteiros enquanto couberem no orçamento e, depois, podados.
+            textos, podados = textos_no_contexto(resposta.ferramentas)
+            resposta.resultados_podados = max(resposta.resultados_podados, podados)
             da_vez = Contexto(
                 sistema=contexto.sistema,
-                mensagens=(*contexto.mensagens, *resultados),
+                mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
                 ferramentas=catalogo,
                 raciocinio=resposta.raciocinio,
                 ja_dito=_ja_dito(resposta),
@@ -379,7 +388,6 @@ class Cerebro:
                 break
             resultado = self._chamar(pedido, cancelado_no_laco, texto_do_dono)
             resposta.ferramentas.append(resultado)
-            resultados.append(Mensagem("ferramenta", resultado.para_o_modelo()))
             if resultado.anexos and aceita_imagem(self.motor):
                 imagens = resultado.anexos
             # Sem status entre passos (dono, 2026-10-20, ADR-0031): ele não acompanha passo a

@@ -88,6 +88,12 @@ seguintes e o que o modelo diz depois de propor vão para o raciocínio do turno
 motor na rodada seguinte com o que o dono já ouviu. Os passos de navegação (`browser.navigate`,
 `click`, `type`, `scroll`) não falam o aviso (`aviso_silencioso`); a frase fica na auditoria.
 
+## Emenda de 2026-10-20 (ADR-0034): memória de trabalho do turno
+
+Cada rodada leva os resultados do turno dentro de um orçamento (18 mil caracteres): o mais novo
+inteiro, os antigos inteiros enquanto couberem e, depois, podados (só o que identifica o passo).
+Nada do que as ferramentas trouxeram passa do turno.
+
 ## Como invalidar esta decisão
 
 - O `claude -p` real não seguir o protocolo de texto com confiabilidade (teste do dono): o

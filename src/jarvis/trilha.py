@@ -179,6 +179,8 @@ def _linha(evento: Mapping[str, Any]) -> str:
                 f" · raciocínio {evento.get('caracteres_de_raciocinio', 0)} car. (não falado)"
                 f" · narração retida {evento.get('narracao_retida', 0)}"
             )
+        if evento.get("resultados_podados"):
+            pensou += f" · passos antigos podados {evento['resultados_podados']}"
         return (
             f"fim: {evento.get('fim')} · 1ª fala {_ms(evento.get('ms_primeira_fala'))} · "
             f"1º áudio {_ms(evento.get('ms_primeiro_audio'))} · total {_ms(evento.get('ms_total'))}"
