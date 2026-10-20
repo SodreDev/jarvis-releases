@@ -722,7 +722,11 @@ com rótulo neutro pedindo o sim** (e o «não» impedindo), digitar na busca, r
 `browser.estado` = conectado, host derrubado que **volta sozinho** pela reconexão, e o mesmo host
 respondendo depois de 40 s ocioso. Esse roteiro achou dois defeitos que os fakes escondiam: a
 extensão aninhava a resposta da página (o Jarvis lia texto vazio e o risco do clique ficava cego) e
-o Firefox recusava instalá-la (faltava `background.scripts`).
+o Firefox recusava instalá-la (faltava `background.scripts`). Desde 2026-10-20 ele prova também o
+mapa e o acionar (§0.7.7), a tela da aba (§0.7.8), a busca numa aba de fundo (§0.13) e a janela
+própria do Jarvis (§0.17): 25 conferências por navegador. **Intermitente:** a busca de fundo no
+Chromium falhou uma vez em três rodadas (`pagina_lenta`: a aba de fundo não chegou a «carregada» em
+15 s; a sua aba não mudou) e não se repetiu; a causa não foi achada.
 
 O resto continua sem prova — **o seu desktop fecha esta conta**:
 
