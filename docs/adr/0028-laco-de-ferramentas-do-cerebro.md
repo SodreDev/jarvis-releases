@@ -80,6 +80,14 @@ ADR-0018) roda **sem ferramenta nenhuma** de propósito.
 - Passa a ser obrigatório testar: nada sem a decisão do PDP; confirmação vencida nega; interromper
   cancela; conteúdo de arquivo não vira chamada; o segredo não chega ao modelo.
 
+## Emenda de 2026-10-20 (ADR-0031): pensar não é falar
+
+O status curto entre passos (7096c1a) saiu: o dono não acompanha passo a passo. O cérebro fala
+no máximo um aviso curto antes da primeira ferramenta e o resultado; a narração das rodadas
+seguintes e o que o modelo diz depois de propor vão para o raciocínio do turno, que volta ao
+motor na rodada seguinte com o que o dono já ouviu. Os passos de navegação (`browser.navigate`,
+`click`, `type`, `scroll`) não falam o aviso (`aviso_silencioso`); a frase fica na auditoria.
+
 ## Como invalidar esta decisão
 
 - O `claude -p` real não seguir o protocolo de texto com confiabilidade (teste do dono): o

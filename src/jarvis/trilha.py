@@ -173,10 +173,16 @@ def _linha(evento: Mapping[str, Any]) -> str:
             f"{evento.get('motivo')} → {evento.get('resposta', '?')}"
         )
     if tipo == "turno.fim":
+        pensou = ""
+        if evento.get("caracteres_de_raciocinio") or evento.get("narracao_retida"):
+            pensou = (
+                f" · raciocínio {evento.get('caracteres_de_raciocinio', 0)} car. (não falado)"
+                f" · narração retida {evento.get('narracao_retida', 0)}"
+            )
         return (
             f"fim: {evento.get('fim')} · 1ª fala {_ms(evento.get('ms_primeira_fala'))} · "
             f"1º áudio {_ms(evento.get('ms_primeiro_audio'))} · total {_ms(evento.get('ms_total'))}"
-            f" · {evento.get('ferramentas', 0)} ferramenta(s)"
+            f" · {evento.get('ferramentas', 0)} ferramenta(s){pensou}"
         )
     resto = ", ".join(f"{k}={v}" for k, v in evento.items() if k not in ("t", "turno", "evento"))
     return f"{tipo}: {resto}"

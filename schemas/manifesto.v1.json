@@ -56,13 +56,17 @@
     "confirmation": { "enum": ["never", "once_per_batch", "per_action", "handoff"] },
     "tier": {
       "enum": ["livre", "moderado", "perigoso"],
-      "description": "Controle por voz (dono, 2026-10-18). livre: roda sem confirmação nem aviso (abrir, ler, consultar, mídia). moderado: roda sem confirmação, mas o Jarvis avisa em voz (`aviso_falado`), a auditoria registra e, se der, desfaz (`acao.desfazer`). perigoso: irreversível, sai da pasta do Jarvis, gasta, envia ou instala — sempre pede a confirmação do dono, que a IA nunca dá por ele. Campo NOSSO, como risk_class: não vem do LLM nem de servidor remoto."
+      "description": "Controle por voz (dono, 2026-10-18). livre: roda sem confirmação nem aviso (abrir, ler, consultar, mídia). moderado: roda sem confirmação, mas o Jarvis avisa em voz (`aviso_falado`; o passo de navegação com `aviso_silencioso` fica só na auditoria — ADR-0031), a auditoria registra e, se der, desfaz (`acao.desfazer`). perigoso: irreversível, sai da pasta do Jarvis, gasta, envia ou instala — sempre pede a confirmação do dono, que a IA nunca dá por ele. Campo NOSSO, como risk_class: não vem do LLM nem de servidor remoto."
     },
     "aviso_falado": {
       "type": "string",
       "minLength": 8,
       "maxLength": 200,
       "description": "A frase que o Jarvis fala depois que uma tool `moderado` roda. Modelo com {campo}: os argumentos e o resultado da chamada entram no lugar. Obrigatória no tier moderado."
+    },
+    "aviso_silencioso": {
+      "type": "boolean",
+      "description": "Passo de navegação (dono, 2026-10-20, ADR-0031): o `aviso_falado` NÃO é falado — fica na auditoria, e quem conta o resultado ao dono é a resposta final. Só em tool `moderado` de efeito passageiro (`side_effect: ephemeral`): o que escreve de forma persistente o dono ouve."
     },
     "access_level_min": { "enum": ["jarvis", "padrao", "concedido", "total"] },
     "roots": {

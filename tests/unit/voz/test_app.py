@@ -114,7 +114,8 @@ def test_status_do_laco_entra_na_fila_de_avisos_sem_virar_fala_direta(tmp_path: 
     app.abrir(com_asr=False)
     assert app._cerebro is not None and app._cerebro.ao_status is not None
 
-    app._cerebro.ao_status("Passo 2 terminou; avaliando o resultado.")
+    # Hoje só o desfecho de uma pendência vira status (sem status entre passos, ADR-0031).
+    app._cerebro.ao_status("Confirmado: está rodando em segundo plano; aviso quando terminar.")
 
     avisos = app.dados_dos_avisos()["avisos"]
     assert avisos[0]["origem"] == "raciocínio"

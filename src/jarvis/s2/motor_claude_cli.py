@@ -38,6 +38,7 @@ from jarvis.s2.motor import (
     Modo,
     MotivoDoFim,
     PedidoDeTool,
+    Raciocinio,
     Texto,
 )
 from jarvis.s2.persona import prompt_de_sistema
@@ -60,6 +61,11 @@ _FIM_DA_LEITURA: Final = object()
 MARCA_DE_FERRAMENTA: Final = "<<ferramenta>>"
 """O protocolo de texto do provisório (ADR-0028): a CLI roda **sem** ferramenta nenhuma (ADR-0018),
 então a proposta de chamada chega como uma linha que começa com esta marca e traz um JSON."""
+MARCA_DE_RACIOCINIO: Final = "<<pensar>>"
+FIM_DO_RACIOCINIO: Final = "<</pensar>>"
+"""O canal de raciocínio do protocolo (ADR-0031): o que vem entre as duas marcas é do modelo para
+ele mesmo, e sai do leitor como `Raciocinio`. Sem a marca que fecha, vale até a próxima proposta
+ou o fim da geração — na dúvida, o texto não vai para a fala."""
 
 INSTRUCAO_DE_FERRAMENTAS: Final = (
     "Você pode PROPOR ferramentas; quem decide se roda é o código do Jarvis. As simples rodam na "
@@ -68,10 +74,13 @@ INSTRUCAO_DE_FERRAMENTAS: Final = (
     "propor, responda com uma "
     "linha que começa exatamente com " + MARCA_DE_FERRAMENTA + " seguida de um JSON "
     '{"tool_id": "...", "args": {...}} — uma linha por chamada, sem markdown, sem explicar o '
-    'JSON. Pode dizer uma frase curta antes ("deixa eu ver"). Depois você recebe os '
-    "resultados e responde ao dono, em voz, curto. Use só as ferramentas da lista, só com os "
-    "argumentos dela, e nunca invente resultado. Caminhos: sempre a pasta inteira (~/Documentos/"
-    "...). Ferramentas disponíveis agora:"
+    'JSON. Antes da primeira ferramenta do pedido você pode dizer uma frase curta ("vou ver"), '
+    "uma vez só; entre um passo e outro, nada em voz. O que for raciocínio (plano, o que "
+    "conferir, o próximo passo) vai entre " + MARCA_DE_RACIOCINIO + " e " + FIM_DO_RACIOCINIO + ": "
+    "o dono não ouve nem vê, e ele volta para você no passo seguinte. Depois você recebe os "
+    "resultados e, quando o pedido estiver pronto, responde ao dono, em voz, curto. Use só as "
+    "ferramentas da lista, só com os argumentos dela, e nunca invente resultado. Caminhos: "
+    "sempre a pasta inteira (~/Documentos/...). Ferramentas disponíveis agora:"
 )
 
 
@@ -112,6 +121,8 @@ def sistema_com_ferramentas(sistema: str, ferramentas: Sequence[Mapping[str, obj
 
 
 _MARCA_RE: Final = re.compile(r"<<\s*ferramenta\s*>>", re.IGNORECASE)
+_PENSAR_RE: Final = re.compile(r"<<\s*pensar\s*>>", re.IGNORECASE)
+_FIM_DO_PENSAR_RE: Final = re.compile(r"<<\s*/\s*pensar\s*>>", re.IGNORECASE)
 _CERCA_NO_FIM: Final = re.compile(r"```(?:json)?\s*$", re.IGNORECASE)
 _CERCA_NO_COMECO: Final = re.compile(r"^\s*```(?:json)?\s*", re.IGNORECASE)
 LIMITE_DA_PROPOSTA: Final = 4000
@@ -150,10 +161,15 @@ class LeitorDoProtocolo:
     JSON é lido por **balanceamento** — vale em várias linhas, com cerca ``` em volta, com texto
     depois — e a proposta sai no instante em que o objeto fecha, sem esperar a quebra de linha
     nem o fim da geração. JSON que não fecha, ou sem objeto, vira um pedido malformado, que o
-    executor recusa e o motor fica sabendo."""
+    executor recusa e o motor fica sabendo.
+
+    O bloco `<<pensar>>` … `<</pensar>>` (ADR-0031) sai como `Raciocinio`, também no meio do
+    texto e partido entre deltas. Uma proposta dentro de um raciocínio aberto fecha o raciocínio
+    (o modelo esqueceu a marca de fim), e o que sobra aberto no fim da geração é raciocínio."""
 
     _texto: str = ""
     _proposta: str | None = None
+    _raciocinio: str | None = None
 
     def alimentar(self, texto: str) -> Iterator[Delta]:
         while True:
@@ -170,11 +186,46 @@ class LeitorDoProtocolo:
                 if not texto:
                     return
                 continue
+            if self._raciocinio is not None:
+                self._raciocinio += texto
+                texto = ""
+                fim = _FIM_DO_PENSAR_RE.search(self._raciocinio)
+                proposta = _MARCA_RE.search(self._raciocinio)
+                if fim is None and proposta is None:
+                    retido = _retencao(self._raciocinio, (FIM_DO_RACIOCINIO, MARCA_DE_FERRAMENTA))
+                    saida = self._raciocinio[: len(self._raciocinio) - retido]
+                    self._raciocinio = self._raciocinio[len(self._raciocinio) - retido :]
+                    if saida:
+                        yield Raciocinio(saida)
+                    return
+                if fim is not None and (proposta is None or fim.start() < proposta.start()):
+                    antes, texto = self._raciocinio[: fim.start()], self._raciocinio[fim.end() :]
+                else:
+                    assert proposta is not None
+                    # A marca da proposta fica no texto: é o ramo do texto comum que a lê.
+                    antes = self._raciocinio[: proposta.start()]
+                    texto = self._raciocinio[proposta.start() :]
+                self._raciocinio = None
+                if antes:
+                    yield Raciocinio(antes)
+                if not texto:
+                    return
+                continue
             self._texto += texto
             texto = ""
             achada = _MARCA_RE.search(self._texto)
+            pensar = _PENSAR_RE.search(self._texto)
+            if pensar is not None and (achada is None or pensar.start() < achada.start()):
+                antes, texto = self._texto[: pensar.start()], self._texto[pensar.end() :]
+                self._texto = ""
+                self._raciocinio = ""
+                if antes.strip():
+                    yield Texto(antes)
+                if not texto:
+                    return
+                continue
             if achada is None:
-                retido = _retencao(self._texto)
+                retido = _retencao(self._texto, (MARCA_DE_FERRAMENTA, MARCA_DE_RACIOCINIO))
                 saida = self._texto[: len(self._texto) - retido]
                 self._texto = self._texto[len(self._texto) - retido :]
                 if saida:
@@ -201,6 +252,11 @@ class LeitorDoProtocolo:
             self._proposta = None
             if lido is not None:
                 yield lido[0]
+        if self._raciocinio is not None:
+            # Sem a marca que fecha: na dúvida, não é fala.
+            resto, self._raciocinio = self._raciocinio, None
+            if resto:
+                yield Raciocinio(resto)
         if self._texto:
             texto, self._texto = self._texto, ""
             yield Texto(texto)
@@ -226,11 +282,12 @@ class LeitorDoProtocolo:
         return _pedido_de(objeto, corpo[:fim]), resto
 
 
-def _retencao(texto: str) -> int:
-    """Quantos caracteres do fim ainda podem ser o começo da marca (e por isso esperam)."""
-    for tamanho in range(min(len(texto), len("<<ferramenta>>") + 2), 0, -1):
+def _retencao(texto: str, marcas: Sequence[str]) -> int:
+    """Quantos caracteres do fim ainda podem ser o começo de uma das marcas (e por isso esperam)."""
+    for tamanho in range(min(len(texto), max(len(m) for m in marcas) + 2), 0, -1):
         cauda = texto[-tamanho:]
-        if cauda[0] == "<" and "<<ferramenta>>".startswith(cauda.lower().replace(" ", "")):
+        compacta = cauda.lower().replace(" ", "")
+        if cauda[0] == "<" and any(marca.startswith(compacta) for marca in marcas):
             return tamanho
     return 0
 

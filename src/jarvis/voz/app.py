@@ -1173,6 +1173,10 @@ class Aplicativo:
             ms_total=(time.monotonic() - comeco) * 1000.0,
             ferramentas=len(resposta.ferramentas) if resposta else 0,
             caracteres_falados=len(respondeu),
+            # Pensar não é falar (ADR-0031): do raciocínio, só o tamanho — o texto morre no turno.
+            caracteres_de_raciocinio=len(resposta.raciocinio) if resposta else 0,
+            raciocinio_descartado=resposta.raciocinio_descartado if resposta else 0,
+            narracao_retida=resposta.narracao_retida if resposta else 0,
             erro=falha[0] if falha else "",
         )
         return Turno(

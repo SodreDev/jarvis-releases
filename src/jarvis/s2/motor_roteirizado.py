@@ -24,9 +24,13 @@ from jarvis.s2.motor import (
     Modo,
     MotivoDoFim,
     PedidoDeTool,
+    Raciocinio,
     Texto,
 )
 from jarvis.voz.interface import Cancelado, Onde
+
+Parte = str | PedidoDeTool | Raciocinio
+"""Um pedaço do roteiro: texto (cortado em deltas), uma proposta ou um raciocínio (inteiros)."""
 
 
 def em_deltas(texto: str, *, caracteres: int = 4) -> tuple[str, ...]:
@@ -39,11 +43,12 @@ def em_deltas(texto: str, *, caracteres: int = 4) -> tuple[str, ...]:
 class MotorRoteirizado:
     """Responde sempre o roteiro, um delta por vez."""
 
-    resposta: Callable[[Contexto], str | Sequence[str | PedidoDeTool]] | str = (
+    resposta: Callable[[Contexto], str | Sequence[Parte]] | str = (
         "Depois de quinta vem sexta-feira."
     )
-    """Texto, ou (por função) uma sequência de textos e pedidos de ferramenta — é como o teste
-    do laço de ferramentas faz o motor "propor" sem LLM (ADR-0028)."""
+    """Texto, ou (por função) uma sequência de textos, pedidos de ferramenta e raciocínios — é
+    como o teste do laço de ferramentas faz o motor "propor" (ADR-0028) e "pensar" (ADR-0031)
+    sem LLM."""
     primeiro_atraso_s: float = 0.0
     """Do pedido ao primeiro delta: o "tempo até o primeiro token" do motor."""
     atraso_entre_deltas_s: float = 0.0
@@ -60,8 +65,8 @@ class MotorRoteirizado:
         del modo  # o roteiro não pensa
         self.pedidos.append(contexto)
         roteiro = self.resposta if isinstance(self.resposta, str) else self.resposta(contexto)
-        partes: Sequence[str | PedidoDeTool] = [roteiro] if isinstance(roteiro, str) else roteiro
-        deltas: list[str | PedidoDeTool] = []
+        partes: Sequence[Parte] = [roteiro] if isinstance(roteiro, str) else roteiro
+        deltas: list[Parte] = []
         for parte in partes:
             if isinstance(parte, str):
                 deltas += em_deltas(parte, caracteres=self.caracteres_por_delta)

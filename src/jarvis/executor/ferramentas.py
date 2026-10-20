@@ -152,13 +152,19 @@ class ResultadoDeFerramenta:
     aviso: str = ""
     """O aviso falado de uma tool `moderado`: o cérebro o **fala** na hora (o dono ouve o que foi
     feito sem ter sido consultado) e o modelo é avisado de que o dono já ouviu."""
+    aviso_silencioso: str = ""
+    """O aviso de um passo de navegação (`aviso_silencioso: true` no manifesto): **não** é falado
+    nem dito ao modelo como falado; fica na auditoria, e quem conta o resultado ao dono é a
+    resposta final (dono, 2026-10-20, ADR-0031)."""
     acao_id: str = ""
     """Se a ação dá para desfazer, o id que `acao.desfazer` aceita."""
 
     @property
     def detalhe_de_auditoria(self) -> str:
-        if self.motivo or not self.aviso:
+        if self.motivo or not (self.aviso or self.aviso_silencioso):
             return self.motivo
+        if self.aviso_silencioso:
+            return f"moderado: passo sem aviso falado «{self.aviso_silencioso}»"
         desfazer = f" — desfazer: {self.acao_id}" if self.acao_id else ""
         return f"moderado: avisado «{self.aviso}»{desfazer}"
 
@@ -482,6 +488,8 @@ class ExecutorDeFerramentas:
         if self.trilha is None:
             return
         motivo = resultado.motivo if resultado.status != "ok" else ""
+        # Se o aviso da moderada foi falado ou ficou só na auditoria (ADR-0031) — nunca a frase.
+        aviso = "silencioso" if resultado.aviso_silencioso else ""
         self.trilha.evento(
             "ferramenta",
             tool_id=resultado.tool_id,
@@ -491,6 +499,7 @@ class ExecutorDeFerramentas:
             ms=round(ms, 1) if ms is not None else None,
             motivo=motivo,
             codigo=codigo_do_motivo(motivo),
+            aviso="falado" if resultado.aviso else aviso,
         )
 
     def _trilhar_permissao(self, pergunta: Confirmacao, origem: str, sim: bool) -> None:
@@ -600,12 +609,17 @@ class ExecutorDeFerramentas:
         if manifesto.get("tier") != "moderado":
             return resultado
         acao = self._registrar_desfazer(tool_id, resultado.dados)
+        frase = aviso_falado(manifesto, args, resultado.dados)
+        # Passo de navegação (clicar, digitar, rolar, navegar): o dono não acompanha passo a
+        # passo (ADR-0031). O validador só aceita isto em efeito passageiro.
+        silencioso = manifesto.get("aviso_silencioso") is True
         return ResultadoDeFerramenta(
             tool_id,
             resultado.status,
             dados=resultado.dados,
             call_id=resultado.call_id,
-            aviso=aviso_falado(manifesto, args, resultado.dados),
+            aviso="" if silencioso else frase,
+            aviso_silencioso=frase if silencioso else "",
             acao_id=acao,
         )
 

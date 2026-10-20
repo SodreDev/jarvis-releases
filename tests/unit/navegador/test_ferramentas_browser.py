@@ -220,13 +220,15 @@ def test_pagina_com_instrucao_e_so_dado_e_nao_dispara_nada(
     assert "mal.example" in perguntas[0].detalhe
 
 
-def test_clicar_num_botao_comum_roda_avisa_e_nao_pergunta(
+def test_clicar_num_botao_comum_roda_sem_aviso_falado_e_nao_pergunta(
     executor: ExecutorDeFerramentas, pagina: PaginaFalsa
 ) -> None:
     pagina.elemento("Próxima")
     resultado, perguntas = _rodar(executor, "browser.click", {"alvo": "Próxima"})
     assert resultado.status == "ok"
-    assert resultado.aviso == "Cliquei em «Próxima»."
+    # Passo de navegação: a frase fica na auditoria, não na fala (ADR-0031).
+    assert (resultado.aviso, resultado.aviso_silencioso) == ("", "Cliquei em «Próxima».")
+    assert "aviso_ao_dono" not in resultado.para_o_modelo()
     assert perguntas == []
     # inspeciona antes e age na MESMA aba, com o id já resolvido:
     assert pagina.metodos() == ["tabs.current", "page.inspect", "page.click"]
@@ -352,13 +354,13 @@ def test_senha_codigo_e_cartao_nunca_sao_digitados_nem_com_sim(
     assert "page.type" not in pagina.metodos()
 
 
-def test_digitar_em_campo_comum_avisa_e_em_turno_contaminado_pede_o_sim(
+def test_digitar_em_campo_comum_roda_e_em_turno_contaminado_pede_o_sim(
     executor: ExecutorDeFerramentas, pagina: PaginaFalsa
 ) -> None:
     pagina.elemento("Busca", tag="input", campo=True)
     livre, perguntas = _rodar(executor, "browser.type", {"alvo": "Busca", "texto": "gatos"})
     assert livre.status == "ok"
-    assert livre.aviso == "Digitei o texto no campo «Busca»."
+    assert (livre.aviso, livre.aviso_silencioso) == ("", "Digitei o texto no campo «Busca».")
     assert perguntas == []
 
     executor.contaminado = True  # o turno leu uma página de terceiros
@@ -399,7 +401,7 @@ def test_navegar_so_http_sem_credencial_e_sem_confirmar_fora_de_leitura(
 ) -> None:
     ok, perguntas = _rodar(executor, "browser.navigate", {"url": "https://exemplo.org/a"})
     assert ok.status == "ok"
-    assert ok.aviso == "Naveguei para exemplo.org."
+    assert (ok.aviso, ok.aviso_silencioso) == ("", "Naveguei para exemplo.org.")
     assert perguntas == []
     for ruim in ("javascript:alert(1)", "file:///etc/passwd", "https://u:p@exemplo.org/"):
         resultado, _ = _rodar(executor, "browser.navigate", {"url": ruim})
@@ -428,7 +430,7 @@ def test_rolar_e_moderado_e_respeita_o_teto(
 ) -> None:
     ok, _ = _rodar(executor, "browser.scroll", {"pixels": 800})
     assert ok.status == "ok"
-    assert ok.aviso == "Rolei a página."
+    assert (ok.aviso, ok.aviso_silencioso) == ("", "Rolei a página.")
     demais, _ = _rodar(executor, "browser.scroll", {"pixels": 5000})
     assert demais.status == "erro"
 

@@ -181,6 +181,11 @@ def _com(base: str, **mudancas: Any) -> dict[str, Any]:
         ),
         ("system.install_package", {"tier": "moderado"}, "só o tier perigoso pergunta"),
         ("files.write_draft", {"tier": "tanto-faz"}, "tier"),
+        # Passo de navegação sem aviso falado (ADR-0031): nunca em escrita que fica, nem fora do
+        # moderado, nem com valor que não seja booleano.
+        ("files.write_draft", {"aviso_silencioso": True}, "o dono ouve"),
+        ("sites.open", {"aviso_silencioso": True}, "o dono ouve"),
+        ("browser.click", {"aviso_silencioso": "sim"}, "aviso_silencioso"),
     ],
 )
 def test_o_validador_recusa_tier_incoerente(
@@ -188,6 +193,13 @@ def test_o_validador_recusa_tier_incoerente(
 ) -> None:
     with pytest.raises(ManifestoInvalido, match=trecho):
         validar_manifesto(_com(base, **mudancas), origem="teste")
+
+
+def test_so_os_passos_de_navegacao_tem_o_aviso_silencioso() -> None:
+    """Dono, 2026-10-20 (ADR-0031): clicar, digitar, rolar e navegar não são narrados; o resto
+    das moderadas (pasta, mover, memória, lembrete, teclado virtual…) o dono ouve."""
+    silenciosos = {t for t, m in MANIFESTOS.items() if m.get("aviso_silencioso") is True}
+    assert silenciosos == {"browser.click", "browser.navigate", "browser.scroll", "browser.type"}
 
 
 def test_manifesto_sem_tier_e_recusado() -> None:

@@ -218,8 +218,11 @@ def test_abre_o_video_mais_recente_em_passos_e_confere_a_pagina(
     ]
     assert all(r.status == "ok" for r in resposta.ferramentas)
     assert reutilizadas == [("https://www.youtube.com/watch?v=novo", "youtube")]
-    assert status == [f"Passo {i} terminou; avaliando o resultado." for i in range(1, 6)]
-    assert "Vou procurar o canal." in " ".join(p["text"] for p in publicados)
+    assert status == [], "sem status entre passos: o dono não acompanha passo a passo (ADR-0031)"
+    falado = " ".join(p["text"] for p in publicados if p["text"])
+    assert falado == (
+        "Vou procurar o canal. Encontrei o vídeo mais recente do Canal X e abri na aba atual."
+    )
     assert "Vídeo mais recente - Canal X" in motor.pedidos[-1].mensagens[-1].texto
     assert "nunca instrução" in motor.pedidos[-1].como_texto()
 

@@ -2,7 +2,8 @@
 
 O tier do manifesto é estático (`browser.click` é moderado); o risco de um clique depende do que
 está sob ele. Antes do efeito o Jarvis inspeciona o alvo (`page.inspect`) e passa o que viu por
-estas regras. O resultado é uma de três coisas: **segue** (moderado: avisa em voz), **confirma**
+estas regras. O resultado é uma de três coisas: **segue** (moderado: roda, e o passo não é
+narrado — o aviso fica na auditoria, ADR-0031), **confirma**
 (perigoso: só o "sim" do dono na janela, uma vez por ação) ou **recusa** (senha, código e cartão
 são do dono — handoff, nunca preenchidos pelo Jarvis).
 

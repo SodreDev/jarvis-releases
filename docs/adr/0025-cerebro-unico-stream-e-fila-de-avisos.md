@@ -121,7 +121,8 @@ esperam o piso livre numa fila do `agentd`.**
    esforço de raciocínio que o motor oferece). O motor pode devolver o sinal `pensar` em vez de
    texto; o `s2` então solta uma **ponte** (regra 8) e refaz o mesmo turno no modo `pensar`, com
    teto de tokens e de tempo vindo de configuração. O texto de raciocínio **nunca** vai para o TTS
-   nem para a UI (P10). O barge-in cancela o `pensar` como cancela o resto. Quem decide pensar é o
+   nem para a UI (P10). **[Emenda de 2026-10-20, ADR-0031:]** o canal de raciocínio do protocolo
+   (`<<pensar>>`, delta `Raciocinio`) fica com o turno e volta só ao motor, com teto. O barge-in cancela o `pensar` como cancela o resto. Quem decide pensar é o
    modelo; quem limita é o código. **[SUPOSIÇÃO: o sinal `pensar` vindo do próprio motor acerta o
    bastante para não precisar de classificador antes; confirma ou derruba o corpus da F2, contando
    turnos que pediram `pensar` sem precisar e turnos errados que não pediram.]**

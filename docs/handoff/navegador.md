@@ -49,7 +49,8 @@ Não houve push, coautoria ou alteração fora dos arquivos dos dois commits.
 - Fluxo real: o **navegador** lança o host (não o Jarvis); por isso o host é quem escuta e o Jarvis
   é o cliente, um pedido por conexão. O README da extensão foi corrigido (dizia o contrário).
 - Catálogo: `browser.tabs`, `browser.read` (livre, contaminam o turno); `browser.click`, `.type`,
-  `.scroll`, `.navigate` (moderado, com `aviso_falado`); `browser.acao_sensivel` (**perigoso**, só o
+  `.scroll`, `.navigate` (moderado; o `aviso_falado` fica só na auditoria, `aviso_silencioso`,
+  ADR-0031); `browser.acao_sensivel` (**perigoso**, só o
   código a consulta no PDP — fica fora de `_ligada`, o modelo nunca a vê). Stubs gerados.
 - Risco dinâmico: antes de clicar/digitar o corpo chama `page.inspect` na MESMA aba (id resolvido por
   `tabs.current`) e aplica `risco.py`: enviar formulário (exceto busca GET), palavras de envio/

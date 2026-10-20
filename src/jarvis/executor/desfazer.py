@@ -4,7 +4,8 @@ Tool `moderada` roda sem perguntar, e em troca duas coisas são **do código**, 
 
 1. **o aviso**: depois do efeito, o Jarvis fala a frase que o manifesto declara (`aviso_falado`),
    com os argumentos e o resultado no lugar dos `{campos}`. É o dono sabendo o que aconteceu sem
-   ter sido consultado antes;
+   ter sido consultado antes. O passo de navegação (`aviso_silencioso`, dono 2026-10-20,
+   ADR-0031) é a exceção: a frase fica na auditoria e o resultado vem na resposta final;
 2. **o desfazer**: o que dá para voltar atrás fica num registro curto, e `acao.desfazer` o usa.
    Nada é apagado de verdade: arquivo criado pelo Jarvis vai para `lixeira/` na área dele (e
    dali o dono decide), memória é retratada (continua no livro, deixa de valer).

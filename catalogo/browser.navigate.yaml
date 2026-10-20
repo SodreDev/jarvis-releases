@@ -41,6 +41,7 @@ pii_touch: none
 confirmation: never
 tier: moderado
 aviso_falado: Naveguei para {dominio}.
+aviso_silencioso: true  # passo de navegação: só na auditoria (ADR-0031)
 access_level_min: jarvis
 roots: []
 requires_elevation: false

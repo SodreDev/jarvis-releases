@@ -14,6 +14,9 @@ para o contrato ser testado inteiro em memória:
 - **Cancelamento** (regra 9). Visto o cancelamento, nada mais daquele epoch é publicado, e o
   iterador do motor é fechado — é o `finally` dele que mata processo ou conexão. O tempo entre
   ver o cancelamento e o motor parado é medido e fica na `Resposta`.
+- **Pensar não é falar** (ADR-0031, dono 2026-10-20). O `Raciocinio` do motor fica com o turno,
+  com teto, e volta só para o motor na rodada seguinte; a fala é o resultado, uma pergunta
+  necessária e no máximo um aviso curto antes da primeira ferramenta.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ from jarvis.executor.ferramentas import (
     ResultadoDeFerramenta,
     negar_sempre,
 )
-from jarvis.fatiador import Corte, FatiadorDeFala, PedacoDeFala
+from jarvis.fatiador import PALAVRAS_MINIMAS_POR_PEDACO, Corte, FatiadorDeFala, PedacoDeFala
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
@@ -46,6 +49,7 @@ from jarvis.s2.motor import (
     MotorDeConversa,
     PedidoDeTool,
     Pensar,
+    Raciocinio,
 )
 from jarvis.s2.pendencias import RegistroDePendencias
 from jarvis.s2.persona import prompt_de_sistema
@@ -62,6 +66,11 @@ MAXIMO_DE_RODADAS: Final = MAXIMO_DE_PASSOS
 TURNOS_NO_CONTEXTO: Final = 12
 """Orçamento fixo de conversa no contexto (regra 5): os últimos turnos estáveis. O resumo do que
 ficou para trás é trabalho de segundo plano, fora desta fatia."""
+LIMITE_DO_RACIOCINIO: Final = 2000
+"""Caracteres de raciocínio que um turno guarda e devolve ao motor (ADR-0031). O resto é contado
+e descartado: o canal interno não pode crescer o prompt de cada rodada sem fim."""
+LIMITE_DO_JA_DITO: Final = 300
+"""Caracteres do que o dono já ouviu no turno que voltam ao motor (o fim, que é o mais novo)."""
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
@@ -94,7 +103,17 @@ class Resposta:
     epoch: int
     motor: str
     gerado: str = ""
-    """Tudo o que o motor entregou — **não** é o que o dono ouviu, e não volta ao contexto."""
+    """O texto que foi à tela e à fala — **não** é o que o dono ouviu, e não volta ao contexto.
+    Sem o raciocínio: esse fica em `raciocinio`."""
+    raciocinio: str = ""
+    """O raciocínio do turno (`Raciocinio` do motor, a narração retida), até
+    `LIMITE_DO_RACIOCINIO`. Nunca vai à fala nem à tela, nem ao histórico, nem à trilha (só o
+    tamanho): morre com o turno."""
+    raciocinio_descartado: int = 0
+    """Caracteres de raciocínio que passaram do teto e não voltaram ao motor."""
+    narracao_retida: int = 0
+    """Trechos de narração de passo que não foram ditos (ADR-0031): o "achei, vou abrir" antes de
+    uma ferramenta, depois da primeira, e o que o modelo disse depois de propor uma."""
     publicados: list[dict[str, Any]] = field(default_factory=list)
     fim: MotivoDoFim = MotivoDoFim.CONCLUIDO
     detalhe: str = ""
@@ -305,9 +324,19 @@ class Cerebro:
                 sistema=contexto.sistema,
                 mensagens=(*contexto.mensagens, *resultados),
                 ferramentas=catalogo,
+                raciocinio=resposta.raciocinio,
+                ja_dito=_ja_dito(resposta),
             )
             pedidos, visto_cancelamento = self._rodada(
-                da_vez, modo, cancelado_no_laco, fatiador, resposta, publicar, comeco, crescer
+                da_vez,
+                modo,
+                cancelado_no_laco,
+                fatiador,
+                resposta,
+                publicar,
+                comeco,
+                crescer,
+                segurar=passo > 1,
             )
             if prazo_esgotado() and not cancelado():
                 visto_cancelamento = None
@@ -325,7 +354,8 @@ class Cerebro:
             # O que o motor disse antes de pedir a ferramenta ("deixa eu ver") sai agora, mesmo
             # abaixo do piso de 14 palavras do lote: até a ferramenta voltar não há mais texto.
             # Com `alimentar(" ")` (antes de 7507cd5 bastava), a frase ficava no buffer e era
-            # falada só depois da ferramenta.
+            # falada só depois da ferramenta. Da segunda rodada em diante a narração curta nem
+            # chega aqui: `_rodada` a segura e a passa ao raciocínio (ADR-0031).
             for pedaco in fatiador.descarregar():
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             # Uma por vez: o próximo pedido só pode nascer depois que o modelo viu este
@@ -344,7 +374,9 @@ class Cerebro:
             resultado = self._chamar(pedido, cancelado_no_laco, texto_do_dono)
             resposta.ferramentas.append(resultado)
             resultados.append(Mensagem("ferramenta", resultado.para_o_modelo()))
-            self._status(f"Passo {passo} terminou; avaliando o resultado.")
+            # Sem status entre passos (dono, 2026-10-20, ADR-0031): ele não acompanha passo a
+            # passo. O aviso de uma moderada é resultado (o que mudou e se desfaz); o passo de
+            # navegação vem sem aviso (`aviso_silencioso` no manifesto).
             if resultado.aviso:
                 # Tool moderada: o aviso é do código, e sai agora, em voz (dono, 2026-10-18).
                 resposta.gerado += resultado.aviso + " "
@@ -426,11 +458,34 @@ class Cerebro:
         publicar: Publicar,
         comeco: float,
         crescer: Callable[[], None],
+        *,
+        segurar: bool = False,
     ) -> tuple[list[PedidoDeTool], float | None]:
-        """Uma chamada ao motor: publica o texto em pedaços e junta os pedidos de ferramenta."""
+        """Uma chamada ao motor: publica o texto em pedaços e junta os pedidos de ferramenta.
+
+        Pensar não é falar (ADR-0031): o `Raciocinio` fica com o turno; o texto que vem **depois**
+        de uma proposta é palpite (o resultado ainda não voltou) e também. Com `segurar` (as
+        rodadas depois de uma ferramenta), o texto espera até ter o tamanho de um lote: se uma
+        proposta chega antes, era narração de passo e vai para o raciocínio; senão, é a resposta.
+        O lote de fala só fecha com 14 palavras, então segurar não atrasa a voz — só a tela,
+        nessas rodadas, espera o primeiro lote."""
         pedidos: list[PedidoDeTool] = []
         visto_cancelamento: float | None = None
+        retido = ""
+        palpite = False
+        pensando = False  # o delta anterior era raciocínio: o próximo continua o mesmo trecho
         deltas = self.motor.gerar(contexto, modo, cancelado)
+
+        def falar(texto: str) -> bool:
+            """Tela e fala; devolve se o cancelamento chegou no meio."""
+            resposta.gerado += texto
+            crescer()  # a tela, já: o lote de fala pode levar 14 palavras para fechar
+            for pedaco in fatiador.alimentar(texto):
+                if cancelado():
+                    return True
+                self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+            return cancelado()
+
         try:
             for delta in deltas:
                 if isinstance(delta, Fim):
@@ -442,25 +497,42 @@ class Cerebro:
                     # Regra 4: quem refaz no modo `pensar` (com a ponte) é o chamador.
                     resposta.pediu_pensar = True
                     continue
+                if isinstance(delta, Raciocinio):
+                    _guardar_raciocinio(resposta, delta.texto, separado=not pensando)
+                    pensando = True
+                    continue
+                pensando = False
                 if isinstance(delta, PedidoDeTool):
                     pedidos.append(delta)  # o modelo propõe; quem dispõe é o código (P1)
+                    if retido.strip():
+                        resposta.narracao_retida += 1
+                        _guardar_raciocinio(resposta, retido, separado=True)
+                    retido = ""
                     continue
                 if resposta.ms_ate_primeiro_token is None and delta.texto.strip():
                     resposta.ms_ate_primeiro_token = _ms_desde(comeco)
-                resposta.gerado += delta.texto
-                crescer()  # a tela, já: o lote de fala pode levar 14 palavras para fechar
-                for pedaco in fatiador.alimentar(delta.texto):
-                    if cancelado():
-                        visto_cancelamento = time.monotonic()
-                        break
-                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
-                if visto_cancelamento is None and cancelado():
+                if pedidos:
+                    novo = not palpite and bool(delta.texto.strip())
+                    if novo:
+                        palpite = True
+                        resposta.narracao_retida += 1
+                    _guardar_raciocinio(resposta, delta.texto, separado=novo)
+                    continue
+                texto = delta.texto
+                if segurar:
+                    retido += texto
+                    if len(retido.split()) < PALAVRAS_MINIMAS_POR_PEDACO:
+                        continue
+                    texto, retido, segurar = retido, "", False
+                if falar(texto):
                     visto_cancelamento = time.monotonic()
-                if visto_cancelamento is not None:
                     break
         finally:
             # Fechar o iterador é o que faz o motor parar de gerar (o `finally` dele).
             deltas.close()
+        # A rodada acabou sem proposta: o que estava seguro era a resposta.
+        if retido.strip() and visto_cancelamento is None and not cancelado() and falar(retido):
+            visto_cancelamento = time.monotonic()
         return pedidos, visto_cancelamento
 
     def _chamar(
@@ -622,6 +694,24 @@ class Cerebro:
             resposta.ms_ate_primeiro_pedaco = _ms_desde(comeco)
         resposta.publicados.append(payload)
         publicar(payload)
+
+
+def _guardar_raciocinio(resposta: Resposta, texto: str, *, separado: bool = False) -> None:
+    """Junta ao raciocínio do turno até o teto; o que passa é só contado. `separado` é um trecho
+    novo (a narração retida), e não a continuação do stream de um bloco."""
+    if separado and resposta.raciocinio and not resposta.raciocinio[-1].isspace():
+        texto = " " + texto
+    cabe = max(0, LIMITE_DO_RACIOCINIO - len(resposta.raciocinio))
+    resposta.raciocinio += texto[:cabe]
+    resposta.raciocinio_descartado += max(0, len(texto) - cabe)
+
+
+def _ja_dito(resposta: Resposta) -> str:
+    """O que já foi para a fala neste turno, sem os avisos da fila (esses o prompt já conta)."""
+    dito = " ".join(
+        str(p["text"]) for p in resposta.publicados if p["text"] and not p.get("notif_ids")
+    )
+    return dito if len(dito) <= LIMITE_DO_JA_DITO else "…" + dito[-LIMITE_DO_JA_DITO:]
 
 
 def _tela(resposta: Resposta, mostrar: Mostrar | None) -> Callable[[], None]:

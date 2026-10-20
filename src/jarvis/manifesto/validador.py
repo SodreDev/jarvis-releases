@@ -119,11 +119,20 @@ def _validar_tier(manifesto: dict[str, Any], origem: str) -> None:
       execução;
     - **livre** é leitura ou efeito passageiro (abrir, tocar), sem escrita persistente;
     - **moderado** escreve, mas só o que se desfaz: reversível, com `undo`, sem sair da máquina, e
-      com a frase que o Jarvis fala (`aviso_falado`) citando só campos que existem.
+      com a frase que o Jarvis fala (`aviso_falado`) citando só campos que existem;
+    - `aviso_silencioso` (passo de navegação, que não é falado — ADR-0031) só em **moderado** de
+      efeito passageiro: o que escreve de forma persistente o dono ouve.
     """
     identificador = str(manifesto["id"])
     tier = manifesto["tier"]
     confirmacao = manifesto["confirmation"]
+    if manifesto.get("aviso_silencioso") is True and (
+        tier != "moderado" or manifesto["side_effect"] != "ephemeral"
+    ):
+        raise ManifestoInvalido(
+            f"{origem}: {identificador} tem aviso_silencioso e não é moderado de efeito "
+            "passageiro: o que escreve de forma persistente o dono ouve (ADR-0031)"
+        )
     if tier == "perigoso":
         if confirmacao == "never":
             raise ManifestoInvalido(
