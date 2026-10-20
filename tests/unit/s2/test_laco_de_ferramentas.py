@@ -346,8 +346,10 @@ class _ExecutorQueAnota(ExecutorDeFerramentas):
     """Anota o que já tinha sido publicado (falado) no instante em que a ferramenta roda."""
 
     __slots__ = ("falado", "publicados")
+    falado: list[str]
+    publicados: list[dict[str, Any]]
 
-    def executar(self, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
+    def executar(self, *args: Any, **kwargs: Any) -> Any:
         self.falado.append(" ".join(str(p["text"]) for p in self.publicados if p["text"]))
         return ExecutorDeFerramentas.executar(self, *args, **kwargs)
 
