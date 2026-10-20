@@ -48,7 +48,8 @@ Não houve push, coautoria ou alteração fora dos arquivos dos dois commits.
   `ferramentas.py` (`CorposDoNavegador`: o corpo das tools).
 - Fluxo real: o **navegador** lança o host (não o Jarvis); por isso o host é quem escuta e o Jarvis
   é o cliente, um pedido por conexão. O README da extensão foi corrigido (dizia o contrário).
-- Catálogo: `browser.tabs`, `browser.read` (livre, contaminam o turno); `browser.click`, `.type`,
+- Catálogo: `browser.tabs`, `browser.read`, `browser.inspecionar` (livre, contaminam o turno; o mapa
+  com `ref`, ADR-0032); `browser.click`, `.type` (por `alvo` ou `ref`), `.acionar` (ADR-0032),
   `.scroll`, `.navigate` (moderado; o `aviso_falado` fica só na auditoria, `aviso_silencioso`,
   ADR-0031); `browser.acao_sensivel` (**perigoso**, só o
   código a consulta no PDP — fica fora de `_ligada`, o modelo nunca a vê). Stubs gerados.

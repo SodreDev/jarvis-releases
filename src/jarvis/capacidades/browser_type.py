@@ -39,9 +39,10 @@ POSTCONDITION: Final = (
 class BrowserTypeEntrada:
     """Argumentos normalizados de `browser.type` (input_schema do §4)."""
 
-    alvo: str
     texto: str
+    alvo: str | None = None
     limpar: bool | None = None
+    ref: str | None = None
     tab_id: int | None = None
 
 
@@ -52,8 +53,8 @@ class BrowserTypeSaida:
     digitado: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("alvo", "texto", "limpar", "tab_id"))
-OBRIGATORIOS: Final[frozenset[str]] = frozenset(("alvo", "texto"))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("texto", "alvo", "limpar", "ref", "tab_id"))
+OBRIGATORIOS: Final[frozenset[str]] = frozenset(("texto",))
 
 
 def validar_entrada(bruto: dict[str, Any]) -> BrowserTypeEntrada:

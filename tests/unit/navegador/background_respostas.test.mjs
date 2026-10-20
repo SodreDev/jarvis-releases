@@ -117,6 +117,27 @@ test("page.inspect chega plano: o risco do clique enxerga o envio de formulário
   assert.equal(resposta.result.ok, undefined);
 });
 
+test("page.map e page.act chegam ao conteúdo como mapear e acionar, com a referência", async () => {
+  const cenario = carregar((mensagem) => ({ ok: true, result: { comando: mensagem.comando } }));
+
+  const mapa = await pedir(cenario, { id: "j1-5", method: "page.map", params: { tabId: 7 } });
+  assert.deepEqual(mapa.result, { comando: "mapear" });
+
+  cenario.porta.respostas.length = 0;
+  const acao = await pedir(cenario, {
+    id: "j1-6",
+    method: "page.act",
+    params: { tabId: 7, ref: "ab1.3", acao: "tecla", tecla: "Enter" },
+  });
+  assert.deepEqual(acao.result, { comando: "acionar" });
+  assert.deepEqual(JSON.parse(JSON.stringify(cenario.enviadas[1].mensagem.params)), {
+    tabId: 7,
+    ref: "ab1.3",
+    acao: "tecla",
+    tecla: "Enter",
+  });
+});
+
 test("erro do conteúdo vira erro da ponte com o código dele", async () => {
   const cenario = carregar(() => ({
     ok: false,

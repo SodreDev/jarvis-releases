@@ -78,6 +78,8 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
         "page.click",
         "page.type",
         "page.scroll",
+        "page.map",
+        "page.act",
     ):
         assert f'case "{metodo}"' in fundo
     assert "connectNative" in fundo
@@ -85,7 +87,10 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
     assert "fetch(" not in fundo
     assert 'addEventListener("message"' not in conteudo
     assert "campo_sensivel" in conteudo
-    assert "selector" not in conteudo  # o alvo é o texto visível, nunca um seletor CSS
+    # O alvo vem do Jarvis como texto visível ou referência do mapa (ADR-0032), nunca seletor CSS:
+    # o seletor estável é gerado e usado só dentro da página, para reencontrar o elemento.
+    assert "params.selector" not in conteudo and "params.seletor" not in conteudo
+    assert "eval(" not in conteudo and "new Function" not in conteudo
     assert "time[datetime]" in conteudo
 
 

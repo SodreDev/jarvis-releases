@@ -191,16 +191,47 @@ class ClienteDoNavegador:
     def ler(self, tab_id: int) -> dict[str, Any]:
         return self.chamar("page.read", tabId=tab_id)
 
-    def inspecionar(self, tab_id: int, alvo: str) -> dict[str, Any]:
-        return self.chamar("page.inspect", tabId=tab_id, alvo=alvo)
+    def mapear(self, tab_id: int) -> dict[str, Any]:
+        """O mapa da página (ADR-0032): elementos interativos com `ref`, e os scripts."""
+        return self.chamar("page.map", tabId=tab_id)
 
-    def clicar(self, tab_id: int, alvo: str) -> dict[str, Any]:
-        return self.chamar("page.click", tabId=tab_id, alvo=alvo)
+    def inspecionar(
+        self, tab_id: int, alvo: str | None = None, *, ref: str | None = None
+    ) -> dict[str, Any]:
+        return self.chamar("page.inspect", tabId=tab_id, alvo=alvo, ref=ref)
+
+    def clicar(
+        self, tab_id: int, alvo: str | None = None, *, ref: str | None = None
+    ) -> dict[str, Any]:
+        return self.chamar("page.click", tabId=tab_id, alvo=alvo, ref=ref)
 
     def digitar(
-        self, tab_id: int, alvo: str, texto: str, *, limpar: bool = False
+        self,
+        tab_id: int,
+        alvo: str | None,
+        texto: str,
+        *,
+        limpar: bool = False,
+        ref: str | None = None,
     ) -> dict[str, Any]:
-        return self.chamar("page.type", tabId=tab_id, alvo=alvo, texto=texto, limpar=limpar)
+        return self.chamar(
+            "page.type", tabId=tab_id, alvo=alvo, ref=ref, texto=texto, limpar=limpar
+        )
+
+    def acionar(
+        self,
+        tab_id: int,
+        acao: str,
+        alvo: str | None = None,
+        *,
+        ref: str | None = None,
+        tecla: str | None = None,
+        valor: str | None = None,
+    ) -> dict[str, Any]:
+        """Uma ação da lista fechada no elemento — equivale a clicá-lo (ADR-0027, ADR-0032)."""
+        return self.chamar(
+            "page.act", tabId=tab_id, acao=acao, alvo=alvo, ref=ref, tecla=tecla, valor=valor
+        )
 
     def rolar(self, tab_id: int, pixels: int) -> dict[str, Any]:
         return self.chamar("page.scroll", tabId=tab_id, pixels=pixels)

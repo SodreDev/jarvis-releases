@@ -42,12 +42,34 @@ class PaginaFalsa:
         self.texto = "Bem-vindo. Preço R$ 10."
         self.links: list[dict[str, Any]] = []
         self.elementos: dict[str, dict[str, Any]] = {}
+        self.mapa: list[dict[str, Any]] = []
+        """Os elementos que `page.map` devolve, cada um com a sua `ref` (ADR-0032)."""
+        self.scripts: list[dict[str, Any]] = []
         self.chamadas: list[tuple[str, dict[str, Any]]] = []
         self.fora_do_ar = False
 
     def elemento(self, alvo: str, **dados: Any) -> None:
         base = {"tag": "button", "texto": alvo, "campo": False, "sensivel": False}
         self.elementos[alvo] = base | dados
+
+    def no_mapa(self, ref: str, rotulo: str, **dados: Any) -> None:
+        base = {
+            "ref": ref,
+            "papel": "button",
+            "rotulo": rotulo,
+            "tag": "button",
+            "texto": rotulo,
+            "caixa": [10, 20, 200, 40],
+            "naTela": True,
+            "campo": False,
+            "sensivel": False,
+        }
+        self.mapa.append(base | dados)
+
+    def _do_alvo(self, p: dict[str, Any]) -> dict[str, Any] | None:
+        if "ref" in p:
+            return next((e for e in self.mapa if e["ref"] == p["ref"]), None)
+        return self.elementos.get(p["alvo"])
 
     def chamar(self, pedido: PedidoDaPonte, navegador: str = "") -> dict[str, Any]:
         if self.fora_do_ar:
@@ -64,13 +86,31 @@ class PaginaFalsa:
             case "page.read":
                 pagina = {"url": self.abas[0]["url"], "titulo": "Loja", "textoVisivel": self.texto}
                 return ok | {"result": pagina | {"links": self.links, "datas": []}}
-            case "page.inspect" | "page.click" | "page.type":
-                dados = self.elementos.get(p["alvo"])
+            case "page.map":
+                mapa = {
+                    "instantaneo": "ab1",
+                    "url": self.abas[0]["url"],
+                    "titulo": "Loja",
+                    "dpr": 2,
+                    "viewport": [1280, 720],
+                    "rolagem": [0, 0],
+                    "total": len(self.mapa),
+                    "elementos": self.mapa,
+                    "scripts": self.scripts,
+                }
+                return ok | {"result": mapa}
+            case "page.inspect" | "page.click" | "page.type" | "page.act":
+                dados = self._do_alvo(p)
                 if dados is None:
                     erro = {"codigo": "alvo_ausente", "mensagem": "não achei esse elemento"}
                     return {"id": pedido.id, "ok": False, "error": erro}
                 if pedido.method == "page.inspect":
                     return ok | {"result": dados}
+                if pedido.method == "page.act":
+                    enviado = p["acao"] == "enviar" or (
+                        p.get("tecla") == "Enter" and bool(dados.get("noFormulario"))
+                    )
+                    return ok | {"result": dados | {"acionado": p["acao"], "enviado": enviado}}
                 extra = (
                     {"clicado": True}
                     if pedido.method == "page.click"
@@ -158,10 +198,12 @@ def test_sem_extensao_as_tools_nao_existem_para_o_modelo(tmp_path: Path) -> None
         assert resultado.status == "negado"
 
 
-def test_o_modelo_ve_seis_tools_e_nunca_a_de_confirmacao(executor: ExecutorDeFerramentas) -> None:
+def test_o_modelo_ve_as_tools_do_navegador_e_nunca_a_de_confirmacao(
+    executor: ExecutorDeFerramentas,
+) -> None:
     ids = {t["id"] for t in executor.catalogo_para_o_modelo()}
     assert {"browser.tabs", "browser.read", "browser.click", "browser.type"} <= ids
-    assert {"browser.scroll", "browser.navigate"} <= ids
+    assert {"browser.scroll", "browser.navigate", "browser.inspecionar", "browser.acionar"} <= ids
     assert "browser.acao_sensivel" not in ids
     resultado, perguntas = _rodar(
         executor, "browser.acao_sensivel", {"acao": "browser.click", "detalhe": "x"}, sim=True
@@ -516,3 +558,136 @@ def test_dentro_do_objetivo_ainda_pergunta_o_que_protege_de_injecao(
     assert (estranho.status, vaza.status) == ("negado", "negado")
     assert "não é um site que o dono liberou" in p1[0].motivo
     assert "email" in p2[0].motivo and "não citou" in p2[0].motivo
+
+
+# --- o mapa da página e acionar (ADR-0032) -------------------------------------------------------
+BUSCA_DO_YOUTUBE: dict[str, Any] = {
+    "papel": "combobox",
+    "tag": "input",
+    "texto": "",
+    "campo": True,
+    "editavel": True,
+    "nome": "search_query",
+    "seletor": 'input[name="search_query"]',
+    "noFormulario": True,
+    "metodoDoFormulario": "get",
+    "formularioDeBusca": True,
+    "acaoDoFormulario": "https://www.youtube.com/results",
+    "campoDeBusca": True,
+}
+
+
+def test_campo_de_busca_nao_achado_pelo_texto_se_resolve_pelo_mapa(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """Teste do dono (2026-10-20): a extensão não achou o campo de busca do YouTube pelo texto que o
+    modelo disse. Pelo mapa ele acha o campo, digita pela referência e busca com Enter, sem
+    pergunta: é a busca do objetivo, por GET."""
+    executor.novo_turno("abra o canal do Thiago Nigro no youtube")
+    pagina.abas[0]["url"] = "https://www.youtube.com/"
+    pagina.no_mapa("ab1.1", "Pesquisar", **BUSCA_DO_YOUTUBE)
+    pagina.no_mapa("ab1.2", "Início", papel="link", tag="a", href="https://www.youtube.com/")
+
+    pelo_texto = {"alvo": "campo de busca", "texto": "o primo rico"}
+    falhou, _ = _rodar(executor, "browser.type", pelo_texto)
+    mapa, p1 = _rodar(executor, "browser.inspecionar", {"tipo": "campos"})
+    campo = mapa.dados["elementos"][0]
+    digitou, p2 = _rodar(executor, "browser.type", {"ref": campo["ref"], "texto": "o primo rico"})
+    buscou, p3 = _rodar(
+        executor, "browser.acionar", {"ref": campo["ref"], "acao": "tecla", "tecla": "Enter"}
+    )
+
+    assert falhou.status == "erro" and "alvo_ausente" in falhou.motivo
+    assert mapa.status == "ok" and mapa.dados["achados"] == 1  # só o campo, não o link
+    assert campo == {
+        "ref": "ab1.1",
+        "papel": "combobox",
+        "rotulo": "Pesquisar",
+        "caixa": [10, 20, 200, 40],
+        "nome": "search_query",
+        "seletor": 'input[name="search_query"]',
+        "busca": True,
+    }
+    assert (digitou.status, buscou.status) == ("ok", "ok")
+    assert buscou.dados == {"tab_id": 7, "acionado": "tecla", "alvo": "Pesquisar", "enviado": True}
+    assert p1 == p2 == p3 == []
+    assert ("page.act", {"tabId": 7, "acao": "tecla", "ref": "ab1.1", "tecla": "Enter"}) in (
+        pagina.chamadas
+    )
+    assert executor.contaminado, "o mapa é conteúdo de terceiros, como a leitura"
+
+
+def test_acionar_o_envio_de_um_formulario_pede_o_sim_e_o_nao_impede(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    pagina.no_mapa(
+        "ab1.3",
+        "Pronto",
+        enviaFormulario=True,
+        noFormulario=True,
+        metodoDoFormulario="post",
+        acaoDoFormulario="https://loja.example/enviar",
+    )
+    negado, perguntas = _rodar(
+        executor, "browser.acionar", {"ref": "ab1.3", "acao": "enviar"}, sim=False
+    )
+    assert negado.status == "negado" and "formulário" in perguntas[0].motivo
+    assert "page.act" not in pagina.metodos()
+    feito, _ = _rodar(executor, "browser.acionar", {"ref": "ab1.3", "acao": "enviar"}, sim=True)
+    assert feito.status == "ok" and feito.dados["enviado"] is True
+
+
+def test_texto_e_referencia_juntos_ou_nenhum_dos_dois_sao_recusados(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    pagina.no_mapa("ab1.4", "Próxima")
+    pagina.elemento("Próxima")
+    juntos, _ = _rodar(executor, "browser.click", {"alvo": "Próxima", "ref": "ab1.4"})
+    nenhum, _ = _rodar(executor, "browser.acionar", {"acao": "focar"})
+    assert juntos.status == nenhum.status == "erro"
+    assert "um dos dois" in juntos.motivo and "um dos dois" in nenhum.motivo
+    pela_ref, perguntas = _rodar(executor, "browser.click", {"ref": "ab1.4"})
+    assert pela_ref.status == "ok" and perguntas == []
+    assert pela_ref.dados["alvo"] == "Próxima"
+
+
+def test_o_mapa_filtra_por_tipo_e_texto_e_so_traz_scripts_quando_pedidos(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("abre o painel da loja")
+    pagina.no_mapa("ab1.1", "Pesquisar", **BUSCA_DO_YOUTUBE)
+    pagina.no_mapa("ab1.2", "Painel", papel="link", tag="a", href="https://canal.example/x",
+                   manipuladores=["onclick"], chama=["abrirPainel"], scripts=["s1"])  # fmt: skip
+    pagina.no_mapa("ab1.3", "Mais", naTela=False, desabilitado=True)
+    pagina.scripts = [
+        {"id": "s1", "src": "", "tamanho": 80, "resumo": "function abrirPainel(){…}",
+         "define": ["abrirPainel"]},
+        {"id": "s2", "src": "https://cdn.example/app.js", "tamanho": 0, "resumo": "", "define": []},
+    ]  # fmt: skip
+
+    links, _ = _rodar(executor, "browser.inspecionar", {"tipo": "links"})
+    painel, _ = _rodar(executor, "browser.inspecionar", {"texto": "painel", "scripts": True})
+    botoes, _ = _rodar(executor, "browser.inspecionar", {"tipo": "botoes"})
+
+    assert [e["ref"] for e in links.dados["elementos"]] == ["ab1.2"]
+    assert "scripts" not in links.dados and links.dados["scripts_na_pagina"] == 2
+    assert painel.dados["elementos"][0]["scripts"] == ["s1"]
+    assert painel.dados["scripts"][0] == {
+        "id": "s1",
+        "src": "inline",
+        "tamanho": 80,
+        "resumo": "function abrirPainel(){…}",
+        "define": ["abrirPainel"],
+    }
+    assert painel.dados["scripts"][1]["src"] == "https://cdn.example/app.js"
+    assert botoes.dados["elementos"][0] == {
+        "ref": "ab1.3",
+        "papel": "button",
+        "rotulo": "Mais",
+        "caixa": [10, 20, 200, 40],
+        "desabilitado": True,
+        "fora_da_tela": True,
+    }
+    assert {"dpr", "viewport", "rolagem", "instantaneo"} <= set(painel.dados)
+    assert executor.objetivo is not None
+    assert "canal.example" in executor.objetivo.alcancados  # o link do mapa é caminho do objetivo

@@ -90,6 +90,8 @@ TIER_ESPERADO: dict[str, str] = {
     "browser.type": "moderado",
     "browser.scroll": "moderado",
     "browser.navigate": "moderado",
+    "browser.inspecionar": "livre",
+    "browser.acionar": "moderado",
     "browser.acao_sensivel": "perigoso",
     "input.mouse.move": "moderado",
     "input.mouse.click": "moderado",
@@ -196,10 +198,17 @@ def test_o_validador_recusa_tier_incoerente(
 
 
 def test_so_os_passos_de_navegacao_tem_o_aviso_silencioso() -> None:
-    """Dono, 2026-10-20 (ADR-0031): clicar, digitar, rolar e navegar não são narrados; o resto
-    das moderadas (pasta, mover, memória, lembrete, teclado virtual…) o dono ouve."""
+    """Dono, 2026-10-20 (ADR-0031): clicar, digitar, rolar, navegar e acionar (que equivale a
+    clicar, ADR-0032) não são narrados; o resto das moderadas (pasta, mover, memória, lembrete,
+    teclado virtual…) o dono ouve."""
     silenciosos = {t for t, m in MANIFESTOS.items() if m.get("aviso_silencioso") is True}
-    assert silenciosos == {"browser.click", "browser.navigate", "browser.scroll", "browser.type"}
+    assert silenciosos == {
+        "browser.acionar",
+        "browser.click",
+        "browser.navigate",
+        "browser.scroll",
+        "browser.type",
+    }
 
 
 def test_manifesto_sem_tier_e_recusado() -> None:
@@ -322,6 +331,10 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "browser.type": _pedido(pdp, "browser.type", {"alvo": "Busca", "texto": "gatos"}),
         "browser.scroll": _pedido(pdp, "browser.scroll", {"pixels": 600}),
         "browser.navigate": _pedido(pdp, "browser.navigate", {"url": "https://exemplo.org/"}),
+        "browser.inspecionar": _pedido(pdp, "browser.inspecionar", {"tipo": "campos"}),
+        "browser.acionar": _pedido(
+            pdp, "browser.acionar", {"ref": "ab1.1", "acao": "tecla", "tecla": "Enter"}
+        ),
         "browser.acao_sensivel": _pedido(
             pdp, "browser.acao_sensivel", {"acao": "browser.click", "detalhe": "Enviar"}
         ),

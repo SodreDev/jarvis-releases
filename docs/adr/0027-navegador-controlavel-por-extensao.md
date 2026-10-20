@@ -183,3 +183,13 @@ falso, `kdotool`/`xprop` com lançador falso): o diálogo do KDE de verdade, o `
 keysym de maiúscula/acentuada no KWin, o `kdotool windowactivate` devolvendo o foco, e o `uinput`
 num X11 real. **Limites conhecidos:** o ponteiro só move relativo (posição absoluta pede captura de
 tela/ScreenCast, fora desta fatia); o `uinput` só digita o que tem a mesma tecla em US e ABNT2.
+
+## Emenda de 2026-10-20 — o mapa da página e acionar (ADR-0032)
+
+A regra 1 passa a valer como escrita: o alvo pode ser a **referência** (`ref`) do mapa que a página
+devolveu (`browser.inspecionar`), além do texto visível; seletor CSS e coordenada continuam sem vir
+do Jarvis (o seletor estável é gerado e usado só dentro da página, para reencontrar o elemento). E
+"acionar uma função ou ação do DOM é equivalente a clicar" virou `browser.acionar`: clicar com a
+sequência inteira de ponteiro, focar, passar o mouse, Enter/Escape/Tab/setas, enviar o formulário e
+escolher opção — vocabulário fechado, sem `eval` nem função da página chamada pelo nome, com o risco
+do clique (o envio e o Enter num campo contam como envio do formulário).

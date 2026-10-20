@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.manifesto.validador import (
+    EXCECOES_DO_TETO,
     IDS_PROIBIDOS,
     PASTA_CATALOGO,
     TETO_POR_NAMESPACE,
@@ -181,13 +182,14 @@ def lintar_catalogo(pasta: Path = PASTA_CATALOGO) -> list[Achado]:
         namespace = identificador.split(".")[0]
         por_namespace[namespace] = por_namespace.get(namespace, 0) + 1
     for namespace, quantas in sorted(por_namespace.items()):
-        if quantas > TETO_POR_NAMESPACE:
+        teto = EXCECOES_DO_TETO.get(namespace, TETO_POR_NAMESPACE)
+        if quantas > teto:
             achados.append(
                 Achado(
                     "(catálogo)",
                     namespace,
                     "catalogo-largo",
-                    f"{quantas} tools no namespace {namespace!r}, teto é {TETO_POR_NAMESPACE} (§4)",
+                    f"{quantas} tools no namespace {namespace!r}, teto é {teto} (§4)",
                 )
             )
 

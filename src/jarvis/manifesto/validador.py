@@ -39,6 +39,11 @@ TOOLS_PROIBIDAS_DE_PROMOVER: Final[frozenset[str]] = frozenset(
 )
 NUCLEO_DE_CONVERSA: Final[tuple[str, ...]] = tuple(SCHEMA["x-nucleo-de-conversa"]["ids"])
 TETO_POR_NAMESPACE: Final[int] = int(SCHEMA["x-tetos-de-catalogo"]["por_namespace"])
+EXCECOES_DO_TETO: Final[dict[str, int]] = {
+    str(namespace): int(teto)
+    for namespace, teto in SCHEMA["x-tetos-de-catalogo"].get("excecoes_por_namespace", {}).items()
+}
+"""Namespace com teto próprio, decidido e explicado no esquema (`descricao_das_excecoes`)."""
 TETO_POR_TURNO: Final[int] = int(SCHEMA["x-tetos-de-catalogo"]["por_turno"])
 
 

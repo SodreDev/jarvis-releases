@@ -1,8 +1,10 @@
 """O vocabulário fechado entre o Jarvis e a extensão (extensao/background.js).
 
 Só estes métodos existem, cada um com os parâmetros que aceita. Não há `eval`, CDP nem
-seletor CSS: o alvo de um clique é o **texto ou rótulo visível** do elemento. O host valida de
-novo o que o cliente já validou — o socket é uma fronteira, e a extensão não confia em ninguém.
+seletor CSS: o alvo de uma ação é o **texto ou rótulo visível** do elemento ou a **referência**
+(`ref`) que o mapa da própria página devolveu (`page.map`, ADR-0032), e o que se faz com ele é
+uma ação de uma lista fechada (`page.act`). O host valida de novo o que o cliente já validou — o
+socket é uma fronteira, e a extensão não confia em ninguém.
 """
 
 from __future__ import annotations
@@ -25,6 +27,11 @@ LIMITE_DO_ALVO: Final = 500
 LIMITE_DO_TEXTO: Final = 10_000
 LIMITE_DO_DESLOCAMENTO: Final = 2_000
 PADRAO_DO_ID: Final = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+PADRAO_DA_REF: Final = re.compile(r"[a-z0-9]{1,16}\.[0-9]{1,4}")
+"""`<instantâneo>.<n>`: o instantâneo leva a marca da página que o mapeou (`content.js`)."""
+ACOES: Final = frozenset({"clicar", "focar", "passar_o_mouse", "tecla", "enviar", "selecionar"})
+TECLAS: Final = frozenset({"Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"})
+LIMITE_DO_VALOR: Final = 200
 
 METODOS: Final[dict[str, dict[str, type]]] = {
     # método → parâmetro → tipo (`int` nunca aceita booleano)
@@ -33,18 +40,21 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     "tabs.navigate": {"tabId": int, "url": str},
     "tabs.open": {"url": str},
     "page.read": {"tabId": int},
-    "page.inspect": {"tabId": int, "alvo": str},
-    "page.click": {"tabId": int, "alvo": str},
-    "page.type": {"tabId": int, "alvo": str, "texto": str, "limpar": bool},
+    "page.map": {"tabId": int},
+    "page.inspect": {"tabId": int, "alvo": str, "ref": str},
+    "page.click": {"tabId": int, "alvo": str, "ref": str},
+    "page.type": {"tabId": int, "alvo": str, "ref": str, "texto": str, "limpar": bool},
+    "page.act": {"tabId": int, "alvo": str, "ref": str, "acao": str, "tecla": str, "valor": str},
     "page.scroll": {"tabId": int, "pixels": int},
 }
 OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "tabs.navigate": frozenset({"url"}),
     "tabs.open": frozenset({"url"}),
-    "page.inspect": frozenset({"alvo"}),
-    "page.click": frozenset({"alvo"}),
-    "page.type": frozenset({"alvo", "texto"}),
+    "page.type": frozenset({"texto"}),
+    "page.act": frozenset({"acao"}),
 }
+COM_ALVO: Final = frozenset({"page.inspect", "page.click", "page.type", "page.act"})
+"""Métodos que agem num elemento: exatamente um de `alvo` (texto visível) ou `ref` (do mapa)."""
 
 
 class PedidoInvalido(ValueError):
@@ -100,10 +110,22 @@ def validar_pedido(bruto: object) -> PedidoDaPonte:
         raise PedidoInvalido("tabId negativo")
     if "url" in params:
         _url_http(params["url"])
+    if metodo in COM_ALVO and ("alvo" in params) == ("ref" in params):
+        raise PedidoInvalido(f"{metodo}: diga o alvo pelo texto (alvo) ou pela referência (ref)")
     if "alvo" in params:
         if not params["alvo"].strip():
             raise PedidoInvalido("alvo vazio")
         _tamanho("alvo", params["alvo"], LIMITE_DO_ALVO)
+    if "ref" in params and not PADRAO_DA_REF.fullmatch(params["ref"]):
+        raise PedidoInvalido("ref fora do formato do mapa da página")
+    if "acao" in params and params["acao"] not in ACOES:
+        raise PedidoInvalido(f"ação fora da lista: {sorted(ACOES)}")
+    if params.get("acao") == "tecla" and params.get("tecla") not in TECLAS:
+        raise PedidoInvalido(f"tecla fora da lista: {sorted(TECLAS)}")
+    if params.get("acao") == "selecionar" and not params.get("valor"):
+        raise PedidoInvalido("selecionar pede o valor (o texto da opção)")
+    if "valor" in params:
+        _tamanho("valor", params["valor"], LIMITE_DO_VALOR)
     if "texto" in params:
         _tamanho("texto", params["texto"], LIMITE_DO_TEXTO)
     if "pixels" in params and abs(params["pixels"]) > LIMITE_DO_DESLOCAMENTO:

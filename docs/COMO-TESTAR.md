@@ -584,6 +584,8 @@ navegador. Não recarregue a extensão entre essas etapas.
 | «digita 123 no campo Senha» | **recusa**, sem pergunta: senha é sua |
 | «clica em Enviar» | **faixa de confirmação** (envia formulário); sem o seu sim, a aba **não** muda para «enviado» |
 | «rola a página» | rola; fala só o resultado |
+| «que campos tem na página?» | `browser.inspecionar`: o mapa (rótulo, papel, `ref`, caixa em pixels), sem perguntar (livre) — §0.7.7 |
+| «digita Ana no Nome e aperta Enter» | digita; o **Enter** pede o seu sim: o formulário tem senha (§0.7.7) |
 | «abre o site exemplo.org» / «vai para …» | troca a URL da **aba atual** (2026-10-20); aba nova só se você pedir («abre numa aba nova») |
 
 Conferir que não há porta de rede e que o socket é só seu:
@@ -598,6 +600,31 @@ Sites de banco, pagamento e gerenciador de senhas pedem o seu sim **a cada cliqu
 banco/senha/pagamento também pede. Em mensageiro e e-mail, abrir a conversa e escrever não pedem —
 **enviar** pede (lista versionada em `src/jarvis/navegador/risco.py`). Para conferir sem expor conta
 nenhuma, use o teste automático (`tests/unit/navegador/test_ferramentas_browser.py`).
+
+#### 0.7.7 Mapa da página e acionar (2026-10-20, ADR-0032)
+
+Quando o Jarvis não acha um campo ou botão pelo texto (o caso do campo de busca do YouTube, que só
+tem «Pesquisar» por dentro), ele pede o **mapa** da página (`browser.inspecionar`): os elementos
+interativos com papel, rótulo, estado, caixa em pixels da tela e uma **referência** (`ref`) que
+vale só naquela página. Daí ele digita e clica pela referência e, se o clique simples não fizer
+efeito, **aciona** o elemento (`browser.acionar`): clicar com a sequência inteira de mouse, focar,
+passar o mouse, Enter/Escape/Tab/setas, enviar o formulário ou escolher uma opção. Não roda script
+nem chama função da página. Acionar tem o risco do clique: o Enter num campo e o «enviar» contam
+como envio do formulário — **busca** (GET) não pergunta; formulário que envia, com senha ou cartão,
+e o Enter na caixa de um chat pedem o seu sim; banco, pagamento e senha pedem a cada ação.
+
+**Como conferir** (página local do §0.7.2, `navegador_controlado` ligado): «que campos tem na
+página?» → ele lista Nome e Senha sem perguntar; «digita Ana no Nome e aperta Enter» → digita e
+**pede o sim** antes do Enter (o formulário tem senha). Num site de verdade: «pesquisa o primo rico
+no youtube» com a aba no YouTube → ele busca sem perguntar nada.
+
+**Provado em contêiner** (Chromium e Firefox, `tools/harness_navegador.py`): a busca sem rótulo não
+se acha pelo texto; o mapa a acha com `ref` e caixa e liga o link «Painel» ao script que define a
+função dele; digitar pela `ref` e Enter buscam por GET sem pergunta; passar o mouse roda o
+`mouseover` da página; o clique pela `ref` roda a função do script; «enviar» num formulário POST
+pede o sim e o «não» impede. **Não provado:** sites reais (YouTube, lojas) — a página de teste os
+imita; ouvinte posto por `addEventListener` não aparece no mapa; página que confere `isTrusted`
+não aceita evento sintético (ali, o teclado e o mouse virtuais do §0.7.3).
 
 #### 0.7.3 Mouse e teclado virtuais — o consentimento do portal
 

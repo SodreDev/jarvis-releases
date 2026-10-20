@@ -39,7 +39,8 @@ POSTCONDITION: Final = (
 class BrowserClickEntrada:
     """Argumentos normalizados de `browser.click` (input_schema do §4)."""
 
-    alvo: str
+    alvo: str | None = None
+    ref: str | None = None
     tab_id: int | None = None
 
 
@@ -50,8 +51,8 @@ class BrowserClickSaida:
     clicado: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("alvo", "tab_id"))
-OBRIGATORIOS: Final[frozenset[str]] = frozenset(("alvo",))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("alvo", "ref", "tab_id"))
+OBRIGATORIOS: Final[frozenset[str]] = frozenset(())
 
 
 def validar_entrada(bruto: dict[str, Any]) -> BrowserClickEntrada:

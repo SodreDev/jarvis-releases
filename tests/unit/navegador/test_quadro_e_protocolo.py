@@ -55,6 +55,14 @@ def test_pedidos_do_vocabulario_passam() -> None:
     assert validar_pedido(_pedido("tabs.navigate", url="https://exemplo.org/a?b=1")).id == "j1-1"
     # Aba nova só quando o dono pede (2026-10-20): o padrão continua sendo navegar na atual.
     assert validar_pedido(_pedido("tabs.open", url="https://exemplo.org")).method == "tabs.open"
+    # O mapa da página e a ação pela referência dele (ADR-0032).
+    assert validar_pedido(_pedido("page.map", tabId=7)).method == "page.map"
+    assert validar_pedido(_pedido("page.click", ref="k3f2.12")).params == {"ref": "k3f2.12"}
+    assert validar_pedido(_pedido("page.type", ref="k3f2.1", texto="o primo rico")).params["ref"]
+    acao = validar_pedido(_pedido("page.act", ref="k3f2.1", acao="tecla", tecla="Enter"))
+    assert acao.params["tecla"] == "Enter"
+    escolha = _pedido("page.act", alvo="Parcelas", acao="selecionar", valor="3x")
+    assert validar_pedido(escolha).params["valor"] == "3x"
 
 
 @pytest.mark.parametrize(
@@ -65,6 +73,17 @@ def test_pedidos_do_vocabulario_passam() -> None:
         _pedido("tabs.open", url="https://exemplo.org", reutilizar=True),  # fora do contrato
         _pedido("page.eval", codigo="1+1"),  # canivete suíço
         _pedido("page.click", selector="#enviar", alvo="x"),  # seletor CSS não existe
+        _pedido("page.click", seletor="#enviar"),  # nem em português
+        _pedido("page.click", alvo="Próxima", ref="k3f2.1"),  # texto ou referência, um só
+        _pedido("page.click", ref="#enviar"),  # referência fora do formato do mapa
+        _pedido("page.click", ref="k3f2.1; document.cookie"),
+        _pedido("page.act", ref="k3f2.1"),  # falta a ação
+        _pedido("page.act", ref="k3f2.1", acao="executar"),  # ação fora da lista
+        _pedido("page.act", ref="k3f2.1", acao="tecla", tecla="F12"),
+        _pedido("page.act", ref="k3f2.1", acao="tecla"),  # tecla sem dizer qual
+        _pedido("page.act", ref="k3f2.1", acao="selecionar"),  # escolher sem a opção
+        _pedido("page.act", ref="k3f2.1", acao="selecionar", valor="v" * 201),
+        _pedido("page.map", alvo="x"),  # o mapa é da página inteira
         _pedido("page.click"),  # falta o alvo
         _pedido("page.click", alvo="   "),
         _pedido("page.click", alvo="a" * 501),

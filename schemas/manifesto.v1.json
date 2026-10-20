@@ -141,6 +141,10 @@
   "x-tetos-de-catalogo": {
     "descricao": "Guias de catálogo da §4.",
     "por_namespace": 10,
-    "por_turno": 12
+    "por_turno": 12,
+    "excecoes_por_namespace": {
+      "browser": 12
+    },
+    "descricao_das_excecoes": "browser: 11 tools que o modelo vê (ler, mapear, ver a tela, clicar, digitar, acionar, rolar, navegar, abas, estado, abrir o navegador) mais a interna browser.acao_sensivel, que só o código usa — as de mapa e tela foram pedidas pelo dono pelo nome (2026-10-20, ADR-0032)."
   }
 }

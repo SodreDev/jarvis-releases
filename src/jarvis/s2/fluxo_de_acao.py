@@ -308,6 +308,8 @@ NAVEGACAO_DO_OBJETIVO: Final = frozenset(
         "browser.click",
         "browser.type",
         "browser.scroll",
+        "browser.inspecionar",
+        "browser.acionar",
         "sites.open",
         "web.buscar",
         "web.ler",

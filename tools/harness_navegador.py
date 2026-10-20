@@ -78,8 +78,16 @@ Mostrar detalhe</button>
 <button>Pronto</button></form>
 <form role=search action="/busca"><label>Busca <input type=search name=q></label></form>
 <label>Senha <input type=password name=s></label>
+<form id=topo action="/resultados">
+<input name=search_query placeholder="Pesquisar" autocomplete=off></form>
+<div id=menu tabindex=0 onmouseover="document.getElementById('estado').textContent='menu aberto'">
+Menu</div>
+<script>
+function abrirPainel(){document.getElementById('estado').textContent='painel aberto'}</script>
+<a href="#painel" onclick="abrirPainel();return false">Painel</a>
 """
-"""«Pronto» é um envio de formulário com rótulo neutro: só a inspeção do alvo o pega."""
+"""«Pronto» é um envio de formulário com rótulo neutro: só a inspeção do alvo o pega. A busca do
+topo imita a do YouTube (2026-10-20): sem rótulo que diga "busca", só o mapa a acha (ADR-0032)."""
 SEGUNDA: Final = "<!doctype html><meta charset=utf-8><title>Segunda página do Jarvis</title><p>dois"
 
 
@@ -342,6 +350,8 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             "browser.scroll",
             "browser.navigate",
             "browser.estado",
+            "browser.inspecionar",
+            "browser.acionar",
         }
         prompt = sistema_com_ferramentas("Você é o Jarvis.", catalogo)
         relatorio.conferir(
@@ -421,6 +431,94 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             "browser.type recusa o campo de senha",
             senha.status != "ok" and "senha" in senha.motivo.lower(),
             f"{senha.status}: {senha.motivo}",
+        )
+
+        # O caso do dono (2026-10-20): o campo de busca não se acha pelo texto; pelo mapa, sim.
+        nao_achou = rodar("browser.type", {**alvo, "alvo": "campo de busca", "texto": "o primo"})
+        relatorio.conferir(
+            "a busca sem rótulo não se acha pelo texto (o caso do dono)",
+            nao_achou.status == "erro" and "alvo_ausente" in nao_achou.motivo,
+            f"{nao_achou.status}: {nao_achou.motivo}",
+        )
+        mapa = rodar("browser.inspecionar", {**alvo, "scripts": True})
+        elementos = list(mapa.dados.get("elementos", []))
+        busca = next((e for e in elementos if e.get("rotulo") == "Pesquisar"), None)
+        painel = next((e for e in elementos if e.get("rotulo") == "Painel"), None)
+        do_painel = [
+            s.get("id")
+            for s in mapa.dados.get("scripts", [])
+            if "abrirPainel" in s.get("define", [])
+        ]
+        caixa = list(busca.get("caixa", [])) if busca else []
+        relatorio.conferir(
+            "browser.inspecionar acha a busca (ref, caixa em pixels) e liga o painel ao script",
+            mapa.status == "ok"
+            and busca is not None
+            and busca.get("busca") is True
+            and len(caixa) == 4
+            and caixa[2] > 0
+            and painel is not None
+            and bool(do_painel)
+            and painel.get("scripts") == do_painel,
+            {"busca": busca, "painel": painel, "scripts": do_painel}
+            if mapa.status == "ok"
+            else mapa.motivo,
+        )
+        if busca is not None and aba is not None:
+            antes = len(perguntas)
+            pela_ref = rodar("browser.type", {**alvo, "ref": busca["ref"], "texto": "o primo rico"})
+            enter = rodar(
+                "browser.acionar", {**alvo, "ref": busca["ref"], "acao": "tecla", "tecla": "Enter"}
+            )
+            buscou = _esperar(
+                lambda: (
+                    "search_query=o+primo+rico" in str(corpos.cliente.aba(aba["tab_id"]).get("url"))
+                ),
+                10,
+            )
+            relatorio.conferir(
+                "digitar pela ref e Enter buscam por GET, sem pedir o sim",
+                pela_ref.status == "ok"
+                and enter.status == "ok"
+                and bool(buscou)
+                and len(perguntas) == antes,
+                f"{pela_ref.status}/{enter.status} {enter.dados or enter.motivo}",
+            )
+            rodar("browser.navigate", {**alvo, "url": url})
+            _esperar(pagina_pronta, 15)
+        de_novo = rodar("browser.inspecionar", alvo)
+        refs = {e.get("rotulo"): e.get("ref") for e in de_novo.dados.get("elementos", [])}
+        passou = rodar(
+            "browser.acionar", {**alvo, "ref": str(refs.get("Menu")), "acao": "passar_o_mouse"}
+        )
+        menu = rodar("browser.read", alvo)
+        relatorio.conferir(
+            "browser.acionar passa o mouse no menu (mouseover da página roda)",
+            passou.status == "ok" and "menu aberto" in str(menu.dados.get("texto")),
+            passou.dados or passou.motivo,
+        )
+        clicou = rodar(
+            "browser.acionar", {**alvo, "ref": str(refs.get("Painel")), "acao": "clicar"}
+        )
+        aberto = rodar("browser.read", alvo)
+        relatorio.conferir(
+            "browser.acionar clica no link que chama a função do script da página",
+            clicou.status == "ok" and "painel aberto" in str(aberto.dados.get("texto")),
+            clicou.dados or clicou.motivo,
+        )
+        antes = len(perguntas)
+        envio = rodar(
+            "browser.acionar", {**alvo, "ref": str(refs.get("Pronto")), "acao": "enviar"}, sim=False
+        )
+        ficou = rodar("browser.read", alvo)
+        pediu = perguntas[antes:]
+        relatorio.conferir(
+            "browser.acionar «enviar» num formulário que envia pede o sim, e o não impede",
+            envio.status == "negado"
+            and bool(pediu)
+            and "formulário" in pediu[0].motivo
+            and "Olá" in str(ficou.dados.get("texto")),
+            f"{envio.status}: {pediu[0].motivo if pediu else 'NÃO PERGUNTOU'}",
         )
 
         estado = rodar("browser.estado", {})

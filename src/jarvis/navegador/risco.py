@@ -268,12 +268,31 @@ def avaliar_clique(
     motivo = _palavra_de_risco(alvo, str(dados.get("texto", "")))
     if motivo:
         return Avaliacao(confirmar=f"clicar em «{alvo}» {motivo}")
-    destino = str(dados.get("destinoDoLink", ""))
-    if destino:
-        para_fora = _dado_para_fora(destino, objetivo)
-        if para_fora is not None:
-            return para_fora
-    if contaminado and destino and not (objetivo is not None and objetivo.dentro(destino)):
+    return _para_onde_leva(
+        url,
+        str(dados.get("destinoDoLink", "")),
+        contaminado=contaminado,
+        liberados=liberados,
+        objetivo=objetivo,
+    )
+
+
+def _para_onde_leva(
+    url: str,
+    destino: str,
+    *,
+    contaminado: bool,
+    liberados: frozenset[str],
+    objetivo: Objetivo | None,
+) -> Avaliacao:
+    """O destino de um link ou de uma busca por GET: dado do dono para fora pergunta sempre;
+    domínio de fora do objetivo pergunta depois de o turno ler conteúdo de terceiros."""
+    if not destino:
+        return SEGUE
+    para_fora = _dado_para_fora(destino, objetivo)
+    if para_fora is not None:
+        return para_fora
+    if contaminado and not (objetivo is not None and objetivo.dentro(destino)):
         host = dominio(destino)
         if host != dominio(url) and not dominio_liberado(host, liberados):
             return Avaliacao(
@@ -283,6 +302,52 @@ def avaliar_clique(
                 )
             )
     return SEGUE
+
+
+def avaliar_acionamento(
+    url: str,
+    dados: Mapping[str, Any],
+    alvo: str,
+    acao: str,
+    *,
+    tecla: str = "",
+    contaminado: bool,
+    liberados: frozenset[str],
+    objetivo: Objetivo | None = None,
+) -> Avaliacao:
+    """Acionar a ação do elemento equivale a clicá-lo (dono, 2026-10-18; ADR-0032): o risco é o do
+    clique, e o «enviar» e o Enter num campo contam como envio do formulário em que ele está.
+    Focar, passar o mouse, escolher opção e as outras teclas não enviam nada."""
+    nome = categoria(url)
+    if nome in CATEGORIAS_DE_CADA_ACAO:
+        return Avaliacao(
+            confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada ação pede o seu sim"
+        )
+    enter = acao == "tecla" and tecla == "Enter"
+    if acao == "clicar" or (enter and not dados.get("editavel")):
+        # Enter num botão ou link é o clique dele.
+        return avaliar_clique(
+            url, dados, alvo, contaminado=contaminado, liberados=liberados, objetivo=objetivo
+        )
+    if not (acao == "enviar" or enter):
+        return SEGUE
+    if not dados.get("noFormulario"):
+        if enter and dados.get("campoDeBusca"):
+            return SEGUE  # o código da página busca
+        # Fora de formulário o Enter vai para o código da página: na caixa de um chat, envia.
+        return Avaliacao(confirmar=f"apertar Enter em «{alvo}» pode enviar o que está escrito")
+    envio = _envio_de_formulario({**dados, "enviaFormulario": True})
+    if envio:
+        verbo = "enviar" if acao == "enviar" else "apertar Enter em"
+        return Avaliacao(confirmar=f"{verbo} «{alvo}» {envio}")
+    # Busca por GET: o formulário só navega; o destino passa pelas regras do link.
+    return _para_onde_leva(
+        url,
+        str(dados.get("acaoDoFormulario", "")),
+        contaminado=contaminado,
+        liberados=liberados,
+        objetivo=objetivo,
+    )
 
 
 def avaliar_digitacao(

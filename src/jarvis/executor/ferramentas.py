@@ -106,6 +106,7 @@ FONTES_DE_TERCEIROS: Final = frozenset(
         "clipboard.text.read",
         "browser.tabs",
         "browser.read",
+        "browser.inspecionar",
     }
 )
 """Tools cujo resultado é texto que **outra pessoa** escreveu (nome de arquivo, conteúdo, conversa

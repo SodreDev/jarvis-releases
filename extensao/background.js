@@ -145,6 +145,10 @@ async function executar(method, params) {
       return mensagemDaPagina(params, "ler");
     case "page.inspect":
       return mensagemDaPagina(params, "inspecionar");
+    case "page.map":
+      return mensagemDaPagina(params, "mapear");
+    case "page.act":
+      return mensagemDaPagina(params, "acionar");
     case "page.click":
       return mensagemDaPagina(params, "clicar");
     case "page.type":

@@ -139,7 +139,8 @@ class Objetivo:
 
 def enderecos_do_resultado(dados: object) -> list[str]:
     """Os endereços que um resultado de ferramenta traz: `url` e `dominio` no topo, `href` e `url`
-    de links, resultados, vídeos e abas. Só endereço — o texto do resultado não é lido."""
+    de links, resultados, vídeos, abas e dos elementos do mapa da página. Só endereço — o texto do
+    resultado não é lido."""
     achados: list[str] = []
 
     def visitar(valor: object, profundidade: int) -> None:
@@ -150,7 +151,7 @@ def enderecos_do_resultado(dados: object) -> list[str]:
                 endereco = valor.get(chave)
                 if isinstance(endereco, str) and endereco:
                     achados.append(endereco)
-            for chave in ("links", "resultados", "videos", "abas", "aba"):
+            for chave in ("links", "resultados", "videos", "abas", "aba", "elementos"):
                 if chave in valor:
                     visitar(valor[chave], profundidade + 1)
         elif isinstance(valor, list):
