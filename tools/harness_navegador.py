@@ -13,8 +13,9 @@ navegador carrega a cópia da extensão que ele gravou → `connectNative` → o
 host deste código → socket Unix → `Aplicativo._montar_ferramentas` (catálogo C0, PDP e risco
 reais) → as `browser.*`, numa página servida no 127.0.0.1 do contêiner.
 
-O que se confere, por navegador: o host nasce; o modelo enxerga as `browser.*`; `browser.read` lê o
-texto; um botão comum é clicado sem pergunta; um botão de **envio de formulário** com rótulo neutro
+O que se confere, por navegador (14 pontos): o host nasce; o modelo enxerga as `browser.*`;
+`browser.tabs` acha a página e `browser.navigate` a recarrega; `browser.read` lê o texto; um botão
+comum é clicado sem pergunta; um botão de **envio de formulário** com rótulo neutro
 pede o "sim" (e o "não" impede o clique); `browser.type` digita na busca e recusa a senha;
 `browser.estado` diz conectado; o host derrubado (PID conferido em `/proc`) volta pela reconexão
 da extensão; e, 40 s sem pedido, o mesmo host continua respondendo.
@@ -24,7 +25,9 @@ Fatos que este roteiro descobriu (2026-10-19, Chromium 155 e Firefox 158 do Fedo
   `--disable-features=DisableLoadExtensionCommandLineSwitch`;
 - o manifesto do usuário mora em `<user-data-dir>/NativeMessagingHosts`: o headless usa uma pasta
   temporária, então o `--user-data-dir` vai explícito;
-- o Firefox instala extensão temporária pelo Marionette (`Addon:Install` com `temporary`).
+- o Firefox instala extensão temporária pelo Marionette (`Addon:Install` com `temporary`);
+- a URL da linha de comando do Chromium corre com o registro do conteúdo da extensão: às vezes a
+  página carrega antes e fica sem ele — por isso o roteiro navega de novo antes de ler.
 """
 
 from __future__ import annotations
@@ -250,9 +253,21 @@ def _log_util(log: Path) -> str:
 
 
 def dentro(nome: str) -> int:
+    """Roda o roteiro e imprime o relatório — também quando ele quebra no meio."""
+    relatorio = Relatorio(nome)
+    try:
+        _roteiro(nome, relatorio)
+    except Exception as erro:  # quebrar no meio é resultado do teste: vai para o relatório
+        relatorio.conferir("o roteiro chegou ao fim", False, f"{type(erro).__name__}: {erro}")
+    print(MARCA + json.dumps(relatorio.__dict__, ensure_ascii=False), flush=True)
+    return 0 if relatorio.ok else 1
+
+
+def _roteiro(nome: str, relatorio: Relatorio) -> None:
     """O roteiro, de cima a baixo: um roteiro linear lê melhor que dez funções."""
     from jarvis.executor.ferramentas import Confirmacao, ResultadoDeFerramenta
     from jarvis.navegador import instalar
+    from jarvis.navegador.cliente import NavegadorFalhou, NavegadorIndisponivel
     from jarvis.s2.motor_claude_cli import sistema_com_ferramentas
     from jarvis.voz.app import Aplicativo
     from jarvis.voz.config import Configuracao
@@ -263,7 +278,6 @@ def dentro(nome: str) -> int:
     RUN.mkdir(mode=0o700, parents=True, exist_ok=True)
     RUN.chmod(0o700)
     familia = "chromium" if nome == "chromium" else "firefox"
-    relatorio = Relatorio(nome)
 
     falas: list[str] = []
     codigo = instalar.principal(
@@ -283,8 +297,7 @@ def dentro(nome: str) -> int:
         vivos = _esperar(lambda: _sockets(familia), 40)
         if not relatorio.conferir("o navegador lançou o host pelo manifesto", vivos, list(vivos)):
             relatorio.conferir("log do navegador", False, _log_util(log))
-            print(MARCA + json.dumps(relatorio.__dict__, ensure_ascii=False), flush=True)
-            return 1
+            return
         pid = next(iter(vivos))
         relatorio.conferir("o processo do socket é o host deste código", _e_o_host(pid), pid)
 
@@ -339,6 +352,17 @@ def dentro(nome: str) -> int:
         relatorio.conferir("browser.tabs acha a página", aba is not None, abas.dados or abas.motivo)
         alvo = {"tab_id": aba["tab_id"]} if aba else {}
 
+        # O Chromium abre a URL da linha de comando correndo com o registro do conteúdo da
+        # extensão: às vezes a página carrega antes, e fica sem ele (o produto diz «recarregue a
+        # aba»). Navegar de novo, já com a extensão de pé, tira a sorte do roteiro — e prova a
+        # browser.navigate.
+        ida = rodar("browser.navigate", {**alvo, "url": url})
+        relatorio.conferir(
+            "browser.navigate leva a aba de novo à página",
+            ida.status == "ok",
+            ida.dados or ida.motivo,
+        )
+
         def pagina_pronta() -> ResultadoDeFerramenta | None:
             lida = rodar("browser.read", alvo)
             return lida if lida.status == "ok" and "Olá" in str(lida.dados.get("texto")) else None
@@ -377,7 +401,10 @@ def dentro(nome: str) -> int:
         digitou = rodar("browser.type", {**alvo, "alvo": "Busca", "texto": "jarvis"})
         corpos = ferramentas.navegador
         assert corpos is not None
-        campo = corpos.cliente.inspecionar(aba["tab_id"], "Busca") if aba else {}
+        try:
+            campo = corpos.cliente.inspecionar(aba["tab_id"], "Busca") if aba else {}
+        except (NavegadorFalhou, NavegadorIndisponivel) as erro:
+            campo = {"erro": str(erro)}
         relatorio.conferir(
             "browser.type digita no campo de busca",
             digitou.status == "ok" and campo.get("texto") == "jarvis",
@@ -415,9 +442,6 @@ def dentro(nome: str) -> int:
             _e_o_host(vivo) and ocioso.status == "ok",
             f"pid {vivo}: {ocioso.status} {ocioso.motivo}",
         )
-
-    print(MARCA + json.dumps(relatorio.__dict__, ensure_ascii=False), flush=True)
-    return 0 if relatorio.ok else 1
 
 
 # --- no host --------------------------------------------------------------------------------------

@@ -238,7 +238,9 @@ Prova em navegador real: `uv run --frozen python -m tools.harness_navegador` (po
 `--network none`, `--userns=keep-id`, repositório e Python do uv só leitura). Armadilhas do roteiro:
 o Chromium ≥ 137 ignora `--load-extension` sem
 `--disable-features=DisableLoadExtensionCommandLineSwitch`; o `--user-data-dir` tem de ir
-explícito; o Firefox instala extensão temporária pelo Marionette (`Addon:Install`).
+explícito; o Firefox instala extensão temporária pelo Marionette (`Addon:Install`); e a URL da
+linha de comando do Chromium às vezes carrega antes do conteúdo da extensão (o roteiro navega de
+novo com `browser.navigate` antes de ler — é o mesmo caso da aba aberta antes da extensão).
 
 ## Verificações já verdes
 
