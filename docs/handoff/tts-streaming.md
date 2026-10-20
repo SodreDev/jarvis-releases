@@ -21,7 +21,10 @@ deltas do modelo → fatiador 14..18 → janela de síntese (máx. 3) → ordem 
   a linha do player e uma janela de três futures permite a síntese atual mais duas antecipadas. A
   fila e um semáforo impõem backpressure; conclusão fora de ordem fica retida até chegar sua vez.
 - `Aplicativo._tocar` continua sendo o dono da reprodução sequencial. A fila de `ResponseChunk`
-  também é limitada e seu `put` consulta o epoch, para uma geração bloqueada acordar no barge-in.
+  entre o cérebro e o TTS **não tem teto** (correção de 2026-10-20): com teto de 3, o cérebro
+  parava de ler o motor enquanto o alto-falante falava — a tela voltava ao ritmo da fala e o prazo
+  total do motor (30 s no `claude -p`, conferido a cada `next()`) cortava resposta longa. Quem
+  limita o trabalho é a janela de síntese acima; o texto é pequeno.
 - O primeiro `False` de `FilaDePlayback.enfileirar` encerra o pipeline. Todos os iteradores são
   fechados explicitamente pelo produtor; future ainda não iniciada é cancelada e resultado tardio
   não atravessa para a fila nem para outro epoch. A vaga é obtida **antes** de ler outro trecho:

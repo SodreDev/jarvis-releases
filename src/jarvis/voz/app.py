@@ -45,7 +45,6 @@ from jarvis.agentd.asr import MotorWhisper, TranscritorIncremental
 from jarvis.agentd.fala_em_stream import trechos_do_stream
 from jarvis.agentd.fila_de_avisos import Entrega, FilaDeAvisos, notificacao
 from jarvis.agentd.tts import (
-    MAXIMO_DE_SINTESES_PENDENTES,
     Fala,
     MotorParametrico,
     MotorPiperOnnx,
@@ -1035,22 +1034,15 @@ class Aplicativo:
 
         self._mudar(Estado.PENSANDO)
         comeco = time.monotonic()
-        pedacos: queue.Queue[dict[str, object] | None] = queue.Queue(
-            maxsize=MAXIMO_DE_SINTESES_PENDENTES
-        )
+        # Sem teto: texto é pequeno, e quem limita o trabalho é a janela de síntese do
+        # `SintetizadorEmStreaming` (3 lotes à frente). Com teto aqui (7507cd5) o cérebro parava de
+        # ler o motor enquanto o alto-falante falava: a tela voltava ao ritmo da fala e o prazo
+        # total do motor (30 s no claude, contado a cada `next()`) cortava resposta longa.
+        pedacos: queue.Queue[dict[str, object] | None] = queue.Queue()
         resultado: dict[str, Resposta] = {}
         falha: list[str] = []
         exibido: list[str] = []
         primeiro_texto_ms: list[float] = []
-
-        def colocar_no_stream(pedaco: dict[str, object] | None) -> bool:
-            while not geracao_cancelada():
-                try:
-                    pedacos.put(pedaco, timeout=INTERVALO_DE_CONSULTA_S)
-                    return True
-                except queue.Full:
-                    continue
-            return False
 
         def publicar(pedaco: dict[str, object]) -> None:
             """Na linha do cérebro, no instante em que o pedaço nasce: a tela segue a geração.
@@ -1059,9 +1051,10 @@ class Aplicativo:
             seguinte depois de **tocar** o anterior — o texto aparecia no ritmo da fala (um
             pedaço por segundo, achado do dono em 2026-10-17), embora a resposta estivesse pronta
             em milissegundos. O que o dono ouve continua sendo o que o tocador consome."""
-            if not colocar_no_stream(pedaco):
+            if geracao_cancelada():
                 return
-            if pedaco["text"] and not geracao_cancelada():
+            pedacos.put(pedaco)
+            if pedaco["text"]:
                 if not primeiro_texto_ms:
                     primeiro_texto_ms.append((time.monotonic() - comeco) * 1000.0)
                 exibido.append(str(pedaco["text"]))
@@ -1076,7 +1069,7 @@ class Aplicativo:
             except Exception as erro:  # o turno degrada e diz; a linha não leva o laço junto
                 falha.append(f"{type(erro).__name__}: {erro}")
             finally:
-                colocar_no_stream(None)
+                pedacos.put(None)
 
         linha = threading.Thread(target=gerar, name="jarvis-cerebro", daemon=True)
         linha.start()
@@ -1100,8 +1093,8 @@ class Aplicativo:
                 trechos_do_stream(do_cerebro(), epoch=epoch), epoch=epoch, fila=fila
             )
         finally:
-            # Recusa da fila ou erro na síntese também precisam acordar publicar() quando
-            # o produtor está bloqueado, mesmo sem alteração do epoch local.
+            # Recusa da fila ou erro na síntese também encerram a geração, mesmo sem alteração
+            # do epoch local: o cérebro para de publicar e fecha o motor.
             parar_geracao.set()
             linha.join(timeout=ESPERA_DO_CEREBRO_S)
         resposta = resultado.get("r")
