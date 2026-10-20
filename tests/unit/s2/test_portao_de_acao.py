@@ -36,6 +36,7 @@ from jarvis.s2.portao import (
     resposta_literal,
 )
 from jarvis.tarefas.gestor import EstadoDaTarefa, GestorDeTarefas, Tarefa
+from jarvis.voz.interface import Onde
 
 YOUTUBE = "https://www.youtube.com"
 
@@ -202,6 +203,109 @@ def test_o_estado_leva_pedido_conversa_e_situacao_mas_nao_resultado_de_ferrament
     assert estado["conversa"] == ["dono: oi", "jarvis: olá"]
     assert estado["situacao"] == {"modo_de_acesso": "padrao"}
     assert "SEGREDO" not in json.dumps(estado, ensure_ascii=False)
+
+
+def _jev_na_nuvem(classe: str = "fazer") -> ClassificadorFalso:
+    jev = _jev(classe)
+    jev.onde = Onde.NUVEM
+    return jev
+
+
+def test_na_nuvem_vai_so_o_necessario_e_a_fala_do_jarvis_fica() -> None:
+    """Revisão de bf9102c: 6 falas (do Jarvis também, que podem trazer memória ou arquivo) e os
+    argumentos inteiros iam ao Jev de nuvem a cada ferramenta."""
+    jev = _jev_na_nuvem()
+    PortaoDeAcao(classificador=jev).classificar(
+        tool_id="files.write_draft",
+        titulo="Escrever rascunho",
+        argumentos={
+            "url": "https://www.youtube.com/watch?v=abc&conta=ana%40exemplo.com",
+            "texto": "o resumo do exame que o modelo tirou do arquivo",
+            "nome": "lista de compras",
+            "vezes": 2,
+        },
+        pedido_do_dono="faz um rascunho chamado lista de compras",
+        mensagens=(
+            Mensagem("dono", "bom dia"),
+            Mensagem("jarvis", "sua consulta no cardiologista é amanhã às 9"),
+            Mensagem("dono", "faz um rascunho chamado lista de compras"),
+        ),
+        situacao={"modo_de_acesso": "padrao"},
+    )
+    estado, _ = jev.chamadas[0]
+    texto = json.dumps(estado, ensure_ascii=False)
+    assert estado["conversa"] == ["dono: bom dia"]
+    assert "cardiologista" not in texto and "exame" not in texto and "ana" not in texto
+    assert estado["argumentos"]["url"] == "https://www.youtube.com/…"
+    assert estado["argumentos"]["texto"].startswith("<retido: ")
+    assert estado["argumentos"]["nome"] == "lista de compras"  # o dono disse: já está no pedido
+    assert estado["argumentos"]["vezes"] == 2
+
+
+def test_segredo_e_redigido_antes_de_ir_ao_classificador() -> None:
+    for jev in (_jev(), _jev_na_nuvem()):
+        PortaoDeAcao(classificador=jev).classificar(
+            tool_id="sites.open",
+            titulo="Abrir site",
+            argumentos={"url": YOUTUBE},
+            pedido_do_dono="abre o youtube, a chave é sk-abcdefghijklmnopqrstuvwx",
+            mensagens=(Mensagem("dono", "minha senha: hunter2hunter2"),),
+            situacao={},
+        )
+        estado, _ = jev.chamadas[0]
+        texto = json.dumps(estado, ensure_ascii=False)
+        assert "sk-abcdefghijklmnopqrstuvwx" not in texto and "hunter2" not in texto
+        assert "[REDIGIDO:" in estado["pedido_do_dono"]
+
+
+def test_d20_pedido_sensivel_nao_vai_a_nuvem_e_o_dono_decide() -> None:
+    jev = _jev_na_nuvem()
+    classificacao = PortaoDeAcao(classificador=jev).classificar(
+        tool_id="files.list_dir",
+        titulo="Listar pasta",
+        argumentos={"path": "~/.ssh"},
+        pedido_do_dono="lista a minha pasta .ssh",
+        mensagens=(),
+        situacao={},
+    )
+    assert jev.chamadas == [], "nada sensível vai à nuvem"
+    assert classificacao.classe is Classe.PEDIR_PERMISSAO
+    assert "D20" in classificacao.motivo
+
+
+def test_argumento_aninhado_vai_com_teto_de_campos_itens_e_profundidade() -> None:
+    jev = _jev_na_nuvem()
+    PortaoDeAcao(classificador=jev).classificar(
+        tool_id="tarefa.iniciar",
+        titulo="Iniciar tarefa",
+        argumentos={
+            "argumentos": {
+                "lista": list(range(9)),
+                "fundo": {"mais": {"ainda": "x"}},
+                **{f"c{i}": i for i in range(10)},
+            }
+        },
+        pedido_do_dono="começa a tarefa",
+        mensagens=(),
+        situacao={},
+    )
+    interno = jev.chamadas[0][0]["argumentos"]["argumentos"]
+    assert interno["lista"] == "<lista com 9 itens>"
+    assert interno["fundo"] == "<objeto com 1 campos>"
+    assert interno["…"] == "mais 4 campos"
+
+
+def test_na_nuvem_a_resposta_a_pendencia_vai_sem_a_conversa() -> None:
+    jev = _jev_na_nuvem()
+    jev.roteiro = lambda _e, _p: {"resposta": RespostaEscolha("sim", 0.95, {"sim": 0.95})}
+    resposta = PortaoDeAcao(classificador=jev).interpretar_resposta(
+        "manda bala, pode abrir esse aí",
+        acao_pendente="abrir o site exemplo.com.br",
+        mensagens=(Mensagem("jarvis", "sua consulta no cardiologista é amanhã"),),
+    )
+    assert resposta is RespostaDoDono.SIM
+    estado, _ = jev.chamadas[0]
+    assert set(estado) == {"acao_pendente", "fala"}
 
 
 # --- no cérebro, com o executor e o PDP de verdade ------------------------------------------

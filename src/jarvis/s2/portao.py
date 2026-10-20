@@ -24,9 +24,17 @@ lida contra **ela**: "sim" curto e literal resolve sem rede; o resto vai ao Jev 
 pendente e as mensagens recentes, e só "sim" com probabilidade alta conta. Quem amarra a resposta
 à pendência certa, e recusa a vencida, é o registro (`jarvis.s2.pendencias`).
 
-**Privacidade.** O estado vai ao classificador (que pode ser de nuvem): só as últimas falas do
-dono e do Jarvis, truncadas, e os argumentos truncados. Resultado de ferramenta (texto de
-terceiros, e vetor de injeção) não vai.
+**Privacidade.** Resultado de ferramenta (texto de terceiros, e vetor de injeção) nunca vai, e
+todo texto passa pelo `redigir` do projeto (chave, token, senha declarada, e-mail). Com o
+classificador **de nuvem** (o Jev do OpenRouter), só o necessário para decidir (revisão de
+bf9102c, que mandava 6 falas e os argumentos a cada ferramenta):
+
+- conversa: só a fala anterior **do dono**, curta — o Jev já recebe cada fala do dono pelo "é
+  comigo?". As falas do Jarvis ficam: podem trazer o que veio de memória ou de arquivo;
+- argumentos: o valor que **não** está na fala do dono é retido (vai só o tamanho); de URL vai o
+  host; tetos de chaves, itens e profundidade;
+- D20: texto de classe `sensitive` (`classe_de_pii`: .ssh, .env, cofre, credencial…) não sai — se
+  é o pedido, a nuvem nem é chamada e a decisão é perguntar ao dono.
 """
 
 from __future__ import annotations
@@ -50,12 +58,20 @@ from jarvis.decisao.interface import (
     RespostaEscolha,
     RespostaNoul,
 )
+from jarvis.memoryd.importacao import classe_de_pii, redigir
 from jarvis.s2.motor import Mensagem
-from jarvis.voz.interface import Cancelado, nunca_cancelado
+from jarvis.voz.interface import Cancelado, Onde, nunca_cancelado
 
 MENSAGENS_NO_ESTADO: Final = 6
 CARACTERES_POR_MENSAGEM: Final = 300
 CARACTERES_POR_ARGUMENTO: Final = 200
+FALAS_DO_DONO_NA_NUVEM: Final = 1
+"""Além do pedido atual, quantas falas anteriores do dono vão ao classificador de nuvem."""
+CARACTERES_NA_NUVEM: Final = 160
+CHAVES_NA_NUVEM: Final = 8
+ITENS_NA_NUVEM: Final = 5
+PROFUNDIDADE_NA_NUVEM: Final = 2
+SENSIVEL: Final = "sensitive"
 PRAZO_DA_AUTORIZACAO_S: Final = 60.0
 
 
@@ -190,13 +206,28 @@ class PortaoDeAcao:
         cancelado: Cancelado = nunca_cancelado,
     ) -> Classificacao:
         estado = {
-            "pedido_do_dono": _cortar(pedido_do_dono, CARACTERES_POR_MENSAGEM),
+            "pedido_do_dono": _cortar(_redigido(pedido_do_dono), CARACTERES_POR_MENSAGEM),
             "acao": f"{tool_id} — {titulo}",
             "argumentos": _argumentos_para_o_estado(argumentos),
             "conversa": _conversa(mensagens),
             "situacao": dict(situacao),
         }
         comeco = time.monotonic()
+        if self._na_nuvem():
+            pedido = _redigido(pedido_do_dono)
+            if classe_de_pii(pedido) == SENSIVEL:
+                return Classificacao(
+                    Classe.PEDIR_PERMISSAO,
+                    "o pedido tem conteúdo sensível, que não vai à nuvem (D20): pergunto",
+                    ms=_ms(comeco),
+                )
+            estado = {
+                "pedido_do_dono": _cortar(pedido, CARACTERES_POR_MENSAGEM),
+                "acao": f"{tool_id} — {titulo}",
+                "argumentos": _para_a_nuvem(argumentos, pedido_do_dono),
+                "conversa": _falas_do_dono_para_a_nuvem(mensagens, pedido_do_dono),
+                "situacao": dict(situacao),
+            }
         try:
             respostas = self.classificador.decidir(estado, PERGUNTAS_DA_ACAO, cancelado=cancelado)
             escolha = respostas["acao"]
@@ -233,6 +264,10 @@ class PortaoDeAcao:
             ms=ms,
         )
 
+    def _na_nuvem(self) -> bool:
+        """Classificador sem `onde` declarado conta como de nuvem: é o caso que pede cuidado."""
+        return getattr(self.classificador, "onde", Onde.NUVEM) is not Onde.LOCAL
+
     def interpretar_resposta(
         self,
         fala: str,
@@ -244,11 +279,16 @@ class PortaoDeAcao:
         literal = resposta_literal(fala)
         if literal is not None:
             return literal
-        estado = {
-            "acao_pendente": acao_pendente,
-            "fala": _cortar(fala, CARACTERES_POR_MENSAGEM),
-            "conversa": _conversa(mensagens),
+        estado: dict[str, Any] = {
+            "acao_pendente": _redigido(acao_pendente),
+            "fala": _cortar(_redigido(fala), CARACTERES_POR_MENSAGEM),
         }
+        if self._na_nuvem():
+            # Só a pergunta (texto do código) e a resposta dele: a conversa não é necessária.
+            if any(classe_de_pii(str(v)) == SENSIVEL for v in estado.values()):
+                return RespostaDoDono.OUTRA_COISA  # D20: sensível não vai; sem leitura, não é sim
+        else:
+            estado["conversa"] = _conversa(mensagens)
         try:
             escolha = self.classificador.decidir(
                 estado, PERGUNTAS_DA_RESPOSTA, cancelado=cancelado
@@ -380,14 +420,71 @@ def normalizar(texto: str) -> str:
 
 def _conversa(mensagens: Sequence[Mensagem]) -> list[str]:
     falas = [m for m in mensagens if m.papel in ("dono", "jarvis")][-MENSAGENS_NO_ESTADO:]
-    return [f"{m.papel}: {_cortar(m.texto, CARACTERES_POR_MENSAGEM)}" for m in falas]
+    return [f"{m.papel}: {_cortar(_redigido(m.texto), CARACTERES_POR_MENSAGEM)}" for m in falas]
 
 
 def _argumentos_para_o_estado(argumentos: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        chave: _cortar(valor, CARACTERES_POR_ARGUMENTO) if isinstance(valor, str) else valor
+        chave: _cortar(_redigido(valor), CARACTERES_POR_ARGUMENTO)
+        if isinstance(valor, str)
+        else valor
         for chave, valor in argumentos.items()
     }
+
+
+def _redigido(texto: str) -> str:
+    return redigir(texto).texto
+
+
+def _falas_do_dono_para_a_nuvem(mensagens: Sequence[Mensagem], pedido_atual: str) -> list[str]:
+    """A fala anterior do dono (sem repetir o pedido atual), curta, sem segredo e sem sensível."""
+    anteriores = [
+        m.texto for m in mensagens if m.papel == "dono" and m.texto.strip() != pedido_atual.strip()
+    ]
+    falas = []
+    for texto in anteriores[-FALAS_DO_DONO_NA_NUVEM:]:
+        limpo = _redigido(texto)
+        if classe_de_pii(limpo) != SENSIVEL:
+            falas.append(f"dono: {_cortar(limpo, CARACTERES_NA_NUVEM)}")
+    return falas
+
+
+def _para_a_nuvem(valor: Any, fala: str, profundidade: int = 0) -> Any:
+    """O argumento como o classificador de nuvem pode vê-lo: o que o dono disse vai (já está no
+    pedido); o que o modelo deduziu — de memória, de arquivo, de página — vira só o tamanho."""
+    if isinstance(valor, bool | int | float) or valor is None:
+        return valor
+    if isinstance(valor, Mapping):
+        if profundidade >= PROFUNDIDADE_NA_NUVEM:
+            return f"<objeto com {len(valor)} campos>"
+        itens = list(valor.items())
+        saida = {
+            str(chave): _para_a_nuvem(v, fala, profundidade + 1)
+            for chave, v in itens[:CHAVES_NA_NUVEM]
+        }
+        if len(itens) > CHAVES_NA_NUVEM:
+            saida["…"] = f"mais {len(itens) - CHAVES_NA_NUVEM} campos"
+        return saida
+    if isinstance(valor, list | tuple):
+        if profundidade >= PROFUNDIDADE_NA_NUVEM:
+            return f"<lista com {len(valor)} itens>"
+        saida_lista = [_para_a_nuvem(v, fala, profundidade + 1) for v in valor[:ITENS_NA_NUVEM]]
+        if len(valor) > ITENS_NA_NUVEM:
+            saida_lista.append(f"… mais {len(valor) - ITENS_NA_NUVEM} itens")
+        return saida_lista
+    texto = str(valor)
+    partes = urlsplit(texto.strip())
+    if partes.scheme in ("http", "https") and partes.hostname:
+        # O host decide "é o site que o dono pediu?"; caminho e consulta podem levar dado dele.
+        return f"{partes.scheme}://{partes.hostname}/…"
+    limpo = _redigido(texto)
+    if (
+        limpo.strip()
+        and cobre_literalmente({"v": limpo}, fala)
+        and classe_de_pii(limpo) != SENSIVEL
+    ):
+        return _cortar(limpo, CARACTERES_NA_NUVEM)
+    return f"<retido: {len(texto)} caracteres que não estão na fala do dono>"
 
 
 def _cortar(texto: str, limite: int) -> str:
