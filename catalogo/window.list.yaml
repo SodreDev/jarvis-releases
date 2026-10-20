@@ -1,8 +1,9 @@
 # Ferramenta nativa do assistente de voz (dono, 2026-10-18; item 4 do pedido).
 id: window.list
 title: Listar janelas abertas
-description: Lista as janelas abertas (aplicativo e título). Use quando o dono perguntar o que está aberto. Não
-  mostra o conteúdo das janelas, não muda nada e pode não enxergar janelas nativas de Wayland, só as X11 e XWayland.
+description: Lista as janelas abertas (aplicativo, título, id e qual está em primeiro plano). Use quando o dono
+  perguntar o que está aberto. Não mostra o conteúdo das janelas e não muda nada; sem o kdotool, no Wayland só
+  enxerga as janelas X11 e XWayland.
 input_schema:
   type: object
   additionalProperties: false

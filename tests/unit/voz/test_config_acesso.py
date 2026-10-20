@@ -87,3 +87,20 @@ def test_teto_e_prazo_do_laco_vao_e_voltam_pelo_toml_e_valor_absurdo_e_recusado(
         arquivo.write_text(texto, "utf-8")
         with pytest.raises(ConfiguracaoInvalida, match="laco_"):
             ler(arquivo)
+
+
+# --- o prazo do foco de um app que abriu (ADR-0037) -----------------------------------------
+def test_o_prazo_do_foco_vai_e_volta_pelo_toml_e_valor_absurdo_e_recusado(tmp_path: Path) -> None:
+    from jarvis.executor.janelas import PRAZO_DO_FOCO_S
+    from jarvis.voz.config import Configuracao, ConfiguracaoInvalida, escrever, ler
+
+    arquivo = tmp_path / "jarvis-voz.toml"
+    assert Configuracao().prazo_do_foco_s == PRAZO_DO_FOCO_S, "o padrão é o do executor"
+
+    escrever(Configuracao(prazo_do_foco_s=600.0), arquivo)
+
+    assert ler(arquivo).prazo_do_foco_s == 600.0
+    for texto in ("prazo_do_foco_s = 2\n", "prazo_do_foco_s = 99999\n"):
+        arquivo.write_text(texto, "utf-8")
+        with pytest.raises(ConfiguracaoInvalida, match="prazo_do_foco_s"):
+            ler(arquivo)

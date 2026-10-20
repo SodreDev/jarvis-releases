@@ -1,0 +1,531 @@
+"""As janelas do sistema e qual delas é o app que o Jarvis abriu (dono, 2026-10-20, ADR-0037).
+
+Ao abrir um app, o foco tem de ir para ele — e app **lento** (o Steam, que pode pedir a conta antes,
+e o jogo, que demora e abre a janela dele depois) não aparece na hora. Esta parte lista as janelas
+(a em primeiro plano e as em segundo) e decide **com evidência** qual é a do app:
+
+- o **PID**: a janela é do processo lançado ou de um descendente dele;
+- o **jogo do Steam**: a classe `steam_app_<id>` ou o processo da janela descende do `reaper` do
+  Steam com `AppId=<id>` — o id que estava no `steam://rungameid/<id>` do lançamento;
+- a **classe** da janela (`WM_CLASS` no X11, `app_id` no Wayland) é a do app: o `StartupWMClass` do
+  `.desktop`, o id do `.desktop` ou o executável;
+- o **executável** do processo da janela é o que foi lançado;
+- a janela é **nova** (não existia antes do lançamento) e o **título** traz o nome do catálogo.
+
+Janela de nome genérico que pode ou não ser o app **não** é focada por palpite: nova e com o nome
+no título não bastam (2 pontos); é preciso uma ligação com o que foi lançado (PID, jogo, classe ou
+executável). Duas candidatas empatadas são dúvida — o dono escolhe. A janela de entrar na conta do
+Steam é dele: o Jarvis espera. Executável e classe genéricos (`python3`, `flatpak`, `java`…) não
+contam: dizem nada sobre qual app é.
+
+Quem lista é o mesmo de `jarvis.entrada.foco`: `kdotool` no KDE (Wayland ou X11; uma chamada por
+ciclo, encadeada) e `wmctrl` + `xprop` no X11. No Wayland sem o `kdotool` não há como ver as janelas
+dos outros apps — e o Jarvis diz isso em vez de chutar.
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Final, Protocol
+
+from jarvis.executor import desktop
+from jarvis.executor.comandos import (
+    ComandoIndisponivel,
+    ComandoRecusado,
+    Lancador,
+    executar,
+    instalado,
+)
+
+PRAZO_S: Final = 3.0
+PRAZO_DO_FOCO_S: Final = 300.0
+"""Quanto se espera a janela de um app aberto (o dono muda em `prazo_do_foco_s`): cinco minutos,
+porque o jogo pelo Steam demora."""
+LIMITE_DE_JANELAS: Final = 200
+NA_LISTA_DO_MODELO: Final = 40
+# Padrões como texto, sem `re.compile`: a varredura de «sem shell» proíbe qualquer chamada
+# `compile()` no executor, e o `re` guarda o padrão compilado sozinho.
+ID_DE_JANELA: Final = r"0x[0-9a-fA-F]{1,8}|\{[0-9a-fA-F-]{36}\}"
+"""X11 (`0x3a00003`) ou KWin (`{uuid}`): o mesmo padrão do `janela_id` do manifesto."""
+_HEXA: Final = r"\b(0x[0-9a-fA-F]+)\b"
+_LOGIN_DO_STEAM: Final = (
+    r"(?i)\b(?:entrar|login|log in|sign in|iniciar sess\w*|escolh\w* (?:a|uma) conta|"
+    r"choose an account|account|conta)\b"
+)
+_JOGO_DO_STEAM: Final = r"steam://(?:rungameid|run)/(\d+)"
+_APPID: Final = r"AppId=(\d+)"
+
+
+def id_de_janela(texto: str) -> bool:
+    return re.fullmatch(ID_DE_JANELA, texto) is not None
+
+
+GENERICOS: Final = frozenset(
+    {
+        "python", "python3", "python2", "java", "node", "electron", "sh", "bash", "env", "flatpak",
+        "snap", "wine", "wine64", "wine-preloader", "wine64-preloader", "mono", "dotnet", "perl",
+        "ruby", "gjs", "xdg-open", "gtk-launch", "kioclient", "kioclient5", "kstart", "kstart5",
+        "proton", "reaper", "bwrap", "pressure-vessel-wrap", "appimagelauncher",
+    }
+)  # fmt: skip
+"""Executáveis que são o embrulho, não o app: casar por eles casaria qualquer coisa."""
+DO_SISTEMA: Final = frozenset(
+    {
+        "plasmashell", "org.kde.plasmashell", "kwin", "kwin_wayland", "kwin_x11", "krunner",
+        "org.kde.krunner", "ksmserver", "ksplashqml", "xwaylandvideobridge",
+        "org.kde.xwaylandvideobridge", "polkit-kde-authentication-agent-1",
+        "org.kde.polkit-kde-authentication-agent-1", "spectacle", "org.kde.spectacle",
+    }
+)  # fmt: skip
+"""A casca do desktop (painel, área de trabalho, lançador): não é janela de app."""
+
+
+@dataclass(frozen=True, slots=True)
+class JanelaDoSistema:
+    id: str
+    titulo: str
+    classe: str
+    pid: int | None
+    ativa: bool = False
+    """Em primeiro plano (a janela ativa); as outras estão em segundo."""
+
+
+class Janelas(Protocol):
+    def listar(self) -> list[JanelaDoSistema]:
+        """As janelas de agora — em primeiro e em segundo plano —, ou `[]` se não deu para ver."""
+        ...
+
+    def ativar(self, janela_id: str) -> bool:
+        """Põe a janela em foco. `False` = o gerenciador de janelas não deixou."""
+        ...
+
+
+def _rodar(lancar: Lancador, *argv: str) -> str | None:
+    """A saída, ou `None` quando o programa falhou, não existe ou não respondeu."""
+    try:
+        saida = lancar(list(argv), PRAZO_S, None)
+    except (ComandoIndisponivel, ComandoRecusado):
+        return None
+    return saida.saida if saida.ok else None
+
+
+def _pid(texto: str) -> int | None:
+    texto = texto.strip()
+    return int(texto) if texto.isdigit() and int(texto) > 0 else None
+
+
+class JanelasPorKdotool:
+    """KDE Plasma (Wayland ou X11): `kdotool`, ids do KWin (`{uuid}`).
+
+    Uma chamada por ciclo: `search` põe todas as janelas na pilha e cada ação imprime uma linha
+    por janela (`%@`) — ids, títulos, classes, PIDs — e a última consulta, a janela ativa. Título
+    com quebra de linha desalinha os blocos: aí vale o caminho lento, uma chamada por janela."""
+
+    def __init__(self, lancar: Lancador = executar) -> None:
+        self._lancar = lancar
+
+    def listar(self) -> list[JanelaDoSistema]:
+        bruto = _rodar(
+            self._lancar,
+            "kdotool",
+            "search",
+            "--class",
+            ".",
+            *("getwindowid", "%@", "getwindowname", "%@"),
+            *("getwindowclassname", "%@", "getwindowpid", "%@"),
+            "getactivewindow",
+        )
+        if bruto is None:
+            return []
+        linhas = bruto.split("\n")
+        if linhas and linhas[-1] == "":
+            linhas.pop()
+        janelas = _blocos_do_kdotool(linhas)
+        return janelas if janelas is not None else self._uma_a_uma()
+
+    def _uma_a_uma(self) -> list[JanelaDoSistema]:
+        ids = (_rodar(self._lancar, "kdotool", "search", "--class", ".") or "").split()
+        ativa = (_rodar(self._lancar, "kdotool", "getactivewindow") or "").strip()
+        janelas = []
+        for janela_id in ids[:NA_LISTA_DO_MODELO]:
+            if not id_de_janela(janela_id):
+                continue
+            titulo = (_rodar(self._lancar, "kdotool", "getwindowname", janela_id) or "").strip()
+            classe = (
+                _rodar(self._lancar, "kdotool", "getwindowclassname", janela_id) or ""
+            ).strip()
+            pid = _pid(_rodar(self._lancar, "kdotool", "getwindowpid", janela_id) or "")
+            janelas.append(
+                JanelaDoSistema(janela_id, titulo[:200], classe[:120], pid, janela_id == ativa)
+            )
+        return janelas
+
+    def ativar(self, janela_id: str) -> bool:
+        if not id_de_janela(janela_id):
+            return False
+        return _rodar(self._lancar, "kdotool", "windowactivate", janela_id) is not None
+
+
+def _blocos_do_kdotool(linhas: list[str]) -> list[JanelaDoSistema] | None:
+    """Os quatro blocos (ids, títulos, classes, PIDs) e a ativa no fim; `None` se desalinhou."""
+    if (len(linhas) - 1) % 4:
+        return None
+    n = (len(linhas) - 1) // 4
+    ids, titulos, classes, pids = (linhas[i * n : (i + 1) * n] for i in range(4))
+    ativa = linhas[-1].strip()
+    if not all(id_de_janela(i.strip()) for i in [*ids, ativa]):
+        return None
+    if not all(p.strip().isdigit() or p.strip() in ("", "null", "-1") for p in pids):
+        return None
+    return [
+        JanelaDoSistema(i.strip(), t.strip()[:200], c.strip()[:120], _pid(p), i.strip() == ativa)
+        for i, t, c, p in zip(ids, titulos, classes, pids, strict=True)
+    ][:LIMITE_DE_JANELAS]
+
+
+class JanelasPorWmctrl:
+    """X11: `wmctrl -lxp` (id, mesa, PID, classe, título) e a ativa pelo `xprop`."""
+
+    def __init__(self, lancar: Lancador = executar) -> None:
+        self._lancar = lancar
+
+    def listar(self) -> list[JanelaDoSistema]:
+        bruto = _rodar(self._lancar, "wmctrl", "-lxp")
+        if bruto is None:
+            return []
+        raiz = _rodar(self._lancar, "xprop", "-root", "_NET_ACTIVE_WINDOW") or ""
+        achado = re.search(_HEXA, raiz.split("#", 1)[-1]) if "#" in raiz else None
+        ativa = int(achado.group(1), 16) if achado else 0
+        janelas = []
+        for linha in bruto.splitlines()[:LIMITE_DE_JANELAS]:
+            partes = linha.split(None, 5)
+            if len(partes) < 5 or not partes[0].startswith("0x") or partes[1] == "-1":
+                continue  # `-1` = área de trabalho/painel, não janela de app
+            janela_id, pid, classe = partes[0], partes[2], partes[3]
+            titulo = partes[5] if len(partes) > 5 else ""
+            if titulo == "N/A":  # o wmctrl não leu o título (WM_NAME fora do UTF-8): desconhecido
+                titulo = ""
+            janelas.append(
+                JanelaDoSistema(
+                    janela_id,
+                    titulo.strip()[:200],
+                    classe.split(".")[-1][:120],
+                    _pid(pid),
+                    bool(ativa) and int(janela_id, 16) == ativa,
+                )
+            )
+        return janelas
+
+    def ativar(self, janela_id: str) -> bool:
+        if not id_de_janela(janela_id):
+            return False
+        return _rodar(self._lancar, "wmctrl", "-i", "-a", janela_id) is not None
+
+
+def janelas_do_ambiente(
+    ambiente: Mapping[str, str],
+    lancar: Lancador = executar,
+    tem: Callable[[str], bool] = instalado,
+) -> Janelas | None:
+    """O mesmo critério de `jarvis.entrada.foco`: no Wayland só o `kdotool` (KDE) vê as janelas
+    dos outros; no X11, `kdotool` no KDE ou `wmctrl` + `xprop`. `None` = não há como ver."""
+    kde = "KDE" in ambiente.get("XDG_CURRENT_DESKTOP", "").upper()
+    if ambiente.get("WAYLAND_DISPLAY") or ambiente.get("XDG_SESSION_TYPE") == "wayland":
+        return JanelasPorKdotool(lancar) if kde and tem("kdotool") else None
+    if not ambiente.get("DISPLAY"):
+        return None
+    if kde and tem("kdotool"):
+        return JanelasPorKdotool(lancar)
+    if tem("wmctrl") and tem("xprop"):
+        return JanelasPorWmctrl(lancar)
+    return None
+
+
+# --- o que as ferramentas window.* fazem com a porta -----------------------------------------
+def de_app(janela: JanelaDoSistema) -> bool:
+    return bool(janela.titulo) and _dobrar(janela.classe) not in DO_SISTEMA
+
+
+def listar_para_o_modelo(janelas: Janelas) -> dict[str, Any]:
+    lista = [j for j in janelas.listar() if de_app(j)][:NA_LISTA_DO_MODELO]
+    return {
+        "janelas": [
+            {"id": j.id, "app": j.classe, "titulo": j.titulo[:100], "primeiro_plano": j.ativa}
+            for j in lista
+        ]
+    }
+
+
+def focar(janelas: Janelas, app: str, janela_id: str = "") -> dict[str, Any]:
+    """Põe em foco a janela `janela_id` (conferida na lista de agora) ou a do app pelo nome —
+    escolhida pelo código, como em `desktop.achar_janela`. Já em foco, não mexe."""
+    lista = [j for j in janelas.listar() if de_app(j)]
+    if janela_id:
+        alvo = next((j for j in lista if j.id == janela_id), None)
+        if alvo is None:
+            raise ValueError("essa janela não está mais aberta")
+    else:
+        escolhida = desktop.achar_janela(
+            [{"id": j.id, "app": j.classe, "titulo": j.titulo} for j in lista], app
+        )
+        alvo = next(j for j in lista if j.id == escolhida["id"])
+    if not alvo.ativa and not janelas.ativar(alvo.id):
+        raise ComandoIndisponivel("o gerenciador de janelas não deixou focar")
+    return {"app": alvo.classe, "titulo": alvo.titulo[:100], "janela_id": alvo.id}
+
+
+# --- os processos ----------------------------------------------------------------------------
+class Processos(Protocol):
+    """O que se lê de um processo para ligá-lo ao que foi lançado. Nunca o ambiente dele (pode
+    ter chave de API): só o pai, o executável e a linha de comando."""
+
+    def pai(self, pid: int) -> int | None: ...
+
+    def executavel(self, pid: int) -> str: ...
+
+    def argumentos(self, pid: int) -> tuple[str, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessosDoProc:
+    """Linux: o `/proc` (só processos do próprio usuário se deixam ler por inteiro)."""
+
+    raiz: Path = Path("/proc")
+
+    def pai(self, pid: int) -> int | None:
+        try:
+            for linha in (self.raiz / str(pid) / "status").read_text("utf-8").splitlines():
+                if linha.startswith("PPid:"):
+                    return int(linha.split()[1])
+        except (OSError, ValueError, IndexError):
+            return None
+        return None
+
+    def executavel(self, pid: int) -> str:
+        try:
+            return (self.raiz / str(pid) / "exe").readlink().name
+        except OSError:
+            try:
+                return (self.raiz / str(pid) / "comm").read_text("utf-8").strip()
+            except OSError:
+                return ""
+
+    def argumentos(self, pid: int) -> tuple[str, ...]:
+        try:
+            with (self.raiz / str(pid) / "cmdline").open("rb") as arquivo:
+                bruto = arquivo.read(8192)
+        except OSError:
+            return ()
+        return tuple(a.decode("utf-8", "replace") for a in bruto.split(b"\0") if a)
+
+
+def descendente(pid: int | None, de: int | None, pai: Callable[[int], int | None]) -> bool:
+    """`pid` é `de` ou um descendente dele (sobe pela cadeia de pais, até 32 níveis)."""
+    if pid is None or de is None:
+        return False
+    atual: int | None = pid
+    for _ in range(32):
+        if atual is None or atual <= 1:
+            return False
+        if atual == de:
+            return True
+        atual = pai(atual)
+    return False
+
+
+def jogo_do_steam(pid: int | None, processos: Processos) -> str:
+    """O `AppId` do `reaper` do Steam acima do processo (`reaper SteamLaunch AppId=480 -- …`)."""
+    atual = pid
+    for _ in range(32):
+        if atual is None or atual <= 1:
+            return ""
+        argumentos = processos.argumentos(atual)
+        if any(Path(a).name == "reaper" for a in argumentos[:2]):
+            achado = next((m.group(1) for a in argumentos if (m := re.fullmatch(_APPID, a))), "")
+            if achado:
+                return achado
+        atual = processos.pai(atual)
+    return ""
+
+
+# --- a evidência -----------------------------------------------------------------------------
+def _dobrar(texto: str) -> str:
+    sem_acento = "".join(
+        c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn"
+    )
+    return " ".join(sem_acento.casefold().split())
+
+
+def _palavra(nome: str, titulo: str) -> bool:
+    """O nome inteiro no título («Spotify» em «Spotify Premium»), não pedaço de outra palavra."""
+    return len(nome) >= 3 and re.search(rf"(?<!\w){re.escape(nome)}(?!\w)", titulo) is not None
+
+
+@dataclass(frozen=True, slots=True)
+class PistaDoApp:
+    """O que o código sabe do app que abriu — nada vem do modelo."""
+
+    nome: str
+    nomes: tuple[str, ...]
+    pid: int | None
+    executavel: str = ""
+    classe_do_desktop: str = ""
+    """`StartupWMClass` do `.desktop`, quando há."""
+    id_do_desktop: str = ""
+    """O id do `.desktop` (`org.kde.dolphin`): é o `app_id` do app no Wayland."""
+    jogo_do_steam: str = ""
+    """O id do jogo, quando o app é um jogo aberto pelo Steam (`steam://rungameid/<id>`)."""
+
+    @property
+    def classes(self) -> frozenset[str]:
+        """As classes que só este app teria. Num jogo do Steam, o `steam` é o lançador, não ele."""
+        candidatas = {
+            self.classe_do_desktop,
+            self.id_do_desktop,
+            self.id_do_desktop.rsplit(".", 1)[-1] if "." in self.id_do_desktop else "",
+            "" if self.jogo_do_steam else self.executavel,
+        }
+        return frozenset(
+            _dobrar(c) for c in candidatas if len(c) >= 3 and _dobrar(c) not in GENERICOS
+        )
+
+    @classmethod
+    def do_app(
+        cls,
+        nome: str,
+        nomes: Sequence[str],
+        argv: Sequence[str],
+        pid: int | None,
+        *,
+        arquivo: Path | None = None,
+        id_do_desktop: str = "",
+    ) -> PistaDoApp:
+        jogo = next((m.group(1) for a in argv if (m := re.search(_JOGO_DO_STEAM, a))), "")
+        if not jogo and "-applaunch" in argv[:-1]:
+            seguinte = argv[list(argv).index("-applaunch") + 1]
+            jogo = seguinte if seguinte.isdigit() else ""
+        return cls(
+            nome=nome,
+            nomes=tuple(nomes),
+            pid=pid,
+            executavel=Path(argv[0]).name if argv else "",
+            classe_do_desktop=_classe_do_desktop(arquivo),
+            id_do_desktop=id_do_desktop,
+            jogo_do_steam=jogo,
+        )
+
+
+def _classe_do_desktop(arquivo: Path | None) -> str:
+    if arquivo is None:
+        return ""
+    try:
+        for linha in arquivo.read_text(encoding="utf-8", errors="replace").splitlines():
+            if linha.startswith("StartupWMClass="):
+                return linha.split("=", 1)[1].strip()
+    except OSError:
+        return ""
+    return ""
+
+
+@dataclass(frozen=True, slots=True)
+class Evidencia:
+    janela: JanelaDoSistema
+    pontos: int
+    razoes: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Leitura:
+    """O que a lista de janelas diz agora sobre o app."""
+
+    alvo: Evidencia | None = None
+    """A janela do app, com evidência forte e sem empate."""
+    duvida: tuple[Evidencia, ...] = ()
+    """Candidatas fortes empatadas: o dono escolhe."""
+    fracas: tuple[Evidencia, ...] = ()
+    """Novas e com o nome no título, mas sem ligação com o lançado: não se focam por palpite."""
+    conta_do_steam: bool = False
+    """O Steam está pedindo a conta: é com o dono, e o Jarvis espera."""
+
+
+PONTOS_FORTES: Final = 3
+"""PID (3), jogo do Steam (3), ou classe/executável (2) com mais um sinal (nova, título)."""
+
+
+def avaliar(
+    janelas: Iterable[JanelaDoSistema],
+    pista: PistaDoApp,
+    antes: frozenset[str],
+    *,
+    processos: Processos | None = None,
+    velhas_valem: bool = True,
+) -> Leitura:
+    """A janela do app, só com evidência (ADR-0037). Sem ela, nenhuma — e o Jarvis espera.
+
+    `velhas_valem=False` nos primeiros segundos: lançar costuma abrir janela nova, e a janela que
+    o app já tinha só é a resposta quando ele reaproveitou a instância aberta."""
+    proc = processos if processos is not None else ProcessosDoProc()
+    nomes = {_dobrar(n) for n in (pista.nome, *pista.nomes) if n}
+    classes = pista.classes
+    executavel = "" if pista.jogo_do_steam else _dobrar(pista.executavel)
+    avaliadas: list[Evidencia] = []
+    conta_do_steam = False
+    for janela in janelas:
+        classe, titulo = _dobrar(janela.classe), _dobrar(janela.titulo)
+        nova = janela.id not in antes
+        if classe in DO_SISTEMA:
+            continue
+        if pista.jogo_do_steam and classe == "steam":
+            # O cliente do Steam (loja, biblioteca, atualização, conta) não é o jogo; a janela de
+            # entrar na conta é do dono — não se foca nem se clica.
+            conta_do_steam |= bool(re.search(_LOGIN_DO_STEAM, janela.titulo))
+            continue
+        if not nova and not velhas_valem:
+            continue
+        pontos, razoes = 0, []
+        if pista.jogo_do_steam:
+            # Tudo o que o Steam abre descende dele: o PID não distingue o jogo das janelas do
+            # Steam. O que liga a janela ao jogo é o id dele.
+            if classe == f"steam_app_{pista.jogo_do_steam}" or (
+                jogo_do_steam(janela.pid, proc) == pista.jogo_do_steam
+            ):
+                pontos += 3
+                razoes.append("jogo do Steam")
+        elif descendente(janela.pid, pista.pid, proc.pai):
+            pontos += 3
+            razoes.append("pid")
+        if classe and classe in classes:
+            pontos += 2
+            razoes.append("classe")
+        if (
+            "pid" not in razoes
+            and executavel
+            and executavel not in GENERICOS
+            and janela.pid is not None
+            and _dobrar(proc.executavel(janela.pid)) == executavel
+        ):
+            pontos += 2
+            razoes.append("executável")
+        if nova:
+            pontos += 1
+            razoes.append("nova")
+        if titulo and any(_palavra(nome, titulo) for nome in nomes):
+            pontos += 1
+            razoes.append("título")
+        if pontos:
+            avaliadas.append(Evidencia(janela, pontos, tuple(razoes)))
+    fortes = [e for e in avaliadas if e.pontos >= PONTOS_FORTES]
+    fracas = tuple(
+        e for e in avaliadas if e.pontos < PONTOS_FORTES and {"nova", "título"} <= set(e.razoes)
+    )
+    if not fortes:
+        return Leitura(fracas=fracas, conta_do_steam=conta_do_steam)
+    maximo = max(e.pontos for e in fortes)
+    topo = tuple(e for e in fortes if e.pontos == maximo)
+    if len(topo) > 1:
+        return Leitura(duvida=topo, fracas=fracas, conta_do_steam=conta_do_steam)
+    return Leitura(alvo=topo[0], fracas=fracas, conta_do_steam=conta_do_steam)

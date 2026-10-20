@@ -10,7 +10,8 @@ Política desta capacidade (decidida no repositório, nunca pelo modelo):
   tier: livre
   risco: transitorio_reversivel · confirmação: never · egress: none
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
-  pós-condição verificada pelo executor: a janela escolhida pelo código na lista real ficou em foco
+  pós-condição verificada pelo executor: a janela escolhida pelo código na lista real (ou a do
+    janela_id, conferida nela) ficou em foco
 """
 
 from __future__ import annotations
@@ -29,7 +30,9 @@ REQUIRES_ELEVATION: Final = False
 IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 3000
 ROOTS: Final[tuple[str, ...]] = ()
-POSTCONDITION: Final = "a janela escolhida pelo código na lista real ficou em foco"
+POSTCONDITION: Final = (
+    "a janela escolhida pelo código na lista real (ou a do janela_id, conferida nela) ficou em foco"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,16 +40,17 @@ class WindowFocusAppEntrada:
     """Argumentos normalizados de `window.focus_app` (input_schema do §4)."""
 
     app: str
+    janela_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class WindowFocusAppSaida:
     """Resultado de `window.focus_app` (output_schema do §4)."""
 
-    app: Any
+    janela_id: str | None = None
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("app",))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("app", "janela_id"))
 OBRIGATORIOS: Final[frozenset[str]] = frozenset(("app",))
 
 

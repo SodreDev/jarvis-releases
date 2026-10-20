@@ -26,6 +26,7 @@ from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.tarefas.gestor import (
     EstadoDaTarefa,
+    FimDaTarefa,
     GestorDeTarefas,
     MotorDireto,
     Tarefa,
@@ -466,3 +467,32 @@ def test_falha_da_ferramenta_vira_falha_da_tarefa_com_a_frase(
     assert [t.id for t in painel.concluidas] == [tarefa.id]
     assert gestor.dados_do_card()["itens"][0]["estado"] == "falhou"
     assert isinstance(MotorDireto().nome, str)
+
+
+def test_o_prazo_e_o_aviso_da_tarefa_sao_do_codigo_que_a_criou(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """O foco de um app lento (ADR-0037) espera mais que o prazo de sempre, e o fim dele diz o
+    que o dono ouve: `prazo_s` e `aviso` vêm do código — nenhuma tool os tem."""
+
+    @dataclasses.dataclass
+    class Motor:
+        nome: str = "foco"
+        na_nuvem: bool = False
+
+        def proximo(
+            self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
+        ) -> PedidoDeTool | FimDaTarefa:
+            if not feitos:
+                return PedidoDeTool("system.clock.now", {})
+            return FimDaTarefa("pronto", aviso="")
+
+    gestor = _gestor(executor, Painel(), prazo_s=0.0)  # o prazo de sempre estoura na hora
+
+    propria = gestor.iniciar("ver a hora", "system.clock.now", {}, motor=Motor(), prazo_s=30.0)
+    gestor.esperar(propria.id)
+    de_sempre = gestor.iniciar("ver a hora", "system.clock.now", {}, motor=Motor())
+    gestor.esperar(de_sempre.id)
+
+    assert propria.estado is EstadoDaTarefa.CONCLUIDA and propria.aviso == ""
+    assert de_sempre.estado is EstadoDaTarefa.FALHOU and "passou de 0 s" in de_sempre.motivo

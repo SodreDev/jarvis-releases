@@ -52,7 +52,7 @@ from jarvis.agentd.tts import (
     Trecho,
     fatiar,
 )
-from jarvis.ambiente import ambiente_ou_os
+from jarvis.ambiente import ambiente_ou_os, em_ci
 from jarvis.apps.resolvedor import RepositorioDeAliases, dicas_de_apps
 from jarvis.audio_io.ambiente import Backend, backend_escolhido
 from jarvis.audio_io.backend import dispositivo_pedido, fonte_do_ambiente, sumidouro_do_ambiente
@@ -72,6 +72,7 @@ from jarvis.entrada.limite import Interruptor
 from jarvis.executor import desktop
 from jarvis.executor.alarmes import Alarme, agenda_compartilhada
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
+from jarvis.executor.janelas import janelas_do_ambiente
 from jarvis.executor.lancador import RegistroDeApps, listar_apps
 from jarvis.executor.navegadores import AbridorDeNavegador, separar
 from jarvis.memoryd.conversa import ConversaPersistente
@@ -552,10 +553,15 @@ class Aplicativo:
         self._cerebro.ao_status = self._status_do_laco
         self._cerebro.maximo_de_passos = self.configuracao.laco_max_passos
         self._cerebro.prazo_do_laco_de_ferramentas_s = self.configuracao.laco_prazo_s
+        self.ferramentas.prazo_do_foco_s = self.configuracao.prazo_do_foco_s
         self._sincronizar_conversa(self._cerebro)
         if self.ferramentas.tarefas is None:
             self.ferramentas.tarefas = self._montar_tarefas(self.ferramentas)
         self.ferramentas.portas().ambiente = self.ambiente
+        if self.ferramentas.portas().janelas is None and not em_ci(self.ambiente):
+            # Quem vê e foca as janelas (ADR-0037): o critério da entrada virtual — `kdotool` no
+            # KDE, `wmctrl` no X11. Sem ele, as `window.*` seguem pelo `wmctrl`, como antes.
+            self.ferramentas.portas().janelas = janelas_do_ambiente(ambiente_ou_os(self.ambiente))
         self.ferramentas.portas().agenda = agenda_compartilhada(
             self.raiz / "area" / "alarmes.json", self._alarme_disparou
         )
@@ -623,9 +629,12 @@ class Aplicativo:
     def _tarefa_concluida(self, tarefa: Tarefa) -> None:
         """A conclusão entra pela fila de avisos (ADR-0025) como `Notification`: o Jarvis decide
         se fala e quando, sem cortar fala em andamento. O texto é **nosso** (a descrição e o
-        estado), exceto o resumo de um motor `agente`, que é de terceiros e vem marcado."""
+        estado, ou o aviso que o código do motor escreveu — ADR-0037), exceto o resumo de um motor
+        `agente`, que é de terceiros e vem marcado."""
         if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
-            tipo, resumo = "concluida", f"a tarefa «{tarefa.descricao}» terminou"
+            if tarefa.aviso == "":
+                return  # o código do motor pediu silêncio (ADR-0037): o card mostra o fim
+            tipo, resumo = "concluida", tarefa.aviso or f"a tarefa «{tarefa.descricao}» terminou"
             if tarefa.resumo and tarefa.de_terceiros:
                 resumo += f": {tarefa.resumo}"
         elif tarefa.estado is EstadoDaTarefa.FALHOU:
@@ -955,6 +964,7 @@ class Aplicativo:
             novo.turno = antigo.turno
             novo.destino_onde = antigo.destino_onde
             novo.destino_motor = antigo.destino_motor
+            novo.prazo_do_foco_s = antigo.prazo_do_foco_s
             if antigo.tarefas is not None:
                 antigo.tarefas.executor = novo
                 novo.tarefas = antigo.tarefas

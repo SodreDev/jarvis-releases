@@ -252,3 +252,10 @@ Cada tarefa nasce com o objetivo dela (a descrição), com critério de pronto, 
 usa nas chamadas da tarefa, e o motor `agente` segue até o critério estar cumprido e conferido,
 dentro do teto de passos, do prazo e do cancelar.
 
+## Emenda de 2026-10-20 — prazo e aviso escolhidos pelo código (ADR-0037)
+
+O código que cria uma tarefa (nunca o modelo) pode dar a ela um **prazo próprio** — o foco de um
+app lento espera mais que os 300 s de sempre — e o motor diz, no fim, **o que o dono ouve**
+(`FimDaTarefa.aviso`): nada (o fim fica no card: o app que abriu na hora), a frase do motor (o jogo
+que demorou, a pergunta da dúvida) ou o aviso de sempre. A tarefa de foco é criada pelo executor
+depois de `apps.launch`, ocupa uma das duas vagas e cancela pelo mesmo "parar".

@@ -177,7 +177,13 @@ def escolher_metodo(fala: str, contexto: ContextoDoMetodo) -> Escolha:
     nomes = {app for app in contexto.apps if app and f" {app} " in texto}
     if nomes:  # com site também: "abre o Spotify e pesquisa no Google" é misto, nada fica de fora
         candidatos.append(
-            Escolha(Metodo.APP, "cita_app", ENTRADA, "use apps.launch e window.focus_app")
+            Escolha(
+                Metodo.APP,
+                "cita_app",
+                ENTRADA,
+                "use apps.launch (o foco vai sozinho para a janela quando ela abrir) e "
+                "window.focus_app para um app já aberto",
+            )
         )
     if _algum(texto, _SISTEMA):
         candidatos.append(

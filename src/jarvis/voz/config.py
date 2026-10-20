@@ -169,6 +169,9 @@ class Configuracao:
     """Teto de chamadas de ferramenta encadeadas num turno (1 a 50). Só o dono escolhe."""
     laco_prazo_s: float = 90.0
     """Teto, em segundos, do encadeamento inteiro de um turno (5 a 600). Só o dono escolhe."""
+    prazo_do_foco_s: float = 300.0
+    """Quanto o Jarvis espera a janela de um app que abriu para pô-la em foco (10 a 1800 s;
+    ADR-0037). O padrão (o `PRAZO_DO_FOCO_S` do executor) é longo: o jogo pelo Steam demora."""
 
     def para_dict(self) -> dict[str, Any]:
         return {
@@ -204,6 +207,7 @@ class Configuracao:
             "tarefa_motor": self.tarefa_motor,
             "laco_max_passos": self.laco_max_passos,
             "laco_prazo_s": self.laco_prazo_s,
+            "prazo_do_foco_s": self.prazo_do_foco_s,
         }
 
     @property
@@ -302,6 +306,8 @@ tarefa_motor = {aspas(configuracao.tarefa_motor)}
 # Laço de ferramentas: quantas chamadas encadeadas num turno (1 a 50) e quantos segundos (5 a 600).
 laco_max_passos = {configuracao.laco_max_passos}
 laco_prazo_s = {configuracao.laco_prazo_s}
+# Quantos segundos o Jarvis espera a janela de um app que abriu para pô-la em foco (10 a 1800).
+prazo_do_foco_s = {configuracao.prazo_do_foco_s}
 """
 
 
@@ -372,6 +378,10 @@ def validar(configuracao: Configuracao) -> Configuracao:
         )
     if not 5 <= configuracao.laco_prazo_s <= 600:
         raise ConfiguracaoInvalida(f"laco_prazo_s = {configuracao.laco_prazo_s} fora de 5 a 600")
+    if not 10 <= configuracao.prazo_do_foco_s <= 1800:
+        raise ConfiguracaoInvalida(
+            f"prazo_do_foco_s = {configuracao.prazo_do_foco_s} fora de 10 a 1800"
+        )
     if configuracao.tarefa_motor not in ("direto", "agente"):
         raise ConfiguracaoInvalida(
             f"tarefa_motor = {configuracao.tarefa_motor!r} não existe. Os que existem: "
@@ -522,6 +532,7 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         tarefa_motor=_texto(dados, "tarefa_motor", "direto"),
         laco_max_passos=_inteiro(dados, "laco_max_passos", 12),
         laco_prazo_s=_numero(dados, "laco_prazo_s", 90.0),
+        prazo_do_foco_s=_numero(dados, "prazo_do_foco_s", 300.0),
     )
     return validar(configuracao)
 

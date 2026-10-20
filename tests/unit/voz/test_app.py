@@ -416,3 +416,32 @@ def test_o_aviso_de_privacidade_sai_uma_vez_e_nao_a_cada_conversa(tmp_path: Path
     assert any("DESLIGADO" in linha for linha in sessoes[0])
     assert not any("DESLIGADO" in linha for linha in sessoes[1]), sessoes[1]
     assert any("falando com:" in linha for linha in sessoes[1]), "o resumo continua aparecendo"
+
+
+def test_o_fim_da_tarefa_fala_o_aviso_do_codigo_e_cala_quando_ele_pede(tmp_path: Path) -> None:
+    """O foco de um app (ADR-0037): o que abriu na hora não vira aviso; o jogo que demorou, sim,
+    com a frase do motor; tarefa sem aviso próprio segue com a frase de sempre."""
+    import time
+
+    from jarvis.tarefas.gestor import EstadoDaTarefa, Tarefa
+
+    app = aplicativo_de(tmp_path)
+
+    for numero, aviso in enumerate(("", "Spacewar abriu e está em foco", None)):
+        app._tarefa_concluida(
+            Tarefa(
+                f"t-{numero}",  # um aviso por tarefa: a fila junta os de mesmo id
+                "pôr Spacewar em foco quando a janela abrir",
+                "window.focus_app",
+                {"app": "Spacewar"},
+                motor="foco",
+                estado=EstadoDaTarefa.CONCLUIDA,
+                aviso=aviso,
+            )
+        )
+
+    avisos = app.avisos.dados_do_card(time.monotonic())["avisos"]
+    assert sorted(a["resumo"] for a in avisos) == [
+        "Spacewar abriu e está em foco",
+        "a tarefa «pôr Spacewar em foco quando a janela abrir» terminou",
+    ]

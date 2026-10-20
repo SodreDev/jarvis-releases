@@ -20,7 +20,8 @@ from typing import Any, Final
 
 from jarvis.executor import desktop, sistema, web
 from jarvis.executor.alarmes import AgendaDeAlarmes, quando_da_fala
-from jarvis.executor.comandos import Lancador, executar
+from jarvis.executor.comandos import ComandoIndisponivel, Lancador, executar
+from jarvis.executor.janelas import Janelas, focar, listar_para_o_modelo
 
 
 @dataclass(slots=True)
@@ -37,6 +38,9 @@ class Nativas:
     busca_no_navegador: web.BuscaPeloNavegador | None = None
     """A busca pela extensão (ADR-0033), quando o controle do navegador está ligado: o executor a
     põe aqui a cada chamada, com o navegador dele daquele momento."""
+    janelas: Janelas | None = None
+    """Quem lista e foca as janelas (`kdotool` no KDE, `wmctrl` no X11; ADR-0037). `None` = o
+    `wmctrl` de antes nas `window.*`, e nada de acompanhar o foco de um app aberto."""
     anterior_da_area: str = field(default="", repr=False)
     """O texto que a área de transferência tinha antes da última escrita — é o do "desfazer"."""
 
@@ -98,6 +102,26 @@ def _web_ler(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
     return web.ler_pagina(str(url), n.obter, n.resolver)
 
 
+def _janelas(n: Nativas, _a: Mapping[str, Any]) -> dict[str, Any]:
+    if n.janelas is None:
+        return {"janelas": desktop.listar_janelas(n.lancar)}
+    return listar_para_o_modelo(n.janelas)
+
+
+def _focar(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
+    """Pelo nome (o código escolhe na lista real) ou pelo `janela_id` que uma lista deu — o do
+    acompanhamento de foco (ADR-0037) ou o do `window.list`."""
+    janela_id = str(a.get("janela_id") or "")
+    if n.janelas is not None:
+        return focar(n.janelas, str(a["app"]), janela_id)
+    if janela_id:
+        raise ComandoIndisponivel(
+            "nesta sessão não há como focar uma janela pelo id (no Wayland do KDE, instale o "
+            "kdotool)"
+        )
+    return desktop.focar(n.lancar, str(a["app"]))
+
+
 def _area_write(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
     try:
         n.anterior_da_area = desktop.ler_area(n.lancar, n.ambiente)[: desktop.LIMITE_DE_ESCRITA]
@@ -122,8 +146,8 @@ CORPOS: Final[dict[str, Corpo]] = {
         n.lancar, str(a["acao"]), str(a.get("player", ""))
     ),
     "media.player.status": lambda n, a: desktop.estado_da_midia(n.lancar),
-    "window.list": lambda n, a: {"janelas": desktop.listar_janelas(n.lancar)},
-    "window.focus_app": lambda n, a: desktop.focar(n.lancar, str(a["app"])),
+    "window.list": _janelas,
+    "window.focus_app": _focar,
     "window.close_app": lambda n, a: desktop.fechar(n.lancar, str(a["app"])),
     "clipboard.text.read": lambda n, a: desktop.texto_da_area(n.lancar, n.ambiente),
     "clipboard.text.write": _area_write,

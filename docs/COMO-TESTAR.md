@@ -991,6 +991,41 @@ mais nova como a em foco), por isso a imagem de teste ganhou Xvfb e openbox
 (`localhost/jarvis-nav-teste:x11`, construída sozinha na primeira vez). **Não provado:** o KDE de
 verdade.
 
+### 0.18 O app que você abre vai para a frente quando a janela abrir (2026-10-20, ADR-0037)
+
+Ao abrir um app («abre o Spacewar»), o Jarvis responde na hora e **acompanha** a janela numa tarefa
+(aparece no card de tarefas, com "parar"): a cada ciclo ele lista as janelas — a que está na frente
+e as de trás — e, quando a do app aparece, põe ela em foco. App lento, como um jogo pelo Steam, pode
+levar minutos: se o Steam pedir a conta, **quem escolhe é você** — o Jarvis não mexe nessa janela e
+espera —, e quando o jogo abrir ele vai para a frente e o Jarvis avisa («Spacewar abriu e está em
+foco»). App que abre na hora vai para a frente **sem aviso falado** (você acabou de ouvir "abri").
+
+Ele **não chuta**: uma janela só vai para a frente com prova de que é do app (o processo que ele
+abriu, a classe da janela, o executável ou, no Steam, o id do jogo); janela nova com o nome do app no
+título, sozinha, não basta. Duas janelas empatadas → ele pergunta qual. Passado o prazo, diz com
+franqueza o que viu (a janela não apareceu; o Steam ficou esperando a conta; vi «tal», mas sem
+ligação com o que abri). O prazo é seu: `prazo_do_foco_s` em `~/.config/jarvis/jarvis-voz.toml`
+(padrão 300 s, de 10 a 1800). `window.list` passou a dizer qual janela está em primeiro plano, e
+«foca a segunda» pode ir pelo id da janela.
+
+**Precisa:** no KDE com Wayland, o **`kdotool`** instalado (o mesmo da entrada virtual, §0.7); sem
+ele não há como ver as janelas dos outros apps, e abrir app fica como antes (sem acompanhar). No X11,
+`wmctrl` e `xprop`. **Como conferir:** com o `kdotool` instalado, autorize um jogo do Steam em
+Configuração → Aplicativos e diga «abre o <jogo>»; o card mostra a tarefa «pôr <jogo> em foco quando a janela
+abrir», e o jogo vem para a frente quando abrir.
+
+**Provado em contêiner** (`uv run --frozen python -m tools.harness_janelas --detalhes`, imagem
+`localhost/jarvis-janelas-teste:x11` construída sozinha na primeira vez): X virtual com openbox que
+**não** dá o foco a janela nova, `wmctrl`/`xprop` de verdade e apps que são `xterm` — o app que abre
+na hora vai para a frente pelo PDP, sem aviso; o Steam falso pede a conta por 5 s, abre a janela
+dele e só então o jogo (ligado pelo `reaper` com `AppId=480`): a janela ativa do X segue a sua até
+o jogo aparecer, e só o jogo vai para a frente — nem a conta, nem o Steam, nem uma janela qualquer
+com o nome do jogo; duas janelas iguais → pergunta, ninguém vai para a frente; prazo de 10 s → a
+falha cita a janela com o nome, sem ligação. **Não provado:** o KWin de verdade (só openbox), o
+Steam de verdade e o formato da saída encadeada do `kdotool` (lido no código-fonte dele; se não
+bater, vale uma chamada por janela). Testes: `tests/unit/executor/test_janelas.py`,
+`tests/unit/tarefas/test_foco.py`, `tests/unit/executor/test_foco_do_app.py`.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)
@@ -1208,7 +1243,8 @@ sudo dnf remove jarvis
 6. **o navegador controlado e a entrada virtual de verdade** (§0.7.6): a extensão no **seu**
    navegador (em contêiner ela já rodou num Chromium e num Firefox reais), diálogo do portal
    `RemoteDesktop` do Plasma, `uinput` e `kdotool` reais, e os pacotes **instalados** (foram gerados
-   e inspecionados, não instalados);
+   e inspecionados, não instalados); o foco do app aberto (§0.18) no **seu** KDE, com o `kdotool` e
+   um jogo do Steam de verdade (em contêiner rodou com openbox, `wmctrl` e um Steam falso);
 7. **chamada real à nuvem.** Toda a suíte fala com um servidor falso em porta efêmera; sob
    `CI=1` o código **recusa** falar com serviço de verdade. Uma chamada real à Groq (ASR, turbo)
    foi feita em 2026-10-17 com áudio sintético e funcionou; **ElevenLabs e Edge** e o

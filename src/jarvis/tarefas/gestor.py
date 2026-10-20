@@ -70,6 +70,9 @@ class FimDaTarefa:
     resumo: str
     de_terceiros: bool = False
     """O resumo foi escrito por um modelo a partir do que a tarefa leu: é dado, não fala própria."""
+    aviso: str | None = None
+    """O que o dono ouve no fim, escrito pelo **código** do motor: `None` = o aviso de sempre; `""`
+    = nenhum (o card mostra o fim) — o foco de um app que abriu na hora (ADR-0037)."""
 
 
 Passo = PedidoDeTool | FimDaTarefa
@@ -104,6 +107,9 @@ class Tarefa:
     resumo: str = ""
     motivo: str = ""
     de_terceiros: bool = False
+    aviso: str | None = None
+    prazo_s: float | None = None
+    """O prazo desta tarefa, quando o código que a criou escolheu outro; `None` = o do gestor."""
     criada_em: float = field(default_factory=time.monotonic)
     terminou_em: float | None = None
     cancelada: threading.Event = field(default_factory=threading.Event, repr=False)
@@ -194,10 +200,12 @@ class GestorDeTarefas:
         contaminado: bool = False,
         motor: MotorDeTarefa | None = None,
         confirmar: Callable[[Confirmacao], bool] | None = None,
+        prazo_s: float | None = None,
     ) -> Tarefa:
-        """Cria e põe a tarefa para rodar. `motor` e `confirmar` são do **código** (a execução que
-        o dono já autorizou na conversa: motor direto, e o "sim" dele valendo só para aquela
-        chamada); o modelo, por `tarefa.iniciar`, nunca os escolhe."""
+        """Cria e põe a tarefa para rodar. `motor`, `confirmar` e `prazo_s` são do **código** (a
+        execução que o dono já autorizou na conversa: motor direto, e o "sim" dele valendo só para
+        aquela chamada; o foco de um app lento, que espera mais que o prazo de sempre); o modelo,
+        por `tarefa.iniciar`, nunca os escolhe."""
         self._conferir(tool_id, parametros)
         with self._trava:
             rodando = [t for t in self.tarefas.values() if not t.estado.final]
@@ -219,6 +227,7 @@ class GestorDeTarefas:
                 # passos e de prazo e o cancelar de sempre — e o PDP o usa nas chamadas dela.
                 contaminacao=Contaminacao(contaminado, Objetivo.do_pedido(descricao)),
                 confirmar=confirmar,
+                prazo_s=prazo_s,
             )
             self.tarefas[tarefa.id] = tarefa
             linha = threading.Thread(
@@ -299,7 +308,7 @@ class GestorDeTarefas:
 
     def _correr(self, tarefa: Tarefa, motor: MotorDeTarefa) -> None:
         feitos: list[ResultadoDeFerramenta] = []
-        limite = time.monotonic() + self.prazo_s
+        limite = time.monotonic() + (tarefa.prazo_s or self.prazo_s)
         try:
             self._passos(tarefa, motor, feitos, limite)
         except ErroDeTarefa as erro:
@@ -318,12 +327,14 @@ class GestorDeTarefas:
             if tarefa.cancelada.is_set():
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             if time.monotonic() > limite:
-                raise ErroDeTarefa(f"passou de {self.prazo_s:.0f} s: o prazo é nosso")
+                prazo = tarefa.prazo_s or self.prazo_s
+                raise ErroDeTarefa(f"passou de {prazo:.0f} s: o prazo é nosso")
             passo = motor.proximo(tarefa, feitos, tarefa.cancelada.is_set)
             if tarefa.cancelada.is_set():
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             if isinstance(passo, FimDaTarefa):
                 tarefa.resumo, tarefa.de_terceiros = passo.resumo, passo.de_terceiros
+                tarefa.aviso = passo.aviso
                 return self._terminar(tarefa, EstadoDaTarefa.CONCLUIDA)
             if passo.tool_id.startswith(FORA_DA_ALLOWLIST):
                 # O motor propôs fora da allowlist da tarefa: nem chega ao PDP (e fica registrado).

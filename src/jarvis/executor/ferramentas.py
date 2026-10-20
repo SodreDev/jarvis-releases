@@ -29,6 +29,7 @@ from jarvis.entrada.controle import FERRAMENTAS_DE_ENTRADA, ControleDeEntrada
 from jarvis.executor import arquivos, desktop
 from jarvis.executor.comandos import ComandoIndisponivel
 from jarvis.executor.desfazer import LIXEIRA, Contaminacao, RegistroDeDesfazeres, aviso_falado
+from jarvis.executor.janelas import PRAZO_DO_FOCO_S, PistaDoApp
 from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
 from jarvis.executor.nativas import CORPOS, DE_ARQUIVOS, PRECISAM_DE_AGENDA, Nativas
 from jarvis.executor.navegadores import AbridorDeNavegador
@@ -265,6 +266,9 @@ class ExecutorDeFerramentas:
     """Os navegadores que o dono configurou. Sem principal (ou sem esta peça), o site abre pelo
     portal, no padrão do desktop — como antes."""
     lancar_app: Callable[[App], int] = lancar
+    prazo_do_foco_s: float = PRAZO_DO_FOCO_S
+    """Quanto o Jarvis espera a janela de um app aberto para pô-la em foco (`prazo_do_foco_s` na
+    configuração; ADR-0037)."""
     sistema: Sistema = Sistema.POSIX
     prazo_de_confirmacao_s: float = PRAZO_DE_CONFIRMACAO_S
     manifestos: dict[str, dict[str, Any]] = field(default_factory=carregar_catalogo)
@@ -1070,7 +1074,18 @@ class ExecutorDeFerramentas:
             return self._organizar(tool_id, args, grant, caminho, marca, chamada)
         if tool_id == "apps.launch":
             app = self.registro_de_apps.resolver(str(args["nome"]))
-            return {"app": app.nome, "pid": self.lancar_app(app)}
+            janelas = self.portas().janelas
+            do_turno = marca is None or marca is self.turno
+            # As janelas de antes do lançamento: a que aparecer depois é evidência (ADR-0037).
+            antes = (
+                frozenset(j.id for j in janelas.listar())
+                if janelas is not None and do_turno
+                else frozenset()
+            )
+            pid = self.lancar_app(app)
+            return {"app": app.nome, "pid": pid} | self._acompanhar_o_foco(
+                app, pid, antes, do_turno
+            )
         if tool_id == "browser.launch":
             if self.navegadores is None or not self.navegadores.navegadores:
                 raise AppRecusado(
@@ -1186,6 +1201,37 @@ class ExecutorDeFerramentas:
         if tool_id == "browser.launch":
             return f"abrir o navegador «{args.get('navegador') or 'principal'}»"
         return f"{tool_id} com {json.dumps(dict(args), ensure_ascii=False)[:160]}"
+
+    def _acompanhar_o_foco(
+        self, app: App, pid: int, antes: frozenset[str], do_turno: bool
+    ) -> dict[str, Any]:
+        """O foco vai para o app quando a janela dele abrir (Lote C, C4; ADR-0037): uma tarefa
+        acompanha em segundo plano, sem prender a conversa. Só o que a conversa abriu: tarefa não
+        cria tarefa. Sem como ver as janelas, nada muda — como antes."""
+        janelas = self.portas().janelas
+        if janelas is None or self.tarefas is None or not do_turno:
+            return {}
+        from jarvis.tarefas.foco import MARGEM_DA_TAREFA_S, MotorDeFoco  # tarefas → executor
+
+        pista = PistaDoApp.do_app(
+            app.nome, app.nomes, app.argv, pid, arquivo=app.arquivo, id_do_desktop=app.id
+        )
+        motor = MotorDeFoco(pista, antes, janelas, prazo_s=self.prazo_do_foco_s)
+        try:
+            tarefa = self.tarefas.iniciar(
+                f"pôr {app.nome} em foco quando a janela abrir",
+                "window.focus_app",
+                {"app": app.nome[:60]},
+                contaminado=self.contaminado,
+                motor=motor,
+                prazo_s=self.prazo_do_foco_s + MARGEM_DA_TAREFA_S,
+            )
+        except ValueError as erro:  # TarefaRecusada: o teto de tarefas, ou window.* fora do modo
+            return {"foco": f"não vou acompanhar a janela: {erro}"}
+        return {
+            "foco": "acompanhando: a janela vai para a frente sozinha quando abrir",
+            "tarefa_do_foco": tarefa.id,
+        }
 
     def _sugestao_de_app(self, nome: str, motivo: str) -> str:
         try:
