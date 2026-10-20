@@ -6,13 +6,13 @@ Com o cérebro respondendo em stream, o `s2` precisa cortar o texto **enquanto e
 duas regras de corte (uma em cada processo) seriam dois lugares para divergir. Por isso a regra
 mora aqui, incremental, e o `fatiar()` é este mesmo fatiador alimentado de uma vez.
 
-A regra: um lote normal só sai depois de 14 palavras. A partir daí, a primeira pontuação útil
-fecha o lote; sem pontuação, 18 palavras são o teto que impede buffer sem limite. Lote menor
-só sai quando o texto acaba — no fim do stream, ou numa pausa dele (`descarregar`: o motor parou
-para uma ferramenta, e "Deixa eu ver." não pode esperar a ferramenta voltar). Uma palavra só
-conta quando está **completa** — seguida de espaço, ou no fim do texto —, porque o stream entrega
-pedaço de palavra: "3," pode virar "3,5" no delta seguinte, e cortar ali partiria o número. Palavra é todo token sem espaço: hífen e token
-excepcionalmente longo continuam atômicos, sem corte por caractere.
+A regra: um lote normal só sai depois de 14 palavras. A partir daí, a primeira pontuação útil fecha
+o lote; sem pontuação, 18 palavras são o teto que impede buffer sem limite. Lote menor só sai quando
+o texto acaba — no fim do stream, ou numa pausa dele (`descarregar`: o motor parou para uma
+ferramenta, e "Deixa eu ver." não pode esperar a ferramenta voltar). Uma palavra só conta quando
+está **completa** — seguida de espaço, ou no fim do texto —, porque o stream entrega pedaço de
+palavra: "3," pode virar "3,5" no delta seguinte, e cortar ali partiria o número. Palavra é todo
+token sem espaço: hífen e token excepcionalmente longo continuam atômicos, sem corte por caractere.
 """
 
 from __future__ import annotations
