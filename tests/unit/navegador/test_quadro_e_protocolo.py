@@ -58,6 +58,9 @@ def test_pedidos_do_vocabulario_passam() -> None:
     # O mapa da página e a ação pela referência dele (ADR-0032).
     assert validar_pedido(_pedido("page.map", tabId=7)).method == "page.map"
     assert validar_pedido(_pedido("page.capture", tabId=7)).method == "page.capture"
+    fundo = validar_pedido(_pedido("tabs.open", url="https://x.example", janela="jarvis"))
+    assert fundo.params["janela"] == "jarvis"  # a janela própria do Jarvis (ADR-0036)
+    assert validar_pedido(_pedido("windows.focused")).method == "windows.focused"
     lida = validar_pedido(_pedido("page.readUrl", url="https://search.brave.com/search?q=x"))
     assert lida.params == {"url": "https://search.brave.com/search?q=x"}
     assert validar_pedido(_pedido("page.click", ref="k3f2.12")).params == {"ref": "k3f2.12"}
@@ -89,6 +92,8 @@ def test_pedidos_do_vocabulario_passam() -> None:
         _pedido("page.map", alvo="x"),  # o mapa é da página inteira
         _pedido("page.capture", formato="png"),  # a captura não escolhe nada
         _pedido("page.readUrl"),  # ler o quê?
+        _pedido("tabs.open", url="https://x.example", janela="outra"),
+        _pedido("windows.focused", janelaId=3),  # só pergunta, não escolhe
         _pedido("page.readUrl", url="file:///etc/passwd"),
         _pedido("page.readUrl", url="https://x.example", tabId=7),  # a aba é sempre nova, de fundo
         _pedido("page.click"),  # falta o alvo

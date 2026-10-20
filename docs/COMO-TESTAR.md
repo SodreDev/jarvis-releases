@@ -710,8 +710,9 @@ Prefira o portal; use o `uinput` só onde o portal não existe.
 
 #### 0.7.6 O que **não** foi verificado ao vivo
 
-**Navegador de verdade, em contêiner (2026-10-19):** `uv run --frozen python -m
-tools.harness_navegador` sobe Chromium 155 e Firefox 158 headless (Fedora 44, podman sem rede, HOME
+**Navegador de verdade, em contêiner (2026-10-19; 2026-10-20: Chromium com janela num X virtual,
+§0.17; `--detalhes` mostra o detalhe de cada conferência):** `uv run --frozen python -m
+tools.harness_navegador` sobe Chromium 155 e Firefox 158 (Fedora 44, podman sem rede, HOME
 descartável, repositório só leitura) e prova, nos dois: `jarvis-native-host --instalar` no modo
 repositório; o navegador lança o host pelo manifesto; o modelo enxerga as `browser.*` no prompt;
 `browser.tabs`, `browser.navigate`, `browser.read` (texto da página), clique comum sem pergunta,
@@ -971,6 +972,24 @@ passos e do prazo, e para quando você manda.
 **Como conferir:** `jarvis-voz --diagnostico` mostra a fase em cada ferramenta e «objetivo
 concluido/aguardando_o_dono/falhou/cancelado» no fim do turno; «como está a tarefa?» diz a fase dela.
 Testes: `tests/unit/s2/test_objetivo_e_fase.py`.
+
+### 0.17 O Jarvis trabalha numa janela dele, sem tirar o seu foco (2026-10-20, ADR-0036)
+
+Trabalho que você não precisa ver — pesquisar, conferir, ler outro site — vai numa **janela do
+Jarvis**, atrás das suas: ele lê, clica e vê a tela lá, e a sua janela e a aba que você está vendo
+**não mudam**. A busca na web sem chave (§0.13) também usa essa janela. Se o navegador der o foco à
+janela nova (o Firefox às vezes dá), o Jarvis o devolve para onde você estava. Navegar a sua aba
+(«vai para tal site») continua sendo na sua aba, e ela não é trazida para a frente se estiver atrás.
+
+**Recarregue a extensão** (código novo). **Como conferir:** com o Brave aberto no Google, peça
+«pesquisa o canal do Primo Rico e me diz quantos vídeos novos tem» → uma janela do Jarvis aparece
+atrás e o seu Google continua na frente. Pode fechar a janela do Jarvis: ela volta na próxima vez.
+**Provado em contêiner** (Chromium com janela de verdade num X virtual com openbox, e Firefox):
+ler, clicar e ver a tela na janela do Jarvis com a janela em foco, a aba ativa do dono e a janela
+ativa do X iguais antes e depois. O Chromium **headless** não serve para essa prova (trata a janela
+mais nova como a em foco), por isso a imagem de teste ganhou Xvfb e openbox
+(`localhost/jarvis-nav-teste:x11`, construída sozinha na primeira vez). **Não provado:** o KDE de
+verdade.
 
 ---
 

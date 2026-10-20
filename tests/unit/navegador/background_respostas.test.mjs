@@ -30,6 +30,36 @@ class EventoFalso {
   }
 }
 
+function janelasFalsas({ roubaFoco = false } = {}) {
+  // A janela do dono é a 1. `roubaFoco` imita o Firefox, que pode ignorar `focused: false`.
+  const estado = { emFoco: 1, criadas: [], focadas: [], existentes: new Set([1]) };
+  estado.api = {
+    getLastFocused: async () => ({ id: estado.emFoco }),
+    get: async (id) => {
+      if (!estado.existentes.has(id)) {
+        throw new Error(`No window with id: ${id}`);
+      }
+      return { id };
+    },
+    create: async (opcoes) => {
+      estado.criadas.push(opcoes);
+      estado.existentes.add(50);
+      if (roubaFoco) {
+        estado.emFoco = 50;
+      }
+      return { id: 50, focused: roubaFoco };
+    },
+    update: async (id, opcoes) => {
+      estado.focadas.push({ id, ...opcoes });
+      if (opcoes.focused) {
+        estado.emFoco = id;
+      }
+      return { id };
+    },
+  };
+  return estado;
+}
+
 class PortaFalsa {
   onMessage = new EventoFalso();
   onDisconnect = new EventoFalso();
@@ -42,7 +72,7 @@ class PortaFalsa {
 
 const ABA = { id: 7, windowId: 1, active: true, url: "https://exemplo.org/", title: "Exemplo" };
 
-function carregar(responderPagina, extraDasAbas = {}, aba = ABA, relogio = {}) {
+function carregar(responderPagina, extraDasAbas = {}, aba = ABA, relogio = {}, janelas = janelasFalsas()) {
   const portas = [];
   const enviadas = [];
   const contexto = vm.createContext({
@@ -50,6 +80,7 @@ function carregar(responderPagina, extraDasAbas = {}, aba = ABA, relogio = {}) {
     Date,
     Math,
     chrome: {
+      windows: janelas.api,
       runtime: {
         lastError: undefined,
         onStartup: new EventoFalso(),
@@ -61,10 +92,10 @@ function carregar(responderPagina, extraDasAbas = {}, aba = ABA, relogio = {}) {
         },
       },
       tabs: {
-        ...extraDasAbas,
         query: async () => [aba],
         // Como o navegador: devolve a aba do id pedido (a de fundo da busca tem outro id).
         get: async (id) => (id === undefined || id === aba.id ? aba : { ...aba, id }),
+        ...extraDasAbas,
         sendMessage: async (tabId, mensagem) => {
           enviadas.push({ tabId, mensagem });
           return responderPagina(mensagem);
@@ -79,7 +110,7 @@ function carregar(responderPagina, extraDasAbas = {}, aba = ABA, relogio = {}) {
     ...relogio,
   });
   vm.runInContext(background, contexto, { filename: "extensao/background.js" });
-  return { porta: portas[0], enviadas };
+  return { porta: portas[0], enviadas, janelas };
 }
 
 async function pedir(cenario, pedido, voltas = 20) {
@@ -223,7 +254,7 @@ function abasDeFundo() {
       onUpdated: new EventoFalso(),
       create: async (opcoes) => {
         criadas.push(opcoes);
-        return { id: 99, windowId: 1, active: false, url: opcoes.url };
+        return { id: 99, windowId: opcoes.windowId ?? 1, active: Boolean(opcoes.active), url: opcoes.url };
       },
       remove: async (id) => {
         fechadas.push(id);
@@ -232,7 +263,7 @@ function abasDeFundo() {
   };
 }
 
-test("page.readUrl lê numa aba de fundo, sem foco, e a fecha no fim", async () => {
+test("page.readUrl lê numa aba da janela do Jarvis, sem foco, e a fecha no fim", async () => {
   const fundo = abasDeFundo();
   const cenario = carregar(
     (mensagem) => ({ ok: true, result: { comando: mensagem.comando, links: [] } }),
@@ -247,10 +278,14 @@ test("page.readUrl lê numa aba de fundo, sem foco, e a fecha no fim", async () 
   assert.equal(resposta.ok, true);
   assert.deepEqual(resposta.result, { pagina: { comando: "ler", links: [] } });
   assert.deepEqual(JSON.parse(JSON.stringify(fundo.criadas)), [
-    { url: "https://search.brave.com/search?q=x", active: false },
+    { windowId: 50, url: "https://search.brave.com/search?q=x", active: true },
   ]);
   assert.deepEqual(fundo.fechadas, [99]);
   assert.equal(cenario.enviadas[0].tabId, 99, "lê a aba de fundo, não a do dono");
+  assert.deepEqual(JSON.parse(JSON.stringify(cenario.janelas.criadas)), [
+    { url: "about:blank", focused: false, type: "normal" },
+  ]);
+  assert.deepEqual(cenario.janelas.focadas, [], "o foco do dono não foi tocado");
 });
 
 test("page.readUrl fecha a aba de fundo mesmo quando a página não responde", async () => {
@@ -275,6 +310,90 @@ test("page.readUrl fecha a aba de fundo mesmo quando a página não responde", a
   assert.equal(resposta.ok, false);
   assert.equal(resposta.error.codigo, "pagina_indisponivel");
   assert.deepEqual(fundo.fechadas, [99]);
+});
+
+test("tabs.open na janela do Jarvis cria a janela sem foco e a reaproveita depois", async () => {
+  const fundo = abasDeFundo();
+  const cenario = carregar(() => ({ ok: true, result: {} }), fundo.abas);
+  const primeira = await pedir(cenario, {
+    id: "j2-1",
+    method: "tabs.open",
+    params: { url: "https://x.example/a", janela: "jarvis" },
+  });
+  cenario.porta.respostas.length = 0;
+  await pedir(cenario, {
+    id: "j2-2",
+    method: "tabs.open",
+    params: { url: "https://x.example/b", janela: "jarvis" },
+  });
+
+  assert.equal(primeira.ok, true);
+  assert.equal(primeira.result.janela, "jarvis");
+  assert.equal(cenario.janelas.criadas.length, 1, "uma janela só, reaproveitada");
+  assert.equal(cenario.janelas.criadas[0].focused, false);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(fundo.criadas.map((c) => c.windowId))),
+    [50, 50],
+    "as abas vão para a janela do Jarvis",
+  );
+  assert.deepEqual(cenario.janelas.focadas, [], "o foco do dono não foi tocado");
+});
+
+test("se o navegador tomar o foco ao criar a janela, ele volta para a janela do dono", async () => {
+  const fundo = abasDeFundo();
+  const janelas = janelasFalsas({ roubaFoco: true });
+  const cenario = carregar(() => ({ ok: true, result: {} }), fundo.abas, ABA, {}, janelas);
+  await pedir(cenario, {
+    id: "j2-3",
+    method: "tabs.open",
+    params: { url: "https://x.example/a", janela: "jarvis" },
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(janelas.focadas)), [{ id: 1, focused: true }]);
+  assert.equal(janelas.emFoco, 1);
+});
+
+test("tabs.navigate não traz a aba para a frente", async () => {
+  const atualizadas = [];
+  const cenario = carregar(() => ({ ok: true, result: {} }), {
+    update: async (id, opcoes) => {
+      atualizadas.push({ id, ...opcoes });
+      return { ...ABA, url: opcoes.url };
+    },
+  });
+  await pedir(cenario, {
+    id: "j2-4",
+    method: "tabs.navigate",
+    params: { tabId: 7, url: "https://x.example/c" },
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(atualizadas)), [{ id: 7, url: "https://x.example/c" }]);
+});
+
+test("a aba atual do dono nunca é a da janela do Jarvis, mesmo que o navegador a ache em foco", async () => {
+  const fundo = abasDeFundo();
+  const daJanelaDoJarvis = { id: 99, windowId: 50, active: true, url: "about:blank", title: "" };
+  const cenario = carregar(() => ({ ok: true, result: {} }), {
+    ...fundo.abas,
+    query: async (filtro) => (filtro.currentWindow ? [daJanelaDoJarvis] : [daJanelaDoJarvis, ABA]),
+  });
+  await pedir(cenario, {
+    id: "j2-6",
+    method: "tabs.open",
+    params: { url: "https://x.example/a", janela: "jarvis" },
+  });
+  cenario.porta.respostas.length = 0;
+  const atual = await pedir(cenario, { id: "j2-7", method: "tabs.current", params: {} });
+  assert.equal(atual.result.aba.id, 7, "a aba do dono, na janela dele");
+});
+
+test("windows.focused diz a janela e a aba ativa do dono", async () => {
+  const cenario = carregar(() => ({ ok: true, result: {} }));
+  const resposta = await pedir(cenario, { id: "j2-5", method: "windows.focused", params: {} });
+  assert.deepEqual(resposta.result, {
+    janelaId: 1,
+    abaAtivaId: 7,
+    janelaDoJarvisId: null,
+    janelaDoDonoId: 1,
+  });
 });
 
 test("erro do conteúdo vira erro da ponte com o código dele", async () => {

@@ -34,13 +34,16 @@ PADRAO_DA_REF: Final = re.compile(r"[a-z0-9]{1,16}\.[0-9]{1,4}")
 ACOES: Final = frozenset({"clicar", "focar", "passar_o_mouse", "tecla", "enviar", "selecionar"})
 TECLAS: Final = frozenset({"Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"})
 LIMITE_DO_VALOR: Final = 200
+JANELAS: Final = frozenset({"jarvis", "dono"})
+"""`tabs.open`: a janela própria do Jarvis, atrás das do dono (ADR-0036), ou a do dono."""
 
 METODOS: Final[dict[str, dict[str, type]]] = {
     # método → parâmetro → tipo (`int` nunca aceita booleano)
     "tabs.list": {},
+    "windows.focused": {},
     "tabs.current": {"tabId": int},
     "tabs.navigate": {"tabId": int, "url": str},
-    "tabs.open": {"url": str},
+    "tabs.open": {"url": str, "janela": str},
     "page.read": {"tabId": int},
     "page.map": {"tabId": int},
     "page.capture": {"tabId": int},
@@ -131,6 +134,8 @@ def validar_pedido(bruto: object) -> PedidoDaPonte:
         raise PedidoInvalido("selecionar pede o valor (o texto da opção)")
     if "valor" in params:
         _tamanho("valor", params["valor"], LIMITE_DO_VALOR)
+    if "janela" in params and params["janela"] not in JANELAS:
+        raise PedidoInvalido(f"janela fora da lista: {sorted(JANELAS)}")
     if "texto" in params:
         _tamanho("texto", params["texto"], LIMITE_DO_TEXTO)
     if "pixels" in params and abs(params["pixels"]) > LIMITE_DO_DESLOCAMENTO:

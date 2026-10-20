@@ -247,6 +247,11 @@ class ClienteDoNavegador:
     def navegar(self, tab_id: int, url: str) -> dict[str, Any]:
         return self.chamar("tabs.navigate", tabId=tab_id, url=url)
 
-    def abrir(self, url: str) -> dict[str, Any]:
-        """Uma aba **nova**, ativa — só quando o dono pediu nova aba; o padrão é `navegar`."""
-        return self.chamar("tabs.open", url=url)
+    def abrir(self, url: str, *, segundo_plano: bool = False) -> dict[str, Any]:
+        """Uma aba **nova**: na janela do dono, à vista (ele pediu), ou — `segundo_plano` — na
+        janela própria do Jarvis, atrás das dele, sem tirar o foco (ADR-0036)."""
+        return self.chamar("tabs.open", url=url, janela="jarvis" if segundo_plano else None)
+
+    def janela_em_foco(self) -> dict[str, Any]:
+        """A janela em foco e a aba ativa dela (`janelaId`, `abaAtivaId`), e a do Jarvis."""
+        return self.chamar("windows.focused")

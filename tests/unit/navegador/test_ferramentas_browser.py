@@ -142,7 +142,9 @@ class PaginaFalsa:
                 aba = self.abas[0] | {"url": p["url"]}
                 return ok | {"result": {"aba": aba}}
             case "tabs.open":
-                nova = {"id": 8, "janelaId": 1, "ativa": True, "url": p["url"], "titulo": ""}
+                # Na janela do Jarvis (ADR-0036) a aba é ativa lá, e a janela do dono não muda.
+                janela = 50 if p.get("janela") == "jarvis" else 1
+                nova = {"id": 8, "janelaId": janela, "ativa": True, "url": p["url"], "titulo": ""}
                 self.abas.append(nova)
                 return ok | {"result": {"reutilizada": False, "aba": nova}}
         raise AssertionError(pedido.method)
@@ -829,3 +831,32 @@ def test_sem_chave_a_busca_vai_pela_extensao_numa_aba_de_fundo_e_alcanca_o_objet
     assert lida["url"].startswith("https://search.brave.com/search?q=thiago+nigro+canal")
     assert executor.contaminado and executor.objetivo is not None
     assert executor.objetivo.dentro("https://www.youtube.com/@primorico")
+
+
+# --- a janela própria do Jarvis, sem tirar o foco (ADR-0036) ------------------------------------
+def test_segundo_plano_abre_na_janela_do_jarvis_e_as_outras_tools_agem_nela_pelo_id(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    aberto, perguntas = _rodar(
+        executor, "browser.navigate", {"url": "https://exemplo.org/a", "segundo_plano": True}
+    )
+
+    assert aberto.status == "ok" and perguntas == []
+    assert aberto.dados["janela"] == "jarvis" and aberto.dados["tab_id"] == 8
+    assert ("tabs.open", {"url": "https://exemplo.org/a", "janela": "jarvis"}) in pagina.chamadas
+    assert "tabs.navigate" not in pagina.metodos()  # a aba do dono não foi tocada
+
+    lido, _ = _rodar(executor, "browser.read", {"tab_id": aberto.dados["tab_id"]})
+    assert lido.status == "ok" and ("tabs.current", {"tabId": 8}) in pagina.chamadas
+
+
+def test_com_tab_id_o_segundo_plano_navega_aquela_aba_onde_ela_estiver(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    ok, _ = _rodar(
+        executor,
+        "browser.navigate",
+        {"url": "https://exemplo.org/b", "segundo_plano": True, "tab_id": 7},
+    )
+    assert ok.status == "ok" and "janela" not in ok.dados
+    assert ("tabs.navigate", {"tabId": 7, "url": "https://exemplo.org/b"}) in pagina.chamadas

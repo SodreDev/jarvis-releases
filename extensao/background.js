@@ -20,6 +20,8 @@ const MAX_CAPTURA = 6 * 1024 * 1024;
 let nativePort;
 let reconnectTimer;
 let reconnectAttempt = 0;
+let janelaDoJarvisId;
+let janelaDoDonoId;
 
 function erro(codigo, mensagem) {
   return { codigo, mensagem };
@@ -67,7 +69,15 @@ function resumoDaAba(tab) {
 
 async function abaAtiva() {
   const tabs = await api.tabs.query({ active: true, currentWindow: true });
-  const tab = tabs[0];
+  let tab = tabs[0];
+  if (tab && tab.windowId === janelaDoJarvisId) {
+    // A janela do Jarvis nunca é "a aba atual" do dono (ADR-0036): se o navegador a tratar como a
+    // janela em foco, vale a aba ativa da última janela dele.
+    const ativas = await api.tabs.query({ active: true });
+    tab =
+      ativas.find((outra) => outra.windowId === janelaDoDonoId) ??
+      ativas.find((outra) => outra.windowId !== janelaDoJarvisId);
+  }
   if (!tab || typeof tab.id !== "number") {
     throw erro("sem_aba", "não há aba ativa na janela atual");
   }
@@ -108,6 +118,70 @@ async function mensagemDaPagina(params, comando) {
     typeof falha.codigo === "string" ? falha.codigo : "pagina_indisponivel",
     typeof falha.mensagem === "string" ? falha.mensagem : "a página não respondeu à extensão",
   );
+}
+
+async function janelaEmFoco() {
+  try {
+    const janela = await api.windows.getLastFocused({});
+    const id = typeof janela?.id === "number" ? janela.id : undefined;
+    if (typeof id === "number" && id !== janelaDoJarvisId) {
+      janelaDoDonoId = id;
+    }
+    return id;
+  } catch {
+    return undefined;
+  }
+}
+
+async function devolverOFoco(doDono) {
+  // O foco só muda se o objetivo exigir — e criar a janela do Jarvis não exige (ADR-0036). O
+  // Firefox pode ignorar `focused: false`: aí o foco volta para onde o dono estava.
+  if (typeof doDono !== "number") {
+    return;
+  }
+  const agora = await janelaEmFoco();
+  if (agora !== doDono) {
+    await api.windows.update(doDono, { focused: true }).catch(() => undefined);
+  }
+}
+
+async function janelaDoJarvis() {
+  // A janela própria do Jarvis, atrás das do dono: lembrada enquanto o fundo vive e refeita se o
+  // dono a fechou. A aba em branco dela segura a janela aberta entre um trabalho e outro.
+  if (typeof janelaDoJarvisId === "number") {
+    try {
+      await api.windows.get(janelaDoJarvisId);
+      return janelaDoJarvisId;
+    } catch {
+      janelaDoJarvisId = undefined;
+    }
+  }
+  const doDono = await janelaEmFoco();
+  const criada = await api.windows.create({ url: "about:blank", focused: false, type: "normal" });
+  janelaDoJarvisId = criada.id;
+  await devolverOFoco(doDono);
+  return janelaDoJarvisId;
+}
+
+async function abrirNaJanelaDoJarvis(url) {
+  const doDono = await janelaEmFoco();
+  const janelaId = await janelaDoJarvis();
+  const aba = await api.tabs.create({ windowId: janelaId, url, active: true });
+  await devolverOFoco(doDono);
+  return { reutilizada: false, aba: resumoDaAba(aba), janela: "jarvis" };
+}
+
+async function focoAtual() {
+  // Para provar que o trabalho do Jarvis não mexeu no foco do dono (e para o diagnóstico).
+  const janelaId = await janelaEmFoco();
+  const ativas =
+    typeof janelaId === "number" ? await api.tabs.query({ active: true, windowId: janelaId }) : [];
+  return {
+    janelaId: janelaId ?? null,
+    abaAtivaId: typeof ativas[0]?.id === "number" ? ativas[0].id : null,
+    janelaDoJarvisId: typeof janelaDoJarvisId === "number" ? janelaDoJarvisId : null,
+    janelaDoDonoId: typeof janelaDoDonoId === "number" ? janelaDoDonoId : null,
+  };
 }
 
 async function capturar(params) {
@@ -193,7 +267,11 @@ async function lerEmSegundoPlano(params) {
   // A busca na web pelo navegador do dono (ADR-0033): uma aba de fundo, que não ganha o foco nem
   // troca a aba que ele está vendo, lida e fechada no fim — inclusive quando algo falha.
   const url = urlHttp(params.url);
-  const aba = await api.tabs.create({ url, active: false });
+  // Na janela do Jarvis (ADR-0036), não na do dono: nem a aba de fundo aparece para ele.
+  const doDono = await janelaEmFoco();
+  const janelaId = await janelaDoJarvis();
+  const aba = await api.tabs.create({ windowId: janelaId, url, active: true });
+  await devolverOFoco(doDono);
   try {
     await esperarCarregar(aba.id);
     let ultima;
@@ -215,6 +293,9 @@ async function lerEmSegundoPlano(params) {
 
 async function abrirOuReutilizar(params) {
   const url = urlHttp(params.url);
+  if (params.janela === "jarvis") {
+    return abrirNaJanelaDoJarvis(url);
+  }
   if (params.reutilizar === true) {
     const existente = (await api.tabs.query({})).find((tab) => tab.url === url);
     if (existente && typeof existente.id === "number") {
@@ -229,6 +310,8 @@ async function abrirOuReutilizar(params) {
 
 async function executar(method, params) {
   switch (method) {
+    case "windows.focused":
+      return focoAtual();
     case "tabs.list": {
       const tabs = await api.tabs.query({});
       return { abas: tabs.map(resumoDaAba) };
@@ -246,7 +329,8 @@ async function executar(method, params) {
       if (typeof tab.id !== "number") {
         throw erro("sem_aba", "a aba escolhida não tem identificador");
       }
-      const atualizada = await api.tabs.update(tab.id, { url: urlHttp(params.url), active: true });
+      // Sem `active: true`: navegar a aba não a traz para a frente (ADR-0036).
+      const atualizada = await api.tabs.update(tab.id, { url: urlHttp(params.url) });
       return { aba: resumoDaAba(atualizada) };
     }
     case "page.read":

@@ -51,7 +51,8 @@ Não houve push, coautoria ou alteração fora dos arquivos dos dois commits.
 - Catálogo: `browser.tabs`, `browser.read`, `browser.inspecionar`, `browser.tela` (livre, contaminam o
   turno; o mapa com `ref` e a tela como anexo, só com motor que `aceita_imagem`, ADR-0032);
   `page.readUrl` (sem tool própria) é a busca do `web.buscar` sem chave: aba de fundo, lida e fechada
-  (`jarvis.navegador.busca`, ADR-0033); `browser.click`, `.type` (por `alvo` ou `ref`), `.acionar` (ADR-0032),
+  (`jarvis.navegador.busca`, ADR-0033), na janela própria do Jarvis (`janelaDoJarvis`, ADR-0036), que
+  `browser.navigate` com `segundo_plano` também usa; `windows.focused` mostra o foco do dono; `browser.click`, `.type` (por `alvo` ou `ref`), `.acionar` (ADR-0032),
   `.scroll`, `.navigate` (moderado; o `aviso_falado` fica só na auditoria, `aviso_silencioso`,
   ADR-0031); `browser.acao_sensivel` (**perigoso**, só o
   código a consulta no PDP — fica fora de `_ligada`, o modelo nunca a vê). Stubs gerados.

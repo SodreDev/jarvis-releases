@@ -52,12 +52,19 @@ from pathlib import Path
 from typing import Any, Final
 
 RAIZ: Final = Path(__file__).resolve().parent.parent
-IMAGEM: Final = "localhost/jarvis-nav-teste:latest"
+IMAGEM: Final = "localhost/jarvis-nav-teste:x11"
 CONTAINERFILE: Final = (
     "FROM registry.fedoraproject.org/fedora:44\n"
     "RUN dnf -y install --setopt=install_weak_deps=False chromium firefox procps-ng findutils "
-    "&& dnf clean all\n"
+    "xorg-x11-server-Xvfb openbox xprop && dnf clean all\n"
 )
+"""Xvfb e openbox (2026-10-20, ADR-0036): o Chromium headless trata a janela mais nova como a em
+foco e não devolve o foco, então a prova de "a janela do dono não muda" roda o Chromium com janela,
+num X virtual com gerenciador de janelas, e confere o foco também pelo X (`xprop`)."""
+TELA_VIRTUAL: Final = ":99"
+XVFB: Final = "/usr/bin/Xvfb"  # os da imagem (fedora:44)
+OPENBOX: Final = "/usr/bin/openbox"
+XPROP: Final = "/usr/bin/xprop"
 NAVEGADORES: Final = ("chromium", "firefox")
 SEGUNDOS_POR_NAVEGADOR: Final = 300
 OCIOSO_S: Final = 40.0
@@ -186,14 +193,28 @@ def _site() -> Iterator[str]:
 def _navegador(nome: str, extensao: Path, url: str, log: Path) -> Iterator[str]:
     """Abre o navegador headless com a extensão e devolve a versão dele."""
     saida = log.open("wb")
+    extras: list[subprocess.Popen[bytes]] = []
     if nome == "chromium":
         versao = subprocess.run(
             [CHROMIUM, "--version"], capture_output=True, text=True, check=False
         ).stdout.strip()
+        com_janela = Path(XVFB).exists() and Path(OPENBOX).exists()
+        if com_janela:
+            # Janela de verdade num X virtual, com gerenciador de janelas: o foco é observável.
+            extras.append(
+                subprocess.Popen(
+                    [XVFB, TELA_VIRTUAL, "-screen", "0", "1280x800x24", "-nolisten", "tcp"],
+                    stdout=saida,
+                    stderr=subprocess.STDOUT,
+                )
+            )
+            _esperar(lambda: Path(f"/tmp/.X11-unix/X{TELA_VIRTUAL[1:]}").exists(), 10)  # noqa: S108
+            os.environ["DISPLAY"] = TELA_VIRTUAL
+            extras.append(subprocess.Popen([OPENBOX], stdout=saida, stderr=subprocess.STDOUT))
         processo = subprocess.Popen(
             [
                 CHROMIUM,
-                "--headless=new",
+                *([] if com_janela else ["--headless=new"]),
                 "--no-sandbox",  # o contêiner não tem o namespace que a caixa de areia pede
                 "--disable-gpu",
                 "--no-first-run",
@@ -230,12 +251,23 @@ def _navegador(nome: str, extensao: Path, url: str, log: Path) -> Iterator[str]:
     try:
         yield versao
     finally:
-        processo.terminate()  # o PID é o deste Popen: nada de matar por nome
-        try:
-            processo.wait(15)
-        except subprocess.TimeoutExpired:
-            processo.kill()
+        for filho in (processo, *reversed(extras)):
+            filho.terminate()  # o PID é o deste Popen: nada de matar por nome
+            try:
+                filho.wait(15)
+            except subprocess.TimeoutExpired:
+                filho.kill()
         saida.close()
+
+
+def _janela_ativa_do_x() -> str:
+    """A janela ativa pelo X (`_NET_ACTIVE_WINDOW`), quando há X; vazio no headless."""
+    if not os.environ.get("DISPLAY") or not Path(XPROP).exists():
+        return ""
+    saida = subprocess.run(
+        [XPROP, "-root", "_NET_ACTIVE_WINDOW"], capture_output=True, text=True, check=False
+    )
+    return saida.stdout.strip()
 
 
 def _sockets(familia: str) -> dict[int, Path]:
@@ -603,12 +635,13 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             frozenset({""}),  # os links do próprio servidor (IP) são do buscador
         )
         ativa_antes = corpos.cliente.aba()
-        abas_da_busca = abas_agora()
         try:
             achado = BuscaNoNavegador(corpos.cliente, (buscador,))("o primo rico")
         except BuscaIndisponivel as erro:
             achado = {"erro": str(erro)}
-        fechou = _esperar(lambda: len(abas_agora()) == len(abas_da_busca), 10)
+        fechou = _esperar(
+            lambda: not any("Resultados de teste" in a.get("titulo", "") for a in abas_agora()), 10
+        )
         ativa_depois = corpos.cliente.aba()
         relatorio.conferir(
             "a busca pela extensão lê numa aba de fundo, fecha a aba e não troca a aba do dono",
@@ -619,8 +652,45 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             {"achado": achado, "ativa": [ativa_antes.get("id"), ativa_depois.get("id")]},
         )
 
+        # C3 (ADR-0036): o Jarvis trabalha na janela própria, sem tirar o foco do dono.
+        x_antes = _janela_ativa_do_x()
+        foco_antes = corpos.cliente.janela_em_foco()
+        fundo = rodar("browser.navigate", {"url": url, "segundo_plano": True})
+        tab_jarvis = fundo.dados.get("tab_id")
+
+        def jarvis_pronta() -> bool:
+            lida = rodar("browser.read", {"tab_id": tab_jarvis})
+            return lida.status == "ok" and "Olá" in str(lida.dados.get("texto"))
+
+        pronta = _esperar(jarvis_pronta, 15)
+        clique_no_fundo = rodar("browser.click", {"tab_id": tab_jarvis, "alvo": "Mostrar detalhe"})
+        lida_no_fundo = rodar("browser.read", {"tab_id": tab_jarvis})
+        tela_no_fundo = rodar("browser.tela", {"tab_id": tab_jarvis})
+        foco_depois = corpos.cliente.janela_em_foco()
+        x_depois = _janela_ativa_do_x()
+        relatorio.conferir(
+            "o Jarvis lê, clica e vê a tela na janela própria, e o foco do dono não muda",
+            fundo.status == "ok"
+            and fundo.dados.get("janela") == "jarvis"
+            and bool(pronta)
+            and clique_no_fundo.status == "ok"
+            and "detalhe aberto" in str(lida_no_fundo.dados.get("texto"))
+            and tela_no_fundo.status == "ok"
+            and foco_antes.get("janelaId") == foco_depois.get("janelaId")
+            and foco_antes.get("abaAtivaId") == foco_depois.get("abaAtivaId")
+            and foco_depois.get("janelaDoJarvisId") not in (None, foco_antes.get("janelaId"))
+            and x_antes == x_depois,
+            {
+                "foco": [foco_antes, foco_depois],
+                "x11": [x_antes, x_depois],
+                "fundo": fundo.dados or fundo.motivo,
+                "tela": tela_no_fundo.status + " " + tela_no_fundo.motivo,
+            },
+        )
+
+        abas_antes_da_nova = len(abas_agora())
         nova = rodar("browser.navigate", {"url": url, "nova_aba": True})
-        com_nova = _esperar(lambda: len(abas_agora()) == len(abas_antes) + 1, 10)
+        com_nova = _esperar(lambda: len(abas_agora()) == abas_antes_da_nova + 1, 10)
         relatorio.conferir(
             "browser.navigate com nova_aba abre uma aba e só uma",
             nova.status == "ok" and nova.dados.get("nova_aba") is True and com_nova,
@@ -716,6 +786,9 @@ def main(argumentos: list[str] | None = None) -> int:
     analisador = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     analisador.add_argument("--navegador", choices=NAVEGADORES, action="append")
     analisador.add_argument("--dentro", choices=NAVEGADORES, help=argparse.SUPPRESS)
+    analisador.add_argument(
+        "--detalhes", action="store_true", help="mostra o detalhe também das que passaram"
+    )
     args = analisador.parse_args(argumentos)
     if args.dentro:
         return dentro(args.dentro)
@@ -729,7 +802,7 @@ def main(argumentos: list[str] | None = None) -> int:
         for conferencia in relatorio["conferencias"]:
             marca = "ok " if conferencia["ok"] else "FALHOU"
             print(f"   {marca} {conferencia['nome']}")
-            if not conferencia["ok"]:
+            if not conferencia["ok"] or args.detalhes:
                 print(f"          {conferencia['detalhe']}")
         falhas += not all(c["ok"] for c in relatorio["conferencias"])
     return 1 if falhas else 0

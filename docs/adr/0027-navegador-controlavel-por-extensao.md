@@ -199,3 +199,10 @@ do clique (o envio e o Enter num campo contam como envio do formulário).
 `page.readUrl` abre um endereço numa aba de fundo (`active: false`), lê e fecha a aba no fim, mesmo
 na falha: é como o `web.buscar` sem chave usa o navegador do dono como motor de busca, sem trocar a
 aba que ele está vendo. Não há tool `browser.*` para isso; o modelo chama `web.buscar`.
+
+## Emenda de 2026-10-20 — a janela do Jarvis (ADR-0036)
+
+O trabalho que o dono não precisa ver vai numa janela própria do Jarvis, criada sem foco; se o
+navegador tomar o foco, o fundo o devolve à janela do dono. `tabs.navigate` não traz mais a aba
+para a frente.
+

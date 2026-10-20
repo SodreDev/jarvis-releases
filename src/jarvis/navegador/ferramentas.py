@@ -359,16 +359,20 @@ class CorposDoNavegador:
         except UrlRecusada as erro:
             raise ValueError(str(erro)) from None
         nova_aba = bool(args.get("nova_aba", False))
+        # Segundo plano (ADR-0036): uma aba na janela própria do Jarvis, atrás das do dono — o
+        # trabalho que ele não precisa ver, sem tirar o foco nem trocar a aba dele. As outras
+        # browser.* agem nela pelo tab_id. Com tab_id, navega aquela aba, onde ela estiver.
+        segundo_plano = bool(args.get("segundo_plano", False)) and args.get("tab_id") is None
         # A aba atual é o padrão (dono, 2026-10-20): link aberto em aba nova a cada passo enchia o
         # navegador. Aba nova só quando o dono pede.
-        tab_id = None if nova_aba else self._aba(args)[0]
+        tab_id = None if (nova_aba or segundo_plano) else self._aba(args)[0]
         avaliacao = risco.avaliar_navegacao(
             url, contaminado=contaminado, liberados=liberados, objetivo=objetivo
         )
         if avaliacao.confirmar:
             exigir(f"navegar para {dominio(url)}", avaliacao.confirmar)
         if tab_id is None:
-            aba = dict(self.cliente.abrir(url).get("aba", {}))
+            aba = dict(self.cliente.abrir(url, segundo_plano=segundo_plano).get("aba", {}))
             tab_id = aba.get("id") if isinstance(aba.get("id"), int) else None
         else:
             aba = dict(self.cliente.navegar(tab_id, url).get("aba", {}))
@@ -376,7 +380,8 @@ class CorposDoNavegador:
             "tab_id": tab_id,
             "url": _curto(aba.get("url", url), 300),
             "dominio": dominio(url),
-            "nova_aba": nova_aba,
+            "nova_aba": nova_aba or segundo_plano,
+            **({"janela": "jarvis"} if segundo_plano else {}),
         }
 
     def _rolar(self, args: Mapping[str, Any]) -> dict[str, Any]:

@@ -10,8 +10,8 @@ Política desta capacidade (decidida no repositório, nunca pelo modelo):
   tier: moderado
   risco: transitorio_reversivel · confirmação: never · egress: local
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
-  pós-condição verificada pelo executor: a aba atual (ou a escolhida, ou uma nova se pedida) aponta
-    para a URL pedida, sem credencial
+  pós-condição verificada pelo executor: a aba atual (ou a escolhida, ou uma nova se pedida, ou uma
+    na janela do Jarvis) aponta para a URL pedida, sem credencial, e o foco do dono não mudou
 """
 
 from __future__ import annotations
@@ -31,7 +31,8 @@ IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 15000
 ROOTS: Final[tuple[str, ...]] = ()
 POSTCONDITION: Final = (
-    "a aba atual (ou a escolhida, ou uma nova se pedida) aponta para a URL pedida, sem credencial"
+    "a aba atual (ou a escolhida, ou uma nova se pedida, ou uma na janela do Jarvis) aponta para a "
+    "URL pedida, sem credencial, e o foco do dono não mudou"
 )
 
 
@@ -41,6 +42,7 @@ class BrowserNavigateEntrada:
 
     url: str
     nova_aba: bool | None = None
+    segundo_plano: bool | None = None
     tab_id: int | None = None
 
 
@@ -52,7 +54,7 @@ class BrowserNavigateSaida:
     dominio: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("url", "nova_aba", "tab_id"))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("url", "nova_aba", "segundo_plano", "tab_id"))
 OBRIGATORIOS: Final[frozenset[str]] = frozenset(("url",))
 
 
