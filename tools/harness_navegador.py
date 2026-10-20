@@ -17,15 +17,15 @@ O que se confere, por navegador (25 pontos): instalar no modo repositório; o ho
 manifesto e é o deste código; o modelo enxerga as `browser.*`; `browser.tabs` acha a página e
 `browser.navigate` a recarrega; `browser.read` lê o texto; um botão comum é clicado sem pergunta; um
 botão de **envio de formulário** com rótulo neutro pede o "sim" (e o "não" impede o clique);
-`browser.type` digita na busca e recusa a senha; a busca sem rótulo, que não se acha pelo texto,
-se acha pelo mapa (`browser.inspecionar`: ref, caixa, painel ligado ao script), digitar pela ref e
+`browser.type` digita na busca e recusa a senha; a busca sem rótulo, que não se acha pelo texto, se
+acha pelo mapa (`browser.inspecionar`: ref, caixa, painel ligado ao script), digitar pela ref e
 Enter buscam por GET sem pedir o sim, e `browser.acionar` passa o mouse, clica no link que chama a
-função e pede o "sim" no «enviar» (ADR-0032); `browser.tela` captura a aba com o mapa do mesmo instante;
-`browser.estado` diz conectado; `sites.open` troca a URL da aba atual; a busca pela extensão lê numa
-aba de fundo e a fecha sem trocar a aba do dono (ADR-0033); o Jarvis lê, clica e vê a tela na janela
-própria com o foco do dono igual (ADR-0036); `browser.navigate` com `nova_aba` abre uma só; o host
-derrubado (PID conferido em `/proc`) volta pela reconexão da extensão; e, 40 s sem pedido, o mesmo
-host continua respondendo.
+função e pede o "sim" no «enviar» (ADR-0032); `browser.tela` captura a aba com o mapa do mesmo
+instante; `browser.estado` diz conectado; `sites.open` troca a URL da aba atual; a busca pela
+extensão lê numa aba de fundo e a fecha sem trocar a aba do dono (ADR-0033); o Jarvis lê, clica e vê
+a tela na janela própria com o foco do dono igual (ADR-0036); `browser.navigate` com `nova_aba` abre
+uma só; o host derrubado (PID conferido em `/proc`) volta pela reconexão da extensão; e, 40 s sem
+pedido, o mesmo host continua respondendo.
 
 Fatos que este roteiro descobriu (2026-10-19, Chromium 155 e Firefox 158 do Fedora 44):
 - o Chromium ≥ 137 ignora `--load-extension` sem
