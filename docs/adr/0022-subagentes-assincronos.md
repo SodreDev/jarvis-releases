@@ -245,3 +245,10 @@ O teste (d) passa a ser o teste (d) da ADR-0025.
 O motor `agente` monta o contexto de cada passo da tarefa pelo mesmo orçamento do cérebro: o
 resultado mais novo inteiro, os antigos inteiros enquanto couberem e, depois, podados. Os passos
 continuam morrendo com a tarefa — só o resumo final fica.
+
+## Emenda de 2026-10-20 — o objetivo da tarefa (ADR-0030, emenda C2)
+
+Cada tarefa nasce com o objetivo dela (a descrição), com critério de pronto, fase e passos: o PDP o
+usa nas chamadas da tarefa, e o motor `agente` segue até o critério estar cumprido e conferido,
+dentro do teto de passos, do prazo e do cancelar.
+

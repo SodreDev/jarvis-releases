@@ -25,13 +25,51 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Final
+from enum import StrEnum
+from typing import Any, Final
 from urllib.parse import unquote_plus, urlsplit
 
 from jarvis.memoryd.importacao import redigir
 from jarvis.politica.abertura import dominio_registravel
 
 CARACTERES_DO_PEDIDO: Final = 300
+PASSOS_GUARDADOS: Final = 12
+"""Os passos que o objetivo lembra (ferramenta e status, nunca dados): o resto é só contado."""
+
+
+class Fase(StrEnum):
+    """Em que ponto do objetivo está a chamada (Lote C, C2) — dita ao classificador."""
+
+    PLANEJANDO = "planejando"
+    """Antes da primeira ferramenta."""
+    EXECUTANDO = "executando"
+    VERIFICANDO = "verificando"
+    """Uma leitura depois de um efeito: conferir o que foi feito."""
+    CONCLUINDO = "concluindo"
+    """A resposta final ao dono."""
+
+
+class EstadoDoObjetivo(StrEnum):
+    ABERTO = "aberto"
+    EM_ANDAMENTO = "em_andamento"
+    AGUARDANDO_O_DONO = "aguardando_o_dono"
+    CONCLUIDO = "concluido"
+    """O modelo deu a resposta final; que o critério foi cumprido, quem diz é o resultado lido."""
+    FALHOU = "falhou"
+    CANCELADO = "cancelado"
+
+
+CRITERIO_PADRAO: Final = "o dono respondido com o que pediu, conferido no resultado"
+CRITERIOS: Final[dict[str, str]] = {
+    "navegador": "a página pedida aberta e conferida pela leitura (título, canal, conteúdo)",
+    "entrada_virtual": "a ação feita e conferida na tela",
+    "web": "a resposta achada numa fonte e conferida",
+    "app": "o app aberto e em foco",
+    "subagente": "a tarefa em segundo plano iniciada e o dono avisado",
+    "sistema": "o ajuste feito e o resultado dito",
+    "memoria": "anotado ou achado, e dito ao dono",
+}
+"""O critério de pronto pelo método do pedido (ADR-0035): o que conta como "ficou pronto"."""
 SEGREDOS_QUE_NAO_CONTAM_EM_URL: Final = frozenset({"hex_longo", "conteudo_de_env"})
 """Em URL, hexadecimal longo é quase sempre identificador de página (cache, assinatura de CDN) e
 não segredo do dono: contaria como dado do dono e perguntaria à toa."""
@@ -108,12 +146,59 @@ class Objetivo:
     _termos: frozenset[str] = frozenset()
     alcancados: set[str] = field(default_factory=set)
     """Domínios registráveis (`youtube.com`) que o caminho do objetivo alcançou."""
+    criterio: str = CRITERIO_PADRAO
+    """Como saber que ficou pronto (pelo método do pedido, `CRITERIOS`)."""
+    estado: EstadoDoObjetivo = EstadoDoObjetivo.ABERTO
+    fase: Fase = Fase.PLANEJANDO
+    passos: list[tuple[str, str]] = field(default_factory=list)
+    """`(ferramenta, status)` dos últimos passos — nunca argumento nem resultado."""
+    total_de_passos: int = 0
+    _efeito_feito: bool = False
 
     @classmethod
-    def do_pedido(cls, fala: str) -> Objetivo:
+    def do_pedido(cls, fala: str, metodo: str = "") -> Objetivo:
         limpo = " ".join(redigir(fala).texto.split())
         curto = limpo if len(limpo) <= CARACTERES_DO_PEDIDO else limpo[:CARACTERES_DO_PEDIDO] + "…"
-        return cls(pedido=curto, _termos=frozenset(termos(fala)))
+        return cls(
+            pedido=curto,
+            _termos=frozenset(termos(fala)),
+            criterio=CRITERIOS.get(metodo, CRITERIO_PADRAO),
+        )
+
+    def registrar(self, tool_id: str, status: str, *, leitura: bool) -> None:
+        """Um passo concluído: muda a fase (ler depois de um efeito é verificar) e o estado."""
+        self.total_de_passos += 1
+        self.passos = [*self.passos, (tool_id, status)][-PASSOS_GUARDADOS:]
+        if status == "pendente":
+            self.estado = EstadoDoObjetivo.AGUARDANDO_O_DONO
+            return
+        self.estado = EstadoDoObjetivo.EM_ANDAMENTO
+        if leitura and self._efeito_feito:
+            self.fase = Fase.VERIFICANDO
+        else:
+            self.fase = Fase.EXECUTANDO
+        if not leitura and status == "ok":
+            self._efeito_feito = True
+
+    def concluir(self, estado: EstadoDoObjetivo) -> None:
+        """O fim do turno ou da tarefa: a resposta final (concluindo) ou o motivo de parar."""
+        self.fase = Fase.CONCLUINDO
+        if self.estado is not EstadoDoObjetivo.AGUARDANDO_O_DONO:
+            self.estado = estado
+
+    def para_o_classificador(self, *, na_nuvem: bool) -> dict[str, Any]:
+        """O contexto do objetivo para o portão (Jev): critério, fase, estado e os passos feitos.
+        Na nuvem o texto do pedido não vai de novo (já vai redigido em `pedido_do_dono`, D20)."""
+        contexto: dict[str, Any] = {
+            "criterio_de_pronto": self.criterio,
+            "fase": str(self.fase),
+            "estado": str(self.estado),
+            "passos_feitos": [f"{t}:{s}" for t, s in self.passos[-8:]],
+            "total_de_passos": self.total_de_passos,
+        }
+        if not na_nuvem:
+            contexto["objetivo"] = self.pedido
+        return contexto
 
     def citado(self, url_ou_host: str) -> bool:
         """O dono disse o nome ou o domínio deste site (e o host é ele ou um subdomínio dele)."""

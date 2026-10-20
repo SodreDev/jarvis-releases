@@ -42,6 +42,16 @@ PADROES_DE_SEGREDO: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
         # caractere de palavra, e a borda não existiria.
         re.compile(r"(?i)(senha|password|passwd|secret|token|api[_-]?key)\s*[:=]\s*\S{4,}"),
     ),
+    (
+        "senha_falada",
+        # O jeito falado (2026-10-20, Lote C/D20): "minha senha é hunter2", "a senha do wifi é
+        # casa2024". Exige um dígito no valor — "a senha é fraca" e "o token é válido" não são
+        # segredo e não podem virar consulta recusada.
+        re.compile(
+            r"(?i)\b(?:senha|password|passwd|pin)\s+(?:d[aoe]\s+\S+\s+)?(?:é|e|eh|era)\s+"
+            r"(?=\S*\d)\S{4,}"
+        ),
+    ),
     ("conteudo_de_env", re.compile(r"(?m)^\s*[A-Z][A-Z0-9_]{3,}=(?!\s*$)\S+")),
     ("email", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")),
     ("hex_longo", re.compile(r"\b[0-9a-f]{48,}\b")),

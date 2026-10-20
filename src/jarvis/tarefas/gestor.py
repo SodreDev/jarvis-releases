@@ -32,6 +32,7 @@ import jsonschema
 
 from jarvis.barramento.envelope import uuid7
 from jarvis.executor.desfazer import Contaminacao
+from jarvis.politica.objetivo import EstadoDoObjetivo, Objetivo
 from jarvis.s2.motor import PedidoDeTool
 
 if TYPE_CHECKING:
@@ -126,6 +127,10 @@ class Tarefa:
             "estado": str(self.estado),
             "progresso_pct": self.progresso,
         }
+        objetivo = self.contaminacao.objetivo
+        if objetivo is not None:
+            corpo["fase"] = str(objetivo.fase)
+            corpo["passos_feitos"] = objetivo.total_de_passos
         if self.motivo:
             corpo["motivo"] = self.motivo
         return corpo
@@ -210,7 +215,9 @@ class GestorDeTarefas:
                 motor=motor.nome,
                 na_nuvem=motor.na_nuvem,
                 passos_previstos=1 if motor.nome == "direto" else 0,
-                contaminacao=Contaminacao(contaminado),
+                # O objetivo da tarefa é dela (Lote C, C2): ela o segue até cumprir, com o teto de
+                # passos e de prazo e o cancelar de sempre — e o PDP o usa nas chamadas dela.
+                contaminacao=Contaminacao(contaminado, Objetivo.do_pedido(descricao)),
                 confirmar=confirmar,
             )
             self.tarefas[tarefa.id] = tarefa
@@ -355,6 +362,9 @@ class GestorDeTarefas:
         return perguntar
 
     def _terminar(self, tarefa: Tarefa, estado: EstadoDaTarefa, *, motivo: str = "") -> None:
+        objetivo = tarefa.contaminacao.objetivo
+        if objetivo is not None:
+            objetivo.concluir(_ESTADO_DO_OBJETIVO.get(estado, EstadoDoObjetivo.FALHOU))
         with self._trava:
             tarefa.estado = estado
             tarefa.motivo = motivo or tarefa.motivo
@@ -371,6 +381,12 @@ def _negado(tool_id: str, motivo: str) -> ResultadoDeFerramenta:
 
     return ResultadoDeFerramenta(tool_id, "negado", motivo=motivo)
 
+
+_ESTADO_DO_OBJETIVO: Final = {
+    EstadoDaTarefa.CONCLUIDA: EstadoDoObjetivo.CONCLUIDO,
+    EstadoDaTarefa.CANCELADA: EstadoDoObjetivo.CANCELADO,
+    EstadoDaTarefa.FALHOU: EstadoDoObjetivo.FALHOU,
+}
 
 _ESTADO_DO_CARD: Final = {
     EstadoDaTarefa.RODANDO: "executando",

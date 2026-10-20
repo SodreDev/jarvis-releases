@@ -60,6 +60,7 @@ from jarvis.decisao.interface import (
 )
 from jarvis.memoryd.importacao import classe_de_pii, redigir
 from jarvis.politica.abertura import dominio_registravel
+from jarvis.politica.objetivo import Objetivo
 from jarvis.s2.motor import Mensagem
 from jarvis.voz.interface import Cancelado, Onde, nunca_cancelado
 
@@ -92,7 +93,9 @@ PERGUNTAS_DA_ACAO: Final[dict[str, Pergunta]] = {
     "acao": PerguntaEscolha(
         instrucoes=(
             "O assistente de voz Jarvis vai executar `acao` com `argumentos` no computador do "
-            "dono. Olhando `pedido_do_dono`, `conversa` e `situacao`, o que o Jarvis deve fazer?"
+            "dono. Olhando `pedido_do_dono`, `conversa`, `situacao` e `objetivo` (o critério de "
+            "pronto, a fase — planejando, executando, verificando, concluindo — e os passos já "
+            "feitos), o que o Jarvis deve fazer?"
         ),
         # A primeira opção atrai (docs.typesafe.ai): a segura vem primeiro.
         opcoes={
@@ -205,6 +208,7 @@ class PortaoDeAcao:
         mensagens: Sequence[Mensagem],
         situacao: Mapping[str, Any],
         cancelado: Cancelado = nunca_cancelado,
+        objetivo: Objetivo | None = None,
     ) -> Classificacao:
         estado = {
             "pedido_do_dono": _cortar(_redigido(pedido_do_dono), CARACTERES_POR_MENSAGEM),
@@ -213,6 +217,9 @@ class PortaoDeAcao:
             "conversa": _conversa(mensagens),
             "situacao": dict(situacao),
         }
+        if objetivo is not None:
+            # O pedido como objetivo, na fase em que a chamada está (Lote C, C2).
+            estado["objetivo"] = objetivo.para_o_classificador(na_nuvem=False)
         comeco = time.monotonic()
         if self._na_nuvem():
             pedido = _redigido(pedido_do_dono)
@@ -229,6 +236,10 @@ class PortaoDeAcao:
                 "conversa": _falas_do_dono_para_a_nuvem(mensagens, pedido_do_dono),
                 "situacao": dict(situacao),
             }
+            if objetivo is not None:
+                # Critério, fase, estado e os passos (ferramenta:status): sem o texto do pedido
+                # de novo, que já vai redigido acima (D20).
+                estado["objetivo"] = objetivo.para_o_classificador(na_nuvem=True)
         try:
             respostas = self.classificador.decidir(estado, PERGUNTAS_DA_ACAO, cancelado=cancelado)
             escolha = respostas["acao"]

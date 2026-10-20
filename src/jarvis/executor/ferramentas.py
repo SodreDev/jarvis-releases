@@ -313,7 +313,7 @@ class ExecutorDeFerramentas:
         objetivo é o que ele pediu agora (sem pedido, não há objetivo — as regras de antes), e o
         método é o que o roteador escolheu para esse pedido com o que está ligado (ADR-0035)."""
         self.turno.valor = False
-        self.objetivo = Objetivo.do_pedido(pedido_do_dono) if pedido_do_dono.strip() else None
+        self.objetivo = None
         self.metodo = None
         if pedido_do_dono.strip():
             self.metodo = escolher_metodo(
@@ -328,6 +328,8 @@ class ExecutorDeFerramentas:
                     ),
                 ),
             )
+            # O objetivo do pedido, com o critério de pronto do método escolhido (C2).
+            self.objetivo = Objetivo.do_pedido(pedido_do_dono, str(self.metodo.metodo))
             if self.trilha is not None:
                 self.trilha.evento(
                     "metodo",
@@ -363,6 +365,12 @@ class ExecutorDeFerramentas:
             for tool_id in self.pdp.allowlist()
             if self._ligada(tool_id)
         )
+
+    def _objetivo_de(self, marca: Contaminacao | None) -> Objetivo | None:
+        """O objetivo de quem chama (C2): o da tarefa, quando ela traz o dela; senão, o do turno."""
+        if marca is not None and marca is not self.turno and marca.objetivo is not None:
+            return marca.objetivo
+        return self.objetivo
 
     def portas(self) -> Nativas:
         if self.nativas is None:
@@ -554,7 +562,7 @@ class ExecutorDeFerramentas:
             call_id=chamada,
             proveniencia=proveniencia,
             contaminado=marca.valor,
-            objetivo=self.objetivo,
+            objetivo=self._objetivo_de(marca),
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
 
@@ -589,6 +597,7 @@ class ExecutorDeFerramentas:
         *,
         pdp: str,
         ms: float | None = None,
+        fase: str = "",
     ) -> None:
         if self.trilha is None:
             return
@@ -605,6 +614,7 @@ class ExecutorDeFerramentas:
             motivo=motivo,
             codigo=codigo_do_motivo(motivo),
             aviso="falado" if resultado.aviso else aviso,
+            fase=fase,
         )
 
     def _trilhar_permissao(self, pergunta: Confirmacao, origem: str, sim: bool) -> None:
@@ -636,11 +646,18 @@ class ExecutorDeFerramentas:
             proveniencia=proveniencia,
             contaminacao=contaminacao,
         )
+        objetivo = self._objetivo_de(contaminacao if contaminacao is not None else self.turno)
+        if objetivo is not None:
+            # O passo feito muda a fase (ler depois de um efeito é verificar) — só ferramenta e
+            # status, nunca o resultado (C2).
+            leitura = self.manifestos[avaliacao.tool_id].get("side_effect") == "none"
+            objetivo.registrar(avaliacao.tool_id, resultado.status, leitura=leitura)
         self._trilhar(
             resultado,
             avaliacao.argumentos.keys(),
             pdp=veredito,
             ms=(time.monotonic() - comeco) * 1000.0,
+            fase=str(objetivo.fase) if objetivo is not None else "",
         )
         return resultado
 
@@ -706,10 +723,11 @@ class ExecutorDeFerramentas:
         e, na **moderada**, montar o aviso falado e guardar como desfazer."""
         if tool_id in FONTES_DE_TERCEIROS:
             marca.valor = True
-        if self.objetivo is not None:
+        objetivo = self._objetivo_de(marca)
+        if objetivo is not None:
             # O caminho do objetivo: o que ele abriu, os links e resultados que trouxe. É daqui
             # que sai o "domínio novo alcançado" que não pergunta (dono, 2026-10-20).
-            self.objetivo.alcancar(enderecos_do_resultado(resultado.dados))
+            objetivo.alcancar(enderecos_do_resultado(resultado.dados))
         manifesto = self.manifestos[tool_id]
         if manifesto.get("tier") != "moderado":
             return resultado
@@ -884,7 +902,7 @@ class ExecutorDeFerramentas:
                 CONFIRMACAO_DO_NAVEGADOR, tool_id, chamada, cancelado, confirmar, contaminado
             ),
             cancelado=cancelado,
-            objetivo=self.objetivo,
+            objetivo=self._objetivo_de(marca),
         )
 
     def _entrada_virtual(

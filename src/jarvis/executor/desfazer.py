@@ -19,9 +19,12 @@ import re
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from jarvis.barramento.envelope import uuid7
+
+if TYPE_CHECKING:
+    from jarvis.politica.objetivo import Objetivo
 
 LIMITE_DO_REGISTRO: Final = 20
 LIMITE_DO_CAMPO: Final = 80
@@ -38,6 +41,9 @@ class Contaminacao:
     segundo plano tem a dela — uma não contamina a outra."""
 
     valor: bool = False
+    objetivo: Objetivo | None = None
+    """O objetivo **deste** fluxo (Lote C, C2): a tarefa em segundo plano tem o dela, que ela segue
+    até cumprir; o turno usa o do executor (`ExecutorDeFerramentas.objetivo`)."""
 
 
 @dataclass(frozen=True, slots=True)

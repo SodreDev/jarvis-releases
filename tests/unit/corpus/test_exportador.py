@@ -30,6 +30,7 @@ SEGREDOS = {
     "token_slack": "xoxb-0123456789-abcdefghij",
     "url_com_credencial": "postgres://sodre:senhaforte@localhost:5432/banco",
     "senha_declarada": "senha: minhaSenhaSecreta123",
+    "senha_falada": "minha senha é hunter2hunter2",
     "conteudo_de_env": "API_TOKEN=abcdef0123456789",
     "email": "alguem@exemplo.com",
     "hex_longo": "a" * 64,
@@ -64,6 +65,21 @@ def test_chave_privada_inteira_e_redigida() -> None:
 
     assert "BEGIN" not in resultado.texto
     assert "b3BlbnNzaC" not in resultado.texto
+
+
+@pytest.mark.parametrize(
+    "texto",
+    ["como saber se minha senha é segura", "a senha é fraca", "o token é válido até amanhã"],
+)
+def test_falar_de_senha_sem_dizer_uma_nao_e_redigido(texto: str) -> None:
+    """A regra falada exige dígito no valor: perguntar sobre senha não vira segredo (nem consulta
+    recusada na busca)."""
+    assert redigir(texto).achados == {}
+
+
+def test_a_senha_falada_com_o_dono_do_valor_tambem_e_redigida() -> None:
+    resultado = redigir("a senha do wifi é casa2024, anota aí")
+    assert "casa2024" not in resultado.texto and resultado.achados == {"senha_falada": 1}
 
 
 def test_texto_sem_segredo_atravessa_intacto() -> None:

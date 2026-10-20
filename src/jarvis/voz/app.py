@@ -1186,6 +1186,7 @@ class Aplicativo:
             raciocinio_descartado=resposta.raciocinio_descartado if resposta else 0,
             narracao_retida=resposta.narracao_retida if resposta else 0,
             resultados_podados=resposta.resultados_podados if resposta else 0,
+            objetivo=resposta.estado_do_objetivo if resposta else "",
             erro=falha[0] if falha else "",
         )
         return Turno(

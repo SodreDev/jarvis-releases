@@ -92,6 +92,7 @@ class FluxoDeAcao:
                 mensagens=mensagens,
                 situacao=_situacao(manifesto, executor, avaliacao.pedido.contaminado),
                 cancelado=cancelado,
+                objetivo=executor.objetivo,
             )
             classe, motivo = classificacao.classe, classificacao.motivo
 

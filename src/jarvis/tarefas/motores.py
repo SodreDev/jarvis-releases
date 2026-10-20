@@ -58,6 +58,17 @@ class MotorDeAgente:
             f"Objetivo: {tarefa.descricao}. Primeiro passo sugerido pelo dono: "
             f"{tarefa.tool_id} com {dict(tarefa.parametros)}."
         )
+        objetivo_da_tarefa = tarefa.contaminacao.objetivo
+        if objetivo_da_tarefa is not None:
+            # Lote C, C2: a tarefa segue o objetivo dela até o critério de pronto, sabendo em que
+            # fase está e o que já fez (só ferramenta e status).
+            contexto_do_objetivo = objetivo_da_tarefa.para_o_classificador(na_nuvem=self.na_nuvem)
+            feitos_ate_aqui = ", ".join(contexto_do_objetivo["passos_feitos"]) or "nenhum"
+            objetivo += (
+                f" Critério de pronto: {contexto_do_objetivo['criterio_de_pronto']}. Fase: "
+                f"{contexto_do_objetivo['fase']}. Passos feitos: {feitos_ate_aqui}. Continue até "
+                "o critério estar cumprido e conferido; então responda com o resultado."
+            )
         contexto = Contexto(
             sistema=SISTEMA_DA_TAREFA,
             mensagens=(

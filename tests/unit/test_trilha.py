@@ -82,3 +82,13 @@ def test_a_linha_do_fim_diz_quantos_passos_antigos_foram_podados(tmp_path: Path)
     trilha.novo_turno("t-1", motor="claude")
     trilha.evento("turno.fim", fim="concluido", ms_total=10.0, ferramentas=7, resultados_podados=3)
     assert any("passos antigos podados 3" in linha for linha in resumo_do_ultimo_turno(tmp_path))
+
+
+def test_a_linha_da_ferramenta_diz_a_fase_e_a_do_fim_o_estado_do_objetivo(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento("ferramenta", tool_id="browser.read", status="ok", ms=5.0, fase="verificando")
+    trilha.evento("turno.fim", fim="concluido", ms_total=9.0, ferramentas=1, objetivo="concluido")
+    texto = "\n".join(resumo_do_ultimo_turno(tmp_path))
+    assert "browser.read: ok em 5 ms (PDP ?) · fase verificando" in texto
+    assert "objetivo concluido" in texto

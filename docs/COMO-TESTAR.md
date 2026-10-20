@@ -958,6 +958,20 @@ automação (WhatsApp, Instagram).
 `jarvis-voz --diagnostico` mostra «método navegador (cita_site) · N ferramenta(s) de fora» no último
 turno. Testes: `tests/unit/politica/test_metodo.py` (a tabela de casos inteira).
 
+### 0.16 O pedido como objetivo, em fases (2026-10-20, ADR-0030, emenda C2)
+
+Cada pedido vira um **objetivo** com **critério de pronto** (pelo método: «a página pedida aberta e
+conferida», «o app aberto e em foco»…), **estado** e **fase** — planejando, executando,
+**verificando** (quando ele lê depois de agir) e concluindo. O classificador que decide cada
+ferramenta (o portão) recebe o pedido, o objetivo, os passos já feitos e a fase; na nuvem, sem o
+texto do pedido repetido e sem segredo — e a redação agora pega o jeito falado («minha senha é
+casa2024»). A tarefa em segundo plano tem o objetivo dela e segue até cumprir, dentro do teto de
+passos e do prazo, e para quando você manda.
+
+**Como conferir:** `jarvis-voz --diagnostico` mostra a fase em cada ferramenta e «objetivo
+concluido/aguardando_o_dono/falhou/cancelado» no fim do turno; «como está a tarefa?» diz a fase dela.
+Testes: `tests/unit/s2/test_objetivo_e_fase.py`.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

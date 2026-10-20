@@ -158,9 +158,10 @@ def _linha(evento: Mapping[str, Any]) -> str:
     if tipo == "ferramenta":
         detalhe = f" — {evento['motivo']}" if evento.get("motivo") else ""
         codigo = f" [{evento['codigo']}]" if evento.get("codigo") else ""
+        fase = f" · fase {evento['fase']}" if evento.get("fase") else ""
         return (
             f"ferramenta {evento.get('tool_id')}: {evento.get('status')} em "
-            f"{_ms(evento.get('ms'))} (PDP {evento.get('pdp', '?')}){codigo}{detalhe}"
+            f"{_ms(evento.get('ms'))} (PDP {evento.get('pdp', '?')}){codigo}{fase}{detalhe}"
         )
     if tipo == "portao":
         return (
@@ -186,6 +187,8 @@ def _linha(evento: Mapping[str, Any]) -> str:
             )
         if evento.get("resultados_podados"):
             pensou += f" · passos antigos podados {evento['resultados_podados']}"
+        if evento.get("objetivo"):
+            pensou += f" · objetivo {evento['objetivo']}"
         return (
             f"fim: {evento.get('fim')} · 1ª fala {_ms(evento.get('ms_primeira_fala'))} · "
             f"1º áudio {_ms(evento.get('ms_primeiro_audio'))} · total {_ms(evento.get('ms_total'))}"

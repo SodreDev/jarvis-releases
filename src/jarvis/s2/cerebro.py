@@ -40,6 +40,7 @@ from jarvis.fatiador import PALAVRAS_MINIMAS_POR_PEDACO, Corte, FatiadorDeFala, 
 from jarvis.imagem import Imagem
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
+from jarvis.politica.objetivo import EstadoDoObjetivo
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
 from jarvis.s2.fluxo_de_acao import FluxoDeAcao
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
@@ -116,6 +117,8 @@ class Resposta:
     tamanho): morre com o turno."""
     raciocinio_descartado: int = 0
     """Caracteres de raciocínio que passaram do teto e não voltaram ao motor."""
+    estado_do_objetivo: str = ""
+    """Como o objetivo do pedido terminou o turno (`EstadoDoObjetivo`), para a trilha."""
     resultados_podados: int = 0
     """Passos antigos que foram ao motor podados numa rodada (o máximo do turno, ADR-0034): o volume
     do que eles trouxeram ficou fora do contexto."""
@@ -431,6 +434,12 @@ class Cerebro:
         else:
             for pedaco in fatiador.fechar():
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
+        objetivo = self.ferramentas.objetivo if self.ferramentas is not None else None
+        if objetivo is not None:
+            # O pedido como objetivo (Lote C, C2): a resposta final é a fase de concluir; o estado
+            # diz se acabou, se espera o dono, se falhou ou se ele interrompeu.
+            objetivo.concluir(_estado_final(resposta))
+            resposta.estado_do_objetivo = str(objetivo.estado)
         self.autorizacoes.encerrar()
         self._pendentes[resposta.response_id] = resposta
         return resposta
@@ -716,6 +725,16 @@ class Cerebro:
             resposta.ms_ate_primeiro_pedaco = _ms_desde(comeco)
         resposta.publicados.append(payload)
         publicar(payload)
+
+
+def _estado_final(resposta: Resposta) -> EstadoDoObjetivo:
+    if resposta.fim is MotivoDoFim.CANCELADO:
+        return EstadoDoObjetivo.CANCELADO
+    if resposta.fim is not MotivoDoFim.CONCLUIDO or resposta.detalhe.startswith(
+        "o motor pediu ferramenta"
+    ):
+        return EstadoDoObjetivo.FALHOU
+    return EstadoDoObjetivo.CONCLUIDO
 
 
 def _guardar_raciocinio(resposta: Resposta, texto: str, *, separado: bool = False) -> None:
