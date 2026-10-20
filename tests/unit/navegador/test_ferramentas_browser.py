@@ -82,6 +82,10 @@ class PaginaFalsa:
             case "tabs.navigate":
                 aba = self.abas[0] | {"url": p["url"]}
                 return ok | {"result": {"aba": aba}}
+            case "tabs.open":
+                nova = {"id": 8, "janelaId": 1, "ativa": True, "url": p["url"], "titulo": ""}
+                self.abas.append(nova)
+                return ok | {"result": {"reutilizada": False, "aba": nova}}
         raise AssertionError(pedido.method)
 
     def metodos(self) -> list[str]:
@@ -384,6 +388,22 @@ def test_navegar_so_http_sem_credencial_e_sem_confirmar_fora_de_leitura(
         resultado, _ = _rodar(executor, "browser.navigate", {"url": ruim})
         assert resultado.status == "erro", ruim
     assert pagina.metodos().count("tabs.navigate") == 1
+
+
+def test_navegar_troca_a_url_da_aba_atual_e_aba_nova_so_se_pedida(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """Dono, 2026-10-20: abrir um link criava aba nova a cada passo."""
+    atual, _ = _rodar(executor, "browser.navigate", {"url": "https://exemplo.org/a"})
+    assert atual.status == "ok" and atual.dados["tab_id"] == 7 and not atual.dados["nova_aba"]
+    assert pagina.metodos() == ["tabs.current", "tabs.navigate"]
+
+    nova, _ = _rodar(
+        executor, "browser.navigate", {"url": "https://exemplo.org/b", "nova_aba": True}
+    )
+    assert nova.status == "ok" and nova.dados["tab_id"] == 8 and nova.dados["nova_aba"]
+    assert pagina.metodos()[-1] == "tabs.open"
+    assert len(pagina.abas) == 2
 
 
 def test_rolar_e_moderado_e_respeita_o_teto(

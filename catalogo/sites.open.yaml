@@ -4,10 +4,10 @@ title: Abrir um site
 description: >-
   Abre um endereço http ou https no navegador principal que o dono configurou (ou no padrão do desktop, se ele
   não configurou). Use quando o dono pedir para abrir uma página; só diga `navegador` se ele pedir um navegador
-  específico e for um dos que ele configurou. `reutilizar_aba` é verdadeiro por padrão: reutilize a aba atual
-  quando o navegador oferecer essa capacidade; sem ela, abra como antes. Abre sem perguntar; só confirma, na tela,
-  se neste turno você leu um arquivo ou página e o endereço não é de um site que o dono liberou. Não lê a página,
-  não controla o navegador, não abre outro esquema (arquivo, javascript, dados) e não aceita URL com senha.
+  específico e for um dos que ele configurou. Por padrão troca a URL da aba atual (com a extensão do Jarvis
+  conectada); `nova_aba: true` só quando o dono pedir nova aba. Abre sem perguntar; só confirma, na tela, se neste
+  turno você leu um arquivo ou página e o endereço não é de um site que o dono liberou. Não lê a página, não abre
+  outro esquema (arquivo, javascript, dados) e não aceita URL com senha.
 input_schema:
   type: object
   additionalProperties: false
@@ -21,7 +21,7 @@ input_schema:
     navegador:
       type: string
       maxLength: 40
-    reutilizar_aba:
+    nova_aba:
       type: boolean
 output_schema:
   type: object

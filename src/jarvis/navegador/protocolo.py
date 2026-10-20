@@ -1,6 +1,6 @@
 """O vocabulário fechado entre o Jarvis e a extensão (extensao/background.js).
 
-Só estes oito métodos existem, cada um com os parâmetros que aceita. Não há `eval`, CDP nem
+Só estes métodos existem, cada um com os parâmetros que aceita. Não há `eval`, CDP nem
 seletor CSS: o alvo de um clique é o **texto ou rótulo visível** do elemento. O host valida de
 novo o que o cliente já validou — o socket é uma fronteira, e a extensão não confia em ninguém.
 """
@@ -31,6 +31,7 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     "tabs.list": {},
     "tabs.current": {"tabId": int},
     "tabs.navigate": {"tabId": int, "url": str},
+    "tabs.open": {"url": str},
     "page.read": {"tabId": int},
     "page.inspect": {"tabId": int, "alvo": str},
     "page.click": {"tabId": int, "alvo": str},
@@ -39,6 +40,7 @@ METODOS: Final[dict[str, dict[str, type]]] = {
 }
 OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "tabs.navigate": frozenset({"url"}),
+    "tabs.open": frozenset({"url"}),
     "page.inspect": frozenset({"alvo"}),
     "page.click": frozenset({"alvo"}),
     "page.type": frozenset({"alvo", "texto"}),

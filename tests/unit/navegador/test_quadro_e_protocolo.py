@@ -53,12 +53,16 @@ def test_pedidos_do_vocabulario_passam() -> None:
     pedido = validar_pedido(_pedido("page.type", alvo="Busca", texto="oi", limpar=True))
     assert pedido.params["limpar"] is True
     assert validar_pedido(_pedido("tabs.navigate", url="https://exemplo.org/a?b=1")).id == "j1-1"
+    # Aba nova só quando o dono pede (2026-10-20): o padrão continua sendo navegar na atual.
+    assert validar_pedido(_pedido("tabs.open", url="https://exemplo.org")).method == "tabs.open"
 
 
 @pytest.mark.parametrize(
     "bruto",
     [
-        _pedido("tabs.open", url="https://exemplo.org"),  # método que o Jarvis não usa
+        _pedido("tabs.open"),  # aba nova sem endereço
+        _pedido("tabs.open", url="javascript:alert(1)"),
+        _pedido("tabs.open", url="https://exemplo.org", reutilizar=True),  # fora do contrato
         _pedido("page.eval", codigo="1+1"),  # canivete suíço
         _pedido("page.click", selector="#enviar", alvo="x"),  # seletor CSS não existe
         _pedido("page.click"),  # falta o alvo

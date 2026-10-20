@@ -13,11 +13,12 @@ navegador carrega a cópia da extensão que ele gravou → `connectNative` → o
 host deste código → socket Unix → `Aplicativo._montar_ferramentas` (catálogo C0, PDP e risco
 reais) → as `browser.*`, numa página servida no 127.0.0.1 do contêiner.
 
-O que se confere, por navegador (14 pontos): o host nasce; o modelo enxerga as `browser.*`;
+O que se confere, por navegador (16 pontos): o host nasce; o modelo enxerga as `browser.*`;
 `browser.tabs` acha a página e `browser.navigate` a recarrega; `browser.read` lê o texto; um botão
 comum é clicado sem pergunta; um botão de **envio de formulário** com rótulo neutro
 pede o "sim" (e o "não" impede o clique); `browser.type` digita na busca e recusa a senha;
-`browser.estado` diz conectado; o host derrubado (PID conferido em `/proc`) volta pela reconexão
+`browser.estado` diz conectado; `sites.open` troca a URL da aba atual e `browser.navigate`
+com `nova_aba` abre uma só; o host derrubado (PID conferido em `/proc`) volta pela reconexão
 da extensão; e, 40 s sem pedido, o mesmo host continua respondendo.
 
 Fatos que este roteiro descobriu (2026-10-19, Chromium 155 e Firefox 158 do Fedora 44):
@@ -79,6 +80,7 @@ Mostrar detalhe</button>
 <label>Senha <input type=password name=s></label>
 """
 """«Pronto» é um envio de formulário com rótulo neutro: só a inspeção do alvo o pega."""
+SEGUNDA: Final = "<!doctype html><meta charset=utf-8><title>Segunda página do Jarvis</title><p>dois"
 
 
 # --- dentro do contêiner ------------------------------------------------------------------------
@@ -148,6 +150,7 @@ class Marionette:
 def _site() -> Iterator[str]:
     pasta = Path(tempfile.mkdtemp(prefix="site-"))
     (pasta / "pagina.html").write_text(PAGINA, encoding="utf-8")
+    (pasta / "pagina2.html").write_text(SEGUNDA, encoding="utf-8")
 
     class Quieto(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *_args: object) -> None:
@@ -310,6 +313,8 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
                 s2="eco",
                 acesso="jarvis",
                 navegador_controlado=True,
+                navegadores=(f"{nome}={CHROMIUM if nome == 'chromium' else FIREFOX}",),
+                navegador_principal=nome,
             ),
             raiz=raiz,
             ambiente={**os.environ, "JARVIS_AUDIO_BACKEND": "arquivo"},
@@ -423,6 +428,40 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             "browser.estado diz conectado",
             estado.status == "ok" and estado.dados.get("situacao") == "conectado",
             estado.dados or estado.motivo,
+        )
+
+        def abas_agora() -> list[dict[str, Any]]:
+            return list(rodar("browser.tabs", {}).dados.get("abas", []))
+
+        abas_antes = abas_agora()
+        segunda = url.replace("pagina.html", "pagina2.html")
+        aberto = rodar("sites.open", {"url": segunda})
+        abas_depois = (
+            _esperar(
+                lambda: (
+                    (lista := abas_agora())
+                    and any("Segunda página" in a["titulo"] for a in lista)
+                    and lista
+                ),
+                10,
+            )
+            or abas_agora()
+        )
+        relatorio.conferir(
+            "sites.open troca a URL da aba atual, sem aba nova nem lançar o navegador",
+            aberto.status == "ok"
+            and aberto.dados.get("reutilizou_aba") is True
+            and len(abas_depois) == len(abas_antes)
+            and any("Segunda página" in a["titulo"] for a in abas_depois),
+            f"{aberto.status} {aberto.dados or aberto.motivo}; "
+            f"abas {len(abas_antes)} → {len(abas_depois)}",
+        )
+        nova = rodar("browser.navigate", {"url": url, "nova_aba": True})
+        com_nova = _esperar(lambda: len(abas_agora()) == len(abas_antes) + 1, 10)
+        relatorio.conferir(
+            "browser.navigate com nova_aba abre uma aba e só uma",
+            nova.status == "ok" and nova.dados.get("nova_aba") is True and com_nova,
+            nova.dados or nova.motivo,
         )
 
         os.kill(pid, signal.SIGTERM)  # PID conferido acima em /proc: é o host, e só ele

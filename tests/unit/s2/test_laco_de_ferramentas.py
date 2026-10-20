@@ -198,12 +198,7 @@ def test_abre_o_video_mais_recente_em_passos_e_confere_a_pagina(
         ["Vou procurar o canal. ", PedidoDeTool("web.buscar", {"consulta": "Canal X YouTube"})],
         [PedidoDeTool("web.ler", {"url": "https://www.youtube.com/@canal-x"})],
         [PedidoDeTool("web.canal_videos", {"canal": "https://www.youtube.com/@canal-x"})],
-        [
-            PedidoDeTool(
-                "sites.open",
-                {"url": "https://www.youtube.com/watch?v=novo", "reutilizar_aba": True},
-            )
-        ],
+        [PedidoDeTool("sites.open", {"url": "https://www.youtube.com/watch?v=novo"})],
         [PedidoDeTool("web.ler", {"url": "https://www.youtube.com/watch?v=novo"})],
         ["Encontrei o vídeo mais recente do Canal X e abri na aba atual."],
     )

@@ -837,7 +837,7 @@ class ExecutorDeFerramentas:
         if tool_id == "sites.open":
             url = validar_url(str(args["url"]))
             pedido = str(args.get("navegador", "")).strip()
-            reutilizar_aba = bool(args.get("reutilizar_aba", True))
+            reutilizar_aba = not bool(args.get("nova_aba", False))
             if self.navegadores is not None and (self.navegadores.principal or pedido):
                 usado, reutilizou = self.navegadores.abrir(
                     url, pedido, reutilizar_aba=reutilizar_aba

@@ -207,3 +207,7 @@ class ClienteDoNavegador:
 
     def navegar(self, tab_id: int, url: str) -> dict[str, Any]:
         return self.chamar("tabs.navigate", tabId=tab_id, url=url)
+
+    def abrir(self, url: str) -> dict[str, Any]:
+        """Uma aba **nova**, ativa — só quando o dono pediu nova aba; o padrão é `navegar`."""
+        return self.chamar("tabs.open", url=url)

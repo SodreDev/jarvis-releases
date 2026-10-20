@@ -77,7 +77,13 @@ from jarvis.executor.navegadores import AbridorDeNavegador, separar
 from jarvis.memoryd.conversa import ConversaPersistente
 from jarvis.memoryd.ferramentas import FerramentasDeMemoria
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
-from jarvis.navegador.cliente import ClienteDoNavegador, TransporteUnix, familia_do_host
+from jarvis.navegador.cliente import (
+    ClienteDoNavegador,
+    NavegadorFalhou,
+    NavegadorIndisponivel,
+    TransporteUnix,
+    familia_do_host,
+)
 from jarvis.navegador.estado import EstadoDaPonte, sondar
 from jarvis.navegador.ferramentas import CorposDoNavegador
 from jarvis.politica.abertura import nome_de_app
@@ -827,6 +833,7 @@ class Aplicativo:
                 navegadores=separar(self.configuracao.navegadores),
                 principal=self.configuracao.navegador_principal,
                 ambiente=self.ambiente,
+                reutilizar_aba=self._na_aba_atual,
             ),
             navegador=self._corpos_do_navegador(),
             estado_do_navegador=self.estado_do_navegador,
@@ -848,6 +855,23 @@ class Aplicativo:
         cliente = ClienteDoNavegador(self._transporte_do_navegador())
         cliente.navegador = familia_do_host(self.configuracao.navegador_principal)
         return CorposDoNavegador(cliente)
+
+    def _na_aba_atual(self, url: str, familia: str) -> bool:
+        """`sites.open` troca a URL da aba atual pela extensão (dono, 2026-10-20: cada link abria
+        uma aba nova). Só com o controle ligado e a extensão daquele navegador conectada; senão
+        devolve `False` e o navegador é aberto com a URL, como antes."""
+        if not self.configuracao.navegador_controlado:
+            return False
+        cliente = ClienteDoNavegador(self._transporte_do_navegador())
+        cliente.navegador = familia_do_host(familia)
+        try:
+            identificador = cliente.aba().get("id")
+            if not isinstance(identificador, int):
+                return False
+            cliente.navegar(identificador, url)
+        except (NavegadorIndisponivel, NavegadorFalhou):
+            return False
+        return True
 
     def estado_do_navegador(self) -> EstadoDaPonte:
         """O estado verdadeiro da ponte (`browser.estado`, `--diagnostico`): ligado ou não, com ou

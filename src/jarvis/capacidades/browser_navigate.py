@@ -10,8 +10,8 @@ Política desta capacidade (decidida no repositório, nunca pelo modelo):
   tier: moderado
   risco: transitorio_reversivel · confirmação: never · egress: local
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
-  pós-condição verificada pelo executor: a aba escolhida passou a apontar para a URL pedida (http ou
-    https, sem credencial)
+  pós-condição verificada pelo executor: a aba atual (ou a escolhida, ou uma nova se pedida) aponta
+    para a URL pedida, sem credencial
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 15000
 ROOTS: Final[tuple[str, ...]] = ()
 POSTCONDITION: Final = (
-    "a aba escolhida passou a apontar para a URL pedida (http ou https, sem credencial)"
+    "a aba atual (ou a escolhida, ou uma nova se pedida) aponta para a URL pedida, sem credencial"
 )
 
 
@@ -40,6 +40,7 @@ class BrowserNavigateEntrada:
     """Argumentos normalizados de `browser.navigate` (input_schema do §4)."""
 
     url: str
+    nova_aba: bool | None = None
     tab_id: int | None = None
 
 
@@ -51,7 +52,7 @@ class BrowserNavigateSaida:
     dominio: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("url", "tab_id"))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("url", "nova_aba", "tab_id"))
 OBRIGATORIOS: Final[frozenset[str]] = frozenset(("url",))
 
 

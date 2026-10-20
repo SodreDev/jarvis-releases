@@ -134,3 +134,46 @@ def test_ligar_o_navegador_com_a_conversa_aberta_nao_some_com_memoria_tarefas_e_
     ids_depois = {t["id"] for t in depois.catalogo_para_o_modelo()}
     assert (ids_antes - ids_depois) == set(), "nada que existia sumiu"
     assert {"browser.read", "browser.click"} <= ids_depois
+
+
+def test_sites_open_troca_a_url_da_aba_atual_pela_extensao_e_nao_abre_o_navegador(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Dono, 2026-10-20: cada link abria uma aba nova. Com a extensão conectada, `sites.open` leva
+    a aba atual ao endereço; o binário configurado (inofensivo aqui) nem é chamado."""
+    curto = tmp_path_factory.mktemp("s")
+    aba = {"id": 5, "janelaId": 1, "ativa": True, "url": "https://antes.example/", "titulo": "A"}
+
+    def extensao(pedido: dict[str, Any]) -> dict[str, Any]:
+        if pedido["method"] == "tabs.current":
+            return {"id": pedido["id"], "ok": True, "result": {"aba": aba}}
+        assert pedido["method"] == "tabs.navigate", pedido
+        nova = aba | {"url": pedido["params"]["url"]}
+        return {"id": pedido["id"], "ok": True, "result": {"aba": nova}}
+
+    navegador = Navegador(curto, extensao)
+    navegador.abrir()
+    try:
+        raiz = curto / "sessao"
+        raiz.mkdir()
+        app = Aplicativo(
+            configuracao=BASE.com(
+                navegador_controlado=True,
+                navegadores=("teste=/usr/bin/true",),
+                navegador_principal="teste",
+            ),
+            raiz=raiz,
+            ambiente={"JARVIS_AUDIO_BACKEND": "arquivo", "XDG_RUNTIME_DIR": str(curto)},
+            lar=curto / "casa",
+        )
+        ferramentas = app._montar_ferramentas()
+        aberto = ferramentas.executar(
+            "sites.open", {"url": "https://exemplo.org/depois"}, cancelado=lambda: False
+        )
+    finally:
+        navegador.fechar()
+
+    assert aberto.status == "ok", aberto.motivo
+    assert aberto.dados["reutilizou_aba"] is True
+    assert [p["method"] for p in navegador.recebidos] == ["tabs.current", "tabs.navigate"]
+    assert navegador.recebidos[1]["params"] == {"tabId": 5, "url": "https://exemplo.org/depois"}

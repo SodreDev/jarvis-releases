@@ -584,6 +584,7 @@ navegador. Não recarregue a extensão entre essas etapas.
 | «digita 123 no campo Senha» | **recusa**, sem pergunta: senha é sua |
 | «clica em Enviar» | **faixa de confirmação** (envia formulário); sem o seu sim, a aba **não** muda para «enviado» |
 | «rola a página» | rola e fala |
+| «abre o site exemplo.org» / «vai para …» | troca a URL da **aba atual** (2026-10-20); aba nova só se você pedir («abre numa aba nova») |
 
 Conferir que não há porta de rede e que o socket é só seu:
 
@@ -655,7 +656,9 @@ Prefira o portal; use o `uinput` só onde o portal não existe.
 tools.harness_navegador` sobe Chromium 155 e Firefox 158 headless (Fedora 44, podman sem rede, HOME
 descartável, repositório só leitura) e prova, nos dois: `jarvis-native-host --instalar` no modo
 repositório; o navegador lança o host pelo manifesto; o modelo enxerga as `browser.*` no prompt;
-`browser.tabs`, `browser.navigate`, `browser.read` (texto da página), clique comum sem pergunta, **envio de formulário
+`browser.tabs`, `browser.navigate`, `browser.read` (texto da página), clique comum sem pergunta,
+`sites.open` trocando a URL da aba atual (sem aba nova) e `browser.navigate` com `nova_aba` abrindo
+uma só, **envio de formulário
 com rótulo neutro pedindo o sim** (e o «não» impedindo), digitar na busca, recusa da senha,
 `browser.estado` = conectado, host derrubado que **volta sozinho** pela reconexão, e o mesmo host
 respondendo depois de 40 s ocioso. Esse roteiro achou dois defeitos que os fakes escondiam: a
