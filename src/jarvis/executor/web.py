@@ -369,9 +369,9 @@ def _videos_do_canal(
     return nome.removesuffix(" - YouTube"), videos, "página do canal"
 
 
-_VIDEO_DA_PAGINA: Final = re.compile(
-    r'"videoId":"([\w-]{11})".{0,1500}?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.){1,300})"',
-    re.DOTALL,
+# Sem `re.compile` (a varredura de «sem shell»): o `re` guarda o padrão compilado sozinho.
+_VIDEO_DA_PAGINA: Final = (
+    r'"videoId":"([\w-]{11})".{0,1500}?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.){1,300})"'
 )
 
 
@@ -381,7 +381,7 @@ def _videos_da_pagina(corpo: bytes) -> list[dict[str, str]]:
     texto = corpo.decode("utf-8", errors="replace")
     videos: list[dict[str, str]] = []
     vistos: set[str] = set()
-    for video_id, titulo_json in _VIDEO_DA_PAGINA.findall(texto):
+    for video_id, titulo_json in re.findall(_VIDEO_DA_PAGINA, texto, re.DOTALL):
         if video_id in vistos:
             continue
         vistos.add(video_id)
