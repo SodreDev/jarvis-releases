@@ -12,6 +12,7 @@ verdade é o `executor`, com credencial de menor privilégio e sandbox (§2).
 from __future__ import annotations
 
 import json
+import re
 import textwrap
 from typing import Any, Final
 
@@ -69,6 +70,8 @@ def _tupla_literal(valores: list[str]) -> str:
 
 LARGURA: Final = 100
 """A largura de linha do `ruff format` do projeto (`line-length` no pyproject)."""
+RECUO: Final = len("    ")
+"""O recuo da linha de dentro dos parênteses."""
 
 
 def _conjunto(nome: str, valores: list[str]) -> str:
@@ -91,10 +94,45 @@ def _conjunto(nome: str, valores: list[str]) -> str:
 
 
 def _constante(nome: str, texto: str) -> str:
-    """`NOME: Final = "texto"`, entre parênteses se passa de 100 colunas (como o `ruff format`)."""
-    literal = json.dumps(texto, ensure_ascii=False)
+    """`NOME: Final = "texto"`, entre parênteses se passa de 100 colunas (como o `ruff format`).
+
+    Se nem entre parênteses a string cabe, ela sai em pedaços concatenados, quebrados no espaço:
+    o `ruff format` mantém (juntos não caberiam) e o E501 aceita. Uma pós-condição longa num
+    manifesto deixava o stub fora do formato e o `verificar.py` vermelho (input.*, 1fc6450)."""
+    literal = _literal(texto)
     linha = f"{nome}: Final = {literal}"
-    return linha if len(linha) <= LARGURA else f"{nome}: Final = (\n    {literal}\n)"
+    if len(linha) <= LARGURA:
+        return linha
+    if len(literal) + RECUO <= LARGURA:
+        return f"{nome}: Final = (\n    {literal}\n)"
+    corpo = "\n".join(f"    {_literal(p)}" for p in _pedacos(texto))
+    return f"{nome}: Final = (\n{corpo}\n)"
+
+
+def _literal(texto: str) -> str:
+    """A string como o `ruff format` a escreve: aspas duplas, salvo quando o texto tem aspas
+    duplas e nenhuma simples — aí simples, que dispensam o escape."""
+    duplas = json.dumps(texto, ensure_ascii=False)
+    if '"' in texto and "'" not in texto:
+        return "'" + duplas[1:-1].replace('\\"', '"') + "'"
+    return duplas
+
+
+def _pedacos(texto: str) -> list[str]:
+    """O texto em pedaços que, entre aspas e recuados, cabem em 100 colunas. Cada um leva o
+    espaço que o separa do seguinte, então a concatenação devolve o texto exato. Palavra maior
+    que a linha fica sozinha (não se corta palavra)."""
+    pedacos: list[str] = []
+    atual = ""
+    for palavra in re.findall(r"\s*\S+\s*", texto) or [texto]:
+        candidato = atual + palavra
+        if atual and len(_literal(candidato)) + RECUO > LARGURA:
+            pedacos.append(atual)
+            atual = palavra
+        else:
+            atual = candidato
+    pedacos.append(atual)
+    return pedacos
 
 
 def _linha_da_poscondicao(texto: str) -> str:

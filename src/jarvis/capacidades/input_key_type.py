@@ -31,7 +31,8 @@ IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 30000
 ROOTS: Final[tuple[str, ...]] = ()
 POSTCONDITION: Final = (
-    "o texto saiu pelo backend de entrada do sistema, na janela que estava em foco e foi conferida antes"
+    "o texto saiu pelo backend de entrada do sistema, na janela que estava em foco e foi conferida "
+    "antes"
 )
 
 

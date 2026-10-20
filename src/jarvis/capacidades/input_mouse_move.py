@@ -31,7 +31,8 @@ IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 10000
 ROOTS: Final[tuple[str, ...]] = ()
 POSTCONDITION: Final = (
-    "o ponteiro andou dx e dy pixels relativos pelo backend de entrada do sistema, com a janela em foco conferida antes"
+    "o ponteiro andou dx e dy pixels relativos pelo backend de entrada do sistema, com a janela em "
+    "foco conferida antes"
 )
 
 
