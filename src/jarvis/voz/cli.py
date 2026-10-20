@@ -29,7 +29,8 @@ from jarvis.executor.navegadores import separar
 from jarvis.navegador.cliente import TransporteUnix
 from jarvis.navegador.estado import sondar
 from jarvis.rede import ErroDeRede
-from jarvis.voz.app import Aplicativo, AplicativoIndisponivel
+from jarvis.trilha import resumo_do_ultimo_turno
+from jarvis.voz.app import PASTA_DA_TRILHA, Aplicativo, AplicativoIndisponivel
 from jarvis.voz.chaves import (
     VARIAVEIS,
     Chave,
@@ -108,6 +109,13 @@ def diagnosticar(
         home=Path(fonte["HOME"]) if fonte.get("HOME") else Path.home(),
     )
     for texto in ponte.linhas():
+        linha(texto)
+
+    linha("")
+    linha(
+        "último turno (trilha de diagnóstico local, só metadados — nada de fala, página ou áudio):"
+    )
+    for texto in resumo_do_ultimo_turno(_raiz_de_sessao(ambiente) / PASTA_DA_TRILHA):
         linha(texto)
 
     linha("")

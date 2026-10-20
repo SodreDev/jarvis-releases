@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 from _pytest.capture import CaptureFixture
 
+from jarvis.trilha import TrilhaDeDiagnostico
+from jarvis.voz.app import PASTA_DA_TRILHA
 from jarvis.voz.chaves import VARIAVEL_GROQ
 from jarvis.voz.cli import diagnosticar, main
 from jarvis.voz.config import Configuracao, escrever
@@ -109,3 +111,18 @@ def test_opcao_de_linha_vale_so_para_esta_execucao(
     assert 'tts = "tts-piper-epitran"' in arquivo.read_text(encoding="utf-8"), (
         "a opção de linha reescreveu o arquivo do dono"
     )
+
+
+def test_diagnostico_mostra_o_ultimo_turno_da_trilha(tmp_path: Path) -> None:
+    """Pedido do dono (2026-10-20): `--diagnostico` com o resumo do último turno, só metadados."""
+    ambiente = {"CI": "1", "XDG_STATE_HOME": str(tmp_path / "estado"), "HOME": str(tmp_path)}
+    trilha = TrilhaDeDiagnostico(tmp_path / "estado" / "jarvis" / "voz" / PASTA_DA_TRILHA)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento("ferramenta", tool_id="web.buscar", status="erro", ms=120.0, pdp="allow")
+    linhas: list[str] = []
+
+    diagnosticar(linhas.append, caminho=tmp_path / "nao-existe.toml", ambiente=ambiente)
+
+    texto = "\n".join(linhas)
+    assert "último turno" in texto
+    assert "ferramenta web.buscar: erro em 120 ms (PDP allow)" in texto

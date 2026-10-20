@@ -108,6 +108,7 @@ from jarvis.tarefas.gestor import (
     Tarefa,
 )
 from jarvis.tarefas.motores import MotorDeAgente
+from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import ASR_PADRAO, Configuracao
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
@@ -129,6 +130,8 @@ MAXIMO_DE_AUDIO_POR_TURNO_S: Final = 30.0
 ESPERA_DO_CEREBRO_S: Final = 2.0
 """Quanto o laço espera a linha do cérebro fechar depois do último pedaço (ou do cancelamento):
 o motor já parou de gerar (regra 9 da ADR-0025, ≤ 50 ms); isto é só o fim da linha."""
+PASTA_DA_TRILHA: Final = "diagnostico"
+"""Dentro da pasta da sessão: `turnos.jsonl` da trilha de diagnóstico (`jarvis.trilha`)."""
 
 
 class AplicativoIndisponivel(RuntimeError):
@@ -404,6 +407,9 @@ class Aplicativo:
     """A conversa que sobrevive ao reinício (ADR-0026). `None` = só na memória, como o terminal e
     a suíte sempre fizeram: quem quer persistir (a janela) passa uma aberta."""
     interruptor_de_entrada: Interruptor = field(init=False, repr=False)
+    trilha: TrilhaDeDiagnostico = field(init=False, repr=False)
+    """Os metadados de cada turno (`jarvis.trilha`), na pasta da sessão: o que o
+    `jarvis-voz --diagnostico` mostra do último turno."""
     """O botão de parar do mouse e do teclado virtuais: a janela o aciona, e só ela o libera."""
     _entrada: tuple[tuple[bool], ControleDeEntrada] | None = field(default=None, repr=False)
     _auditoria: LogDeAuditoria | None = field(default=None, repr=False)
@@ -420,6 +426,7 @@ class Aplicativo:
     def __post_init__(self) -> None:
         self.avisos = FilaDeAvisos(session_id=self.session_id)
         self.interruptor_de_entrada = Interruptor(self.raiz / "entrada")
+        self.trilha = TrilhaDeDiagnostico(self.raiz / PASTA_DA_TRILHA)
 
     # --- avisos (ADR-0025) ---------------------------------------------------------------
     def receber_aviso(self, envelope: Envelope) -> None:
@@ -838,6 +845,7 @@ class Aplicativo:
             navegador=self._corpos_do_navegador(),
             estado_do_navegador=self.estado_do_navegador,
             entrada=self._controle_de_entrada(),
+            trilha=self.trilha,
         )
         executor.preparar()
         return executor
@@ -1052,6 +1060,10 @@ class Aplicativo:
         self._turno_cancelado = False
         cancelado = self.cancelado_de(epoch)
         parar_geracao = threading.Event()
+        turn_id = f"t-{uuid7()}"
+        self.trilha.novo_turno(
+            turn_id, motor=self._motor.nome, epoch=epoch, caracteres_do_pedido=len(texto)
+        )
 
         def geracao_cancelada() -> bool:
             return parar_geracao.is_set() or cancelado()
@@ -1094,6 +1106,7 @@ class Aplicativo:
                     texto,
                     epoch=epoch,
                     publicar=publicar,
+                    turn_id=turn_id,
                     cancelado=geracao_cancelada,
                     mostrar=mostrar,
                 )
@@ -1149,6 +1162,19 @@ class Aplicativo:
             self.conversa.indexar_depois()
         self._mudar(self._repouso)
         respondeu = " ".join(exibido)
+        self.trilha.evento(
+            "turno.fim",
+            turno=turn_id,
+            fim=str(resposta.fim) if resposta is not None else "falhou",
+            cancelado=cancelado() or turno.cancelado,
+            ms_primeiro_token=resposta.ms_ate_primeiro_token if resposta else None,
+            ms_primeira_fala=primeiro_texto_ms[0] if primeiro_texto_ms else None,
+            ms_primeiro_audio=turno.primeiro_pedaco_ms,
+            ms_total=(time.monotonic() - comeco) * 1000.0,
+            ferramentas=len(resposta.ferramentas) if resposta else 0,
+            caracteres_falados=len(respondeu),
+            erro=falha[0] if falha else "",
+        )
         return Turno(
             falou=texto,
             respondeu=respondeu,

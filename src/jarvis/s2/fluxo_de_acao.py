@@ -93,7 +93,20 @@ class FluxoDeAcao:
                 cancelado=cancelado,
             )
             classe, motivo = classificacao.classe, classificacao.motivo
+
+            def trilhar(decisao: str) -> None:
+                if executor.trilha is not None:
+                    executor.trilha.evento(
+                        "portao",
+                        tool_id=tool_id,
+                        pdp=str(veredito),
+                        jev=motivo,
+                        decisao=decisao,
+                        ms=round(classificacao.ms, 1),
+                    )
+
             if classe is Classe.NAO_FAZER:
+                trilhar("negado")
                 entregue = True
                 executor.descartar(avaliacao, "negado", f"portão contextual: {motivo}")
                 return ResultadoDeFerramenta(
@@ -116,6 +129,9 @@ class FluxoDeAcao:
                 )
             ):
                 classe = Classe.FAZER
+                trilhar("explicita")
+            elif veredito is Veredito.ALLOW and classe is Classe.FAZER:
+                trilhar("fazer")
             if veredito is Veredito.ALLOW and classe is Classe.FAZER:
                 entregue = True  # daqui em diante o grant é do `concluir`
                 return executor.concluir(
@@ -127,6 +143,15 @@ class FluxoDeAcao:
                 else f"o portão contextual pediu permissão ({motivo})"
             )
             pergunta = executor.pergunta_de(avaliacao, por_que)
+            trilhar("pendente")
+            if executor.trilha is not None:
+                executor.trilha.evento(
+                    "permissao",
+                    tool_id=tool_id,
+                    origem="pdp" if veredito is Veredito.CONFIRM else "portao",
+                    motivo=por_que,
+                    resposta="pendente",
+                )
             entregue = True
             executor.descartar(avaliacao, "pendente", f"esperando o sim do dono: {por_que}")
             try:

@@ -15,7 +15,8 @@ O modelo **propõe** (`tool_id` + argumentos nomeados); daqui para baixo, só c�
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+import time
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -50,6 +51,7 @@ from jarvis.politica.canonicalizacao import CaminhoRecusado, Sistema, canonicali
 from jarvis.politica.descritor import AberturaRecusada, RaizAberta, abrir_raiz
 from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.pdp import Decisao, Grant, Pdp, Pedido, Veredito
+from jarvis.trilha import TrilhaDeDiagnostico, chaves, codigo_do_motivo
 from jarvis.voz.interface import Onde
 
 if TYPE_CHECKING:
@@ -215,6 +217,9 @@ class ExecutorDeFerramentas:
     para o modelo dizer a verdade em vez de negar a extensão. Sem ele, a tool não aparece."""
     entrada: ControleDeEntrada | None = None
     """Mouse e teclado virtuais (ADR-0027, fatia 4). Sem ele, as `input.*` não existem."""
+    trilha: TrilhaDeDiagnostico | None = None
+    """Onde cada chamada, veredito e pedido de permissão deixa os seus metadados (`jarvis.trilha`).
+    Sem ela, nada é registrado — como antes."""
     destino_onde: Onde = Onde.LOCAL
     destino_motor: str = ""
     """Quem vai ler o resultado: o D20 filtra o que da memória pode ir para este motor."""
@@ -357,6 +362,28 @@ class ExecutorDeFerramentas:
 
         Separado de `concluir` para o portão contextual (`jarvis.s2.portao`) olhar o pedido
         **depois** do PDP e só apertar: o que o PDP nega nem chega ao Jev."""
+        avaliacao = self._avaliar(
+            tool_id,
+            args,
+            session_id=session_id,
+            call_id=call_id,
+            proveniencia=proveniencia,
+            contaminacao=contaminacao,
+        )
+        if isinstance(avaliacao, ResultadoDeFerramenta):
+            self._trilhar(avaliacao, args.keys(), pdp="não chegou ao PDP")
+        return avaliacao
+
+    def _avaliar(
+        self,
+        tool_id: str,
+        args: Mapping[str, Any],
+        *,
+        session_id: str,
+        call_id: str,
+        proveniencia: Proveniencia | None,
+        contaminacao: Contaminacao | None,
+    ) -> Avaliacao | ResultadoDeFerramenta:
         marca = contaminacao if contaminacao is not None else self.turno
         chamada = call_id or f"c-{uuid7()}"
         if not self._ligada(tool_id):
@@ -431,6 +458,43 @@ class ExecutorDeFerramentas:
         if avaliacao.decisao.grant is not None:
             self.pdp.liberar(avaliacao.decisao.grant.grant_id)
         self.pdp.auditoria.anexar_resultado(avaliacao.decisao.decision_id, status, motivo)
+        self._trilhar(
+            ResultadoDeFerramenta(avaliacao.tool_id, status, motivo=motivo),
+            avaliacao.argumentos.keys(),
+            pdp=str(avaliacao.decisao.veredito),
+        )
+
+    def _trilhar(
+        self,
+        resultado: ResultadoDeFerramenta,
+        argumentos: Iterable[str],
+        *,
+        pdp: str,
+        ms: float | None = None,
+    ) -> None:
+        if self.trilha is None:
+            return
+        motivo = resultado.motivo if resultado.status != "ok" else ""
+        self.trilha.evento(
+            "ferramenta",
+            tool_id=resultado.tool_id,
+            argumentos=chaves(argumentos),
+            status=resultado.status,
+            pdp=pdp,
+            ms=round(ms, 1) if ms is not None else None,
+            motivo=motivo,
+            codigo=codigo_do_motivo(motivo),
+        )
+
+    def _trilhar_permissao(self, pergunta: Confirmacao, origem: str, sim: bool) -> None:
+        if self.trilha is not None:
+            self.trilha.evento(
+                "permissao",
+                tool_id=pergunta.tool_id,
+                origem=origem,
+                motivo=pergunta.motivo,
+                resposta="sim" if sim else "não",
+            )
 
     def concluir(
         self,
@@ -442,13 +506,41 @@ class ExecutorDeFerramentas:
         contaminacao: Contaminacao | None = None,
     ) -> ResultadoDeFerramenta:
         """Passos 4 a 6: a confirmação que o PDP pediu, o corpo e a auditoria."""
+        comeco = time.monotonic()
+        veredito = str(avaliacao.decisao.veredito)
+        resultado = self._concluir(
+            avaliacao,
+            cancelado=cancelado,
+            confirmar=confirmar,
+            proveniencia=proveniencia,
+            contaminacao=contaminacao,
+        )
+        self._trilhar(
+            resultado,
+            avaliacao.argumentos.keys(),
+            pdp=veredito,
+            ms=(time.monotonic() - comeco) * 1000.0,
+        )
+        return resultado
+
+    def _concluir(
+        self,
+        avaliacao: Avaliacao,
+        *,
+        cancelado: Cancelado,
+        confirmar: Confirmar,
+        proveniencia: Proveniencia | None,
+        contaminacao: Contaminacao | None,
+    ) -> ResultadoDeFerramenta:
         marca = contaminacao if contaminacao is not None else self.turno
         tool_id, argumentos, caminho = avaliacao.tool_id, avaliacao.argumentos, avaliacao.caminho
         pedido, decisao = avaliacao.pedido, avaliacao.decisao
         chamada = pedido.call_id
         if decisao.veredito is Veredito.CONFIRM:
             pergunta = self.pergunta_de(avaliacao)
-            if cancelado() or not confirmar(pergunta):
+            sim = not cancelado() and confirmar(pergunta)
+            self._trilhar_permissao(pergunta, "pdp", sim)
+            if not sim:
                 self.pdp.auditoria.anexar_resultado(
                     decisao.decision_id, "negado", "dono não confirmou"
                 )
@@ -625,7 +717,9 @@ class ExecutorDeFerramentas:
                     prazo_s=self.prazo_de_confirmacao_s,
                     por_acao=True,
                 )
-                if cancelado() or not confirmar(pergunta):
+                sim = not cancelado() and confirmar(pergunta)
+                self._trilhar_permissao(pergunta, "risco_dinamico", sim)
+                if not sim:
                     self.pdp.auditoria.anexar_resultado(
                         decisao.decision_id, "negado", "dono não confirmou"
                     )

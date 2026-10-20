@@ -81,7 +81,11 @@ class CorposDoNavegador:
             if tool_id == "browser.type":
                 return self._digitar(args, contaminado, exigir, cancelado)
         except NavegadorFalhou as erro:
-            raise ValueError(f"a página não deixou: {erro.mensagem or erro.codigo}") from None
+            # O código entre parênteses é o da extensão (alvo_ausente, campo_sensivel…): ajuda o
+            # modelo a escolher outro caminho e é o que a trilha de diagnóstico guarda.
+            raise ValueError(
+                f"a página não deixou ({erro.codigo}): {erro.mensagem or erro.codigo}"
+            ) from None
         except NavegadorIndisponivel as erro:
             raise ValueError(str(erro)) from None
         raise ValueError(f"{tool_id} sem corpo")  # pragma: no cover — o executor filtra antes

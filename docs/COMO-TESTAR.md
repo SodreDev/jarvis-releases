@@ -777,6 +777,20 @@ permissão" do Jev. Conferido no código em 2026-10-20 (`FluxoDeAcao._despachar`
   ela vai para a janela; dentro de uma tarefa, é recusada). Com TV ligada ou gente falando perto,
   prefira o **PTT** (apertar para falar) à escuta contínua.
 
+### 0.10 Trilha de diagnóstico do turno (2026-10-20)
+
+Cada turno deixa uma linha por evento em `~/.local/state/jarvis/voz/diagnostico/turnos.jsonl`
+(rotativo: até ~2 MB, com `.1`, `.2`, `.3`): início e fim do turno (motor, tempos de 1º token, 1ª
+fala, 1º áudio e total), cada ferramenta (nome, **nomes** dos argumentos, status, tempo, veredito do
+PDP, motivo e o código de erro da extensão, como `alvo_ausente`), cada decisão do portão (Jev, PDP,
+fazer/explícita/pendente/negado) e cada pedido de permissão com o motivo e a sua resposta. **Só
+metadados**: nunca o que você disse, texto de página, resultado de ferramenta, valor de argumento
+ou áudio; o texto que sobra (motivos) passa pela redação de segredos e é cortado em 160 caracteres.
+Nada sai da máquina.
+
+Para ver o último turno: `uv run jarvis-voz --diagnostico` (seção «último turno»). Testes:
+`tests/unit/test_trilha.py`, `tests/unit/voz/test_trilha_do_app.py`.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)
