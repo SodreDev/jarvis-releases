@@ -274,7 +274,7 @@
           "epoch": { "type": "integer", "minimum": 0 },
           "seq": { "type": "integer", "minimum": 0 },
           "text": { "type": "string", "maxLength": 2000 },
-          "boundary": { "enum": ["frase", "virgula", "limite", "fim"] },
+          "boundary": { "enum": ["frase", "virgula", "limite", "pausa", "fim"] },
           "last": { "type": "boolean" },
           "end_reason": { "enum": ["concluido", "erro", "prazo"] },
           "notif_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } }

@@ -152,3 +152,26 @@ def test_a_posicao_aponta_para_o_texto_recebido() -> None:
     texto = "  Oi,\n  tudo   bem com você hoje?  "
     for pedaco in fatiar_tudo(texto):
         assert texto[pedaco.inicio :].startswith(pedaco.texto.split()[0])
+
+
+def test_descarregar_solta_o_residual_curto_na_pausa_e_segue_aberto() -> None:
+    """A pausa do texto (ferramenta) libera o que chegou, abaixo do piso; o resto continua."""
+    fatiador = FatiadorDeFala()
+    assert fatiador.alimentar("Deixa eu ver.") == []  # palavra encostada no fim: pode continuar
+    pausa = fatiador.descarregar()
+    assert [(p.texto, p.corte) for p in pausa] == [("Deixa eu ver.", Corte.PAUSA)]
+    assert fatiador.descarregar() == []  # nada pendente, nada sai
+    depois = fatiador.alimentar(" Achei a pasta.") + fatiador.fechar()
+    assert [(p.texto, p.corte) for p in depois if p.texto] == [("Achei a pasta.", Corte.FIM)]
+    assert fatiador.descarregar() == []  # fechado não solta mais nada
+
+
+def test_descarregar_respeita_o_lote_normal_antes_do_residual() -> None:
+    """O lote completo sai pela regra de sempre; só o resto (abaixo do piso) sai como pausa."""
+    fatiador = FatiadorDeFala()
+    normais = fatiador.alimentar(" ".join(f"p{i}" for i in range(20)))
+    pausa = fatiador.descarregar()
+    assert [(len(p.texto.split()), p.corte) for p in normais + pausa] == [
+        (18, Corte.LIMITE),
+        (2, Corte.PAUSA),
+    ]

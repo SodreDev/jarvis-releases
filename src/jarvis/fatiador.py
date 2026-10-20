@@ -8,7 +8,8 @@ mora aqui, incremental, e o `fatiar()` é este mesmo fatiador alimentado de uma 
 
 A regra: um lote normal só sai depois de 14 palavras. A partir daí, a primeira pontuação útil
 fecha o lote; sem pontuação, 18 palavras são o teto que impede buffer sem limite. Lote menor
-só sai quando o stream fecha. Uma palavra só conta quando está **completa** — seguida de espaço,
+só sai quando o texto acaba — no fim do stream, ou numa pausa dele (`descarregar`: o motor parou
+para uma ferramenta, e "Deixa eu ver." não pode esperar a ferramenta voltar). Uma palavra só conta quando está **completa** — seguida de espaço,
 ou no fim do texto —, porque o stream entrega pedaço de palavra: "3," pode virar "3,5" no delta
 seguinte, e cortar ali partiria o número. Palavra é todo token sem espaço: hífen e token
 excepcionalmente longo continuam atômicos, sem corte por caractere.
@@ -37,6 +38,9 @@ class Corte(StrEnum):
     FRASE = "frase"
     VIRGULA = "virgula"
     LIMITE = "limite"
+    PAUSA = "pausa"
+    """O texto parou antes de completar o lote: o motor pediu uma ferramenta, ou o código disse
+    um aviso, e não há mais texto até ela voltar. O residual sai agora, mesmo abaixo do piso."""
     FIM = "fim"
     """O texto acabou. Pode vir **vazio**: quando o último pedaço já saiu numa pontuação, só o
     fim do stream diz que ele era o último, e esperar para saber atrasaria a primeira palavra."""
@@ -91,6 +95,19 @@ class FatiadorDeFala:
             pedacos.append(self._emitir(Corte.FIM))
         else:
             pedacos.append(PedacoDeFala(texto="", inicio=len(self._texto), corte=Corte.FIM))
+        return pedacos
+
+    def descarregar(self) -> list[PedacoDeFala]:
+        """Uma pausa do texto (a vez do motor acabou e uma ferramenta vai rodar): o que já chegou
+        sai agora. Os lotes normais saem pela regra de sempre; o residual sai com corte `PAUSA`,
+        mesmo abaixo de 14 palavras — é o "só menor no fim, se não houver texto suficiente" da
+        regra do dono, porque até a ferramenta voltar não há. A última palavra conta como
+        completa (a vez acabou: ela não continua). O fatiador segue aberto para o resto."""
+        if self._fechado:
+            return []
+        pedacos = self._consumir(final=True)
+        if self._palavras:
+            pedacos.append(self._emitir(Corte.PAUSA))
         return pedacos
 
     def _consumir(self, *, final: bool) -> list[PedacoDeFala]:

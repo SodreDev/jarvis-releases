@@ -322,9 +322,11 @@ class Cerebro:
                 or resposta.fim is not MotivoDoFim.CONCLUIDO
             ):
                 break
-            # O que o motor disse antes de pedir a ferramenta ("deixa eu ver") sai agora: a
-            # palavra que esperava o espaço seguinte é fechada, e só então a ferramenta roda.
-            for pedaco in fatiador.alimentar(" "):
+            # O que o motor disse antes de pedir a ferramenta ("deixa eu ver") sai agora, mesmo
+            # abaixo do piso de 14 palavras do lote: até a ferramenta voltar não há mais texto.
+            # Com `alimentar(" ")` (antes de 7507cd5 bastava), a frase ficava no buffer e era
+            # falada só depois da ferramenta.
+            for pedaco in fatiador.descarregar():
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             # Uma por vez: o próximo pedido só pode nascer depois que o modelo viu este
             # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
@@ -347,7 +349,7 @@ class Cerebro:
                 # Tool moderada: o aviso é do código, e sai agora, em voz (dono, 2026-10-18).
                 resposta.gerado += resultado.aviso + " "
                 crescer()
-                for pedaco in fatiador.alimentar(resultado.aviso + " "):
+                for pedaco in fatiador.alimentar(resultado.aviso + " ") + fatiador.descarregar():
                     self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             if resultado.status == "pendente":
                 # A pergunta é a última coisa do turno: o laço de voz fica livre para o "sim".

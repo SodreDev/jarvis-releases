@@ -340,3 +340,35 @@ def test_sem_executor_o_pedido_volta_negado_e_o_motor_responde() -> None:
     resposta = Cerebro(motor=motor).responder("lista", epoch=0, publicar=publicados.append)
     assert [r.status for r in resposta.ferramentas] == ["negado"]
     assert "Ainda não consigo" in " ".join(p["text"] for p in publicados)
+
+
+class _ExecutorQueAnota(ExecutorDeFerramentas):
+    """Anota o que já tinha sido publicado (falado) no instante em que a ferramenta roda."""
+
+    __slots__ = ("falado", "publicados")
+
+    def executar(self, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
+        self.falado.append(" ".join(str(p["text"]) for p in self.publicados if p["text"]))
+        return ExecutorDeFerramentas.executar(self, *args, **kwargs)
+
+
+def test_a_frase_antes_da_ferramenta_e_falada_antes_dela_rodar(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """ "Deixa eu ver." sai antes da ferramenta, mesmo abaixo do piso de 14 palavras do lote: até
+    a ferramenta voltar não há mais texto (revisão de 7507cd5, que a segurava até depois)."""
+    anotador = _ExecutorQueAnota(pdp=executor.pdp, lar=executor.lar)
+    publicados: list[dict[str, Any]] = []
+    anotador.publicados, anotador.falado = publicados, []
+    motor = _roteiro(
+        ["Deixa eu ver. ", PedidoDeTool("files.list_dir", {"path": "~/Documentos"})],
+        ["Tem um arquivo de notas na pasta Documentos, e só ele."],
+    )
+    cerebro = Cerebro(motor=motor, ferramentas=anotador)
+
+    cerebro.responder("o que tem em Documentos?", epoch=1, publicar=publicados.append)
+
+    assert anotador.falado == ["Deixa eu ver."]
+    textos = [p["text"] for p in publicados if p["text"]]
+    assert textos[0] == "Deixa eu ver." and publicados[0]["boundary"] == "pausa"
+    assert textos[-1].endswith("e só ele.")
