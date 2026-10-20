@@ -79,69 +79,80 @@ class FluxoDeAcao:
         if veredito is Veredito.DENY:
             return executor.concluir(avaliacao, cancelado=cancelado)  # nega, com a sugestão
         tool_id, chamada = avaliacao.tool_id, avaliacao.pedido.call_id
-        manifesto = executor.manifestos[tool_id]
-        classificacao = self.portao.classificar(
-            tool_id=tool_id,
-            titulo=str(manifesto["title"]),
-            argumentos=avaliacao.argumentos,
-            pedido_do_dono=pedido_do_dono,
-            mensagens=mensagens,
-            situacao=_situacao(manifesto, executor, avaliacao.pedido.contaminado),
-            cancelado=cancelado,
-        )
-        classe, motivo = classificacao.classe, classificacao.motivo
-        if classe is Classe.NAO_FAZER:
-            executor.descartar(avaliacao, "negado", f"portão contextual: {motivo}")
+        entregue = False
+        """A avaliação já foi concluída ou descartada: o grant deixou de ser desta função."""
+        try:
+            manifesto = executor.manifestos[tool_id]
+            classificacao = self.portao.classificar(
+                tool_id=tool_id,
+                titulo=str(manifesto["title"]),
+                argumentos=avaliacao.argumentos,
+                pedido_do_dono=pedido_do_dono,
+                mensagens=mensagens,
+                situacao=_situacao(manifesto, executor, avaliacao.pedido.contaminado),
+                cancelado=cancelado,
+            )
+            classe, motivo = classificacao.classe, classificacao.motivo
+            if classe is Classe.NAO_FAZER:
+                entregue = True
+                executor.descartar(avaliacao, "negado", f"portão contextual: {motivo}")
+                return ResultadoDeFerramenta(
+                    tool_id,
+                    "negado",
+                    motivo=(
+                        f"não fiz: o portão contextual classificou como não fazer ({motivo}). Se o "
+                        "dono quiser mesmo, ele pede de novo, com as palavras dele."
+                    ),
+                    call_id=chamada,
+                )
+            if (
+                classe is Classe.PEDIR_PERMISSAO
+                and veredito is Veredito.ALLOW
+                and self.autorizacoes.consumir(
+                    tool_id,
+                    pedido.args,
+                    p_explicito=classificacao.p_explicito,
+                    limiar=self.portao.limiar_explicito,
+                )
+            ):
+                classe = Classe.FAZER
+            if veredito is Veredito.ALLOW and classe is Classe.FAZER:
+                entregue = True  # daqui em diante o grant é do `concluir`
+                return executor.concluir(
+                    avaliacao, cancelado=cancelado, confirmar=confirmar, proveniencia=proveniencia
+                )
+            por_que = (
+                avaliacao.decisao.motivo
+                if veredito is Veredito.CONFIRM
+                else f"o portão contextual pediu permissão ({motivo})"
+            )
+            pergunta = executor.pergunta_de(avaliacao, por_que)
+            entregue = True
+            executor.descartar(avaliacao, "pendente", f"esperando o sim do dono: {por_que}")
+            try:
+                self.pendencias.abrir(pergunta, contaminado=avaliacao.pedido.contaminado)
+            except PendenciaOcupada:
+                return ResultadoDeFerramenta(
+                    tool_id,
+                    "negado",
+                    motivo="já há uma pergunta pendente com o dono: espere a resposta dele",
+                    call_id=chamada,
+                )
             return ResultadoDeFerramenta(
                 tool_id,
-                "negado",
+                "pendente",
                 motivo=(
-                    f"não fiz: o portão contextual classificou como não fazer ({motivo}). Se o "
-                    "dono quiser mesmo, ele pede de novo, com as palavras dele."
+                    "nada foi feito ainda: a ação espera o sim do dono, e a pergunta já foi dita a "
+                    "ele. Não repita a pergunta nem diga que fez; espere a resposta."
                 ),
                 call_id=chamada,
+                aviso=f"Preciso do seu sim para {pergunta.detalhe}. Posso?",
             )
-        if (
-            classe is Classe.PEDIR_PERMISSAO
-            and veredito is Veredito.ALLOW
-            and self.autorizacoes.consumir(
-                tool_id,
-                pedido.args,
-                p_explicito=classificacao.p_explicito,
-                limiar=self.portao.limiar_explicito,
-            )
-        ):
-            classe = Classe.FAZER
-        if veredito is Veredito.ALLOW and classe is Classe.FAZER:
-            return executor.concluir(
-                avaliacao, cancelado=cancelado, confirmar=confirmar, proveniencia=proveniencia
-            )
-        por_que = (
-            avaliacao.decisao.motivo
-            if veredito is Veredito.CONFIRM
-            else f"o portão contextual pediu permissão ({motivo})"
-        )
-        pergunta = executor.pergunta_de(avaliacao, por_que)
-        executor.descartar(avaliacao, "pendente", f"esperando o sim do dono: {por_que}")
-        try:
-            self.pendencias.abrir(pergunta, contaminado=avaliacao.pedido.contaminado)
-        except PendenciaOcupada:
-            return ResultadoDeFerramenta(
-                tool_id,
-                "negado",
-                motivo="já há uma pergunta pendente com o dono: espere a resposta dele",
-                call_id=chamada,
-            )
-        return ResultadoDeFerramenta(
-            tool_id,
-            "pendente",
-            motivo=(
-                "nada foi feito ainda: a ação espera o sim do dono, e a pergunta já foi dita a "
-                "ele. Não repita a pergunta nem diga que fez; espere a resposta."
-            ),
-            call_id=chamada,
-            aviso=f"Preciso do seu sim para {pergunta.detalhe}. Posso?",
-        )
+        finally:
+            if not entregue:
+                # Uma exceção entre o PDP e a entrega (revisão de bf9102c): nada rodou, e o grant
+                # aberto pelo `avaliar` seguraria a raiz até o TTL. Solta já, e a auditoria diz.
+                executor.descartar(avaliacao, "erro", "o portão falhou antes de decidir")
 
     def ler_a_resposta(
         self,

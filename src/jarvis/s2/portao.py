@@ -203,10 +203,18 @@ class PortaoDeAcao:
             explicito = respostas["pedido_explicito"]
             if not isinstance(escolha, RespostaEscolha) or not isinstance(explicito, RespostaNoul):
                 raise DecisaoIndisponivel("resposta fora do formato: tipos trocados")
-        except (DecisaoIndisponivel, KeyError) as erro:
+        except DecisaoIndisponivel as erro:
             return Classificacao(
                 Classe.PEDIR_PERMISSAO,
                 f"classificador indisponível ({erro}): na dúvida, pergunto",
+                ms=_ms(comeco),
+            )
+        except Exception as erro:  # adaptador quebrado, formato inesperado: falha segura
+            # Antes só `DecisaoIndisponivel` e `KeyError` viravam pergunta; o resto subia e o
+            # grant do PDP vazava (revisão de bf9102c). Na dúvida, o dono decide.
+            return Classificacao(
+                Classe.PEDIR_PERMISSAO,
+                f"classificador falhou ({type(erro).__name__}): na dúvida, pergunto",
                 ms=_ms(comeco),
             )
         ms = _ms(comeco)
@@ -248,8 +256,8 @@ class PortaoDeAcao:
             if not isinstance(escolha, RespostaEscolha):
                 raise DecisaoIndisponivel("resposta fora do formato")
             resposta = RespostaDoDono(escolha.escolha)
-        except (DecisaoIndisponivel, KeyError, ValueError):
-            return RespostaDoDono.OUTRA_COISA  # sem leitura, não é "sim"
+        except Exception:  # sem leitura (rede, formato, adaptador quebrado), não é "sim"
+            return RespostaDoDono.OUTRA_COISA
         if resposta is RespostaDoDono.SIM and escolha.probabilidade_da_escolha < self.limiar_sim:
             return RespostaDoDono.OUTRA_COISA
         return resposta

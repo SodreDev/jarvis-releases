@@ -22,7 +22,7 @@ from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo
 from jarvis.politica.pdp import Pdp
 from jarvis.s2.cerebro import Cerebro
-from jarvis.s2.fluxo_de_acao import _sim_de_uso_unico
+from jarvis.s2.fluxo_de_acao import FluxoDeAcao, _sim_de_uso_unico
 from jarvis.s2.motor import Contexto, Mensagem, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.s2.pendencias import PendenciaOcupada, RegistroDePendencias
@@ -220,6 +220,50 @@ def test_nao_fazer_veta_o_que_o_pdp_deixaria(
     assert "não fazer" in resposta.ferramentas[0].motivo
     assert abertos == []
     assert executor.pdp.grants == {}, "o grant do allow vetado foi solto na hora"
+
+
+def _roteiro_quebrado(_estado: Any, _perguntas: Mapping[str, Pergunta]) -> Mapping[str, Resposta]:
+    raise TypeError("o adaptador recebeu um formato que não esperava")
+
+
+def test_classificador_que_quebra_vira_pergunta_e_solta_o_grant(
+    executor: ExecutorDeFerramentas, abertos: list[str]
+) -> None:
+    """Antes só `DecisaoIndisponivel` e `KeyError` viravam pergunta: o resto subia pelo cérebro e o
+    grant do PDP ficava aberto até o TTL (revisão de bf9102c). Falha segura: pergunta ao dono."""
+    motor = _roteiro([PedidoDeTool("sites.open", {"url": YOUTUBE})], ["Preciso do seu sim."])
+    jev = ClassificadorFalso(roteiro=_roteiro_quebrado)
+
+    resposta, _ = _dizer(_cerebro(executor, motor, jev), "abre o youtube")
+
+    assert [r.status for r in resposta.ferramentas] == ["pendente"]
+    assert abertos == []
+    assert executor.pdp.grants == {}
+
+
+def test_excecao_entre_o_pdp_e_a_entrega_solta_o_grant_e_nao_roda_nada(
+    executor: ExecutorDeFerramentas, abertos: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fluxo = FluxoDeAcao(
+        portao=PortaoDeAcao(classificador=_jev("pedir_permissao", 0.9)),
+        pendencias=RegistroDePendencias(relogio=Relogio()),
+        autorizacoes=AutorizacoesExplicitas(),
+    )
+
+    def quebrar(*_args: Any, **_kwargs: Any) -> Confirmacao:
+        raise RuntimeError("a pergunta não montou")
+
+    monkeypatch.setattr(ExecutorDeFerramentas, "pergunta_de", quebrar)
+    with pytest.raises(RuntimeError, match="não montou"):
+        fluxo.chamar(
+            executor,
+            PedidoDeTool("sites.open", {"url": YOUTUBE}),
+            pedido_do_dono="abre o youtube",
+            mensagens=(),
+            cancelado=lambda: False,
+        )
+    assert executor.pdp.grants == {}, "o grant do allow foi solto mesmo com a exceção"
+    assert abertos == []
 
 
 def test_pedir_permissao_vira_pendencia_e_o_turno_acaba_na_pergunta(
