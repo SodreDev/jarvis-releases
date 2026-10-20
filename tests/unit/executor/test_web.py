@@ -331,3 +331,120 @@ def test_a_tool_so_aceita_o_que_o_manifesto_diz(executor: ExecutorDeFerramentas)
     assert extra.status == "erro" and "fora do contrato" in extra.motivo
     curta = executor.executar("web.ler", {"url": "x"}, cancelado=NUNCA)
     assert curta.status == "erro"
+
+
+# --- busca de verdade (ADR-0033): a API com chave, senão o navegador, senão a Wikipédia ----------
+def _wiki_paris(url: str, _h: Mapping[str, str]) -> Resposta:
+    assert "wikipedia.org" in url, url
+    corpo = {"query": {"search": [{"title": "Paris", "snippet": "A capital"}]}}
+    return pagina(url, tipo="application/json", corpo=json.dumps(corpo).encode())
+
+
+def test_sem_chave_a_busca_vai_pelo_navegador_do_dono() -> None:
+    consultas: list[str] = []
+
+    def navegador(consulta: str) -> dict[str, object]:
+        consultas.append(consulta)
+        resultado = {"titulo": "O Primo Rico", "url": "https://www.youtube.com/@primorico"}
+        return {"fonte": "Brave Search, pelo navegador do dono", "resultados": [resultado]}
+
+    achado = web.buscar("o primo rico", _wiki_paris, {}, publico, navegador=navegador)
+
+    assert consultas == ["o primo rico"]
+    assert achado["resultados"][0]["url"] == "https://www.youtube.com/@primorico"
+
+
+def test_com_chave_a_api_e_a_preferida_e_o_navegador_nem_e_chamado() -> None:
+    def obter(url: str, h: Mapping[str, str]) -> Resposta:
+        assert "api.search.brave.com" in url and h["X-Subscription-Token"] == "chave-de-teste"
+        return pagina(url, tipo="application/json", corpo=b'{"web": {"results": []}}')
+
+    def navegador(_consulta: str) -> dict[str, object]:
+        raise AssertionError("com chave a busca é pela API")
+
+    achado = web.buscar(
+        "notícias", obter, {"BRAVE_SEARCH_API_KEY": "chave-de-teste"}, publico, navegador=navegador
+    )
+    assert achado["fonte"] == "Brave Search"
+
+
+def test_sem_navegador_a_wikipedia_responde_e_diz_por_que_nao_houve_busca_geral() -> None:
+    def navegador(_consulta: str) -> dict[str, object]:
+        raise web.BuscaIndisponivel("Brave Search: pagina_lenta")
+
+    sem_controle = web.buscar("paris", _wiki_paris, {}, publico)
+    sem_resultado = web.buscar("paris", _wiki_paris, {}, publico, navegador=navegador)
+
+    assert sem_controle["fonte"] == "Wikipédia (pt)"
+    assert "controle do navegador está desligado" in sem_controle["sem_busca_geral"]
+    assert "pagina_lenta" in sem_resultado["sem_busca_geral"]
+
+
+def test_ler_varios_sites_seguidos_reparte_o_texto_e_um_que_falha_nao_derruba_os_outros() -> None:
+    def obter(url: str, _h: Mapping[str, str]) -> Resposta:
+        if "quebrado" in url:
+            return pagina(url, status=500)
+        return pagina(url)
+
+    lidas = web.ler_paginas(
+        ["https://um.example/a", "https://quebrado.example/", "https://dois.example/b"],
+        obter,
+        publico,
+    )
+
+    paginas = lidas["paginas"]
+    assert [p["url"] for p in paginas] == [
+        "https://um.example/a",
+        "https://quebrado.example/",
+        "https://dois.example/b",
+    ]
+    assert "Capital da França" in paginas[0]["texto"] and "erro" in paginas[1]
+    assert "500" in paginas[1]["erro"]
+    with pytest.raises(WebRecusada, match="de 1 a 5"):
+        web.ler_paginas([f"https://s{i}.example/" for i in range(6)], obter, publico)
+
+
+# --- o 404 do YouTube (teste do dono, 2026-10-20) ------------------------------------------------
+def test_handle_que_nao_existe_cai_na_busca_do_youtube_pelo_nome() -> None:
+    """A causa do 404: o modelo chutou o handle (`@thiagonigro`), que não existe. O nome dele ainda
+    acha o canal pela busca do YouTube."""
+    pedidas: list[str] = []
+
+    def obter(url: str, h: Mapping[str, str]) -> Resposta:
+        pedidas.append(url)
+        if url.endswith("/@thiagonigro"):
+            return pagina(url, status=404)
+        return youtube(url, h)
+
+    achado = web.canal_videos("@thiagonigro", obter, publico)
+
+    assert achado["channel_id"] == CANAL_ID and achado["fonte"] == "feed"
+    assert "results?search_query=thiagonigro" in pedidas[1]
+
+
+def test_sem_feed_vale_o_da_playlist_de_envios_e_depois_a_pagina_de_videos() -> None:
+    videos_da_pagina = (
+        '<html><head><title>Canal X - YouTube</title></head><script>var ytInitialData = {"x":'
+        '[{"videoRenderer":{"videoId":"abcdefghijk","thumbnail":{},"title":{"runs":[{"text":'
+        '"Vídeo da página \\u00e9 novo"}]}}},{"videoRenderer":{"videoId":"bcdefghijkl",'
+        '"title":{"runs":[{"text":"Outro vídeo"}]}}}]}</script></html>'
+    ).encode()
+
+    def obter(url: str, h: Mapping[str, str], playlist_ok: bool) -> Resposta:
+        if "channel_id=" in url:
+            return pagina(url, status=404)
+        if "playlist_id=UU" in url:
+            if playlist_ok:
+                return pagina(url, tipo="application/atom+xml", corpo=RSS)
+            return pagina(url, status=404)
+        if url.endswith(f"/channel/{CANAL_ID}/videos"):
+            return pagina(url, corpo=videos_da_pagina)
+        return youtube(url, h)
+
+    pela_playlist = web.canal_videos("Canal X", lambda u, h: obter(u, h, True), publico)
+    pela_pagina = web.canal_videos("Canal X", lambda u, h: obter(u, h, False), publico)
+
+    assert pela_playlist["fonte"] == "feed" and pela_playlist["videos"][0]["titulo"] == "Vídeo novo"
+    assert pela_pagina["fonte"] == "página do canal"
+    assert [v["titulo"] for v in pela_pagina["videos"]] == ["Vídeo da página é novo", "Outro vídeo"]
+    assert pela_pagina["videos"][0]["url"] == "https://www.youtube.com/watch?v=abcdefghijk"

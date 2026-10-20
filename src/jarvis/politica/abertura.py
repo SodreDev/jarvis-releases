@@ -120,6 +120,20 @@ def decidir_abertura(
         return RegraDeMemoria(
             "deny", "nenhum navegador principal configurado (Configuração → Navegadores)"
         )
+    if tool_id == "web.ler" and objetivo is not None:
+        # Ler é livre, mas a requisição leva a URL ao site: dado do dono na consulta para um site
+        # que ele não citou é o vazamento que a ADR-0030 manda perguntar (ADR-0033). Ler vários
+        # sites seguidos sem dado do dono não pergunta, nem com o turno contaminado.
+        enderecos = [args.get("url"), *(args.get("urls") or [])]
+        for endereco in enderecos:
+            levados = objetivo.leva_dado_do_dono(endereco) if isinstance(endereco, str) else []
+            if levados:
+                return RegraDeMemoria(
+                    "confirm",
+                    f"o endereço leva {', '.join(levados)} para {dominio(str(endereco))}, que o "
+                    "dono não citou: confirma antes de ler",
+                )
+        return None
     if tool_id == "sites.open":
         try:
             url = validar_url(str(args.get("url", "")))

@@ -24,7 +24,7 @@ Navegar (`browser.navigate`, `sites.open`), clicar em link, digitar e buscar num
 
 ### 3. O que continua perguntando
 
-- **Dado do dono ou segredo indo para fora:** URL ou texto digitado que leva chave, token, senha declarada, e-mail, CPF (dígitos conferidos), telefone ou cartão (Luhn) para um domínio que o dono **não citou** (`dados_do_dono`, `leva_dado_do_dono`). Vale com o turno limpo ou contaminado.
+- **Dado do dono ou segredo indo para fora:** URL ou texto digitado que leva chave, token, senha declarada, e-mail, CPF (dígitos conferidos), telefone ou cartão (Luhn) para um domínio que o dono **não citou** (`dados_do_dono`, `leva_dado_do_dono`). Vale com o turno limpo ou contaminado. Desde a ADR-0033 vale também para o `web.ler` (`url` e cada um de `urls`).
 - **Domínio nem citado nem alcançado** num turno que leu conteúdo de terceiros: o texto injetado que diz "abra mal.example".
 - **Banco, pagamento e senha:** cada clique e cada texto (`CATEGORIAS_DE_CADA_ACAO`); ler a página também pergunta (a tela iria ao modelo).
 - **Enviar:** botão de envio de formulário (fora da busca por GET) e as palavras de risco (enviar, responder, publicar, postar, pagar, comprar, excluir, entrar…). Em mensageiro e e-mail, é isso que pergunta — abrir a conversa e escrever, não.

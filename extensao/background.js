@@ -12,6 +12,9 @@ const RECONNECT_MAX_MS = 30_000;
 const RECONNECT_JITTER = 0.15;
 const RECONNECT_STABLE_MS = 60_000;
 const QUALIDADE_DA_CAPTURA = 60;
+const ESPERA_DA_PAGINA_MS = 15_000;
+const TENTATIVAS_DO_CONTEUDO = 10;
+const INTERVALO_DO_CONTEUDO_MS = 300;
 const MAX_CAPTURA = 6 * 1024 * 1024;
 
 let nativePort;
@@ -152,6 +155,64 @@ async function capturar(params) {
   return { imagem, mapa };
 }
 
+function esperarCarregar(tabId) {
+  // A aba terminou de carregar (`status: complete`), ou o prazo acabou.
+  return new Promise((resolve, reject) => {
+    let feito = false;
+    const terminar = (falha) => {
+      if (feito) {
+        return;
+      }
+      feito = true;
+      clearTimeout(limite);
+      api.tabs.onUpdated.removeListener(ouvir);
+      if (falha) {
+        reject(falha);
+      } else {
+        resolve();
+      }
+    };
+    const limite = setTimeout(
+      () => terminar(erro("pagina_lenta", "a página não terminou de carregar a tempo")),
+      ESPERA_DA_PAGINA_MS,
+    );
+    function ouvir(id, mudanca) {
+      if (id === tabId && mudanca.status === "complete") {
+        terminar();
+      }
+    }
+    api.tabs.onUpdated.addListener(ouvir);
+    api.tabs.get(tabId).then(
+      (tab) => tab.status === "complete" && terminar(),
+      () => terminar(erro("sem_aba", "a aba de fundo sumiu antes de carregar")),
+    );
+  });
+}
+
+async function lerEmSegundoPlano(params) {
+  // A busca na web pelo navegador do dono (ADR-0033): uma aba de fundo, que não ganha o foco nem
+  // troca a aba que ele está vendo, lida e fechada no fim — inclusive quando algo falha.
+  const url = urlHttp(params.url);
+  const aba = await api.tabs.create({ url, active: false });
+  try {
+    await esperarCarregar(aba.id);
+    let ultima;
+    for (let tentativa = 0; tentativa < TENTATIVAS_DO_CONTEUDO; tentativa += 1) {
+      try {
+        const pagina = await mensagemDaPagina({ tabId: aba.id }, "ler");
+        return { pagina };
+      } catch (causa) {
+        // O conteúdo da extensão pode registrar-se um pouco depois do `complete`.
+        ultima = causa;
+        await new Promise((resolve) => setTimeout(resolve, INTERVALO_DO_CONTEUDO_MS));
+      }
+    }
+    throw ultima;
+  } finally {
+    await api.tabs.remove(aba.id).catch(() => undefined);
+  }
+}
+
 async function abrirOuReutilizar(params) {
   const url = urlHttp(params.url);
   if (params.reutilizar === true) {
@@ -198,6 +259,8 @@ async function executar(method, params) {
       return mensagemDaPagina(params, "acionar");
     case "page.capture":
       return capturar(params);
+    case "page.readUrl":
+      return lerEmSegundoPlano(params);
     case "page.click":
       return mensagemDaPagina(params, "clicar");
     case "page.type":

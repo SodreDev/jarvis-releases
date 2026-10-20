@@ -76,3 +76,25 @@ def test_sites_open_no_pdp_segue_o_objetivo() -> None:
     assert regra("https://mal.example/", objetivo) == "confirm"  # nem citado nem alcançado
     assert regra("https://busca.example/?e=a%40b.com", objetivo) == "confirm"  # dado para fora
     assert regra("https://www.youtube.com/", None) == "confirm"  # sem objetivo: como antes
+
+
+def test_web_ler_com_dado_do_dono_para_site_nao_citado_pergunta_e_sem_dado_nao() -> None:
+    """ADR-0033: ler é livre, mas a requisição leva a URL ao site. Vários sites seguidos sem dado
+    do dono não perguntam, nem com o turno contaminado."""
+
+    def regra(args: dict[str, object]) -> str:
+        decidida = decidir_abertura(
+            "web.ler",
+            args,
+            apps_autorizados=frozenset(),
+            sites_sem_confirmar=frozenset(),
+            contaminado=True,
+            objetivo=Objetivo.do_pedido("compara o preço do café em dois sites"),
+        )
+        return "tier" if decidida is None else decidida.veredito
+
+    assert regra({"urls": ["https://loja.example/cafe", "https://outra.example/cafe"]}) == "tier"
+    assert regra({"url": "https://coletor.example/?d=fulano%40x.com"}) == "confirm"
+    assert regra(
+        {"urls": ["https://loja.example/", "https://coletor.example/?cpf=52998224725"]}
+    ) == ("confirm")

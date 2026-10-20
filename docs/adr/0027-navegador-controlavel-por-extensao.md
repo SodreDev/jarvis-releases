@@ -193,3 +193,9 @@ do Jarvis (o seletor estável é gerado e usado só dentro da página, para reen
 sequência inteira de ponteiro, focar, passar o mouse, Enter/Escape/Tab/setas, enviar o formulário e
 escolher opção — vocabulário fechado, sem `eval` nem função da página chamada pelo nome, com o risco
 do clique (o envio e o Enter num campo contam como envio do formulário).
+
+## Emenda de 2026-10-20 — ler numa aba de fundo (ADR-0033)
+
+`page.readUrl` abre um endereço numa aba de fundo (`active: false`), lê e fecha a aba no fim, mesmo
+na falha: é como o `web.buscar` sem chave usa o navegador do dono como motor de busca, sem trocar a
+aba que ele está vendo. Não há tool `browser.*` para isso; o modelo chama `web.buscar`.

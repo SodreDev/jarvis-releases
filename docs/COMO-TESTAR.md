@@ -902,6 +902,36 @@ rede nem microfone:
 uv run --frozen pytest tests/unit/s2/test_pensar_nao_e_falar.py tests/unit/s2/test_laco_de_ferramentas.py tests/unit/navegador/test_ferramentas_browser.py -q
 ```
 
+### 0.13 Busca na web de verdade e o 404 do YouTube (2026-10-20, ADR-0033)
+
+A busca (`web.buscar`) agora tem uma ordem:
+
+1. **Com a chave do Brave Search** (`BRAVE_SEARCH_API_KEY`, exportada no shell ou guardada na janela
+   em Configuração → Chaves de API, que vai para o chaveiro): pela API, a preferida. A chave não
+   aparece em lugar nenhum.
+2. **Sem chave, pelo seu navegador** (com `navegador_controlado` ligado): o Jarvis abre o Brave
+   Search numa **aba de fundo** — ela não ganha o foco nem troca a aba que você está vendo —, lê os
+   resultados e **fecha a aba**. Se o Brave Search não trouxer nada, tenta o DuckDuckGo.
+3. **Sem navegador**, a Wikipédia — e ele diz que não houve busca geral e por quê.
+
+`web.ler` lê até **cinco sites de uma vez**, para conferir em mais de uma fonte, sem perguntar; só
+pergunta se o endereço levar dado seu (e-mail, CPF, telefone, cartão, chave) para um site que você
+não citou.
+
+**O 404 do YouTube** era o `@` chutado: `youtube.com/@thiagonigro` e `@oprimorico` não existem (o
+canal é `@primorico`). Agora um endereço que dá 404 cai na busca do YouTube pelo nome, e o feed de
+vídeos tem dois planos B (o da playlist de envios e a página de vídeos do canal).
+
+**Como conferir:** «pesquisa o canal do Thiago Nigro» → uma aba aparece por um instante atrás da
+sua e some; ele responde com o canal O Primo Rico. «qual o vídeo mais recente do Primo Rico?» → ele
+acha o canal pelo nome e lê os vídeos. **Não provado:** a API com uma chave de verdade (não há chave
+aqui) e o `search.brave.com` de verdade no seu navegador — o contêiner não tem rede, então a página
+de resultados lá é local. Testes:
+
+```bash
+uv run --frozen pytest tests/unit/executor/test_web.py tests/unit/navegador/test_busca.py -q
+```
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

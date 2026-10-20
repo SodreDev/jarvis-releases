@@ -19,6 +19,10 @@ class EventoFalso {
     this.listeners.push(listener);
   }
 
+  removeListener(listener) {
+    this.listeners = this.listeners.filter((outro) => outro !== listener);
+  }
+
   emitir(...args) {
     for (const listener of this.listeners) {
       listener(...args);
@@ -38,7 +42,7 @@ class PortaFalsa {
 
 const ABA = { id: 7, windowId: 1, active: true, url: "https://exemplo.org/", title: "Exemplo" };
 
-function carregar(responderPagina, extraDasAbas = {}, aba = ABA) {
+function carregar(responderPagina, extraDasAbas = {}, aba = ABA, relogio = {}) {
   const portas = [];
   const enviadas = [];
   const contexto = vm.createContext({
@@ -59,7 +63,8 @@ function carregar(responderPagina, extraDasAbas = {}, aba = ABA) {
       tabs: {
         ...extraDasAbas,
         query: async () => [aba],
-        get: async () => aba,
+        // Como o navegador: devolve a aba do id pedido (a de fundo da busca tem outro id).
+        get: async (id) => (id === undefined || id === aba.id ? aba : { ...aba, id }),
         sendMessage: async (tabId, mensagem) => {
           enviadas.push({ tabId, mensagem });
           return responderPagina(mensagem);
@@ -70,14 +75,16 @@ function carregar(responderPagina, extraDasAbas = {}, aba = ABA) {
     setTimeout() {
       return 1;
     },
+    clearTimeout() {},
+    ...relogio,
   });
   vm.runInContext(background, contexto, { filename: "extensao/background.js" });
   return { porta: portas[0], enviadas };
 }
 
-async function pedir(cenario, pedido) {
+async function pedir(cenario, pedido, voltas = 20) {
   cenario.porta.onMessage.emitir(pedido);
-  for (let volta = 0; volta < 20 && cenario.porta.respostas.length === 0; volta += 1) {
+  for (let volta = 0; volta < voltas && cenario.porta.respostas.length === 0; volta += 1) {
     await new Promise((resolve) => setImmediate(resolve));
   }
   assert.equal(cenario.porta.respostas.length, 1, "a extensão tinha de responder uma vez");
@@ -204,6 +211,70 @@ test("erro do próprio navegador na captura chega com a mensagem dele", async ()
   assert.equal(resposta.ok, false);
   assert.equal(resposta.error.codigo, "captura_negada");
   assert.match(resposta.error.mensagem, /all_urls/);
+});
+
+function abasDeFundo() {
+  const criadas = [];
+  const fechadas = [];
+  return {
+    criadas,
+    fechadas,
+    abas: {
+      onUpdated: new EventoFalso(),
+      create: async (opcoes) => {
+        criadas.push(opcoes);
+        return { id: 99, windowId: 1, active: false, url: opcoes.url };
+      },
+      remove: async (id) => {
+        fechadas.push(id);
+      },
+    },
+  };
+}
+
+test("page.readUrl lê numa aba de fundo, sem foco, e a fecha no fim", async () => {
+  const fundo = abasDeFundo();
+  const cenario = carregar(
+    (mensagem) => ({ ok: true, result: { comando: mensagem.comando, links: [] } }),
+    fundo.abas,
+    { ...ABA, status: "complete" },
+  );
+  const resposta = await pedir(cenario, {
+    id: "j1-12",
+    method: "page.readUrl",
+    params: { url: "https://search.brave.com/search?q=x" },
+  });
+  assert.equal(resposta.ok, true);
+  assert.deepEqual(resposta.result, { pagina: { comando: "ler", links: [] } });
+  assert.deepEqual(JSON.parse(JSON.stringify(fundo.criadas)), [
+    { url: "https://search.brave.com/search?q=x", active: false },
+  ]);
+  assert.deepEqual(fundo.fechadas, [99]);
+  assert.equal(cenario.enviadas[0].tabId, 99, "lê a aba de fundo, não a do dono");
+});
+
+test("page.readUrl fecha a aba de fundo mesmo quando a página não responde", async () => {
+  const fundo = abasDeFundo();
+  const imediato = (funcao) => {
+    setImmediate(funcao);
+    return 1;
+  };
+  const cenario = carregar(
+    () => {
+      throw new Error("Could not establish connection");
+    },
+    fundo.abas,
+    { ...ABA, status: "complete" },
+    { setTimeout: imediato },
+  );
+  const resposta = await pedir(
+    cenario,
+    { id: "j1-13", method: "page.readUrl", params: { url: "https://search.brave.com/search?q=x" } },
+    400,
+  );
+  assert.equal(resposta.ok, false);
+  assert.equal(resposta.error.codigo, "pagina_indisponivel");
+  assert.deepEqual(fundo.fechadas, [99]);
 });
 
 test("erro do conteúdo vira erro da ponte com o código dele", async () => {

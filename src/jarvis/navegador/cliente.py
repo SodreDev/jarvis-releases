@@ -199,6 +199,10 @@ class ClienteDoNavegador:
         """A tela da aba (`imagem`, URL de dados JPEG) e o mapa do mesmo instante (`mapa`)."""
         return self.chamar("page.capture", tabId=tab_id)
 
+    def ler_em_segundo_plano(self, url: str) -> dict[str, Any]:
+        """A leitura (`pagina`) de um endereço numa aba de fundo, sem foco, fechada no fim."""
+        return self.chamar("page.readUrl", url=url)
+
     def inspecionar(
         self, tab_id: int, alvo: str | None = None, *, ref: str | None = None
     ) -> dict[str, Any]:

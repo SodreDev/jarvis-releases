@@ -4,7 +4,8 @@ Só estes métodos existem, cada um com os parâmetros que aceita. Não há `eva
 seletor CSS: o alvo de uma ação é o **texto ou rótulo visível** do elemento ou a **referência**
 (`ref`) que o mapa da própria página devolveu (`page.map`, ADR-0032), e o que se faz com ele é
 uma ação de uma lista fechada (`page.act`); `page.capture` traz a tela da aba com o mapa do mesmo
-instante. O host valida de novo o que o cliente já validou — o socket é uma fronteira, e a
+instante; `page.readUrl` lê um endereço numa aba de fundo, que fecha no fim (a busca na web,
+ADR-0033). O host valida de novo o que o cliente já validou — o socket é uma fronteira, e a
 extensão não confia em ninguém.
 """
 
@@ -43,6 +44,7 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     "page.read": {"tabId": int},
     "page.map": {"tabId": int},
     "page.capture": {"tabId": int},
+    "page.readUrl": {"url": str},
     "page.inspect": {"tabId": int, "alvo": str, "ref": str},
     "page.click": {"tabId": int, "alvo": str, "ref": str},
     "page.type": {"tabId": int, "alvo": str, "ref": str, "texto": str, "limpar": bool},
@@ -52,6 +54,7 @@ METODOS: Final[dict[str, dict[str, type]]] = {
 OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "tabs.navigate": frozenset({"url"}),
     "tabs.open": frozenset({"url"}),
+    "page.readUrl": frozenset({"url"}),
     "page.type": frozenset({"texto"}),
     "page.act": frozenset({"acao"}),
 }

@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas, ResultadoDeFerramenta
+from jarvis.executor.nativas import Nativas
 from jarvis.imagem import CHAVE_DOS_ANEXOS
 from jarvis.navegador.cliente import ClienteDoNavegador, NavegadorIndisponivel
 from jarvis.navegador.estado import EstadoDaPonte
@@ -53,6 +54,7 @@ class PaginaFalsa:
         self.scripts: list[dict[str, Any]] = []
         self.dpr = 1
         self.captura = url_de_dados(png(1280, 720))
+        self.links_da_busca: list[dict[str, Any]] = []
         """O que `page.capture` devolve: a tela da aba como a extensão a entrega (ADR-0032)."""
         self.chamadas: list[tuple[str, dict[str, Any]]] = []
         self.fora_do_ar = False
@@ -112,6 +114,10 @@ class PaginaFalsa:
                 return ok | {"result": self._mapa()}
             case "page.capture":
                 return ok | {"result": {"imagem": self.captura, "mapa": self._mapa()}}
+            case "page.readUrl":
+                # A aba de fundo da busca (ADR-0033): não entra em `abas`, e a ativa não muda.
+                resultados = {"links": self.links_da_busca, "url": p["url"]}
+                return ok | {"result": {"pagina": resultados}}
             case "page.inspect" | "page.click" | "page.type" | "page.act":
                 dados = self._do_alvo(p)
                 if dados is None:
@@ -799,3 +805,27 @@ def test_a_tela_vai_so_ao_motor_que_aceita_imagem_e_morre_com_o_turno(
     assert [i.id for i in motor.pedidos[1].imagens] == ["tela:ab1"]
     assert motor.pedidos[2].imagens == (), "a tela é do turno: o pedido seguinte não a leva"
     assert all(isinstance(m.texto, str) for m in cerebro.conversa.turnos)
+
+
+# --- a busca na web pelo navegador do dono (ADR-0033) --------------------------------------------
+def test_sem_chave_a_busca_vai_pela_extensao_numa_aba_de_fundo_e_alcanca_o_objetivo(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("abra o canal do Thiago Nigro")
+    pagina.links_da_busca = [
+        {"texto": "O Primo Rico - YouTube", "href": "https://www.youtube.com/@primorico"},
+        {"texto": "Brave", "href": "https://search.brave.com/"},
+    ]
+    executor.nativas = Nativas(lar=executor.lar, ambiente={})
+
+    achado, perguntas = _rodar(executor, "web.buscar", {"consulta": "thiago nigro canal"})
+
+    assert achado.status == "ok" and perguntas == []
+    assert achado.dados["fonte"] == "Brave Search, pelo navegador do dono"
+    assert achado.dados["resultados"] == [
+        {"titulo": "O Primo Rico - YouTube", "url": "https://www.youtube.com/@primorico"}
+    ]
+    (lida,) = [p for m, p in pagina.chamadas if m == "page.readUrl"]
+    assert lida["url"].startswith("https://search.brave.com/search?q=thiago+nigro+canal")
+    assert executor.contaminado and executor.objetivo is not None
+    assert executor.objetivo.dentro("https://www.youtube.com/@primorico")

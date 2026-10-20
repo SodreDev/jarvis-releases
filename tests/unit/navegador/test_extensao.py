@@ -89,6 +89,7 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
         "page.map",
         "page.act",
         "page.capture",
+        "page.readUrl",
     ):
         assert f'case "{metodo}"' in fundo
     assert "connectNative" in fundo

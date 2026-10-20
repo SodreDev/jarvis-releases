@@ -139,7 +139,12 @@ def test_redigir_sem_chave_nao_mexe_no_texto() -> None:
 
 
 def test_as_variaveis_do_dono_sao_as_registradas() -> None:
-    assert VARIAVEIS == (VARIAVEL_GROQ, VARIAVEL_ELEVENLABS, "OPENROUTER_API_KEY")
+    assert VARIAVEIS == (
+        VARIAVEL_GROQ,
+        VARIAVEL_ELEVENLABS,
+        "OPENROUTER_API_KEY",
+        "BRAVE_SEARCH_API_KEY",  # a busca na web pela API (ADR-0033)
+    )
     assert VARIAVEL_GROQ == "JARVIS_GROQ_API_KEY"
     assert VARIAVEL_ELEVENLABS == "JARVIS_ELEVENLABS_API_KEY"
 

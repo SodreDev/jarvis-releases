@@ -45,7 +45,15 @@ VARIAVEL_ELEVENLABS: Final = "JARVIS_ELEVENLABS_API_KEY"
 VARIAVEL_OPENROUTER: Final = "OPENROUTER_API_KEY"
 """A chave do OpenRouter, que serve ao Jev (ADR-0029). O nome é o do próprio serviço, de
 propósito: quem já a exporta para outras ferramentas não precisa guardá-la duas vezes."""
-VARIAVEIS: Final[tuple[str, ...]] = (VARIAVEL_GROQ, VARIAVEL_ELEVENLABS, VARIAVEL_OPENROUTER)
+VARIAVEL_BRAVE: Final = "BRAVE_SEARCH_API_KEY"
+"""A chave da API do Brave Search: com ela a busca na web vai pela API, que é a preferida do dono
+(ADR-0033); sem ela, pelo navegador dele. O nome é o do próprio serviço, como o do OpenRouter."""
+VARIAVEIS: Final[tuple[str, ...]] = (
+    VARIAVEL_GROQ,
+    VARIAVEL_ELEVENLABS,
+    VARIAVEL_OPENROUTER,
+    VARIAVEL_BRAVE,
+)
 """As variáveis que o produto conhece. O registro de motores aponta para elas pelo nome."""
 
 MARCA: Final = "«chave de {variavel}, não mostrada»"

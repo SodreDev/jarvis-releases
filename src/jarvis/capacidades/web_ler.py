@@ -39,19 +39,21 @@ POSTCONDITION: Final = (
 class WebLerEntrada:
     """Argumentos normalizados de `web.ler` (input_schema do §4)."""
 
-    url: str
+    url: str | None = None
+    urls: list[Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class WebLerSaida:
     """Resultado de `web.ler` (output_schema do §4)."""
 
-    url: Any
-    texto: Any
+    paginas: list[Any] | None = None
+    texto: str | None = None
+    url: str | None = None
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("url",))
-OBRIGATORIOS: Final[frozenset[str]] = frozenset(("url",))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("url", "urls"))
+OBRIGATORIOS: Final[frozenset[str]] = frozenset(())
 
 
 def validar_entrada(bruto: dict[str, Any]) -> WebLerEntrada:

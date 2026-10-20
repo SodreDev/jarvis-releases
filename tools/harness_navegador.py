@@ -89,6 +89,12 @@ function abrirPainel(){document.getElementById('estado').textContent='painel abe
 """«Pronto» é um envio de formulário com rótulo neutro: só a inspeção do alvo o pega. A busca do
 topo imita a do YouTube (2026-10-20): sem rótulo que diga "busca", só o mapa a acha (ADR-0032)."""
 SEGUNDA: Final = "<!doctype html><meta charset=utf-8><title>Segunda página do Jarvis</title><p>dois"
+BUSCA: Final = """<!doctype html><meta charset=utf-8><title>Resultados de teste</title>
+<a href="/configuracoes">Configurações da busca</a>
+<a href="https://www.youtube.com/@primorico">O Primo Rico - YouTube</a>
+<a href="https://pt.wikipedia.org/wiki/Thiago_Nigro">Thiago Nigro – Wikipédia</a>
+"""
+"""Uma página de resultados sem rede (ADR-0033): o link para o próprio buscador não é resultado."""
 
 
 # --- dentro do contêiner ------------------------------------------------------------------------
@@ -159,6 +165,7 @@ def _site() -> Iterator[str]:
     pasta = Path(tempfile.mkdtemp(prefix="site-"))
     (pasta / "pagina.html").write_text(PAGINA, encoding="utf-8")
     (pasta / "pagina2.html").write_text(SEGUNDA, encoding="utf-8")
+    (pasta / "busca.html").write_text(BUSCA, encoding="utf-8")
 
     class Quieto(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *_args: object) -> None:
@@ -277,7 +284,9 @@ def dentro(nome: str) -> int:
 def _roteiro(nome: str, relatorio: Relatorio) -> None:
     """O roteiro, de cima a baixo: um roteiro linear lê melhor que dez funções."""
     from jarvis.executor.ferramentas import Confirmacao, ResultadoDeFerramenta
+    from jarvis.executor.web import BuscaIndisponivel
     from jarvis.navegador import instalar
+    from jarvis.navegador.busca import Buscador, BuscaNoNavegador
     from jarvis.navegador.cliente import NavegadorFalhou, NavegadorIndisponivel
     from jarvis.s2.motor_claude_cli import sistema_com_ferramentas
     from jarvis.voz.app import Aplicativo
@@ -587,6 +596,29 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             f"{aberto.status} {aberto.dados or aberto.motivo}; "
             f"abas {len(abas_antes)} → {len(abas_depois)}",
         )
+        # A busca sem chave (ADR-0033): numa aba de fundo, lida e fechada; a do dono não muda.
+        buscador = Buscador(
+            "Página de busca de teste",
+            url.replace("pagina.html", "busca.html") + "?q={consulta}",
+            frozenset({""}),  # os links do próprio servidor (IP) são do buscador
+        )
+        ativa_antes = corpos.cliente.aba()
+        abas_da_busca = abas_agora()
+        try:
+            achado = BuscaNoNavegador(corpos.cliente, (buscador,))("o primo rico")
+        except BuscaIndisponivel as erro:
+            achado = {"erro": str(erro)}
+        fechou = _esperar(lambda: len(abas_agora()) == len(abas_da_busca), 10)
+        ativa_depois = corpos.cliente.aba()
+        relatorio.conferir(
+            "a busca pela extensão lê numa aba de fundo, fecha a aba e não troca a aba do dono",
+            [r.get("url") for r in achado.get("resultados", [])]
+            == ["https://www.youtube.com/@primorico", "https://pt.wikipedia.org/wiki/Thiago_Nigro"]
+            and bool(fechou)
+            and ativa_depois.get("id") == ativa_antes.get("id"),
+            {"achado": achado, "ativa": [ativa_antes.get("id"), ativa_depois.get("id")]},
+        )
+
         nova = rodar("browser.navigate", {"url": url, "nova_aba": True})
         com_nova = _esperar(lambda: len(abas_agora()) == len(abas_antes) + 1, 10)
         relatorio.conferir(

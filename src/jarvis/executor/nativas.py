@@ -34,6 +34,9 @@ class Nativas:
     obter: web.Obter = web.obter_publico
     resolver: web.Resolver = web._resolver_dns
     dormir: Callable[[float], None] = time.sleep
+    busca_no_navegador: web.BuscaPeloNavegador | None = None
+    """A busca pela extensão (ADR-0033), quando o controle do navegador está ligado: o executor a
+    põe aqui a cada chamada, com o navegador dele daquele momento."""
     anterior_da_area: str = field(default="", repr=False)
     """O texto que a área de transferência tinha antes da última escrita — é o do "desfazer"."""
 
@@ -85,6 +88,16 @@ def _alarme_cancel(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
     return {"alarme_id": cancelado.id, "mensagem": cancelado.mensagem}
 
 
+def _web_ler(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
+    """Um site (`url`) ou vários seguidos (`urls`, dono 2026-10-20) — um dos dois."""
+    url, urls = a.get("url"), a.get("urls")
+    if bool(url) == bool(urls):
+        raise web.WebRecusada("diga um site (url) ou uma lista deles (urls), um dos dois")
+    if urls:
+        return web.ler_paginas([str(u) for u in urls], n.obter, n.resolver)
+    return web.ler_pagina(str(url), n.obter, n.resolver)
+
+
 def _area_write(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
     try:
         n.anterior_da_area = desktop.ler_area(n.lancar, n.ambiente)[: desktop.LIMITE_DE_ESCRITA]
@@ -120,9 +133,11 @@ CORPOS: Final[dict[str, Corpo]] = {
     "timer.alarm.set": _alarme_set,
     "timer.alarm.list": _alarme_list,
     "timer.alarm.cancel": _alarme_cancel,
-    "web.buscar": lambda n, a: web.buscar(str(a["consulta"]), n.obter, n.ambiente, n.resolver),
+    "web.buscar": lambda n, a: web.buscar(
+        str(a["consulta"]), n.obter, n.ambiente, n.resolver, navegador=n.busca_no_navegador
+    ),
     "web.canal_videos": lambda n, a: web.canal_videos(str(a["canal"]), n.obter, n.resolver),
-    "web.ler": lambda n, a: web.ler_pagina(str(a["url"]), n.obter, n.resolver),
+    "web.ler": _web_ler,
 }
 """`tool_id` → corpo. O que está aqui é "ligado" no executor; `timer.*` só com agenda."""
 
