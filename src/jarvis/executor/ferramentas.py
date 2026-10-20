@@ -34,6 +34,7 @@ from jarvis.executor.nativas import CORPOS, DE_ARQUIVOS, PRECISAM_DE_AGENDA, Nat
 from jarvis.executor.navegadores import AbridorDeNavegador
 from jarvis.executor.organizar import OrganizacaoRecusada, Organizador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
+from jarvis.imagem import CHAVE_DOS_ANEXOS, Imagem
 from jarvis.manifesto.validador import carregar_catalogo
 from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
 from jarvis.memoryd.livro import AlvoInexistente
@@ -94,6 +95,14 @@ FERRAMENTAS_DE_MEMORIA: Final = frozenset(
 """As `memoria.*` (ADR-0026): o corpo é do `FerramentasDeMemoria`, e só existem para o modelo
 quando há livro aberto (o histórico persistente) — sem ele, a persona não promete o que não há."""
 
+FERRAMENTA_DA_TELA: Final = "browser.tela"
+"""Só existe quando o motor do chat recebe imagem (`motor_ve_imagem`): sem isso a captura não
+teria como chegar ao modelo, e a tool fica desligada com o motivo dito em `browser.estado`."""
+SEM_IMAGEM: Final = (
+    "o motor deste chat não recebe imagem: a tela da aba não tem como chegar a ele — use "
+    "browser.inspecionar (o mapa da página) ou browser.read (o texto)"
+)
+
 FONTES_DE_TERCEIROS: Final = frozenset(
     {
         "files.list_dir",
@@ -107,6 +116,7 @@ FONTES_DE_TERCEIROS: Final = frozenset(
         "browser.tabs",
         "browser.read",
         "browser.inspecionar",
+        "browser.tela",
     }
 )
 """Tools cujo resultado é texto que **outra pessoa** escreveu (nome de arquivo, conteúdo, conversa
@@ -159,6 +169,9 @@ class ResultadoDeFerramenta:
     resposta final (dono, 2026-10-20, ADR-0031)."""
     acao_id: str = ""
     """Se a ação dá para desfazer, o id que `acao.desfazer` aceita."""
+    anexos: tuple[Imagem, ...] = ()
+    """Imagens do resultado (a tela da aba): vão ao motor à parte, pelo cérebro, e **nunca** entram
+    em `para_o_modelo`, na auditoria nem na trilha."""
 
     @property
     def detalhe_de_auditoria(self) -> str:
@@ -225,6 +238,9 @@ class ExecutorDeFerramentas:
     para o modelo dizer a verdade em vez de negar a extensão. Sem ele, a tool não aparece."""
     entrada: ControleDeEntrada | None = None
     """Mouse e teclado virtuais (ADR-0027, fatia 4). Sem ele, as `input.*` não existem."""
+    motor_ve_imagem: Callable[[], bool] = field(default=lambda: False)
+    """Se o motor do chat de agora recebe imagem (`jarvis.s2.motor.aceita_imagem`): é o que liga a
+    `browser.tela`. Perguntado na hora, porque o motor muda com o chat e o provedor."""
     objetivo: Objetivo | None = None
     """O objetivo do turno (`jarvis.politica.objetivo`): nasce da fala do dono em `novo_turno` e
     cresce com os endereços que as ferramentas devolvem. Sem ele, as regras de antes."""
@@ -299,6 +315,8 @@ class ExecutorDeFerramentas:
             return self.tarefas is not None
         if tool_id == FERRAMENTA_DE_ESTADO:
             return self.estado_do_navegador is not None
+        if tool_id == FERRAMENTA_DA_TELA:
+            return self.navegador is not None and self.motor_ve_imagem()
         if tool_id in FERRAMENTAS_DO_NAVEGADOR:
             return self.navegador is not None
         if tool_id in FERRAMENTAS_DE_ENTRADA:
@@ -316,7 +334,10 @@ class ExecutorDeFerramentas:
                     f"{texto} Agora o controle está DESLIGADO na configuração: as browser.* não "
                     "existem até o dono ligar."
                 )
-            return f"{texto} Agora o controle está ligado na configuração."
+            ligado = f"{texto} Agora o controle está ligado na configuração"
+            if not self.motor_ve_imagem():
+                return f"{ligado}; a tela da aba não: {SEM_IMAGEM}."
+            return f"{ligado}."
         if tool_id == "browser.launch" and self.navegadores is not None:
             feitos = ", ".join(
                 f"{f} (principal)" if f == self.navegadores.principal else f
@@ -400,10 +421,13 @@ class ExecutorDeFerramentas:
         marca = contaminacao if contaminacao is not None else self.turno
         chamada = call_id or f"c-{uuid7()}"
         if not self._ligada(tool_id):
+            sem_imagem = tool_id == FERRAMENTA_DA_TELA and self.navegador is not None
             return ResultadoDeFerramenta(
                 tool_id,
                 "negado",
-                motivo="essa ferramenta não existe no catálogo ligado",
+                motivo=SEM_IMAGEM
+                if sem_imagem
+                else "essa ferramenta não existe no catálogo ligado",
                 call_id=chamada,
             )
         argumentos = dict(args)
@@ -622,6 +646,7 @@ class ExecutorDeFerramentas:
             aviso="" if silencioso else frase,
             aviso_silencioso=frase if silencioso else "",
             acao_id=acao,
+            anexos=resultado.anexos,
         )
 
     def _registrar_desfazer(self, tool_id: str, dados: Mapping[str, Any]) -> str:
@@ -705,7 +730,8 @@ class ExecutorDeFerramentas:
             UrlRecusada,
         ) as erro:
             return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
-        return ResultadoDeFerramenta(tool_id, "ok", dados=dados, call_id=chamada)
+        anexos = tuple(dados.pop(CHAVE_DOS_ANEXOS, ()))
+        return ResultadoDeFerramenta(tool_id, "ok", dados=dados, call_id=chamada, anexos=anexos)
 
     def _exigir_do_dono(
         self,

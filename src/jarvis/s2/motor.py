@@ -18,6 +18,9 @@ Três obrigações de todo motor, cobradas pelos testes de contrato:
    motor libera processo e conexão no `finally`.
 4. **Raciocínio não é `Texto`** (ADR-0031). Todo `Texto` pode ir para o TTS; o que o modelo
    raciocina sai como `Raciocinio` (no protocolo de texto, o bloco `<<pensar>>`) ou é descartado.
+
+Capacidade opcional: o motor que recebe imagem declara `aceita_imagem = True` e lê
+`Contexto.imagens` (a tela da aba, ADR-0032); quem não declara nunca recebe imagem.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Final, Literal, Protocol, runtime_checkable
 
+from jarvis.imagem import Imagem
 from jarvis.voz.interface import Cancelado, Onde
 
 PRAZO_DE_CANCELAMENTO_S: Final = 0.050
@@ -80,6 +84,9 @@ class Contexto:
     ja_dito: str = ""
     """O que o dono já ouviu neste turno (o aviso curto do começo, o aviso de uma ferramenta):
     cada rodada é um pedido novo ao motor, e sem isto ele repetiria o "vou ver"."""
+    imagens: tuple[Imagem, ...] = ()
+    """A tela da aba que uma ferramenta deste turno capturou (só a mais nova): vai ao motor que
+    `aceita_imagem`, junto do texto. Não entra na conversa nem no livro: morre com o turno."""
 
     def __post_init__(self) -> None:
         if not self.mensagens or self.mensagens[-1].papel == "jarvis":
@@ -172,6 +179,11 @@ class Fim:
 
 
 Delta = Texto | Pensar | Raciocinio | PedidoDeTool | Fim
+
+
+def aceita_imagem(motor: object) -> bool:
+    """O motor declara que recebe imagem (`aceita_imagem = True`); sem declarar, não recebe."""
+    return getattr(motor, "aceita_imagem", False) is True
 
 
 @runtime_checkable

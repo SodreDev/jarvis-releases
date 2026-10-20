@@ -3,8 +3,9 @@
 Só estes métodos existem, cada um com os parâmetros que aceita. Não há `eval`, CDP nem
 seletor CSS: o alvo de uma ação é o **texto ou rótulo visível** do elemento ou a **referência**
 (`ref`) que o mapa da própria página devolveu (`page.map`, ADR-0032), e o que se faz com ele é
-uma ação de uma lista fechada (`page.act`). O host valida de novo o que o cliente já validou — o
-socket é uma fronteira, e a extensão não confia em ninguém.
+uma ação de uma lista fechada (`page.act`); `page.capture` traz a tela da aba com o mapa do mesmo
+instante. O host valida de novo o que o cliente já validou — o socket é uma fronteira, e a
+extensão não confia em ninguém.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     "tabs.open": {"url": str},
     "page.read": {"tabId": int},
     "page.map": {"tabId": int},
+    "page.capture": {"tabId": int},
     "page.inspect": {"tabId": int, "alvo": str, "ref": str},
     "page.click": {"tabId": int, "alvo": str, "ref": str},
     "page.type": {"tabId": int, "alvo": str, "ref": str, "texto": str, "limpar": bool},

@@ -11,6 +11,8 @@ const RECONNECT_BASE_MS = 250;
 const RECONNECT_MAX_MS = 30_000;
 const RECONNECT_JITTER = 0.15;
 const RECONNECT_STABLE_MS = 60_000;
+const QUALIDADE_DA_CAPTURA = 60;
+const MAX_CAPTURA = 6 * 1024 * 1024;
 
 let nativePort;
 let reconnectTimer;
@@ -105,6 +107,51 @@ async function mensagemDaPagina(params, comando) {
   );
 }
 
+async function capturar(params) {
+  // A tela da aba e o mapa do mesmo instante (ADR-0032): as caixas dos elementos são desta imagem.
+  const tab = await abaDoPedido(params);
+  if (typeof tab.id !== "number") {
+    throw erro("sem_aba", "a aba escolhida não tem identificador");
+  }
+  // A permissão `<all_urls>` existe só para a captura (o Chromium e o Firefox a exigem); a tela
+  // que sai daqui é sempre de página http ou https, como o resto da extensão.
+  let endereco = null;
+  try {
+    endereco = new URL(tab.url ?? "");
+  } catch {
+    endereco = null;
+  }
+  if (!endereco || (endereco.protocol !== "http:" && endereco.protocol !== "https:")) {
+    throw erro("aba_nao_http", "a tela só é capturada em página http ou https");
+  }
+  const opcoes = { format: "jpeg", quality: QUALIDADE_DA_CAPTURA };
+  let imagem;
+  try {
+    if (typeof api.tabs.captureTab === "function") {
+      // Firefox: captura a aba pedida mesmo que ela não esteja à vista, sem mexer no foco do dono.
+      imagem = await api.tabs.captureTab(tab.id, opcoes);
+    } else {
+      if (!tab.active) {
+        throw erro(
+          "aba_escondida",
+          "no Chromium a captura é da aba à vista na janela dela; esta aba está atrás de outra",
+        );
+      }
+      imagem = await api.tabs.captureVisibleTab(tab.windowId, opcoes);
+    }
+  } catch (causa) {
+    if (causa && typeof causa.codigo === "string") {
+      throw causa;
+    }
+    throw erro("captura_negada", `o navegador não deixou capturar a aba: ${detalheDaFalha(causa)}`);
+  }
+  if (typeof imagem !== "string" || imagem.length > MAX_CAPTURA) {
+    throw erro("captura_invalida", "a captura não veio ou passou do tamanho");
+  }
+  const mapa = await mensagemDaPagina({ tabId: tab.id }, "mapear");
+  return { imagem, mapa };
+}
+
 async function abrirOuReutilizar(params) {
   const url = urlHttp(params.url);
   if (params.reutilizar === true) {
@@ -149,6 +196,8 @@ async function executar(method, params) {
       return mensagemDaPagina(params, "mapear");
     case "page.act":
       return mensagemDaPagina(params, "acionar");
+    case "page.capture":
+      return capturar(params);
     case "page.click":
       return mensagemDaPagina(params, "clicar");
     case "page.type":
@@ -236,13 +285,18 @@ function ligarAoHost() {
       .catch((causa) => {
         const id = typeof pedido?.id === "string" ? pedido.id : null;
         const detalhe = comoObjeto(causa);
+        // Erro do próprio navegador (sem o nosso código) chega com a mensagem dele: "falha na
+        // extensão" sozinha escondia, por exemplo, a permissão que faltava.
+        const nativa = causa instanceof Error && causa.message ? causa.message : "";
         responder(porta, {
           id,
           ok: false,
           error: {
             codigo: typeof detalhe.codigo === "string" ? detalhe.codigo : "falha",
             mensagem:
-              typeof detalhe.mensagem === "string" ? detalhe.mensagem : "falha na extensão",
+              typeof detalhe.mensagem === "string"
+                ? detalhe.mensagem
+                : nativa || "falha na extensão",
           },
         });
       });

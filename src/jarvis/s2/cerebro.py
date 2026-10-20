@@ -35,6 +35,7 @@ from jarvis.executor.ferramentas import (
     negar_sempre,
 )
 from jarvis.fatiador import PALAVRAS_MINIMAS_POR_PEDACO, Corte, FatiadorDeFala, PedacoDeFala
+from jarvis.imagem import Imagem
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
@@ -50,6 +51,7 @@ from jarvis.s2.motor import (
     PedidoDeTool,
     Pensar,
     Raciocinio,
+    aceita_imagem,
 )
 from jarvis.s2.pendencias import RegistroDePendencias
 from jarvis.s2.persona import prompt_de_sistema
@@ -299,6 +301,9 @@ class Cerebro:
         )
         catalogo = self.ferramentas.catalogo_para_o_modelo() if self.ferramentas else ()
         resultados: list[Mensagem] = []
+        # A tela mais nova que uma ferramenta deste turno capturou (ADR-0032): vai só ao motor que
+        # a aceita, e só neste turno.
+        imagens: tuple[Imagem, ...] = ()
         limite_do_laco = self.relogio() + self.prazo_do_laco_de_ferramentas_s
 
         def prazo_esgotado() -> bool:
@@ -326,6 +331,7 @@ class Cerebro:
                 ferramentas=catalogo,
                 raciocinio=resposta.raciocinio,
                 ja_dito=_ja_dito(resposta),
+                imagens=imagens,
             )
             pedidos, visto_cancelamento = self._rodada(
                 da_vez,
@@ -374,6 +380,8 @@ class Cerebro:
             resultado = self._chamar(pedido, cancelado_no_laco, texto_do_dono)
             resposta.ferramentas.append(resultado)
             resultados.append(Mensagem("ferramenta", resultado.para_o_modelo()))
+            if resultado.anexos and aceita_imagem(self.motor):
+                imagens = resultado.anexos
             # Sem status entre passos (dono, 2026-10-20, ADR-0031): ele não acompanha passo a
             # passo. O aviso de uma moderada é resultado (o que mudou e se desfaz); o passo de
             # navegação vem sem aviso (`aviso_silencioso` no manifesto).

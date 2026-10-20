@@ -586,6 +586,7 @@ navegador. Não recarregue a extensão entre essas etapas.
 | «rola a página» | rola; fala só o resultado |
 | «que campos tem na página?» | `browser.inspecionar`: o mapa (rótulo, papel, `ref`, caixa em pixels), sem perguntar (livre) — §0.7.7 |
 | «digita Ana no Nome e aperta Enter» | digita; o **Enter** pede o seu sim: o formulário tem senha (§0.7.7) |
+| «o que você vê na tela?» | `browser.tela`: descreve a página pela captura (só com o motor `claude`) — §0.7.8 |
 | «abre o site exemplo.org» / «vai para …» | troca a URL da **aba atual** (2026-10-20); aba nova só se você pedir («abre numa aba nova») |
 
 Conferir que não há porta de rede e que o socket é só seu:
@@ -625,6 +626,35 @@ função dele; digitar pela `ref` e Enter buscam por GET sem pergunta; passar o 
 pede o sim e o «não» impede. **Não provado:** sites reais (YouTube, lojas) — a página de teste os
 imita; ouvinte posto por `addEventListener` não aparece no mapa; página que confere `isTrusted`
 não aceita evento sintético (ali, o teclado e o mouse virtuais do §0.7.3).
+
+#### 0.7.8 A tela da aba (2026-10-20, ADR-0032)
+
+Quando o texto e o mapa não bastam (um ícone, um desenho, o jeito da página), o Jarvis **vê a
+tela** da aba (`browser.tela`): a captura vai ao motor como imagem, junto do mapa do mesmo instante
+— cada elemento à vista com a `ref` e a caixa nos pixels da captura, para ele ligar o que vê ao que
+pode clicar. A imagem **não** entra no texto, na auditoria nem na trilha, e vale só no turno.
+Banco, gerenciador de senhas e pagamento pedem o seu sim antes da captura.
+
+- **Só com motor que recebe imagem.** O `claude` recebe (pela entrada `stream-json`); com outro
+  motor a ferramenta some e o Jarvis diz por quê («o motor deste chat não recebe imagem»), também
+  em `browser.estado`.
+- **Recarregue a extensão uma vez** (Brave: `brave://extensions` → «Recarregar»): ela passou a pedir
+  `<all_urls>`, que a captura exige no Chromium e no Firefox. O código só captura página http/https,
+  e o mapa e o acionar (§0.7.7) também são código novo da extensão.
+- **No Chromium/Brave, a aba precisa estar à vista** na janela dela: o navegador só captura a aba
+  visível, e o Jarvis não troca a sua aba para isso (diz `aba_escondida`). No Firefox ele captura
+  a aba mesmo atrás de outra, sem mexer no foco.
+
+**Como conferir** (página do §0.7.2, `s2 = "claude"`, `navegador_controlado` ligado): «o que você
+vê na tela?» → ele descreve a página. Sem gastar conversa, a prova de que o motor vê imagem:
+
+```bash
+uv run --frozen python -m tools.harness_tela_no_motor   # uma chamada pequena: PNG verde → "Verde"
+```
+
+**Provado:** essa chamada real (2,9 s, 2026-10-20) e a captura em contêiner no Chromium e no Firefox
+(`tools/harness_navegador.py`). **Não provado:** a captura no seu navegador e numa tela com
+`devicePixelRatio` diferente de 1 (o teste de unidade cobre a conta da escala).
 
 #### 0.7.3 Mouse e teclado virtuais — o consentimento do portal
 

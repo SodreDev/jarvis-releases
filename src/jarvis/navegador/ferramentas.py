@@ -13,6 +13,7 @@ import unicodedata
 from collections.abc import Callable, Mapping
 from typing import Any, Final
 
+from jarvis.imagem import CHAVE_DOS_ANEXOS, ImagemInvalida, da_url_de_dados
 from jarvis.navegador import risco
 from jarvis.navegador.cliente import ClienteDoNavegador, NavegadorFalhou, NavegadorIndisponivel
 from jarvis.politica.abertura import UrlRecusada, dominio, validar_url
@@ -28,6 +29,7 @@ FERRAMENTAS_DO_NAVEGADOR: Final = frozenset(
         "browser.navigate",
         "browser.inspecionar",
         "browser.acionar",
+        "browser.tela",
     }
 )
 FERRAMENTA_DE_CONFIRMACAO: Final = "browser.acao_sensivel"
@@ -166,6 +168,8 @@ class CorposDoNavegador:
                 return self._digitar(args, contaminado, exigir, cancelado, objetivo)
             if tool_id == "browser.inspecionar":
                 return self._inspecionar(args, exigir)
+            if tool_id == "browser.tela":
+                return self._tela(args, exigir)
             if tool_id == "browser.acionar":
                 return self._acionar(args, contaminado, liberados, exigir, cancelado, objetivo)
         except NavegadorFalhou as erro:
@@ -283,6 +287,63 @@ class CorposDoNavegador:
                 for s in scripts[:LIMITE_DOS_SCRIPTS]
             ]
         return saida
+
+    def _tela(self, args: Mapping[str, Any], exigir: Exigir) -> dict[str, Any]:
+        """A tela da aba (ADR-0032, emenda de 2026-10-20): a imagem vai como **anexo** — nunca no
+        texto —, e o texto traz os três artefatos separados, tela, inspeção e scripts, com o mesmo
+        instantâneo. As caixas dos elementos vêm em pixels desta imagem."""
+        tab_id, url, _ = self._aba(args)
+        avaliacao = risco.avaliar_leitura(url)
+        if avaliacao.confirmar:
+            exigir(f"ver a tela de {dominio(url)}", avaliacao.confirmar)
+        captura = self.cliente.capturar(tab_id)
+        mapa = captura.get("mapa")
+        mapa = mapa if isinstance(mapa, dict) else {}
+        instantaneo = str(mapa.get("instantaneo") or "sem-mapa")
+        try:
+            imagem = da_url_de_dados(captura.get("imagem"), f"tela:{instantaneo}")
+        except ImagemInvalida as erro:
+            raise ValueError(str(erro)) from None
+        dpr = float(mapa.get("dpr") or 1)
+        viewport = mapa.get("viewport") if isinstance(mapa.get("viewport"), list) else []
+        # A caixa do mapa é CSS × dpr; se a captura veio noutra escala, ela acompanha a imagem.
+        escala = imagem.largura / (float(viewport[0]) * dpr) if viewport and viewport[0] else 1.0
+        elementos = []
+        for elemento in mapa.get("elementos", []):
+            if not (isinstance(elemento, dict) and elemento.get("naTela")):
+                continue
+            caixa = elemento.get("caixa")
+            if abs(escala - 1) > 0.02 and isinstance(caixa, list):
+                elemento = {**elemento, "caixa": [round(float(v) * escala) for v in caixa]}
+            elementos.append(elemento)
+        scripts = [s for s in mapa.get("scripts", []) if isinstance(s, dict)]
+        ligados = sorted(
+            {str(s) for e in elementos for s in e.get("scripts", []) if isinstance(s, str)}
+        )
+        return {
+            "tab_id": tab_id,
+            "instantaneo": instantaneo,
+            "url": _curto(mapa.get("url", url), 300),
+            "titulo": _curto(mapa.get("titulo", ""), LIMITE_DO_TITULO),
+            "tela": {
+                "id": imagem.id,
+                "formato": imagem.tipo,
+                "largura": imagem.largura,
+                "altura": imagem.altura,
+                "proporcao": round(imagem.largura / imagem.altura, 3),
+                "bytes": len(imagem.dados),
+                "dpr": mapa.get("dpr"),
+                "viewport": mapa.get("viewport"),
+                "rolagem": mapa.get("rolagem"),
+            },
+            "inspecao": {
+                "id": f"inspecao:{instantaneo}",
+                "na_tela": len(elementos),
+                "elementos": [_elemento_para_o_modelo(e) for e in elementos[:LIMITE_DO_MAPA]],
+            },
+            "scripts": {"id": f"scripts:{instantaneo}", "total": len(scripts), "ligados": ligados},
+            CHAVE_DOS_ANEXOS: (imagem,),
+        }
 
     # --- ação ---------------------------------------------------------------------------
     def _navegar(

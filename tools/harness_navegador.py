@@ -329,6 +329,9 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             lar=CASA,
         )
         ferramentas = app._montar_ferramentas()
+        # O roteiro prova a extensão; o motor que enxerga a imagem tem prova à parte
+        # (`tools/harness_tela_no_motor.py`), então aqui a tela fica ligada.
+        ferramentas.motor_ve_imagem = lambda: True
         perguntas: list[Confirmacao] = []
 
         def rodar(tool: str, args: dict[str, Any], sim: bool = False) -> ResultadoDeFerramenta:
@@ -352,6 +355,7 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             "browser.estado",
             "browser.inspecionar",
             "browser.acionar",
+            "browser.tela",
         }
         prompt = sistema_com_ferramentas("Você é o Jarvis.", catalogo)
         relatorio.conferir(
@@ -519,6 +523,35 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             and "formulário" in pediu[0].motivo
             and "Olá" in str(ficou.dados.get("texto")),
             f"{envio.status}: {pediu[0].motivo if pediu else 'NÃO PERGUNTOU'}",
+        )
+
+        tela = rodar("browser.tela", alvo)
+        imagem = tela.anexos[0] if tela.anexos else None
+        caixas = [e.get("caixa", []) for e in tela.dados.get("inspecao", {}).get("elementos", [])]
+        dentro_da_imagem = imagem is not None and all(
+            len(c) == 4 and -2 <= c[0] < imagem.largura and -2 <= c[1] < imagem.altura
+            for c in caixas
+        )
+        relatorio.conferir(
+            "browser.tela captura a aba e traz o mapa do mesmo instante, com as caixas na imagem",
+            tela.status == "ok"
+            and imagem is not None
+            and imagem.largura > 0
+            and imagem.altura > 0
+            and bool(caixas)
+            and dentro_da_imagem
+            and tela.dados.get("tela", {}).get("id") == imagem.id
+            and str(tela.dados.get("inspecao", {}).get("id", "")).endswith(
+                str(tela.dados.get("instantaneo"))
+            ),
+            {
+                "imagem": [imagem.tipo, imagem.largura, imagem.altura, len(imagem.dados)]
+                if imagem
+                else None,
+                "tela": tela.dados.get("tela"),
+                "caixas": caixas[:4],
+                "motivo": tela.motivo,
+            },
         )
 
         estado = rodar("browser.estado", {})

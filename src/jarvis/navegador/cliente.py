@@ -195,6 +195,10 @@ class ClienteDoNavegador:
         """O mapa da página (ADR-0032): elementos interativos com `ref`, e os scripts."""
         return self.chamar("page.map", tabId=tab_id)
 
+    def capturar(self, tab_id: int) -> dict[str, Any]:
+        """A tela da aba (`imagem`, URL de dados JPEG) e o mapa do mesmo instante (`mapa`)."""
+        return self.chamar("page.capture", tabId=tab_id)
+
     def inspecionar(
         self, tab_id: int, alvo: str | None = None, *, ref: str | None = None
     ) -> dict[str, Any]:

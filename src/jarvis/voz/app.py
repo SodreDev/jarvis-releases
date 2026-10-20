@@ -96,7 +96,13 @@ from jarvis.politica.pdp import Pdp
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
 from jarvis.s2.cerebro import Cerebro, Resposta
-from jarvis.s2.motor import INTERVALO_DE_CONSULTA_S, Mensagem, MotivoDoFim, MotorDeConversa
+from jarvis.s2.motor import (
+    INTERVALO_DE_CONSULTA_S,
+    Mensagem,
+    MotivoDoFim,
+    MotorDeConversa,
+    aceita_imagem,
+)
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.s2.portao import PortaoDeAcao
@@ -844,6 +850,8 @@ class Aplicativo:
             ),
             navegador=self._corpos_do_navegador(),
             estado_do_navegador=self.estado_do_navegador,
+            # A tela da aba só existe se o motor do chat de agora recebe imagem (ADR-0032).
+            motor_ve_imagem=lambda: aceita_imagem(self._motor),
             entrada=self._controle_de_entrada(),
             trilha=self.trilha,
         )

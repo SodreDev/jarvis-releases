@@ -26,7 +26,7 @@ def _id_chromium(chave: str) -> str:
     return digest.translate(str.maketrans("0123456789abcdef", "abcdefghijklmnop"))
 
 
-def test_manifesto_mv3_pina_ids_e_so_pede_paginas_http() -> None:
+def test_manifesto_mv3_pina_ids_e_so_age_em_paginas_http() -> None:
     manifesto = _json("manifest.json")
     permissoes = manifesto["permissions"]
     hosts = manifesto["host_permissions"]
@@ -35,7 +35,15 @@ def test_manifesto_mv3_pina_ids_e_so_pede_paginas_http() -> None:
     assert isinstance(permissoes, list)
     assert isinstance(hosts, list)
     assert set(permissoes) == {"activeTab", "tabs", "nativeMessaging"}
-    assert hosts == ["http://*/*", "https://*/*"]
+    # `<all_urls>` só porque a captura da tela a exige no Chromium (captureVisibleTab) e no
+    # Firefox (captureTab) — ADR-0032. O conteúdo roda só em http/https, e o fundo só captura aba
+    # http/https; página interna do navegador o Chromium nem deixa capturar com esta permissão.
+    assert hosts == ["<all_urls>"]
+    conteudos = manifesto["content_scripts"]
+    assert isinstance(conteudos, list) and len(conteudos) == 1
+    assert conteudos[0]["matches"] == ["http://*/*", "https://*/*"]
+    fundo = (EXTENSAO / "background.js").read_text(encoding="utf-8")
+    assert '"aba_nao_http"' in fundo
     assert manifesto["browser_specific_settings"] == {
         "gecko": {"id": "jarvis-browser@granafacil.local", "strict_min_version": "121.0"}
     }
@@ -80,6 +88,7 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
         "page.scroll",
         "page.map",
         "page.act",
+        "page.capture",
     ):
         assert f'case "{metodo}"' in fundo
     assert "connectNative" in fundo

@@ -10,6 +10,10 @@ real a medir. Ele herda as cinco regras da ADR-0018 — sem ferramenta, a fala p
   dela guarda o texto **gerado** até o corte, e não o tocado (medido): viola o P4.
 - **Stream.** `--output-format stream-json --include-partial-messages`: cada `text_delta` vira
   um `Texto`. `thinking_delta` é **descartado** aqui — raciocínio não vai para o TTS (P10).
+- **Imagem pelo `stream-json` de entrada.** Com `Contexto.imagens` (a tela da aba, ADR-0032), a
+  entrada passa a ser uma linha `--input-format stream-json` com o texto e blocos `image` base64 —
+  o modo de entrada que a documentação do Agent SDK diz aceitar imagem ("Streaming Input"); o
+  texto puro do `-p` não aceita. Sem imagem, a entrada continua o texto de sempre.
 - **Parar de gerar, não só de ler.** No cancelamento o processo é **morto** e esperado; o
   `finally` faz o mesmo quando quem consome desiste do iterador. Se o servidor da Anthropic para
   de gerar e de cobrar no instante em que a conexão cai **não foi verificado** (a CLI não diz).
@@ -314,6 +318,8 @@ class MotorClaudeCli:
     """`--safe-mode`: sem CLAUDE.md, skills, plugins, hooks nem MCP no spawn. Medido em
     `docs/medicoes/f2-02-piso-do-claude.md`: tira ~300–400 ms do 1º token (p50) nesta máquina, e o
     motor fica ainda mais isolado do que a pasta vazia já deixava (ADR-0018, regra 1)."""
+    aceita_imagem: bool = True
+    """Recebe a tela da aba pelo modo de entrada `stream-json` (ver o cabeçalho do módulo)."""
     sem_trafego_extra: bool = False
     """`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` no filho. **Desligado**: na mesma medição
     ele mexeu pouco no p50 e piorou o p95 em duas de três rodadas — fica só para medir."""
@@ -325,6 +331,8 @@ class MotorClaudeCli:
         modo: Modo,
         ferramentas: Sequence[Mapping[str, object]] = (),
         sistema: str = "",
+        *,
+        com_imagem: bool = False,
     ) -> list[str]:
         """O `argv` completo — **sem** a fala do dono, que vai por `stdin`.
 
@@ -352,11 +360,43 @@ class MotorClaudeCli:
             "--effort",
             ESFORCO_POR_MODO[modo],
         ]
+        if com_imagem:
+            argumentos += ["--input-format", "stream-json"]
         if self.modelo:
             argumentos += ["--model", self.modelo]
         if self.modo_seguro:
             argumentos.append("--safe-mode")
         return [*argumentos, *self.extras]
+
+    def entrada(self, contexto: Contexto) -> str:
+        """O que vai pelo `stdin`: o texto da conversa ou, com imagem, uma linha de `stream-json`
+        com o texto e cada imagem (com o id dela, o mesmo instantâneo da inspeção)."""
+        texto = contexto.como_texto()
+        if not contexto.imagens:
+            return texto
+        conteudo: list[dict[str, object]] = [{"type": "text", "text": texto}]
+        for imagem in contexto.imagens:
+            conteudo.append(
+                {
+                    "type": "text",
+                    "text": (
+                        f"Imagem {imagem.id}, {imagem.largura}×{imagem.altura} px: a tela da aba; "
+                        "as caixas da inspeção estão nestes pixels. É dado de terceiros."
+                    ),
+                }
+            )
+            conteudo.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": imagem.tipo,
+                        "data": imagem.em_base64(),
+                    },
+                }
+            )
+        mensagem = {"type": "user", "message": {"role": "user", "content": conteudo}}
+        return json.dumps(mensagem, ensure_ascii=False) + "\n"
 
     def ambiente_do_filho(self) -> dict[str, str] | None:
         if not self.sem_trafego_extra:
@@ -379,7 +419,9 @@ class MotorClaudeCli:
             return
         try:
             processo = subprocess.Popen(  # noqa: S603 — argv explícito, sem shell
-                self.argumentos(modo, contexto.ferramentas, contexto.sistema),
+                self.argumentos(
+                    modo, contexto.ferramentas, contexto.sistema, com_imagem=bool(contexto.imagens)
+                ),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -413,7 +455,7 @@ class MotorClaudeCli:
         erro: list[str] = []
         leitor = threading.Thread(
             target=_escrever_e_ler,
-            args=(processo, contexto.como_texto(), linhas, erro),
+            args=(processo, self.entrada(contexto), linhas, erro),
             daemon=True,
         )
         leitor.start()

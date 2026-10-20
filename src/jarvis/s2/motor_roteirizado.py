@@ -55,6 +55,8 @@ class MotorRoteirizado:
     caracteres_por_delta: int = 4
     nome: str = "roteirizado (teste)"
     onde: Onde = Onde.LOCAL
+    aceita_imagem: bool = False
+    """O teste da tela liga: o motor passa a receber `Contexto.imagens` (ADR-0032)."""
     pedidos: list[Contexto] = field(default_factory=list)
     """Cada contexto recebido — é como o teste prova que o motor não guarda estado."""
     _dormir: Callable[[float], None] = field(default=time.sleep, repr=False)

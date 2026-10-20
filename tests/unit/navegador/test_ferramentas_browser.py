@@ -15,13 +15,19 @@ from typing import Any
 import pytest
 
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas, ResultadoDeFerramenta
+from jarvis.imagem import CHAVE_DOS_ANEXOS
 from jarvis.navegador.cliente import ClienteDoNavegador, NavegadorIndisponivel
+from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.navegador.ferramentas import CorposDoNavegador
 from jarvis.navegador.protocolo import PedidoDaPonte
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo
 from jarvis.politica.pdp import Pdp
+from jarvis.s2.cerebro import Cerebro
+from jarvis.s2.motor import Contexto, PedidoDeTool, aceita_imagem
+from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
+from tests.imagens import png, url_de_dados
 
 NUNCA = lambda: False  # noqa: E731
 
@@ -45,6 +51,9 @@ class PaginaFalsa:
         self.mapa: list[dict[str, Any]] = []
         """Os elementos que `page.map` devolve, cada um com a sua `ref` (ADR-0032)."""
         self.scripts: list[dict[str, Any]] = []
+        self.dpr = 1
+        self.captura = url_de_dados(png(1280, 720))
+        """O que `page.capture` devolve: a tela da aba como a extensão a entrega (ADR-0032)."""
         self.chamadas: list[tuple[str, dict[str, Any]]] = []
         self.fora_do_ar = False
 
@@ -65,6 +74,19 @@ class PaginaFalsa:
             "sensivel": False,
         }
         self.mapa.append(base | dados)
+
+    def _mapa(self) -> dict[str, Any]:
+        return {
+            "instantaneo": "ab1",
+            "url": self.abas[0]["url"],
+            "titulo": "Loja",
+            "dpr": self.dpr,
+            "viewport": [1280, 720],
+            "rolagem": [0, 0],
+            "total": len(self.mapa),
+            "elementos": self.mapa,
+            "scripts": self.scripts,
+        }
 
     def _do_alvo(self, p: dict[str, Any]) -> dict[str, Any] | None:
         if "ref" in p:
@@ -87,18 +109,9 @@ class PaginaFalsa:
                 pagina = {"url": self.abas[0]["url"], "titulo": "Loja", "textoVisivel": self.texto}
                 return ok | {"result": pagina | {"links": self.links, "datas": []}}
             case "page.map":
-                mapa = {
-                    "instantaneo": "ab1",
-                    "url": self.abas[0]["url"],
-                    "titulo": "Loja",
-                    "dpr": 2,
-                    "viewport": [1280, 720],
-                    "rolagem": [0, 0],
-                    "total": len(self.mapa),
-                    "elementos": self.mapa,
-                    "scripts": self.scripts,
-                }
-                return ok | {"result": mapa}
+                return ok | {"result": self._mapa()}
+            case "page.capture":
+                return ok | {"result": {"imagem": self.captura, "mapa": self._mapa()}}
             case "page.inspect" | "page.click" | "page.type" | "page.act":
                 dados = self._do_alvo(p)
                 if dados is None:
@@ -691,3 +704,98 @@ def test_o_mapa_filtra_por_tipo_e_texto_e_so_traz_scripts_quando_pedidos(
     assert {"dpr", "viewport", "rolagem", "instantaneo"} <= set(painel.dados)
     assert executor.objetivo is not None
     assert "canal.example" in executor.objetivo.alcancados  # o link do mapa é caminho do objetivo
+
+
+# --- a tela da aba (ADR-0032, emenda) ------------------------------------------------------------
+def test_a_tela_vem_como_anexo_e_os_tres_artefatos_ligados_pelo_instantaneo(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.motor_ve_imagem = lambda: True
+    pagina.no_mapa("ab1.1", "Pesquisar", **BUSCA_DO_YOUTUBE)
+    pagina.no_mapa("ab1.2", "Painel", papel="link", tag="a", scripts=["s1"])
+    pagina.no_mapa("ab1.3", "Rodapé", naTela=False)
+    pagina.scripts = [{"id": "s1", "src": "", "tamanho": 50, "resumo": "", "define": ["abrir"]}]
+
+    tela, perguntas = _rodar(executor, "browser.tela", {})
+
+    assert tela.status == "ok" and perguntas == []
+    (imagem,) = tela.anexos
+    assert (imagem.id, imagem.tipo, imagem.largura, imagem.altura) == (
+        "tela:ab1",
+        "image/png",
+        1280,
+        720,
+    )
+    dados = tela.dados
+    assert (dados["tela"]["id"], dados["inspecao"]["id"], dados["scripts"]["id"]) == (
+        "tela:ab1",
+        "inspecao:ab1",
+        "scripts:ab1",
+    )
+    assert dados["tela"]["proporcao"] == round(1280 / 720, 3)
+    assert [e["ref"] for e in dados["inspecao"]["elementos"]] == ["ab1.1", "ab1.2"]  # só à vista
+    assert dados["scripts"] == {"id": "scripts:ab1", "total": 1, "ligados": ["s1"]}
+    texto = tela.para_o_modelo()
+    assert CHAVE_DOS_ANEXOS not in dados
+    assert "iVBOR" not in texto and "base64" not in texto and len(texto) < 6000
+    assert executor.contaminado, "a tela é conteúdo de terceiros, como a leitura"
+    assert all("iVBOR" not in str(linha["resultado"]) for linha in _auditoria(executor))
+
+
+def test_a_caixa_acompanha_a_escala_da_captura(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.motor_ve_imagem = lambda: True
+    pagina.dpr = 2  # o mapa mede CSS × 2 (2560 px de largura); a captura veio com 1280
+    pagina.no_mapa("ab1.1", "Botão", caixa=[100, 200, 50, 40])
+    tela, _ = _rodar(executor, "browser.tela", {})
+    assert tela.dados["inspecao"]["elementos"][0]["caixa"] == [50, 100, 25, 20]
+
+
+def test_sem_motor_que_ve_imagem_a_tela_fica_desligada_e_diz_o_porque(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.estado_do_navegador = lambda: EstadoDaPonte(True, "chromium", ("chromium",), ())
+    catalogo = {t["id"]: t for t in executor.catalogo_para_o_modelo()}
+    assert "browser.tela" not in catalogo
+    assert "não recebe imagem" in str(catalogo["browser.estado"]["descricao"])
+    negado, _ = _rodar(executor, "browser.tela", {})
+    assert negado.status == "negado" and "não recebe imagem" in negado.motivo
+    assert "page.capture" not in pagina.metodos()
+
+
+def test_a_tela_de_um_banco_pede_o_sim(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.motor_ve_imagem = lambda: True
+    pagina.abas[0]["url"] = "https://app.nubank.com.br/"
+    negado, perguntas = _rodar(executor, "browser.tela", {}, sim=False)
+    assert negado.status == "negado" and "banco" in perguntas[0].motivo
+    assert "page.capture" not in pagina.metodos()
+
+
+def test_a_tela_vai_so_ao_motor_que_aceita_imagem_e_morre_com_o_turno(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    pagina.no_mapa("ab1.1", "Pesquisar", **BUSCA_DO_YOUTUBE)
+
+    def roteiro(contexto: Contexto) -> list[Parte]:
+        if contexto.turno == "e agora?":
+            return ["Nada novo."]
+        if any(m.papel == "ferramenta" for m in contexto.mensagens):
+            return ["Vejo a busca no topo."]
+        return [PedidoDeTool("browser.tela", {})]
+
+    motor = MotorRoteirizado(resposta=roteiro, aceita_imagem=True)
+    executor.motor_ve_imagem = lambda: aceita_imagem(motor)
+    cerebro = Cerebro(motor=motor, ferramentas=executor)
+
+    primeira = cerebro.responder("o que tem na tela?", epoch=0, publicar=lambda _: None)
+    cerebro.ouvido(primeira.response_id, "Vejo a busca no topo.", interrompida=False)
+    cerebro.responder("e agora?", epoch=1, publicar=lambda _: None)
+
+    assert [r.status for r in primeira.ferramentas] == ["ok"]
+    assert motor.pedidos[0].imagens == ()
+    assert [i.id for i in motor.pedidos[1].imagens] == ["tela:ab1"]
+    assert motor.pedidos[2].imagens == (), "a tela é do turno: o pedido seguinte não a leva"
+    assert all(isinstance(m.texto, str) for m in cerebro.conversa.turnos)

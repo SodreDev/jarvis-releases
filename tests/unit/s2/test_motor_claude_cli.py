@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -13,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from jarvis.imagem import Imagem
 from jarvis.s2.cerebro import Cerebro
 from jarvis.s2.motor import (
     PRAZO_DE_CANCELAMENTO_S,
@@ -80,6 +82,36 @@ def test_a_fala_do_dono_vai_por_stdin_e_nunca_no_argv(pasta_vazia: Path, tmp_pat
     assert FALA_DO_DONO not in " ".join(recebido["argv"])
     assert FALA_DO_DONO in recebido["stdin"]
     assert "Oi, tudo [interrompido pelo dono aqui]" in recebido["stdin"]
+
+
+def test_com_imagem_a_entrada_vira_stream_json_com_o_texto_e_a_imagem(
+    pasta_vazia: Path, tmp_path: Path
+) -> None:
+    """A tela da aba (ADR-0032): o `-p` de texto não aceita imagem; o modo de entrada `stream-json`
+    aceita blocos `image` base64 (Agent SDK, "Streaming Input"). Sem imagem, nada muda."""
+    registro = tmp_path / "registro.jsonl"
+    motor = _motor(pasta_vazia, registro, deltas=["Vejo a página."])
+    imagem = Imagem("tela:ab1", "image/png", b"\x89PNG-bytes", 1280, 720)
+    contexto = Contexto(sistema="s", mensagens=_contexto().mensagens, imagens=(imagem,))
+
+    list(motor.gerar(contexto, Modo.RAPIDO, nunca_cancelado))
+
+    recebido = _registro(registro)[0]
+    argv = recebido["argv"]
+    assert argv[argv.index("--input-format") + 1] == "stream-json"
+    mensagem = json.loads(recebido["stdin"])
+    assert mensagem["type"] == "user" and mensagem["message"]["role"] == "user"
+    blocos = mensagem["message"]["content"]
+    assert blocos[0]["type"] == "text" and FALA_DO_DONO in blocos[0]["text"]
+    assert "tela:ab1" in blocos[1]["text"] and "1280×720" in blocos[1]["text"]
+    assert blocos[2]["type"] == "image"
+    assert blocos[2]["source"]["media_type"] == "image/png"
+    assert base64.b64decode(blocos[2]["source"]["data"]) == b"\x89PNG-bytes"
+    assert FALA_DO_DONO not in " ".join(argv)
+
+    sem = MotorClaudeCli(pasta_de_trabalho=pasta_vazia)
+    assert "--input-format" not in sem.argumentos(Modo.RAPIDO)
+    assert sem.entrada(_contexto()) == _contexto().como_texto()
 
 
 def test_sem_ferramenta_sem_sessao_e_com_o_esforco_do_modo(pasta_vazia: Path) -> None:

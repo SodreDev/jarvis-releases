@@ -38,7 +38,7 @@ class PortaFalsa {
 
 const ABA = { id: 7, windowId: 1, active: true, url: "https://exemplo.org/", title: "Exemplo" };
 
-function carregar(responderPagina) {
+function carregar(responderPagina, extraDasAbas = {}, aba = ABA) {
   const portas = [];
   const enviadas = [];
   const contexto = vm.createContext({
@@ -57,8 +57,9 @@ function carregar(responderPagina) {
         },
       },
       tabs: {
-        query: async () => [ABA],
-        get: async () => ABA,
+        ...extraDasAbas,
+        query: async () => [aba],
+        get: async () => aba,
         sendMessage: async (tabId, mensagem) => {
           enviadas.push({ tabId, mensagem });
           return responderPagina(mensagem);
@@ -136,6 +137,73 @@ test("page.map e page.act chegam ao conteúdo como mapear e acionar, com a refer
     acao: "tecla",
     tecla: "Enter",
   });
+});
+
+test("page.capture: a captura da aba visível e o mapa do mesmo instante", async () => {
+  const capturas = [];
+  const cenario = carregar(
+    (mensagem) => ({ ok: true, result: { comando: mensagem.comando, instantaneo: "ab1" } }),
+    {
+      captureVisibleTab: async (janela, opcoes) => {
+        capturas.push({ janela, formato: opcoes.format });
+        return "data:image/jpeg;base64,AAAA";
+      },
+    },
+  );
+  const resposta = await pedir(cenario, { id: "j1-7", method: "page.capture", params: { tabId: 7 } });
+  assert.equal(resposta.ok, true);
+  assert.equal(resposta.result.imagem, "data:image/jpeg;base64,AAAA");
+  assert.deepEqual(resposta.result.mapa, { comando: "mapear", instantaneo: "ab1" });
+  assert.deepEqual(JSON.parse(JSON.stringify(capturas)), [{ janela: 1, formato: "jpeg" }]);
+});
+
+test("page.capture no Chromium recusa a aba escondida atrás de outra, sem trocar o foco", async () => {
+  const escondida = { ...ABA, active: false };
+  const cenario = carregar(() => ({ ok: true, result: {} }), {
+    captureVisibleTab: async () => {
+      throw new Error("não devia capturar outra aba");
+    },
+  }, escondida);
+  const resposta = await pedir(cenario, { id: "j1-8", method: "page.capture", params: { tabId: 7 } });
+  assert.equal(resposta.ok, false);
+  assert.equal(resposta.error.codigo, "aba_escondida");
+});
+
+test("page.capture no Firefox usa captureTab, que pega a aba mesmo escondida", async () => {
+  const escondida = { ...ABA, active: false };
+  const pedidas = [];
+  const cenario = carregar(() => ({ ok: true, result: { instantaneo: "ab1" } }), {
+    captureTab: async (tabId) => {
+      pedidas.push(tabId);
+      return "data:image/jpeg;base64,BBBB";
+    },
+  }, escondida);
+  const resposta = await pedir(cenario, { id: "j1-9", method: "page.capture", params: { tabId: 7 } });
+  assert.equal(resposta.ok, true);
+  assert.equal(resposta.result.imagem, "data:image/jpeg;base64,BBBB");
+  assert.deepEqual(pedidas, [7]);
+});
+
+test("page.capture só captura página http ou https", async () => {
+  const interna = { ...ABA, url: "chrome://settings/" };
+  const cenario = carregar(() => ({ ok: true, result: {} }), {
+    captureVisibleTab: async () => "data:image/jpeg;base64,AAAA",
+  }, interna);
+  const resposta = await pedir(cenario, { id: "j1-10", method: "page.capture", params: { tabId: 7 } });
+  assert.equal(resposta.ok, false);
+  assert.equal(resposta.error.codigo, "aba_nao_http");
+});
+
+test("erro do próprio navegador na captura chega com a mensagem dele", async () => {
+  const cenario = carregar(() => ({ ok: true, result: {} }), {
+    captureVisibleTab: async () => {
+      throw new Error("Either the '<all_urls>' or 'activeTab' permission is required.");
+    },
+  });
+  const resposta = await pedir(cenario, { id: "j1-11", method: "page.capture", params: { tabId: 7 } });
+  assert.equal(resposta.ok, false);
+  assert.equal(resposta.error.codigo, "captura_negada");
+  assert.match(resposta.error.mensagem, /all_urls/);
 });
 
 test("erro do conteúdo vira erro da ponte com o código dele", async () => {
