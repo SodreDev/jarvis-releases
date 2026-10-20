@@ -32,6 +32,7 @@ from jarvis.s2.portao import (
     PortaoDeAcao,
     RespostaDoDono,
     cobre_literalmente,
+    dominio_registravel,
     resposta_literal,
 )
 from jarvis.tarefas.gestor import EstadoDaTarefa, GestorDeTarefas, Tarefa
@@ -322,6 +323,49 @@ def test_cobre_literalmente() -> None:
     assert cobre_literalmente({"nome": "Brave"}, "abre o brave")
     assert not cobre_literalmente({"nome": "Brave"}, "abre o braveiro")
     assert not cobre_literalmente({"texto": "um rascunho longo"}, "escreve algo")
+
+
+@pytest.mark.parametrize(
+    ("url", "fala", "cobre"),
+    [
+        ("https://youtube.evil.com/watch", "abre o youtube", False),  # o achado da revisão
+        ("https://youtube.com.evil.com/", "abre o youtube.com", False),
+        ("https://evilyoutube.com/", "abre o youtube", False),
+        ("https://youtube.evil.com.br/", "abre o youtube", False),
+        ("https://www.youtube.com/watch?v=1", "abre o youtube", True),
+        ("https://m.youtube.com/", "abre o youtube", True),  # subdomínio legítimo
+        ("https://youtube.com.br/", "abre o youtube", True),
+        ("https://www.bbc.co.uk/news", "abre a bbc", True),
+        ("https://www.youtube.com/", "Abra o YouTube.", True),  # ponto final do ASR
+        ("https://youtube.com/", "abre youtube.com", True),
+        ("http://127.0.0.1:8080/", "abre o 127", False),  # IP não tem nome de site
+        ("http://intranet/", "abre a intranet", False),  # rótulo único também não
+    ],
+)
+def test_url_cobre_so_o_dominio_do_site_dito_ou_subdominio_dele(
+    url: str, fala: str, cobre: bool
+) -> None:
+    assert cobre_literalmente({"url": url}, fala) is cobre
+
+
+def test_dominio_registravel() -> None:
+    assert dominio_registravel("www.youtube.com") == "youtube.com"
+    assert dominio_registravel("m.youtube.com.br") == "youtube.com.br"
+    assert dominio_registravel("youtube.evil.com") == "evil.com"
+    assert dominio_registravel("news.bbc.co.uk.") == "bbc.co.uk"
+    assert dominio_registravel("192.168.0.1") == ""
+    assert dominio_registravel("localhost") == ""
+
+
+def test_autorizacao_explicita_nao_vale_para_dominio_que_so_comeca_com_o_nome() -> None:
+    autorizacoes = AutorizacoesExplicitas()
+    autorizacoes.novo_turno("abre o youtube")
+    assert not autorizacoes.consumir(
+        "sites.open", {"url": "https://youtube.evil.com/"}, p_explicito=0.99, limiar=0.8
+    )
+    assert autorizacoes.consumir(
+        "sites.open", {"url": "https://www.youtube.com/"}, p_explicito=0.99, limiar=0.8
+    )
 
 
 # --- o "sim" falado: só a pendência exata, válida, uma vez --------------------------------------

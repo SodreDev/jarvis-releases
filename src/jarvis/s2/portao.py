@@ -298,13 +298,33 @@ class AutorizacoesExplicitas:
         return True
 
 
+SEGUNDO_NIVEL: Final = frozenset(
+    {"com", "net", "org", "gov", "edu", "co", "ac", "mil", "gob", "nom"}
+)
+"""Sob um domínio de país de 2 letras, estes rótulos são parte do sufixo (`com.br`, `co.uk`,
+`gov.br`): o nome do site é o rótulo antes deles."""
+
+
+def dominio_registravel(host: str) -> str:
+    """`www.youtube.com` → `youtube.com`; `m.youtube.com.br` → `youtube.com.br`;
+    `youtube.evil.com` → `evil.com`. Aproximação sem a lista pública de sufixos (TLD e, sob TLD de
+    país, um segundo nível comum). Host de rótulo único ou IP não tem nome de site: vazio."""
+    rotulos = [r for r in host.lower().rstrip(".").split(".") if r]
+    if len(rotulos) < 2 or all(r.isdigit() for r in rotulos):
+        return ""
+    sufixo = 2 if len(rotulos[-1]) == 2 and rotulos[-2] in SEGUNDO_NIVEL else 1
+    return ".".join(rotulos[-(sufixo + 1) :]) if len(rotulos) > sufixo else ""
+
+
 def cobre_literalmente(argumentos: Mapping[str, Any], fala: str) -> bool:
     """Cada valor dos argumentos aparece na fala do dono (sem acento, sem caixa).
 
-    URL conta pelo nome do site ("youtube" em `https://www.youtube.com/...`). Valor que não está
-    na fala — texto longo, caminho deduzido, número que o dono não disse — derruba a autorização:
-    aí o portão pergunta."""
-    alvo = f" {' '.join(re.sub(r'[^\w\s.]', ' ', normalizar(fala)).split())} "
+    URL conta pelo **domínio registrável** do host: o dono diz o nome do site ("youtube") ou o
+    domínio ("youtube.com"), e o host tem de ser esse domínio ou um subdomínio dele (sufixo com
+    ponto). Antes contava o primeiro rótulo, e `youtube.evil.com` passava por "youtube" (revisão
+    de bf9102c). Valor que não está na fala — texto longo, caminho deduzido, número que o dono não
+    disse — derruba a autorização: aí o portão pergunta."""
+    alvo = f" {' '.join(_termos(fala))} "
     for valor in _valores(argumentos):
         if isinstance(valor, bool):
             continue
@@ -313,12 +333,23 @@ def cobre_literalmente(argumentos: Mapping[str, Any], fala: str) -> bool:
             continue
         partes = urlsplit(texto)
         if partes.scheme in ("http", "https") and partes.hostname:
-            host = partes.hostname.removeprefix("www.")
-            texto = host.split(".")[0]
-        termo = " ".join(re.sub(r"[^\w\s.]", " ", normalizar(texto)).split())
+            registravel = dominio_registravel(partes.hostname)
+            nome = registravel.split(".")[0]
+            if not registravel or (f" {registravel} " not in alvo and f" {nome} " not in alvo):
+                return False
+            continue
+        termo = " ".join(_termos(texto))
         if not termo or f" {termo} " not in alvo:
             return False
     return True
+
+
+def _termos(texto: str) -> list[str]:
+    """Palavras sem acento nem caixa; o ponto fica só por dentro (`youtube.com`): o do fim da
+    frase ("Abra o YouTube.", como o ASR escreve) não pode impedir o nome de casar."""
+    return [
+        t.strip(".") for t in re.sub(r"[^\w\s.]", " ", normalizar(texto)).split() if t.strip(".")
+    ]
 
 
 def _valores(argumentos: Mapping[str, Any]) -> list[Any]:
