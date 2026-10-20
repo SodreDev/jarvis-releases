@@ -206,3 +206,22 @@ O trabalho que o dono não precisa ver vai numa janela própria do Jarvis, criad
 navegador tomar o foco, o fundo o devolve à janela do dono. `tabs.navigate` não traz mais a aba
 para a frente.
 
+## Emenda de 2026-10-20 — o que o código tem hoje (conferência do Lote C)
+
+A aceitação de 2026-10-18 (Histórico de decisão) trocou o caminho da proposta, e três itens da
+"Decisão proposta" ficaram assim no código — esta emenda é a que vale onde eles divergem:
+
+- **Os nomes (item 1).** `browser.read_page` é `browser.read`; `browser.screenshot` é
+  `browser.tela` (ADR-0032); vieram também `browser.tabs`, `browser.estado`, `browser.launch`,
+  `browser.inspecionar` e `browser.acionar` (ADR-0032), e a interna `browser.acao_sensivel` (o
+  "sim" por ação sensível, que o modelo não vê). O `alvo` é o texto visível do elemento ou o `ref`
+  do mapa da página (ADR-0032), nunca seletor CSS nem coordenada inventada.
+- **Sem CDP (item 3).** A extensão não pede a permissão `debugger` (o manifesto tem `activeTab`,
+  `tabs`, `nativeMessaging` e `<all_urls>`, este só pela captura da ADR-0032): ler, clicar e digitar
+  são ações no DOM pelo script de conteúdo, que a aceitação equiparou ao clique. Onde o site proíbe
+  automação, o mouse e o teclado são os virtuais do sistema (emenda de 2026-10-18).
+- **O indicador (item 4) não foi feito:** não há faixa na página nem ícone em estado "no controle".
+  O que o dono vê é a janela do Jarvis (o andamento do turno e cada pedido de "sim" das ações
+  sensíveis) e, desde a ADR-0036, a janela própria do Jarvis no navegador. O parar é o do Jarvis:
+  interromper cancela o turno (e a ação dele no navegador), e o interruptor da entrada virtual solta
+  o mouse e o teclado. Se a faixa volta é decisão do dono.

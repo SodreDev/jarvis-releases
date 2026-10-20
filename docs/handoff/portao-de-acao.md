@@ -18,9 +18,13 @@
 
 ```text
 motor propõe PedidoDeTool
-  → ExecutorDeFerramentas.avaliar      catálogo, contrato, PDP: allow | confirm | deny
+  → ExecutorDeFerramentas.avaliar      método do turno (ADR-0035): fora dele → negado com o
+                                        caminho certo (só no turno; a tarefa não segue o método)
+                                        catálogo, contrato, PDP: allow | confirm | deny
       deny ─────────────────────────→ negado (o Jev nem é consultado)
-  → PortaoDeAcao.classificar (Jev)     pedido do dono + últimas falas + situação
+  → PortaoDeAcao.classificar (Jev)     pedido do dono + últimas falas + situação + objetivo
+                                        (critério de pronto, fase, passos; na nuvem sem o texto
+                                        do pedido de novo — ADR-0030, emenda C2)
       nao_fazer ────────────────────→ negado; grant solto; auditoria "portão contextual: …"
       pedir_permissao + allow + AutorizacoesExplicitas.consumir → vira fazer
       fazer + allow ────────────────→ ExecutorDeFerramentas.concluir (roda no turno)
