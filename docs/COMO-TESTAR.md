@@ -474,7 +474,7 @@ voz, com o ASR local. Não verificado com a sua voz.
 
 ### 0.7 Controlar o navegador e usar mouse/teclado virtuais (ADR-0027, 2026-10-18)
 
-Duas peças, **ambas desligadas por padrão** e ligadas só por você no `jarvis-voz.toml`:
+Duas peças, **ambas desligadas por padrão** e ligadas só por você:
 
 ```toml
 navegador_controlado = true   # o Jarvis lê e age nas abas pela extensão (browser.*)
@@ -482,8 +482,30 @@ entrada_virtual = true        # mouse e teclado virtuais pelo portal do sistema 
 entrada_uinput = false        # reserva SEM diálogo, pelo kernel: deixe false se não precisar (§0.7.5)
 ```
 
-Sem a chave, as tools **nem aparecem** para o modelo. Ligar não instala nada: a extensão e o host
-nativo vêm no release (§2.4), mas **você** os carrega no navegador.
+Desligada, as `browser.*` não existem para o modelo — mas a **`browser.estado`** existe sempre:
+pergunte «a extensão do navegador está conectada?» e ele diz a verdade (desligado / sem conexão /
+conectado, e o que falta), em vez de negar que tem extensão. Ligar não instala nada: o host nativo
+e a extensão se instalam uma vez (§0.7.0 ou §0.7.1).
+
+#### 0.7.0 Passo a passo no repositório clonado (sem release) — 2026-10-19
+
+1. No repositório: `uv run jarvis-native-host --instalar`. Ele grava o stub
+   `~/.local/share/jarvis/bin/jarvis-native-host` (lança o host **deste código** pelo `.venv`), os
+   manifestos do host no Firefox, Chrome, Chromium, **Brave**, Edge e Vivaldi do seu usuário, copia a
+   extensão para `~/.local/share/jarvis/extensao` e imprime os próximos passos.
+2. Brave/Chrome/Chromium: `brave://extensions` (ou `chrome://extensions`) → «Modo do
+   desenvolvedor» → «Carregar sem compactação» → `~/.local/share/jarvis/extensao`. **Se ela já
+   estava carregada, clique em «Recarregar» (↻) no cartão dela** — o navegador só procura o host
+   de novo quando a extensão reinicia. Firefox: `about:debugging#/runtime/this-firefox` →
+   «Carregar extensão temporária…» → `~/.local/share/jarvis/extensao/manifest.json` (some ao fechar).
+3. Recarregue (F5) as abas que já estavam abertas antes: o navegador não injeta a extensão nelas.
+4. Na janela do Jarvis: Acesso → Navegadores → «deixar o Jarvis controlar as abas». Vale já no
+   próximo pedido, sem reiniciar; a frase embaixo diz se a extensão está conectada.
+5. Confira: `uv run jarvis-voz --diagnostico` (seção «navegador») ou pergunte ao Jarvis.
+
+Mudou a extensão no repositório (um `git pull`)? Rode o passo 1 de novo e clique em «Recarregar».
+Navegador em **Flatpak** não funciona: o Native Messaging não lança o host fora da caixa de areia —
+use o navegador do pacote do sistema (rpm/deb).
 
 #### 0.7.1 Instalar o host nativo e a extensão
 
@@ -509,7 +531,8 @@ e para a
 | Como instalou | O manifesto do host | A extensão para carregar |
 |---|---|---|
 | `.deb` / `.rpm` | já instalado em `/etc/opt/chrome/…`, `/etc/chromium/…`, `/usr/lib/mozilla/…` (e `/usr/lib64/mozilla/…` no rpm), apontando para `/usr/bin/jarvis-native-host` | `/usr/share/jarvis/extensao` |
-| AppImage | `./Jarvis-0.0.0-x86_64.AppImage --native-host --instalar` grava um stub em `~/.local/share/jarvis/bin/` e os manifestos em `~/.mozilla/…`, `~/.config/google-chrome/…`, `~/.config/chromium/…` | `~/.local/share/jarvis/extensao` (o comando copia e diz o caminho) |
+| AppImage | `./Jarvis-0.0.0-x86_64.AppImage --native-host --instalar` grava um stub em `~/.local/share/jarvis/bin/` e os manifestos em `~/.mozilla/…`, `~/.config/google-chrome/…`, `~/.config/chromium/…`, `~/.config/BraveSoftware/Brave-Browser/…`, `~/.config/microsoft-edge/…`, `~/.config/vivaldi/…` | `~/.local/share/jarvis/extensao` (o comando copia e diz o caminho) |
+| repositório clonado | `uv run jarvis-native-host --instalar` (§0.7.0): as mesmas pastas, e o stub lança o host do repositório pelo `.venv` | `~/.local/share/jarvis/extensao` (copiada de `extensao/`) |
 
 O AppImage precisa de FUSE para ser lançado pelo navegador (o ponto de montagem não é um caminho
 fixo; por isso o stub chama o próprio AppImage no modo `--native-host`). Num `.deb`/`.rpm` também
@@ -628,14 +651,22 @@ Prefira o portal; use o `uinput` só onde o portal não existe.
 
 #### 0.7.6 O que **não** foi verificado ao vivo
 
-Tudo acima foi provado com fakes — **o seu desktop fecha esta conta**:
+**Navegador de verdade, em contêiner (2026-10-19):** `uv run --frozen python -m
+tools.harness_navegador` sobe Chromium 155 e Firefox 158 headless (Fedora 44, podman sem rede, HOME
+descartável, repositório só leitura) e prova, nos dois: `jarvis-native-host --instalar` no modo
+repositório; o navegador lança o host pelo manifesto; o modelo enxerga as `browser.*` no prompt;
+`browser.tabs`, `browser.read` (texto da página), clique comum sem pergunta, **envio de formulário
+com rótulo neutro pedindo o sim** (e o «não» impedindo), digitar na busca, recusa da senha,
+`browser.estado` = conectado, host derrubado que **volta sozinho** pela reconexão, e o mesmo host
+respondendo depois de 40 s ocioso. Esse roteiro achou dois defeitos que os fakes escondiam: a
+extensão aninhava a resposta da página (o Jarvis lia texto vazio e o risco do clique ficava cego) e
+o Firefox recusava instalá-la (faltava `background.scripts`).
 
-- **navegador real:** a extensão nunca foi carregada num Firefox ou Chromium de verdade por este
-  código; o host foi provado com `pipes` e um socket numa pasta temporária. A extensão tem
-  checagem estática (`node --check`) e a reconexão foi exercitada com `Port`, relógio e timers
-  falsos, inclusive porta/timer únicos, backoff, teto e recuperação. Ainda não se verificou como o
-  Chrome/Firefox real se comporta com o service worker dormindo, se `connectNative` sobe o host no
-  perfil do dono nem se o socket reaparece depois de uma queda real;
+O resto continua sem prova — **o seu desktop fecha esta conta**:
+
+- **o seu navegador:** o Brave do seu perfil (e o «Recarregar» da extensão que já está lá) não foi
+  tocado por teste nenhum; Flatpak não funciona (§0.7.0). A chave da janela foi provada na tela
+  offscreen com um estado falso, não com a extensão conectada de verdade;
 - **portal real:** o `RemoteDesktop` foi falado contra um portal **falso** num `dbus-daemon`
   privado. O diálogo do Plasma, a revogação e o teclado de verdade nunca foram exercitados; não se
   sabe como o KWin trata maiúscula e acentuada por *keysym*;
@@ -936,9 +967,10 @@ sudo dnf remove jarvis
 4. **WER do ASR em pt-BR**, local ou na Groq: nenhum model card publica, e ninguém mediu aqui;
 5. **ferramentas com o `claude -p` de verdade, e abrir site de verdade** (ver o fim da seção
    0.1; abrir **app** de verdade foi feito com o KCalc, seção 0.0d);
-6. **o navegador controlado e a entrada virtual de verdade** (§0.7.6): extensão carregada num
-   Firefox/Chromium real, diálogo do portal `RemoteDesktop` do Plasma, `uinput` e `kdotool` reais,
-   e os pacotes **instalados** (foram gerados e inspecionados, não instalados);
+6. **o navegador controlado e a entrada virtual de verdade** (§0.7.6): a extensão no **seu**
+   navegador (em contêiner ela já rodou num Chromium e num Firefox reais), diálogo do portal
+   `RemoteDesktop` do Plasma, `uinput` e `kdotool` reais, e os pacotes **instalados** (foram gerados
+   e inspecionados, não instalados);
 7. **chamada real à nuvem.** Toda a suíte fala com um servidor falso em porta efêmera; sob
    `CI=1` o código **recusa** falar com serviço de verdade. Uma chamada real à Groq (ASR, turbo)
    foi feita em 2026-10-17 com áudio sintético e funcionou; **ElevenLabs e Edge** e o

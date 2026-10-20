@@ -202,6 +202,44 @@ Não houve push, coautoria ou alteração fora dos arquivos dos dois commits.
 - Não houve ensaio em navegador real nem geração de artefato nesta correção. O próximo teste do dono
   precisa de um AppImage novo, gerado em diretório novo; não reutilizar o artefato anterior.
 
+## Ponte de ponta a ponta — por que o Jarvis negava a extensão (2026-10-19)
+
+Sintoma do dono (`uv run jarvis`): perguntado sobre a extensão, o Jarvis dizia não ter `browser.*`.
+Cinco causas, todas reproduzidas (as duas da extensão num Chromium 155 e num Firefox 158 reais):
+
+1. `navegador_controlado = false` no `jarvis-voz.toml` do dono → `_corpos_do_navegador` devolve
+   `None` → `_ligada` tira as `browser.*` do catálogo C0 → o prompt não as lista → o modelo nega.
+   Não havia chave na janela. Agora: Acesso → Navegadores → «deixar o Jarvis controlar as abas»
+   (`PonteDeAcesso.definirNavegadorControlado`, grava e chama `atualizar_acesso`), e a tool livre
+   `browser.estado` existe **sempre** (`jarvis.navegador.estado`): desligado / sem_conexao /
+   conectado, e o que fazer, sem falar com a extensão (conecta no socket e solta).
+2. O principal do dono é o Brave (rpm). O instalador gravava só Firefox, Chrome e Chromium; nos
+   derivados do Chromium o manifesto do usuário mora em `<pasta de dados>/NativeMessagingHosts`
+   (conferido: o headless usa `~/.config/chromium-headless/scoped_dir*`). Agora: Brave, Edge e
+   Vivaldi também. Firefox e Chromium do dono são Flatpak: não há Native Messaging lá.
+3. Repositório sem release não tinha comando: `jarvis-native-host` não era script do projeto.
+   Agora `uv run jarvis-native-host --instalar` faz o mesmo que o AppImage, com o stub chamando
+   `.venv/bin/python -I -m jarvis.navegador.host`. A extensão carregada no Brave do dono era a cópia
+   do AppImage de 18/10 (antes da reconexão): o `--instalar` refaz a cópia; o dono clica «Recarregar».
+4. `background.js` repassava a resposta do conteúdo sem desembrulhar: o host recebia
+   `{ok, result: {ok, result}}`. `browser.read` via texto vazio, `browser.type` dizia «não é campo»
+   sempre, e o risco do clique ficava cego (sem `enviaFormulario`): **botão de envio era clicado
+   sem pedir o sim**. Teste: `background_respostas.test.mjs` (4 de 5 falham no `background.js`
+   antigo).
+5. `manifest.json` só tinha `background.service_worker`: o Firefox recusa instalar. Agora também
+   `background.scripts` (o Chromium ≥ 121 o ignora).
+
+Também: o transporte das `browser.*` passou a usar o `XDG_RUNTIME_DIR` do `ambiente` do app (antes
+o `os.environ` real — um teste falaria com o navegador do dono); `atualizar_acesso` mantém memória,
+tarefas, agenda, desfazer e contaminação (antes sumiam até reiniciar); e a pergunta por ação
+(`Confirmacao.por_acao`) não é mais respondida pelo «sim» de uso único do portão.
+
+Prova em navegador real: `uv run --frozen python -m tools.harness_navegador` (podman,
+`--network none`, `--userns=keep-id`, repositório e Python do uv só leitura). Armadilhas do roteiro:
+o Chromium ≥ 137 ignora `--load-extension` sem
+`--disable-features=DisableLoadExtensionCommandLineSwitch`; o `--user-data-dir` tem de ir
+explícito; o Firefox instala extensão temporária pelo Marionette (`Addon:Install`).
+
 ## Verificações já verdes
 
 Os comandos abaixo passaram para a fatia 2, sem navegador ou dispositivo real:

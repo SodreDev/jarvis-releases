@@ -36,28 +36,34 @@ as confirmações por ação, fica no Jarvis; a extensão nunca recebe uma autor
 
 ## Instalação Linux para desenvolvimento
 
-O empacotamento do release fará esta cópia e substituirá
-`__JARVIS_NATIVE_HOST_ABSOLUTO__` pelo executável instalado. Para testar uma árvore de release
-sem abrir porta de rede:
+No repositório clonado, um comando registra o host **deste código** e copia a extensão:
 
-1. Instale a extensão descompactada. Em Chromium/Chrome, abra `chrome://extensions`, ligue o
-   modo de desenvolvedor e escolha **Carregar sem compactação** apontando para `extensao/`.
-   No Firefox, abra `about:debugging#/runtime/this-firefox`, escolha **Carregar extensão temporária**
-   e selecione `extensao/manifest.json`.
-2. Copie o manifesto de host para o navegador correto e troque o marcador pelo caminho absoluto
-   do lançador `jarvis-native-host` que acompanha o release:
+```bash
+uv run jarvis-native-host --instalar      # --remover desfaz
+```
 
-   - Firefox: `~/.mozilla/native-messaging-hosts/br.com.granafacil.jarvis.json`
-   - Google Chrome: `~/.config/google-chrome/NativeMessagingHosts/br.com.granafacil.jarvis.json`
-   - Chromium: `~/.config/chromium/NativeMessagingHosts/br.com.granafacil.jarvis.json`
+Ele grava o stub `~/.local/share/jarvis/bin/jarvis-native-host` (chama o `.venv` com
+`python -I -m jarvis.navegador.host`), o manifesto do host em cada pasta onde um navegador do
+usuário procura — Firefox (`~/.mozilla/native-messaging-hosts`), Chrome, Chromium, Brave
+(`~/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts`), Edge e Vivaldi: nos derivados do
+Chromium a pasta é `<pasta de dados do navegador>/NativeMessagingHosts` — e copia esta pasta para
+`~/.local/share/jarvis/extensao`, que é a que se carrega:
 
-   O arquivo do host deve ter permissão de leitura para o navegador; o executável indicado em
-   `path` deve ser absoluto e executável. Em instalações corporativas, o administrador pode usar
-   os diretórios de sistema equivalentes do navegador.
-3. Abra uma página `http` ou `https`. O navegador lança o host ao carregar a extensão; o host só
-   atende o Jarvis do mesmo usuário, e sem o Jarvis a extensão permanece inerte.
-   `about:`, `file:`, páginas de extensão e páginas internas
-   do navegador nunca são lidas ou controladas.
+1. Chromium, Chrome ou Brave: `chrome://extensions` (no Brave, `brave://extensions`), ligue o modo de
+   desenvolvedor e escolha **Carregar sem compactação** apontando para
+   `~/.local/share/jarvis/extensao`. Se ela já estava carregada, clique em **Recarregar**: o
+   navegador só procura o host quando a extensão reinicia.
+2. Firefox: `about:debugging#/runtime/this-firefox` → **Carregar extensão temporária** →
+   `~/.local/share/jarvis/extensao/manifest.json`. O fundo roda por `background.scripts` (o Firefox
+   não tem service worker de extensão); o Chromium usa o `service_worker` e ignora `scripts`.
+3. Abas abertas antes de carregar a extensão não têm o conteúdo dela: recarregue a aba.
+   `about:`, `file:`, páginas de extensão e páginas internas do navegador nunca são lidas ou
+   controladas.
+
+O host só atende o Jarvis do mesmo usuário; sem o Jarvis, a extensão fica ociosa. Navegador em
+Flatpak não lança o host (o Native Messaging não sai da caixa de areia). A prova de ponta a ponta
+num Chromium e num Firefox de verdade, em contêiner, é `uv run --frozen python -m
+tools.harness_navegador`.
 
 Não carregue uma extensão de origem diferente: o manifesto do host fixa os IDs acima. Não há
 necessidade, nem caminho suportado, para expor uma porta local.
