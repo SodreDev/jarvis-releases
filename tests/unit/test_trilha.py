@@ -9,6 +9,7 @@ from pathlib import Path
 from jarvis.trilha import (
     ARQUIVO,
     CAMPOS,
+    CAUSAS,
     DIAS_DE_RETENCAO,
     EVENTOS,
     FORA_DA_FORMA,
@@ -30,20 +31,18 @@ def _linhas(pasta: Path) -> list[dict[str, object]]:
 def test_texto_e_redigido_e_cortado_e_numero_fica_como_esta(tmp_path: Path) -> None:
     trilha = TrilhaDeDiagnostico(tmp_path, relogio=lambda: 10.0)
     trilha.novo_turno("t-1", motor="eco")
-    trilha.evento(
-        "ferramenta", tool_id="x", ms=12.5, motivo="chave sk-abcdefghijklmnopqrstuv " + "a" * 400
-    )
+    trilha.evento("turno.fim", ms_total=12.5, erro="chave sk-abcdefghijklmnopqrstuv " + "a" * 400)
     evento = _linhas(tmp_path)[1]
-    assert evento["turno"] == "t-1" and evento["ms"] == 12.5
-    motivo = str(evento["motivo"])
-    assert "sk-abcdefghijklmnopqrstuv" not in motivo and "[REDIGIDO:" in motivo
-    assert len(motivo) <= 161
+    assert evento["turno"] == "t-1" and evento["ms_total"] == 12.5
+    erro = str(evento["erro"])
+    assert "sk-abcdefghijklmnopqrstuv" not in erro and "[REDIGIDO:" in erro
+    assert len(erro) <= 161
 
 
 def test_gira_o_arquivo_e_guarda_so_as_copias_combinadas(tmp_path: Path) -> None:
     trilha = TrilhaDeDiagnostico(tmp_path, tamanho_maximo=300, copias=2)
     for i in range(40):
-        trilha.evento("ferramenta", tool_id=f"t{i}", motivo="m" * 40)
+        trilha.evento("ferramenta", tool_id=f"t{i}", motivo="erro_da_ferramenta+pdp_negou")
     nomes = sorted(p.name for p in tmp_path.iterdir())
     assert nomes == [ARQUIVO, f"{ARQUIVO}.1", f"{ARQUIVO}.2"]
     assert all(p.stat().st_size <= 300 for p in tmp_path.iterdir())
@@ -66,19 +65,19 @@ def test_o_resumo_e_do_ultimo_turno_com_ferramenta_permissao_e_fim(tmp_path: Pat
         status="erro",
         ms=40.0,
         pdp="allow",
-        motivo="a página não deixou (alvo_ausente): não achei",
+        motivo="erro_da_ferramenta",
         codigo=codigo_do_motivo("a página não deixou (alvo_ausente): não achei"),
     )
     trilha.evento(
-        "permissao", tool_id="sites.open", origem="pdp", motivo="leu terceiros", resposta="não"
+        "permissao", tool_id="sites.open", origem="pdp", motivo="destino_externo", resposta="não"
     )
     trilha.evento("turno.fim", fim="concluido", ms_total=900.0, ferramentas=2)
 
     assert [e["turno"] for e in eventos_do_ultimo_turno(tmp_path)] == ["t-novo"] * 4
     texto = "\n".join(resumo_do_ultimo_turno(tmp_path))
     assert "motor claude" in texto and "velha" not in texto
-    assert "browser.click: erro em 40 ms (PDP allow) [alvo_ausente]" in texto
-    assert "pediu permissão para sites.open (pdp): leu terceiros → não" in texto
+    assert "browser.click: erro em 40 ms (PDP allow) [alvo_ausente] — erro_da_ferramenta" in texto
+    assert "pediu permissão para sites.open (pdp): destino_externo → não" in texto
     assert "fim: concluido" in texto and "total 900 ms" in texto
 
 
@@ -179,23 +178,63 @@ def test_todo_campo_de_todo_evento_tem_forma_declarada() -> None:
         assert permitidos <= set(CAMPOS), tipo
 
 
-def test_motivo_perde_a_url_inteira_e_o_caminho(tmp_path: Path) -> None:
+def test_texto_de_erro_perde_a_url_inteira_e_o_caminho(tmp_path: Path) -> None:
     trilha = TrilhaDeDiagnostico(tmp_path)
     trilha.novo_turno("t-1", motor="claude")
     trilha.evento(
-        "ferramenta",
-        tool_id="browser.click",
-        status="erro",
-        motivo=(
+        "turno.fim",
+        fim="erro",
+        erro=(
             "não achei o alvo (alvo_ausente) em https://conta.example/extrato/2026?cpf=111 "
             "nem no arquivo /home/sodre/Documentos/extrato-do-banco.pdf"
         ),
     )
-    motivo = str(_linhas(tmp_path)[1]["motivo"])
+    erro = str(_linhas(tmp_path)[1]["erro"])
 
-    assert "(alvo_ausente)" in motivo and "https://conta.example/…" in motivo
-    assert "extrato/2026" not in motivo and "cpf=111" not in motivo
-    assert "extrato-do-banco" not in motivo and "/…" in motivo
+    assert "(alvo_ausente)" in erro and "https://conta.example/…" in erro
+    assert "extrato/2026" not in erro and "cpf=111" not in erro
+    assert "extrato-do-banco" not in erro and "/…" in erro
+
+
+# --- o motivo é código (auditoria dos Lotes B e C, achado 2) -------------------------------------
+SENTINELA = "SENTINELA-DA-PAGINA " + "rótulo que a página escreveu " * 8  # > 160 caracteres
+
+
+def test_o_motivo_so_grava_codigo_da_allowlist_e_a_frase_vira_marca(tmp_path: Path) -> None:
+    """A frase da pergunta cita o rótulo que a página dá ao elemento: na trilha ela não entra,
+    nem cortada em 160 caracteres. Código da allowlist (ou vários, com `+`) entra como está."""
+    assert len(SENTINELA) > 160
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    frase = f"clicar em «{SENTINELA}» envia uma mensagem ou publicação"
+    trilha.evento("permissao", tool_id="browser.click", origem="risco_dinamico", motivo=frase)
+    trilha.evento("ferramenta", tool_id="browser.click", status="negado", motivo=SENTINELA[:30])
+    trilha.evento("permissao", tool_id="browser.click", motivo="palavra_de_risco")
+    trilha.evento("permissao", tool_id="input.key.type", motivo="enter_envia+turno_contaminado")
+    trilha.evento("permissao", tool_id="input.key.type", motivo="enter_envia+inventado")
+    trilha.evento("ferramenta", tool_id="browser.read", status="ok", motivo="")
+    motivos = [e.get("motivo") for e in _linhas(tmp_path)[1:]]
+
+    assert motivos == [
+        FORA_DA_FORMA,
+        FORA_DA_FORMA,
+        "palavra_de_risco",
+        "enter_envia+turno_contaminado",
+        FORA_DA_FORMA,
+        "",
+    ]
+    assert "SENTINELA" not in (tmp_path / ARQUIVO).read_text("utf-8")
+
+
+def test_o_codigo_da_extensao_so_vem_do_comeco_da_frase() -> None:
+    """No meio da frase pode estar o rótulo do elemento: "(algo)" ali não vira código."""
+    assert codigo_do_motivo("a página não deixou (alvo_ausente): não achei") == "alvo_ausente"
+    assert codigo_do_motivo("«Nome (sentinela_da_pagina)» não é um campo de texto") == ""
+    assert codigo_do_motivo("este pedido vai pelo método app (cita_app): fica de fora") == ""
+
+
+def test_a_allowlist_de_causas_so_tem_codigos() -> None:
+    assert all(c and c == c.strip() and " " not in c and "+" not in c for c in CAUSAS)
 
 
 # --- local, permissões, rotação e retenção ----------------------------------------------------

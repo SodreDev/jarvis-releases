@@ -57,7 +57,7 @@ from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.metodo import ContextoDoMetodo, Escolha, escolher_metodo
 from jarvis.politica.objetivo import Objetivo, enderecos_do_resultado
 from jarvis.politica.pdp import Decisao, Grant, Pdp, Pedido, Veredito
-from jarvis.trilha import TrilhaDeDiagnostico, chaves, codigo_do_motivo
+from jarvis.trilha import SEM_CAUSA, TrilhaDeDiagnostico, chaves, codigo_do_motivo
 from jarvis.voz.interface import Onde
 
 if TYPE_CHECKING:
@@ -169,6 +169,9 @@ class Confirmacao:
     por_acao: bool = False
     """Pergunta do risco dinâmico (`_exigir_do_dono`: o que está sob o clique, a janela em foco).
     Nenhum "sim" dado antes responde a ela: o dono ainda não viu o que ela mostra."""
+    causa: str = ""
+    """O código do motivo (`jarvis.trilha.CAUSAS`): é ele que a trilha grava, nunca o `motivo`, que
+    pode citar o rótulo que a página dá ao elemento."""
 
 
 Confirmar = Callable[[Confirmacao], bool]
@@ -200,6 +203,9 @@ class ResultadoDeFerramenta:
     anexos: tuple[Imagem, ...] = ()
     """Imagens do resultado (a tela da aba): vão ao motor à parte, pelo cérebro, e **nunca** entram
     em `para_o_modelo`, na auditoria nem na trilha."""
+    causa: str = ""
+    """Por que não foi ok, em código (`jarvis.trilha.CAUSAS`): o que a trilha grava no lugar do
+    `motivo`, que pode trazer texto da página ou dos argumentos."""
 
     @property
     def detalhe_de_auditoria(self) -> str:
@@ -510,7 +516,11 @@ class ExecutorDeFerramentas:
             # Só a chamada do próprio turno: a tarefa em segundo plano (que traz a contaminação
             # dela) não segue o método do pedido de agora.
             return ResultadoDeFerramenta(
-                tool_id, "negado", motivo=self.metodo.recusa(tool_id), call_id=chamada
+                tool_id,
+                "negado",
+                motivo=self.metodo.recusa(tool_id),
+                call_id=chamada,
+                causa="metodo_de_fora",
             )
         if not self._ligada(tool_id):
             sem_imagem = tool_id == FERRAMENTA_DA_TELA and self.navegador is not None
@@ -521,6 +531,7 @@ class ExecutorDeFerramentas:
                 if sem_imagem
                 else "essa ferramenta não existe no catálogo ligado",
                 call_id=chamada,
+                causa="ferramenta_desligada",
             )
         argumentos = dict(args)
         try:
@@ -532,9 +543,12 @@ class ExecutorDeFerramentas:
                 "erro",
                 motivo=f"argumentos fora do contrato: {erro.message}",
                 call_id=chamada,
+                causa="fora_do_contrato",
             )
         except (ValueError, CaminhoRecusado) as erro:
-            return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
+            return ResultadoDeFerramenta(
+                tool_id, "erro", motivo=str(erro), call_id=chamada, causa="argumento_recusado"
+            )
 
         if tool_id == "apps.launch":
             # O PDP compara o nome com o registro do dono; o executor aceita "Brave" para
@@ -550,6 +564,7 @@ class ExecutorDeFerramentas:
                         "não abri por ambiguidade: " + resolucao.pergunta + " Diga o nome completo."
                     ),
                     call_id=chamada,
+                    causa="app_ambiguo",
                 )
             if resolucao.app is not None:
                 argumentos["nome"] = resolucao.app.nome
@@ -570,7 +585,9 @@ class ExecutorDeFerramentas:
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
 
-    def pergunta_de(self, avaliacao: Avaliacao, motivo: str = "") -> Confirmacao:
+    def pergunta_de(
+        self, avaliacao: Avaliacao, motivo: str = "", causa: str = "confirmacao_do_pdp"
+    ) -> Confirmacao:
         """O que a janela (ou a voz) pergunta ao dono sobre esta chamada exata."""
         return Confirmacao(
             id=avaliacao.pedido.call_id,
@@ -580,16 +597,17 @@ class ExecutorDeFerramentas:
             motivo=motivo or avaliacao.decisao.motivo,
             prazo_s=self.prazo_de_confirmacao_s,
             argumentos=dict(avaliacao.argumentos),
+            causa=causa,
         )
 
-    def descartar(self, avaliacao: Avaliacao, status: str, motivo: str) -> None:
+    def descartar(self, avaliacao: Avaliacao, status: str, motivo: str, *, causa: str) -> None:
         """A avaliação não vai rodar (o portão vetou, ou virou pendência): o grant é solto já,
-        em vez de segurar a raiz aberta até o TTL, e a auditoria diz por quê."""
+        em vez de segurar a raiz aberta até o TTL, e a auditoria diz por quê (a trilha, a causa)."""
         if avaliacao.decisao.grant is not None:
             self.pdp.liberar(avaliacao.decisao.grant.grant_id)
         self.pdp.auditoria.anexar_resultado(avaliacao.decisao.decision_id, status, motivo)
         self._trilhar(
-            ResultadoDeFerramenta(avaliacao.tool_id, status, motivo=motivo),
+            ResultadoDeFerramenta(avaliacao.tool_id, status, motivo=motivo, causa=causa),
             avaliacao.argumentos.keys(),
             pdp=str(avaliacao.decisao.veredito),
         )
@@ -605,7 +623,9 @@ class ExecutorDeFerramentas:
     ) -> None:
         if self.trilha is None:
             return
-        motivo = resultado.motivo if resultado.status != "ok" else ""
+        # A causa em código, nunca o motivo: ele pode citar o rótulo que a página dá ao elemento
+        # ou um valor de argumento. Sem causa, o código genérico.
+        causa = (resultado.causa or SEM_CAUSA) if resultado.status != "ok" else ""
         # Se o aviso da moderada foi falado ou ficou só na auditoria (ADR-0031) — nunca a frase.
         aviso = "silencioso" if resultado.aviso_silencioso else ""
         self.trilha.evento(
@@ -615,8 +635,8 @@ class ExecutorDeFerramentas:
             status=resultado.status,
             pdp=pdp,
             ms=round(ms, 1) if ms is not None else None,
-            motivo=motivo,
-            codigo=codigo_do_motivo(motivo),
+            motivo=causa,
+            codigo=codigo_do_motivo(resultado.motivo) if causa else "",
             aviso="falado" if resultado.aviso else aviso,
             fase=fase,
         )
@@ -627,7 +647,7 @@ class ExecutorDeFerramentas:
                 "permissao",
                 tool_id=pergunta.tool_id,
                 origem=origem,
-                motivo=pergunta.motivo,
+                motivo=pergunta.causa or SEM_CAUSA,
                 resposta="sim" if sim else "não",
             )
 
@@ -700,13 +720,16 @@ class ExecutorDeFerramentas:
                     "negado",
                     motivo="o dono não confirmou (negou, ou o prazo acabou)",
                     call_id=chamada,
+                    causa="dono_nao_confirmou",
                 )
             decisao = self.pdp.decidir(pedido, confirmado_pelo_dono=True)
         if decisao.veredito is not Veredito.ALLOW or decisao.grant is None:
             motivo = decisao.motivo
             if tool_id == "apps.launch":
                 motivo = self._sugestao_de_app(str(argumentos["nome"]), motivo)
-            return ResultadoDeFerramenta(tool_id, "negado", motivo=motivo, call_id=chamada)
+            return ResultadoDeFerramenta(
+                tool_id, "negado", motivo=motivo, call_id=chamada, causa="pdp_negou"
+            )
         resultado = self._rodar(
             tool_id,
             argumentos,
@@ -812,7 +835,7 @@ class ExecutorDeFerramentas:
     ) -> ResultadoDeFerramenta:
         if cancelado():
             return ResultadoDeFerramenta(
-                tool_id, "cancelado", motivo="interrompido", call_id=chamada
+                tool_id, "cancelado", motivo="interrompido", call_id=chamada, causa="interrompido"
             )
         assert decisao.grant is not None
         try:
@@ -827,9 +850,13 @@ class ExecutorDeFerramentas:
                     tool_id, args, decisao.grant, caminho, cancelado, chamada, marca
                 )
         except arquivos.Cancelada as erro:
-            return ResultadoDeFerramenta(tool_id, "cancelado", motivo=str(erro), call_id=chamada)
+            return ResultadoDeFerramenta(
+                tool_id, "cancelado", motivo=str(erro), call_id=chamada, causa="interrompido"
+            )
         except AcaoRecusada as erro:
-            return ResultadoDeFerramenta(tool_id, "negado", motivo=str(erro), call_id=chamada)
+            return ResultadoDeFerramenta(
+                tool_id, "negado", motivo=str(erro), call_id=chamada, causa="acao_recusada"
+            )
         except (
             AberturaRecusada,
             AlvoInexistente,
@@ -840,7 +867,9 @@ class ExecutorDeFerramentas:
             AppRecusado,
             UrlRecusada,
         ) as erro:
-            return ResultadoDeFerramenta(tool_id, "erro", motivo=str(erro), call_id=chamada)
+            return ResultadoDeFerramenta(
+                tool_id, "erro", motivo=str(erro), call_id=chamada, causa="erro_da_ferramenta"
+            )
         anexos = tuple(dados.pop(CHAVE_DOS_ANEXOS, ()))
         return ResultadoDeFerramenta(tool_id, "ok", dados=dados, call_id=chamada, anexos=anexos)
 
@@ -852,14 +881,14 @@ class ExecutorDeFerramentas:
         cancelado: Cancelado,
         confirmar: Confirmar,
         contaminado: bool,
-    ) -> Callable[[str, str], None]:
+    ) -> Callable[[str, str, str], None]:
         """O "sim" por ação das tools cujo risco depende do que está sob o clique (navegador,
         entrada virtual): um segundo pedido ao PDP, de manifesto `perigoso`, que **só** o "sim" do
         dono na janela solta. Cada pergunta é uma linha da auditoria; ninguém passa o parâmetro
         `confirmado_pelo_dono` a não ser esta função, depois da resposta da janela."""
         perguntas = 0
 
-        def exigir(detalhe: str, motivo: str) -> None:
+        def exigir(detalhe: str, motivo: str, causa: str) -> None:
             nonlocal perguntas
             perguntas += 1
             id_da_pergunta = f"{chamada}-s{perguntas}"
@@ -879,6 +908,7 @@ class ExecutorDeFerramentas:
                     motivo=motivo,
                     prazo_s=self.prazo_de_confirmacao_s,
                     por_acao=True,
+                    causa=causa,
                 )
                 sim = not cancelado() and confirmar(pergunta)
                 self._trilhar_permissao(pergunta, "risco_dinamico", sim)

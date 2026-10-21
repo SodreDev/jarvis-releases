@@ -155,6 +155,9 @@ class Avaliacao:
 
     recusa: str = ""
     confirmar: str = ""
+    causa: str = ""
+    """O código do motivo (`jarvis.trilha.CAUSAS`): é o que a trilha grava — a frase cita o rótulo
+    que a página dá ao elemento."""
 
 
 SEGUE: Final = Avaliacao()
@@ -202,7 +205,8 @@ def avaliar_leitura(url: str) -> Avaliacao:
             confirmar=(
                 f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: ler a página manda o que "
                 "está na tela para o modelo"
-            )
+            ),
+            causa="categoria_do_site",
         )
     return SEGUE
 
@@ -214,7 +218,8 @@ def _dado_para_fora(destino: str, objetivo: Objetivo | None) -> Avaliacao | None
     return Avaliacao(
         confirmar=(
             f"o endereço leva {', '.join(levados)} para {dominio(destino)}, que o dono não citou"
-        )
+        ),
+        causa="dado_do_dono_para_fora",
     )
 
 
@@ -236,7 +241,8 @@ def avaliar_navegacao(
             confirmar=(
                 f"o turno leu conteúdo de terceiros e {host} não é um site que o dono liberou: "
                 "o endereço carrega o que estiver nele"
-            )
+            ),
+            causa="destino_externo",
         )
     return SEGUE
 
@@ -257,6 +263,10 @@ def _sem_nome(dados: Mapping[str, Any]) -> bool:
     return not (str(dados.get("rotulo") or "").strip() or str(dados.get("texto") or "").strip())
 
 
+def _causa_do_envio(dados: Mapping[str, Any]) -> str:
+    return "formulario_sensivel" if dados.get("formularioSensivel") else "envia_formulario"
+
+
 def avaliar_clique(
     url: str,
     dados: Mapping[str, Any],
@@ -269,21 +279,23 @@ def avaliar_clique(
     nome = categoria(url)
     if nome in CATEGORIAS_DE_CADA_ACAO:
         return Avaliacao(
-            confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada clique pede o seu sim"
+            confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada clique pede o seu sim",
+            causa="categoria_do_site",
         )
     envio = _envio_de_formulario(dados)
     if envio:
-        return Avaliacao(confirmar=f"clicar em «{alvo}» {envio}")
+        return Avaliacao(confirmar=f"clicar em «{alvo}» {envio}", causa=_causa_do_envio(dados))
     motivo = _palavra_de_risco(alvo, str(dados.get("texto", "")))
     if motivo:
-        return Avaliacao(confirmar=f"clicar em «{alvo}» {motivo}")
+        return Avaliacao(confirmar=f"clicar em «{alvo}» {motivo}", causa="palavra_de_risco")
     if nome in CATEGORIAS_EM_QUE_O_ICONE_ENVIA and _sem_nome(dados) and not dados.get("editavel"):
         # Nem o objetivo solta: o domínio citado é justamente onde a mensagem seria enviada.
         return Avaliacao(
             confirmar=(
                 f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]} e o elemento não tem nome: "
                 "pode ser o botão de enviar"
-            )
+            ),
+            causa="elemento_sem_nome",
         )
     return _para_onde_leva(
         url,
@@ -316,7 +328,8 @@ def _para_onde_leva(
                 confirmar=(
                     f"o turno leu conteúdo de terceiros e o link leva a {host}, que o dono não "
                     "liberou"
-                )
+                ),
+                causa="destino_externo",
             )
     return SEGUE
 
@@ -338,7 +351,8 @@ def avaliar_acionamento(
     nome = categoria(url)
     if nome in CATEGORIAS_DE_CADA_ACAO:
         return Avaliacao(
-            confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada ação pede o seu sim"
+            confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada ação pede o seu sim",
+            causa="categoria_do_site",
         )
     enter = acao == "tecla" and tecla == "Enter"
     if acao == "clicar" or (enter and not dados.get("editavel")):
@@ -352,11 +366,14 @@ def avaliar_acionamento(
         if enter and dados.get("campoDeBusca"):
             return SEGUE  # o código da página busca
         # Fora de formulário o Enter vai para o código da página: na caixa de um chat, envia.
-        return Avaliacao(confirmar=f"apertar Enter em «{alvo}» pode enviar o que está escrito")
+        return Avaliacao(
+            confirmar=f"apertar Enter em «{alvo}» pode enviar o que está escrito",
+            causa="enter_envia",
+        )
     envio = _envio_de_formulario({**dados, "enviaFormulario": True})
     if envio:
         verbo = "enviar" if acao == "enviar" else "apertar Enter em"
-        return Avaliacao(confirmar=f"{verbo} «{alvo}» {envio}")
+        return Avaliacao(confirmar=f"{verbo} «{alvo}» {envio}", causa=_causa_do_envio(dados))
     # Busca por GET: o formulário só navega; o destino passa pelas regras do link.
     return _para_onde_leva(
         url,
@@ -381,12 +398,14 @@ def avaliar_digitacao(
             recusa=(
                 "senha, código de verificação e cartão o dono digita; o Jarvis não preenche "
                 "nem recebe esse dado — peça a ele para digitar e siga depois"
-            )
+            ),
+            causa="segredo_do_dono",
         )
     nome = categoria(url)
     if nome in CATEGORIAS_DE_CADA_ACAO:
         return Avaliacao(
-            confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada texto pede o seu sim"
+            confirmar=f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]}: cada texto pede o seu sim",
+            causa="categoria_do_site",
         )
     if objetivo is not None:
         levados = [] if objetivo.citado(url) else dados_do_dono(texto)
@@ -394,7 +413,8 @@ def avaliar_digitacao(
             return Avaliacao(
                 confirmar=(
                     f"o texto leva {', '.join(levados)} para {dominio(url)}, que o dono não citou"
-                )
+                ),
+                causa="dado_do_dono_para_fora",
             )
         if objetivo.dentro(url):
             return SEGUE  # a página é do objetivo: escrever nela é o que o dono pediu
@@ -403,6 +423,7 @@ def avaliar_digitacao(
             confirmar=(
                 "o turno leu conteúdo de terceiros: digitar numa página pode estar sendo "
                 "pedido por esse conteúdo"
-            )
+            ),
+            causa="turno_contaminado",
         )
     return SEGUE

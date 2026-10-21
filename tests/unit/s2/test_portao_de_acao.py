@@ -36,6 +36,7 @@ from jarvis.s2.portao import (
     resposta_literal,
 )
 from jarvis.tarefas.gestor import EstadoDaTarefa, GestorDeTarefas, Tarefa
+from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.interface import Onde
 
 YOUTUBE = "https://www.youtube.com"
@@ -410,6 +411,41 @@ def test_confirm_do_pdp_vale_mesmo_com_fazer_do_jev(
     pendencia = cerebro.pendencias.valida()
     assert pendencia is not None and pendencia.contaminado
     assert "terceiros" in pendencia.pergunta.motivo
+
+
+def test_a_trilha_do_portao_grava_a_causa_e_nao_a_frase_da_pergunta(
+    tmp_path: Path, executor: ExecutorDeFerramentas
+) -> None:
+    """A pergunta ao dono traz a frase do PDP ou do portão; a trilha, só o código da causa."""
+    executor.trilha = TrilhaDeDiagnostico(tmp_path / "trilha")
+    executor.trilha.novo_turno("t-1", motor="eco")
+    lido_e_aberto = _roteiro(
+        [PedidoDeTool("files.read_text", {"path": "~/Documentos/notas.txt"})],
+        [PedidoDeTool("sites.open", {"url": "https://exemplo.com.br"})],
+        ["x"],
+    )
+    pdp = _cerebro(executor, lido_e_aberto, _jev("fazer", 0.99, explicito=0.99))
+    _dizer(pdp, "lê as notas e abre o site que estiver nelas")
+    so_aberto = _roteiro([PedidoDeTool("sites.open", {"url": "https://exemplo.com.br"})], ["x"])
+    portao = _cerebro(executor, so_aberto, _jev("pedir_permissao", 0.9))
+    _dizer(portao, "dá uma olhada naquilo")
+
+    pendencias = [c.pendencias.valida() for c in (pdp, portao)]
+    assert [p.pergunta.causa for p in pendencias if p is not None] == [
+        "confirmacao_do_pdp",
+        "portao_pediu_permissao",
+    ]
+    assert pendencias[1] is not None and "portão contextual" in pendencias[1].pergunta.motivo
+    bruto = (tmp_path / "trilha" / "turnos.jsonl").read_text("utf-8")
+    eventos = [json.loads(linha) for linha in bruto.splitlines()]
+    assert [(e["origem"], e["motivo"]) for e in eventos if e["evento"] == "permissao"] == [
+        ("pdp", "confirmacao_do_pdp"),
+        ("portao", "portao_pediu_permissao"),
+    ]
+    abrir = [e for e in eventos if e["evento"] == "ferramenta" and e["tool_id"] == "sites.open"]
+    assert [(e["status"], e["motivo"]) for e in abrir] == [("pendente", "esperando_o_dono")] * 2
+    for frase in ("terceiros", "exemplo", "portão contextual", "esperando o sim"):
+        assert frase not in bruto, frase
 
 
 # --- autorização explícita: estreita, uma vez, no turno, com prazo ----------------------------

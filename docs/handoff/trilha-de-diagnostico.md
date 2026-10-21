@@ -31,10 +31,22 @@ Dois níveis, ambos fechados:
    vai para `campos_fora` (para a omissão aparecer em vez de ficar escondida). Evento de tipo
    desconhecido grava só o cabeçalho e os nomes dos campos: nenhum valor entra.
 2. `CAMPOS` — a forma de cada nome de campo, igual em qualquer evento: `NUMERO`, `BOOLEANO`,
-   `CODIGO` (slug curto do nosso código), `ROTULO` (48 car.), `MOTIVO` (160 car.) e `CHAVES`
-   (nomes de argumento). Valor que não cabe na forma vira `[fora_da_forma]`.
+   `CODIGO` (slug curto do nosso código), `ROTULO` (48 car.), `MOTIVO` (160 car.), `CAUSA` e
+   `CHAVES` (nomes de argumento). Valor que não cabe na forma vira `[fora_da_forma]`.
 
-Nos campos de texto (`motivo`, `jev`, `erro`, `pdp` — frases que o **nosso** código escreve, nunca
+O `motivo` (de `ferramenta`, `permissao` e `metodo`) tem a forma `CAUSA`: só um **código** da
+allowlist `CAUSAS` — `palavra_de_risco`, `envia_formulario`, `elemento_sem_nome`,
+`categoria_do_site`, `destino_externo`, `dado_do_dono_para_fora`, `confirmacao_do_pdp`,
+`acao_recusada`, `erro_da_ferramenta`, os motivos do método… — ou vários unidos por `+` (a janela
+em foco da entrada virtual: `enter_envia+turno_contaminado`). Qualquer outra coisa vira
+`[fora_da_forma]`: a frase da pergunta ao dono cita o rótulo que a página dá ao elemento e **não
+entra**, nem cortada (auditoria dos Lotes B e C, achado 2). Quem escolhe o código é o caminho que o
+código tomou (`Avaliacao.causa` do risco, `Confirmacao.causa`, `ResultadoDeFerramenta.causa`), nunca
+a frase; resultado sem causa grava `sem_codigo`. A frase continua na janela, na resposta ao modelo e
+na auditoria. O `codigo` do evento `ferramenta` é o da extensão (`alvo_ausente`) e só é lido do
+**começo** do motivo («a página não deixou (…)»): um "(algo)" no rótulo do elemento não vira código.
+
+Nos campos de texto que sobram (`jev`, `erro`, `pdp` — frases que o **nosso** código escreve, nunca
 o dono nem a página) ainda passa `redigir` do projeto, a URL fica em `esquema://host/…`, o caminho
 em `/…` e o resto é cortado. Para registrar um campo novo é preciso declará-lo nas duas tabelas —
 o teste `test_todo_campo_de_todo_evento_tem_forma_declarada` não deixa um evento permitir campo sem
@@ -68,14 +80,20 @@ erro — sem conteúdo privado. Honesto por construção:
 - `src/jarvis/executor/ferramentas.py` — `ferramenta.inicio`/`ferramenta` e `permissao`.
 - `src/jarvis/s2/fluxo_de_acao.py` — `portao` e a `permissao` da pendência.
 - `src/jarvis/voz/app.py` — `turno.inicio`/`turno.fim` e a pasta da trilha (`PASTA_DA_TRILHA`).
+- `src/jarvis/navegador/risco.py` e `src/jarvis/entrada/controle.py` — a causa de cada pergunta
+  do risco dinâmico.
 - Testes: `tests/unit/test_trilha.py`, `tests/unit/voz/test_trilha_do_app.py`,
-  `tests/unit/voz/test_cli.py`. COMO-TESTAR §0.10.
+  `tests/unit/voz/test_cli.py`; o rótulo sentinela da página fora da trilha em
+  `tests/unit/navegador/test_ferramentas_browser.py` e `tests/unit/s2/test_portao_de_acao.py`.
+  COMO-TESTAR §0.10.
 
 ## Limites conhecidos
 
 - A retenção é por **arquivo** (mtime), não por linha: numa sessão longa o arquivo vivo pode ter
   linha mais velha que 7 dias. O teto de tamanho é que segura o volume.
-- O `motivo` é texto livre escrito pelo nosso código: a redação e o encurtamento protegem, mas quem
-  escrever um motivo novo precisa continuar não colando dado do dono nele.
+- O `motivo` é um código da allowlist `CAUSAS`: causa nova precisa entrar lá, senão a trilha grava
+  `[fora_da_forma]` no lugar dela (a causa se perde, a frase nunca vaza). O `jev` e o `erro` ainda
+  são frases do nosso código: a redação e o encurtamento protegem, mas quem escrever uma nova
+  precisa continuar não colando nelas dado do dono nem texto de página.
 - `resumo_do_ultimo_turno` lê o arquivo vivo e o `.1`; um turno que caia inteiro no `.2` não
   aparece no `--diagnostico`.

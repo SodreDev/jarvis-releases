@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from jarvis.navegador import risco
 from jarvis.politica.objetivo import Objetivo
+from jarvis.trilha import CAUSAS
 
 
 @pytest.mark.parametrize(
@@ -158,3 +161,86 @@ def test_busca_por_get_de_outro_dominio_num_turno_contaminado_pergunta() -> None
         liberados=frozenset(),
     )  # fmt: skip
     assert "mal.example" in avaliacao.confirmar
+
+
+ITAU = "https://www.itau.com.br/"
+EXEMPLO = "https://exemplo.org/"
+LIMPO: dict[str, Any] = {"contaminado": False, "liberados": frozenset()}
+SUJO: dict[str, Any] = {"contaminado": True, "liberados": frozenset()}
+DO_CANAL = Objetivo.do_pedido("abra o canal do Thiago Nigro")
+
+
+@pytest.mark.parametrize(
+    ("avaliacao", "causa"),
+    [
+        (risco.avaliar_leitura(ITAU), "categoria_do_site"),
+        (risco.avaliar_clique(ITAU, {}, "Extrato", **LIMPO), "categoria_do_site"),
+        (
+            risco.avaliar_clique(EXEMPLO, {"enviaFormulario": True}, "OK", **LIMPO),
+            "envia_formulario",
+        ),
+        (
+            risco.avaliar_clique(
+                EXEMPLO, {"enviaFormulario": True, "formularioSensivel": True}, "OK", **LIMPO
+            ),
+            "formulario_sensivel",
+        ),
+        (risco.avaliar_clique(EXEMPLO, {}, "Enviar", **LIMPO), "palavra_de_risco"),
+        (risco.avaliar_clique(DISCORD, SO_ICONE, "o elemento", **LIMPO), "elemento_sem_nome"),
+        (
+            risco.avaliar_clique(EXEMPLO, {"destinoDoLink": "https://mal.example/"}, "Ver", **SUJO),
+            "destino_externo",
+        ),
+        (risco.avaliar_navegacao("https://mal.example/", **SUJO), "destino_externo"),
+        (
+            risco.avaliar_navegacao(
+                "https://coletor.example/?c=ana%40x.com", objetivo=DO_CANAL, **LIMPO
+            ),
+            "dado_do_dono_para_fora",
+        ),
+        (
+            risco.avaliar_acionamento(
+                "https://web.whatsapp.com/",
+                CAIXA_DE_CHAT,
+                "Mensagem",
+                "tecla",
+                tecla="Enter",
+                **LIMPO,
+            ),
+            "enter_envia",
+        ),
+        (
+            risco.avaliar_acionamento(ITAU, BOTAO_ENVIAR, "Menu", "passar_o_mouse", **LIMPO),
+            "categoria_do_site",
+        ),
+        (
+            risco.avaliar_acionamento(
+                "https://forum.example/", CAMPO_DE_COMENTARIO_POST, "Comentário", "enviar", **LIMPO
+            ),
+            "envia_formulario",
+        ),
+        (
+            risco.avaliar_digitacao(EXEMPLO, {"sensivel": True}, "Senha", "x", contaminado=False),
+            "segredo_do_dono",
+        ),
+        (risco.avaliar_digitacao(ITAU, {}, "Nome", "Ana", contaminado=False), "categoria_do_site"),
+        (risco.avaliar_digitacao(EXEMPLO, {}, "Busca", "x", contaminado=True), "turno_contaminado"),
+        (
+            risco.avaliar_digitacao(
+                "https://mal.example/",
+                {},
+                "Email",
+                "ana@x.com",
+                contaminado=False,
+                objetivo=DO_CANAL,
+            ),
+            "dado_do_dono_para_fora",
+        ),
+    ],
+)
+def test_cada_pergunta_e_recusa_do_risco_tem_a_causa_que_a_trilha_grava(
+    avaliacao: risco.Avaliacao, causa: str
+) -> None:
+    """A trilha grava a causa, nunca a frase — que cita o rótulo que a página dá ao elemento."""
+    assert avaliacao.confirmar or avaliacao.recusa
+    assert avaliacao.causa == causa and causa in CAUSAS

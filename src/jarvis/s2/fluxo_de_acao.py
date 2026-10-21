@@ -110,7 +110,9 @@ class FluxoDeAcao:
             if classe is Classe.NAO_FAZER:
                 trilhar("negado")
                 entregue = True
-                executor.descartar(avaliacao, "negado", f"portão contextual: {motivo}")
+                executor.descartar(
+                    avaliacao, "negado", f"portão contextual: {motivo}", causa="portao_negou"
+                )
                 return ResultadoDeFerramenta(
                     tool_id,
                     "negado",
@@ -146,18 +148,26 @@ class FluxoDeAcao:
                 if veredito is Veredito.CONFIRM
                 else f"o portão contextual pediu permissão ({motivo})"
             )
-            pergunta = executor.pergunta_de(avaliacao, por_que)
+            causa = (
+                "confirmacao_do_pdp" if veredito is Veredito.CONFIRM else "portao_pediu_permissao"
+            )
+            pergunta = executor.pergunta_de(avaliacao, por_que, causa)
             trilhar("pendente")
             if executor.trilha is not None:
                 executor.trilha.evento(
                     "permissao",
                     tool_id=tool_id,
                     origem="pdp" if veredito is Veredito.CONFIRM else "portao",
-                    motivo=por_que,
+                    motivo=causa,
                     resposta="pendente",
                 )
             entregue = True
-            executor.descartar(avaliacao, "pendente", f"esperando o sim do dono: {por_que}")
+            executor.descartar(
+                avaliacao,
+                "pendente",
+                f"esperando o sim do dono: {por_que}",
+                causa="esperando_o_dono",
+            )
             try:
                 self.pendencias.abrir(pergunta, contaminado=avaliacao.pedido.contaminado)
             except PendenciaOcupada:
@@ -181,7 +191,9 @@ class FluxoDeAcao:
             if not entregue:
                 # Uma exceção entre o PDP e a entrega (revisão de bf9102c): nada rodou, e o grant
                 # aberto pelo `avaliar` seguraria a raiz até o TTL. Solta já, e a auditoria diz.
-                executor.descartar(avaliacao, "erro", "o portão falhou antes de decidir")
+                executor.descartar(
+                    avaliacao, "erro", "o portão falhou antes de decidir", causa="portao_falhou"
+                )
 
     def ler_a_resposta(
         self,

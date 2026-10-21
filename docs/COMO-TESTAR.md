@@ -869,18 +869,22 @@ que segura é a regra do dado seu na URL, que só reconhece os padrões da tabel
 
 Cada turno deixa uma linha por evento em `~/.local/state/jarvis/voz/diagnostico/turnos.jsonl`:
 início e fim do turno (motor, tempos de 1º token, 1ª fala, 1º áudio e total), **início e fim de
-cada ferramenta** (nome, **nomes** dos argumentos, status, duração, veredito do PDP, motivo e o
-código de erro da extensão, como `alvo_ausente`), cada decisão do portão (Jev, PDP,
-fazer/explícita/pendente/negado) e cada pedido de permissão com o motivo e a sua resposta.
+cada ferramenta** (nome, **nomes** dos argumentos, status, duração, veredito do PDP, o código do
+motivo e o código de erro da extensão, como `alvo_ausente`), cada decisão do portão (Jev, PDP,
+fazer/explícita/pendente/negado) e cada pedido de permissão com o código do motivo
+(`palavra_de_risco`, `envia_formulario`, `elemento_sem_nome`…) e a sua resposta.
 
 **Só metadados, por allowlist** (não por lista de proibições, que deixa passar o que não está
 nela): `EVENTOS` em `src/jarvis/trilha.py` diz quais campos cada evento pode ter e `CAMPOS` diz a
 forma de cada um (número, booleano, código, rótulo curto, motivo, nomes de argumento). Campo fora
 da lista **não é gravado** — só o nome dele vai para `campos_fora`, para a omissão aparecer; valor
 que não cabe na forma vira `[fora_da_forma]`. Nunca entra o que você disse, texto ou DOM de
-página, resultado de ferramenta, valor de argumento nem áudio. Nos motivos (as frases que o nosso
-próprio código escreve) ainda passa a redação de segredos, a URL fica em `esquema://host/…`, o
-caminho em `/…` e o texto é cortado em 160 caracteres. Nada sai da máquina.
+página, resultado de ferramenta, valor de argumento nem áudio. O `motivo` é só um código da lista
+`CAUSAS`: a frase da pergunta (que cita o rótulo do botão na página) fica na janela e na
+auditoria, e na trilha qualquer coisa fora da lista vira `[fora_da_forma]`. Nas frases que sobram
+(o erro do turno e a razão do Jev, escritas pelo nosso código) ainda passa a redação de segredos,
+a URL fica em `esquema://host/…`, o caminho em `/…` e o texto é cortado em 160 caracteres. Nada
+sai da máquina.
 
 **Limites:** pasta `0700` e arquivo `0600` (uma trilha antiga com permissão frouxa é corrigida no
 primeiro evento); rotação de 512 KiB por arquivo com 3 cópias (`.1`, `.2`, `.3` — ~2 MB no total);

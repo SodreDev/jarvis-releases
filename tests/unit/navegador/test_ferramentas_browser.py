@@ -7,6 +7,7 @@ inspecionado antes do efeito e só o "sim" do dono solta o que é perigoso.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -28,6 +29,7 @@ from jarvis.politica.pdp import Pdp
 from jarvis.s2.cerebro import Cerebro
 from jarvis.s2.motor import Contexto, PedidoDeTool, aceita_imagem
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
+from jarvis.trilha import CAUSAS, SEM_CAUSA, TrilhaDeDiagnostico
 from tests.imagens import png, url_de_dados
 
 NUNCA = lambda: False  # noqa: E731
@@ -423,6 +425,71 @@ def test_em_mensageiro_e_email_o_botao_so_com_icone_pede_o_sim_mesmo_dentro_do_o
     aceito, _ = _rodar(executor, "browser.click", {"ref": "ab1.3"}, sim=True)
     assert aceito.status == "ok"
     assert [p.get("ref") for m, p in pagina.chamadas if m == "page.click"][-1] == "ab1.3"
+
+
+SENTINELA = "Enviar SENTINELA-DA-PAGINA (sentinela_codigo) " + "texto que a página escreveu " * 6
+
+
+def test_o_rotulo_da_pagina_vai_a_pergunta_e_nunca_a_trilha(
+    tmp_path: Path, executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """Achado 2 da auditoria dos Lotes B e C: o motivo da pergunta cita o rótulo que a página dá
+    ao elemento, e ele ia à trilha (cortado em 160 caracteres). A pergunta e o modelo continuam
+    com a frase; a trilha grava só o código da causa — e o "(algo)" do rótulo não vira código."""
+    assert len(SENTINELA) > 160
+    executor.trilha = TrilhaDeDiagnostico(tmp_path / "trilha")
+    executor.trilha.novo_turno("t-1", motor="eco")
+    pagina.no_mapa("ab1.1", SENTINELA)
+    pagina.no_mapa("ab1.2", SENTINELA[7:], enviaFormulario=True, metodoDoFormulario="post")
+
+    negado, p1 = _rodar(executor, "browser.click", {"ref": "ab1.1"}, sim=False)
+    aceito, p2 = _rodar(executor, "browser.click", {"ref": "ab1.1"}, sim=True)
+    formulario, p3 = _rodar(executor, "browser.click", {"ref": "ab1.2"}, sim=False)
+    digitado, _ = _rodar(executor, "browser.type", {"ref": "ab1.1", "texto": "oi"})
+
+    assert (negado.status, aceito.status, formulario.status) == ("negado", "ok", "negado")
+    assert SENTINELA in p1[0].motivo and "SENTINELA-DA-PAGINA" in p1[0].detalhe  # o dono vê
+    assert (p1[0].causa, p2[0].causa, p3[0].causa) == (
+        "palavra_de_risco",
+        "palavra_de_risco",
+        "envia_formulario",
+    )
+    assert digitado.status == "erro" and "SENTINELA-DA-PAGINA" in digitado.motivo  # o modelo vê
+
+    bruto = (tmp_path / "trilha" / "turnos.jsonl").read_text("utf-8")
+    assert "SENTINELA" not in bruto and "sentinela_codigo" not in bruto and "«" not in bruto
+    eventos = [json.loads(linha) for linha in bruto.splitlines()]
+    permissoes = [(e["motivo"], e["resposta"]) for e in eventos if e["evento"] == "permissao"]
+    assert permissoes == [
+        ("palavra_de_risco", "não"),
+        ("palavra_de_risco", "sim"),
+        ("envia_formulario", "não"),
+    ]
+    resultados = [
+        (e["status"], e["motivo"], e["codigo"]) for e in eventos if e["evento"] == "ferramenta"
+    ]
+    assert resultados == [
+        ("negado", "acao_recusada", ""),
+        ("ok", "", ""),
+        ("negado", "acao_recusada", ""),
+        ("erro", "erro_da_ferramenta", ""),
+    ]
+    assert all(e.get("motivo", "") in CAUSAS | {""} for e in eventos)
+
+
+def test_sem_causa_a_trilha_grava_o_codigo_generico_e_nao_a_frase(
+    tmp_path: Path, executor: ExecutorDeFerramentas
+) -> None:
+    executor.trilha = TrilhaDeDiagnostico(tmp_path / "trilha")
+    frase = f"clicar em «{SENTINELA}» envia uma mensagem ou publicação"
+    executor._trilhar(ResultadoDeFerramenta("browser.click", "erro", motivo=frase), [], pdp="allow")
+    executor._trilhar_permissao(
+        Confirmacao("c-1", "browser.click", "Clicar", SENTINELA, frase, 30.0), "pdp", False
+    )
+
+    bruto = (tmp_path / "trilha" / "turnos.jsonl").read_text("utf-8")
+    assert [json.loads(linha)["motivo"] for linha in bruto.splitlines()] == [SEM_CAUSA] * 2
+    assert "SENTINELA" not in bruto
 
 
 def test_ler_banco_pede_o_sim_mas_ler_mensageiro_e_livre(

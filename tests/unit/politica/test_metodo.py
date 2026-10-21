@@ -17,7 +17,7 @@ from jarvis.politica.modos import Modo
 from jarvis.politica.pdp import Pdp
 from jarvis.s2.cerebro import Cerebro
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
-from jarvis.trilha import TrilhaDeDiagnostico, eventos_do_ultimo_turno
+from jarvis.trilha import CAUSAS, TrilhaDeDiagnostico, eventos_do_ultimo_turno
 
 TUDO: ContextoDoMetodo = ContextoDoMetodo(
     navegador=True, entrada=True, apps=frozenset({"spotify", "steam", "brave"})
@@ -63,6 +63,7 @@ def test_a_tabela_de_casos(
 ) -> None:
     escolha = escolher_metodo(fala, contexto)
     assert (escolha.metodo, escolha.motivo) == (metodo, motivo)
+    assert motivo in CAUSAS  # o código vai à trilha, que só grava o que está na allowlist
 
 
 def test_o_que_cada_metodo_deixa_de_fora() -> None:

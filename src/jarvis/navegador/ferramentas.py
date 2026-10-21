@@ -66,8 +66,9 @@ class AcaoRecusada(Exception):
     """O dono disse não (ou o prazo acabou), ou a política recusou: a ação **não** aconteceu."""
 
 
-Exigir = Callable[[str, str], None]
-"""`(detalhe, motivo)`: pergunta ao dono e volta se ele disse sim; levanta `AcaoRecusada`."""
+Exigir = Callable[[str, str, str], None]
+"""`(detalhe, motivo, causa)`: pergunta ao dono e volta se ele disse sim; levanta `AcaoRecusada`.
+O detalhe e o motivo são a frase da janela; a causa é o código que a trilha grava."""
 
 
 def _curto(valor: object, limite: int) -> str:
@@ -210,7 +211,7 @@ class CorposDoNavegador:
         tab_id, url, _ = self._aba(args)
         avaliacao = risco.avaliar_leitura(url)
         if avaliacao.confirmar:
-            exigir(f"ler a página {dominio(url)}", avaliacao.confirmar)
+            exigir(f"ler a página {dominio(url)}", avaliacao.confirmar, avaliacao.causa)
         pagina = self.cliente.ler(tab_id)
         texto = str(pagina.get("textoVisivel", ""))
         links = list(pagina.get("links", []))
@@ -244,7 +245,7 @@ class CorposDoNavegador:
         tab_id, url, _ = self._aba(args)
         avaliacao = risco.avaliar_leitura(url)
         if avaliacao.confirmar:
-            exigir(f"inspecionar a página {dominio(url)}", avaliacao.confirmar)
+            exigir(f"inspecionar a página {dominio(url)}", avaliacao.confirmar, avaliacao.causa)
         mapa = self.cliente.mapear(tab_id)
         tipo = str(args.get("tipo", "tudo"))
         procurado = _sem_acento(str(args.get("texto", "")).strip())
@@ -295,7 +296,7 @@ class CorposDoNavegador:
         tab_id, url, _ = self._aba(args)
         avaliacao = risco.avaliar_leitura(url)
         if avaliacao.confirmar:
-            exigir(f"ver a tela de {dominio(url)}", avaliacao.confirmar)
+            exigir(f"ver a tela de {dominio(url)}", avaliacao.confirmar, avaliacao.causa)
         captura = self.cliente.capturar(tab_id)
         mapa = captura.get("mapa")
         mapa = mapa if isinstance(mapa, dict) else {}
@@ -370,7 +371,7 @@ class CorposDoNavegador:
             url, contaminado=contaminado, liberados=liberados, objetivo=objetivo
         )
         if avaliacao.confirmar:
-            exigir(f"navegar para {dominio(url)}", avaliacao.confirmar)
+            exigir(f"navegar para {dominio(url)}", avaliacao.confirmar, avaliacao.causa)
         if tab_id is None:
             aba = dict(self.cliente.abrir(url, segundo_plano=segundo_plano).get("aba", {}))
             tab_id = aba.get("id") if isinstance(aba.get("id"), int) else None
@@ -406,7 +407,11 @@ class CorposDoNavegador:
             url, dados, nome, contaminado=contaminado, liberados=liberados, objetivo=objetivo
         )
         if avaliacao.confirmar:
-            exigir(f"clicar em «{_curto(nome, 80)}» em {dominio(url)}", avaliacao.confirmar)
+            exigir(
+                f"clicar em «{_curto(nome, 80)}» em {dominio(url)}",
+                avaliacao.confirmar,
+                avaliacao.causa,
+            )
         if cancelado():
             raise AcaoRecusada("interrompido antes do clique")
         feito = self.cliente.clicar(tab_id, alvo, ref=ref)
@@ -446,6 +451,7 @@ class CorposDoNavegador:
             exigir(
                 f"{FRASE_DA_ACAO.get(acao, acao)} «{_curto(nome, 80)}» em {dominio(url)}",
                 avaliacao.confirmar,
+                avaliacao.causa,
             )
         if cancelado():
             raise AcaoRecusada("interrompido antes de acionar")
@@ -488,6 +494,7 @@ class CorposDoNavegador:
             exigir(
                 f"digitar {len(texto)} caracteres em «{_curto(nome, 80)}» em {dominio(url)}",
                 avaliacao.confirmar,
+                avaliacao.causa,
             )
         if cancelado():
             raise AcaoRecusada("interrompido antes de digitar")

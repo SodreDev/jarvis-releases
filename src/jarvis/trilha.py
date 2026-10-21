@@ -11,10 +11,13 @@ decidido por lista de proibições (frágil: o que não está nela passa), e sim
 (número, booleano, código, rótulo curto, motivo escrito pelo próprio código, nomes de
 argumento). Campo fora da allowlist não é gravado — só o **nome** dele vai para `campos_fora`,
 para que a omissão apareça em vez de ficar escondida; valor que não cabe na forma vira
-`[fora_da_forma]`. Nos textos que sobram (os motivos que o nosso código escreve) ainda passa a
-redação de segredos do projeto, a URL fica reduzida a esquema e host, o caminho a `/…`, e o
-resto é cortado. Nunca vai texto do dono, texto ou DOM de página, resultado de ferramenta,
-valor de argumento nem áudio. Nada sai da máquina.
+`[fora_da_forma]`. O `motivo` de ferramenta, de permissão e de método é um **código** da
+allowlist `CAUSAS` (`envia_formulario`, `elemento_sem_nome`…), nunca a frase: a frase da pergunta
+ao dono cita o rótulo que a página dá ao elemento. Nos textos que sobram (o erro do turno e a
+razão do Jev, que o nosso código escreve) ainda passa a redação de segredos do projeto, a URL
+fica reduzida a esquema e host, o caminho a `/…`, e o resto é cortado. Nunca vai texto do dono,
+texto ou DOM de página, resultado de ferramenta, valor de argumento nem áudio. Nada sai da
+máquina.
 
 Limites (documentados em `docs/COMO-TESTAR.md` §0.10): pasta `0700` e arquivo `0600`, até
 `TAMANHO_MAXIMO` por arquivo e `COPIAS` cópias antigas, e retenção por idade — arquivo sem
@@ -49,8 +52,10 @@ PERMISSAO_DO_ARQUIVO: Final = 0o600
 """Só o dono lê a trilha: a pasta e o arquivo nascem (e são corrigidos) sem grupo nem outros."""
 CARACTERES_POR_TEXTO: Final = 160
 CARACTERES_POR_ROTULO: Final = 48
-CODIGO_NO_MOTIVO: Final = r"\(([a-z][a-z_]{2,40})\)"
-"""O código da extensão que o corpo das browser.* põe entre parênteses: "(alvo_ausente)"."""
+CODIGO_NO_MOTIVO: Final = r"^a página não deixou \(([a-z][a-z_]{2,40})\)"
+"""O código da extensão que o corpo das browser.* põe entre parênteses no **começo** da frase:
+"a página não deixou (alvo_ausente): …". Só ali — no meio da frase pode estar o rótulo que a
+página dá ao elemento, e um rótulo "(algo)" não vira código."""
 
 FORA_DA_FORMA: Final = "[fora_da_forma]"
 """Valor que não cabe na forma do campo: o campo fica, com esta marca em vez do valor."""
@@ -72,6 +77,8 @@ class Forma(Enum):
     """Rótulo de decisão, com espaço mas curto ("não chegou ao PDP")."""
     MOTIVO = auto()
     """Frase que o **nosso** código escreve: redigida, com URL e caminho reduzidos, e cortada."""
+    CAUSA = auto()
+    """Código de motivo da allowlist `CAUSAS` (vários, unidos por `+`). Fora dela, a marca."""
     CHAVES = auto()
     """Nomes de argumento — nunca os valores."""
 
@@ -93,7 +100,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "fim": Forma.CODIGO,
     "jev": Forma.MOTIVO,
     "metodo": Forma.CODIGO,
-    "motivo": Forma.MOTIVO,
+    "motivo": Forma.CAUSA,
     "motor": Forma.CODIGO,
     "ms": Forma.NUMERO,
     "ms_primeira_fala": Forma.NUMERO,
@@ -146,6 +153,58 @@ dos campos que vieram — assim um evento novo aparece na trilha sem levar valor
 
 CAMPOS_BASE: Final = frozenset({"t", "turno", "evento", "campos_fora"})
 
+SEM_CAUSA: Final = "sem_codigo"
+"""Resultado que não foi ok e não disse a causa: o código genérico, nunca a frase."""
+CAUSAS: Final[frozenset[str]] = frozenset(
+    {
+        SEM_CAUSA,
+        # quem pediu o sim
+        "confirmacao_do_pdp",
+        "portao_pediu_permissao",
+        # o risco do que está sob o clique (`jarvis.navegador.risco`)
+        "categoria_do_site",
+        "envia_formulario",
+        "formulario_sensivel",
+        "palavra_de_risco",
+        "elemento_sem_nome",
+        "enter_envia",
+        "destino_externo",
+        "dado_do_dono_para_fora",
+        "turno_contaminado",
+        "segredo_do_dono",
+        # a janela em foco (`jarvis.entrada.controle`)
+        "categoria_da_janela",
+        # a ferramenta que não terminou ok (`jarvis.executor.ferramentas`, `jarvis.s2`)
+        "metodo_de_fora",
+        "ferramenta_desligada",
+        "fora_do_contrato",
+        "argumento_recusado",
+        "app_ambiguo",
+        "dono_nao_confirmou",
+        "pdp_negou",
+        "interrompido",
+        "acao_recusada",
+        "erro_da_ferramenta",
+        "portao_negou",
+        "esperando_o_dono",
+        "portao_falhou",
+        # o método do pedido (`jarvis.politica.metodo`)
+        "pede_teclado_ou_mouse",
+        "pede_terminal",
+        "abre_o_navegador",
+        "site_sem_automacao",
+        "cita_site",
+        "cita_site_sem_extensao",
+        "cita_app",
+        "pede_sistema",
+        "pede_memoria",
+        "pedido_misto",
+        "sem_metodo_especifico",
+    }
+)
+"""A allowlist do `motivo`: códigos que o nosso código escolhe pelo caminho que tomou. Código novo
+entra aqui, ou a trilha grava a marca no lugar dele."""
+
 
 def texto_seguro(valor: object, limite: int) -> str:
     """Redige o segredo, reduz URL a `esquema://host/…` e caminho a `/…`, e corta no limite."""
@@ -171,6 +230,11 @@ def na_forma(forma: Forma, valor: object) -> object:
     if forma is Forma.CODIGO:
         texto = str(valor)
         return texto if SO_CODIGO.match(texto) else FORA_DA_FORMA
+    if forma is Forma.CAUSA:
+        texto = str(valor)
+        if not texto or all(parte in CAUSAS for parte in texto.split("+")):
+            return texto
+        return FORA_DA_FORMA
     limite = CARACTERES_POR_ROTULO if forma is Forma.ROTULO else CARACTERES_POR_TEXTO
     return texto_seguro(valor, limite)
 

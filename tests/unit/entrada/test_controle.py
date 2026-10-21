@@ -74,10 +74,10 @@ class Dono:
 
     def __init__(self, sim: bool = True) -> None:
         self.sim = sim
-        self.perguntas: list[tuple[str, str]] = []
+        self.perguntas: list[tuple[str, str, str]] = []
 
-    def __call__(self, detalhe: str, motivo: str) -> None:
-        self.perguntas.append((detalhe, motivo))
+    def __call__(self, detalhe: str, motivo: str, causa: str) -> None:
+        self.perguntas.append((detalhe, motivo, causa))
         if not self.sim:
             raise EntradaRecusada("o dono não confirmou")
 
@@ -156,6 +156,7 @@ def test_terminal_pede_o_sim_e_so_age_depois_dele() -> None:
     dono = Dono(sim=True)
     _rodar(controle, "input.key.type", {"texto": "ls"}, dono)
     assert "terminal" in dono.perguntas[0][1] and "Konsole".lower() in dono.perguntas[0][0].lower()
+    assert dono.perguntas[0][2] == "categoria_da_janela"  # o código da trilha, sem o título
     assert backend.eventos == [("digitar", "ls")]
 
     negado, nao = _controle(FocoFalso([KONSOLE]))
@@ -170,6 +171,7 @@ def test_enter_pede_o_sim_mesmo_em_janela_comum_e_quebra_de_linha_tambem() -> No
     _rodar(controle, "input.key.press", {"tecla": "enter"}, dono)
     _rodar(controle, "input.key.type", {"texto": "oi\nvida"}, dono)
     assert len(dono.perguntas) == 2 and "Enter" in dono.perguntas[0][1]
+    assert [p[2] for p in dono.perguntas] == ["enter_envia", "enter_envia"]
     assert len(backend.eventos) == 2
 
 
@@ -178,6 +180,7 @@ def test_turno_contaminado_pede_o_sim_para_qualquer_acao() -> None:
     dono = Dono()
     _rodar(controle, "input.mouse.click", {}, dono, contaminado=True)
     assert "terceiros" in dono.perguntas[0][1]
+    assert dono.perguntas[0][2] == "turno_contaminado"
 
 
 def test_foco_desconhecido_e_recusa_nao_pergunta() -> None:
@@ -259,7 +262,7 @@ def test_parada_do_dono_vale_antes_e_durante_a_pergunta(tmp_path: Path) -> None:
     interruptor.liberar()
     controle2, backend2 = _controle(FocoFalso([KONSOLE]), interruptor=interruptor)
 
-    def parar_enquanto_olha(detalhe: str, motivo: str) -> None:
+    def parar_enquanto_olha(detalhe: str, motivo: str, causa: str) -> None:
         interruptor.parar("parei olhando a pergunta")
 
     with pytest.raises(EntradaRecusada, match="mandou parar"):

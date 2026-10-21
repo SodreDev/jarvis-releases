@@ -43,7 +43,8 @@ FERRAMENTA_DE_CONFIRMACAO: Final = "input.acao_sensivel"
 CATEGORIAS_ONDE_NAO_SE_DIGITA: Final = frozenset({"senha", "autenticacao"})
 PAUSA_DEPOIS_DE_ATIVAR_S: Final = 0.3
 
-Exigir = Callable[[str, str], None]
+Exigir = Callable[[str, str, str], None]
+"""`(detalhe, motivo, causa)`: a frase da janela e o código que a trilha grava."""
 
 
 class EntradaRecusada(ValueError):
@@ -54,6 +55,8 @@ class EntradaRecusada(ValueError):
 class Avaliacao:
     recusa: str = ""
     motivos: tuple[str, ...] = ()
+    causas: tuple[str, ...] = ()
+    """Um código por motivo (`jarvis.trilha.CAUSAS`), na mesma ordem: é o que a trilha grava."""
 
 
 def _mesma_janela(a: Janela | None, b: Janela | None) -> bool:
@@ -92,14 +95,21 @@ def avaliar(
             return Avaliacao(
                 recusa="em gerenciador de senhas ou janela de autenticação quem digita é o dono"
             )
-    motivos: list[str] = []
+    motivos: list[tuple[str, str]] = []
     if categoria:
-        motivos.append(f"a janela em foco é {ROTULOS[categoria]}")
+        motivos.append((f"a janela em foco é {ROTULOS[categoria]}", "categoria_da_janela"))
     if enter:
-        motivos.append("Enter confirma ou envia o que estiver na janela")
+        motivos.append(("Enter confirma ou envia o que estiver na janela", "enter_envia"))
     if contaminado:
-        motivos.append("o turno leu conteúdo de terceiros, que pode estar pedindo esta ação")
-    return Avaliacao(motivos=tuple(motivos))
+        motivos.append(
+            (
+                "o turno leu conteúdo de terceiros, que pode estar pedindo esta ação",
+                "turno_contaminado",
+            )
+        )
+    return Avaliacao(
+        motivos=tuple(frase for frase, _ in motivos), causas=tuple(causa for _, causa in motivos)
+    )
 
 
 def _inteiro(args: Mapping[str, Any], nome: str) -> int:
@@ -139,7 +149,7 @@ class ControleDeEntrada:
             raise EntradaRecusada(avaliacao.recusa)
         if avaliacao.motivos:
             onde = f" na janela «{janela.app}: {janela.titulo[:60]}»" if janela else ""
-            exigir(f"{descricao}{onde}", "; ".join(avaliacao.motivos))
+            exigir(f"{descricao}{onde}", "; ".join(avaliacao.motivos), "+".join(avaliacao.causas))
             if cancelado():
                 raise EntradaRecusada("interrompido antes do evento")
             self._conferir_foco_depois_do_sim(janela)
