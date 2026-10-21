@@ -40,10 +40,13 @@ def test_o_turno_deixa_so_metadados_na_trilha(tmp_path: Path) -> None:
 
     pasta = app.raiz / PASTA_DA_TRILHA
     tipos = [e["evento"] for e in eventos_do_ultimo_turno(pasta)]
-    assert tipos == ["turno.inicio", "metodo", "ferramenta", "turno.fim"]  # método: ADR-0035
+    # método: ADR-0035; a ferramenta deixa início e fim (dono, 2026-10-20).
+    assert tipos == ["turno.inicio", "metodo", "ferramenta.inicio", "ferramenta", "turno.fim"]
     metodo = eventos_do_ultimo_turno(pasta)[1]
     assert set(metodo) == {"t", "turno", "evento", "metodo", "motivo", "de_fora"}
-    ferramenta = eventos_do_ultimo_turno(pasta)[2]
+    comeco = eventos_do_ultimo_turno(pasta)[2]
+    assert comeco["tool_id"] == "files.list_dir" and comeco["argumentos"] == ["path"]
+    ferramenta = eventos_do_ultimo_turno(pasta)[3]
     assert ferramenta["tool_id"] == "files.list_dir" and ferramenta["status"] == "ok"
     assert ferramenta["argumentos"] == ["path"] and ferramenta["pdp"] == "allow"
     bruto = (pasta / ARQUIVO).read_text("utf-8")

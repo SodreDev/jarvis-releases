@@ -866,17 +866,31 @@ que segura é a regra do dado seu na URL, que só reconhece os padrões da tabel
 
 ### 0.10 Trilha de diagnóstico do turno (2026-10-20)
 
-Cada turno deixa uma linha por evento em `~/.local/state/jarvis/voz/diagnostico/turnos.jsonl`
-(rotativo: até ~2 MB, com `.1`, `.2`, `.3`): início e fim do turno (motor, tempos de 1º token, 1ª
-fala, 1º áudio e total), cada ferramenta (nome, **nomes** dos argumentos, status, tempo, veredito do
-PDP, motivo e o código de erro da extensão, como `alvo_ausente`), cada decisão do portão (Jev, PDP,
-fazer/explícita/pendente/negado) e cada pedido de permissão com o motivo e a sua resposta. **Só
-metadados**: nunca o que você disse, texto de página, resultado de ferramenta, valor de argumento
-ou áudio; o texto que sobra (motivos) passa pela redação de segredos e é cortado em 160 caracteres.
-Nada sai da máquina.
+Cada turno deixa uma linha por evento em `~/.local/state/jarvis/voz/diagnostico/turnos.jsonl`:
+início e fim do turno (motor, tempos de 1º token, 1ª fala, 1º áudio e total), **início e fim de
+cada ferramenta** (nome, **nomes** dos argumentos, status, duração, veredito do PDP, motivo e o
+código de erro da extensão, como `alvo_ausente`), cada decisão do portão (Jev, PDP,
+fazer/explícita/pendente/negado) e cada pedido de permissão com o motivo e a sua resposta.
 
-Para ver o último turno: `uv run jarvis-voz --diagnostico` (seção «último turno»). Testes:
-`tests/unit/test_trilha.py`, `tests/unit/voz/test_trilha_do_app.py`.
+**Só metadados, por allowlist** (não por lista de proibições, que deixa passar o que não está
+nela): `EVENTOS` em `src/jarvis/trilha.py` diz quais campos cada evento pode ter e `CAMPOS` diz a
+forma de cada um (número, booleano, código, rótulo curto, motivo, nomes de argumento). Campo fora
+da lista **não é gravado** — só o nome dele vai para `campos_fora`, para a omissão aparecer; valor
+que não cabe na forma vira `[fora_da_forma]`. Nunca entra o que você disse, texto ou DOM de
+página, resultado de ferramenta, valor de argumento nem áudio. Nos motivos (as frases que o nosso
+próprio código escreve) ainda passa a redação de segredos, a URL fica em `esquema://host/…`, o
+caminho em `/…` e o texto é cortado em 160 caracteres. Nada sai da máquina.
+
+**Limites:** pasta `0700` e arquivo `0600` (uma trilha antiga com permissão frouxa é corrigida no
+primeiro evento); rotação de 512 KiB por arquivo com 3 cópias (`.1`, `.2`, `.3` — ~2 MB no total);
+retenção de 7 dias — arquivo sem toque há mais que isso é apagado (poda no primeiro evento da
+sessão e a cada volta do arquivo). Os três limites aparecem no `--diagnostico`.
+
+Para ver o último turno: `uv run jarvis-voz --diagnostico` (seção «último turno»). O resumo é
+honesto: diz quando **não há turno** (e cita a retenção), quando o turno ficou **sem linha de
+fim** (interrompido, ou o app saiu antes) e quando uma ferramenta **começou e não terminou**.
+Testes: `tests/unit/test_trilha.py`, `tests/unit/voz/test_trilha_do_app.py`,
+`tests/unit/voz/test_cli.py`.
 
 ### 0.12 Pensar não é falar: menos fala, só o resultado (2026-10-20, ADR-0031)
 

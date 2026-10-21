@@ -1,45 +1,192 @@
 """A trilha de diagnóstico do turno: o que o Jarvis fez, quanto levou e por que perguntou.
 
 Pedido do dono (2026-10-20, depois de testar o app): para melhorar o Jarvis é preciso ver o que
-ele fez em cada turno — que ferramentas chamou, quanto cada uma levou, o que o PDP, o Jev e as
-pendências decidiram, o motivo de cada pedido de permissão e os erros de ferramenta e de seletor.
+ele fez em cada turno — que ferramentas chamou, quando cada uma começou e terminou, quanto levou,
+o que o PDP, o Jev e as pendências decidiram, o motivo de cada pedido de permissão e os erros de
+ferramenta e de seletor.
 
-Um JSONL local, rotativo (`turnos.jsonl`, `.1`, `.2`…), **só de metadados**: ids, nomes de
-ferramenta, chaves de argumento (nunca os valores), tempos, status, vereditos e os motivos que o
-próprio código escreve. Nunca vai texto do dono, texto de página, resultado de ferramenta nem
-áudio; todo texto passa pelo `redigir` do projeto e é cortado. Nada sai da máquina. O
-`jarvis-voz --diagnostico` lê o último turno daqui (`resumo_do_ultimo_turno`).
+Um JSONL local, rotativo (`turnos.jsonl`, `.1`, `.2`…), **só de metadados**. O que entra não é
+decidido por lista de proibições (frágil: o que não está nela passa), e sim por **allowlist**:
+`EVENTOS` diz quais campos cada tipo de evento pode ter e `CAMPOS` diz a forma de cada um
+(número, booleano, código, rótulo curto, motivo escrito pelo próprio código, nomes de
+argumento). Campo fora da allowlist não é gravado — só o **nome** dele vai para `campos_fora`,
+para que a omissão apareça em vez de ficar escondida; valor que não cabe na forma vira
+`[fora_da_forma]`. Nos textos que sobram (os motivos que o nosso código escreve) ainda passa a
+redação de segredos do projeto, a URL fica reduzida a esquema e host, o caminho a `/…`, e o
+resto é cortado. Nunca vai texto do dono, texto ou DOM de página, resultado de ferramenta,
+valor de argumento nem áudio. Nada sai da máquina.
+
+Limites (documentados em `docs/COMO-TESTAR.md` §0.10): pasta `0700` e arquivo `0600`, até
+`TAMANHO_MAXIMO` por arquivo e `COPIAS` cópias antigas, e retenção por idade — arquivo sem
+toque há mais de `DIAS_DE_RETENCAO` dias sai do disco. O `jarvis-voz --diagnostico` lê o último
+turno daqui (`resumo_do_ultimo_turno`) e mostra esses limites (`limites`).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
+from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Final
 
-from jarvis.memoryd.importacao import redigir
+from jarvis.memoryd.importacao import CAMINHO, redigir
 
 ARQUIVO: Final = "turnos.jsonl"
 TAMANHO_MAXIMO: Final = 512 * 1024
 COPIAS: Final = 3
 """Até ~2 MB no total: o arquivo vivo e três antigos."""
+DIAS_DE_RETENCAO: Final = 7
+"""Retenção por idade: arquivo sem toque há mais dias que isto é apagado (poda no primeiro
+evento da sessão e a cada volta do arquivo)."""
+SEGUNDOS_POR_DIA: Final = 86_400.0
+PERMISSAO_DA_PASTA: Final = 0o700
+PERMISSAO_DO_ARQUIVO: Final = 0o600
+"""Só o dono lê a trilha: a pasta e o arquivo nascem (e são corrigidos) sem grupo nem outros."""
 CARACTERES_POR_TEXTO: Final = 160
+CARACTERES_POR_ROTULO: Final = 48
 CODIGO_NO_MOTIVO: Final = r"\(([a-z][a-z_]{2,40})\)"
 """O código da extensão que o corpo das browser.* põe entre parênteses: "(alvo_ausente)"."""
 
+FORA_DA_FORMA: Final = "[fora_da_forma]"
+"""Valor que não cabe na forma do campo: o campo fica, com esta marca em vez do valor."""
+URL: Final = re.compile(r"\b([a-z][a-z0-9+.-]*)://([^\s/?#]{1,80})\S*")
+"""URL no texto vira `esquema://host/…`: o caminho e a consulta podem ser dado privado."""
+SO_CODIGO: Final = re.compile(r"^[\w.:/-]{0,64}$")
 
-def limpo(valor: object) -> object:
-    """O que pode ir para a trilha: número e booleano como estão; texto redigido e curto."""
-    if valor is None or isinstance(valor, bool | int | float):
-        return valor
-    if isinstance(valor, list | tuple):
-        return [limpo(v) for v in list(valor)[:20]]
-    texto = " ".join(redigir(str(valor)).texto.split())
-    return texto if len(texto) <= CARACTERES_POR_TEXTO else texto[:CARACTERES_POR_TEXTO] + "…"
+
+class Forma(Enum):
+    """A forma de um campo da trilha — é ela que decide o que sobra do valor."""
+
+    NUMERO = auto()
+    """`int`/`float`/`None`: vai como está (float arredondado)."""
+    BOOLEANO = auto()
+    """`bool`/`None`."""
+    CODIGO = auto()
+    """Código curto e estável do nosso código (`alvo_ausente`, `browser.click`, `ok`)."""
+    ROTULO = auto()
+    """Rótulo de decisão, com espaço mas curto ("não chegou ao PDP")."""
+    MOTIVO = auto()
+    """Frase que o **nosso** código escreve: redigida, com URL e caminho reduzidos, e cortada."""
+    CHAVES = auto()
+    """Nomes de argumento — nunca os valores."""
+
+
+CAMPOS: Final[Mapping[str, Forma]] = {
+    "argumentos": Forma.CHAVES,
+    "aviso": Forma.CODIGO,
+    "cancelado": Forma.BOOLEANO,
+    "caracteres_de_raciocinio": Forma.NUMERO,
+    "caracteres_do_pedido": Forma.NUMERO,
+    "caracteres_falados": Forma.NUMERO,
+    "codigo": Forma.CODIGO,
+    "de_fora": Forma.NUMERO,
+    "decisao": Forma.CODIGO,
+    "epoch": Forma.NUMERO,
+    "erro": Forma.MOTIVO,
+    "fase": Forma.CODIGO,
+    "ferramentas": Forma.NUMERO,
+    "fim": Forma.CODIGO,
+    "jev": Forma.MOTIVO,
+    "metodo": Forma.CODIGO,
+    "motivo": Forma.MOTIVO,
+    "motor": Forma.CODIGO,
+    "ms": Forma.NUMERO,
+    "ms_primeira_fala": Forma.NUMERO,
+    "ms_primeiro_audio": Forma.NUMERO,
+    "ms_primeiro_token": Forma.NUMERO,
+    "ms_total": Forma.NUMERO,
+    "narracao_retida": Forma.NUMERO,
+    "objetivo": Forma.CODIGO,
+    "origem": Forma.CODIGO,
+    "pdp": Forma.ROTULO,
+    "raciocinio_descartado": Forma.NUMERO,
+    "resposta": Forma.CODIGO,
+    "resultados_podados": Forma.NUMERO,
+    "status": Forma.CODIGO,
+    "tool_id": Forma.CODIGO,
+}
+"""A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
+não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
+
+EVENTOS: Final[Mapping[str, frozenset[str]]] = {
+    "turno.inicio": frozenset({"motor", "epoch", "caracteres_do_pedido"}),
+    "turno.fim": frozenset(
+        {
+            "fim",
+            "cancelado",
+            "ms_primeiro_token",
+            "ms_primeira_fala",
+            "ms_primeiro_audio",
+            "ms_total",
+            "ferramentas",
+            "caracteres_falados",
+            "caracteres_de_raciocinio",
+            "raciocinio_descartado",
+            "narracao_retida",
+            "resultados_podados",
+            "objetivo",
+            "erro",
+        }
+    ),
+    "ferramenta.inicio": frozenset({"tool_id", "argumentos", "pdp", "fase"}),
+    "ferramenta": frozenset(
+        {"tool_id", "argumentos", "status", "pdp", "ms", "motivo", "codigo", "aviso", "fase"}
+    ),
+    "portao": frozenset({"tool_id", "pdp", "jev", "decisao", "ms"}),
+    "permissao": frozenset({"tool_id", "origem", "motivo", "resposta"}),
+    "metodo": frozenset({"metodo", "motivo", "de_fora"}),
+}
+"""Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
+dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""
+
+CAMPOS_BASE: Final = frozenset({"t", "turno", "evento", "campos_fora"})
+
+
+def texto_seguro(valor: object, limite: int) -> str:
+    """Redige o segredo, reduz URL a `esquema://host/…` e caminho a `/…`, e corta no limite."""
+    redigido = redigir(str(valor)).texto
+    sem_url = URL.sub(r"\1://\2/…", redigido)
+    sem_caminho = CAMINHO.sub("/…", sem_url)
+    texto = " ".join(sem_caminho.split())
+    return texto if len(texto) <= limite else texto[:limite] + "…"
+
+
+def na_forma(forma: Forma, valor: object) -> object:
+    """O que sobra do valor na forma do campo; o que não cabe vira `FORA_DA_FORMA`."""
+    if forma is Forma.NUMERO:
+        if valor is None or (isinstance(valor, int | float) and not isinstance(valor, bool)):
+            return round(valor, 3) if isinstance(valor, float) else valor
+        return FORA_DA_FORMA
+    if forma is Forma.BOOLEANO:
+        return valor if valor is None or isinstance(valor, bool) else FORA_DA_FORMA
+    if forma is Forma.CHAVES:
+        if not isinstance(valor, list | tuple):
+            return FORA_DA_FORMA
+        return [na_forma(Forma.CODIGO, chave) for chave in list(valor)[:20]]
+    if forma is Forma.CODIGO:
+        texto = str(valor)
+        return texto if SO_CODIGO.match(texto) else FORA_DA_FORMA
+    limite = CARACTERES_POR_ROTULO if forma is Forma.ROTULO else CARACTERES_POR_TEXTO
+    return texto_seguro(valor, limite)
+
+
+def pela_allowlist(tipo: str, campos: Mapping[str, object]) -> tuple[dict[str, object], list[str]]:
+    """Os campos que este evento pode ter, na forma de cada um, e os nomes dos que ficaram fora."""
+    permitidos = EVENTOS.get(tipo, frozenset())
+    dentro: dict[str, object] = {}
+    fora: list[str] = []
+    for nome, valor in campos.items():
+        forma = CAMPOS.get(nome)
+        if forma is None or nome not in permitidos or nome in CAMPOS_BASE:
+            fora.append(str(na_forma(Forma.CODIGO, nome)))
+            continue
+        dentro[nome] = na_forma(forma, valor)
+    return dentro, sorted(fora)
 
 
 class TrilhaDeDiagnostico:
@@ -51,13 +198,16 @@ class TrilhaDeDiagnostico:
         *,
         tamanho_maximo: int = TAMANHO_MAXIMO,
         copias: int = COPIAS,
+        dias_de_retencao: int = DIAS_DE_RETENCAO,
         relogio: Callable[[], float] = time.time,
     ) -> None:
         self.pasta = pasta
         self._tamanho_maximo = tamanho_maximo
         self._copias = copias
+        self._dias_de_retencao = dias_de_retencao
         self._relogio = relogio
         self._trava = threading.Lock()
+        self._preparada = False
         self.turno = ""
         """O turno corrente: os eventos sem `turno` explícito ficam nele."""
 
@@ -71,21 +221,60 @@ class TrilhaDeDiagnostico:
 
     def evento(self, tipo: str, **campos: object) -> None:
         """Um evento. Falha de disco não derruba o turno: a trilha é ajuda, não requisito."""
+        turno = campos.pop("turno", None) or self.turno
+        dentro, fora = pela_allowlist(tipo, campos)
         registro: dict[str, object] = {
             "t": round(self._relogio(), 3),
-            "turno": campos.pop("turno", None) or self.turno,
-            "evento": tipo,
+            "turno": na_forma(Forma.CODIGO, turno),
+            "evento": tipo if tipo in EVENTOS else na_forma(Forma.CODIGO, tipo),
         }
-        registro.update({chave: limpo(valor) for chave, valor in campos.items()})
+        registro.update(dentro)
+        if fora:
+            registro["campos_fora"] = fora
         linha = json.dumps(registro, ensure_ascii=False) + "\n"
         with self._trava:
             try:
+                self._preparar()
                 self.pasta.mkdir(parents=True, exist_ok=True)
                 self._girar_se_preciso(len(linha.encode("utf-8")))
-                with self.arquivo.open("a", encoding="utf-8") as saida:
+                descritor = os.open(
+                    self.arquivo,
+                    os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                    PERMISSAO_DO_ARQUIVO,
+                )
+                with os.fdopen(descritor, "a", encoding="utf-8") as saida:
                     saida.write(linha)
             except OSError:
                 return
+
+    def _preparar(self) -> None:
+        """Uma vez por instância: pasta e arquivos só do dono, e a poda da retenção."""
+        if self._preparada:
+            return
+        self._preparada = True
+        self.pasta.mkdir(parents=True, exist_ok=True)
+        self.pasta.chmod(PERMISSAO_DA_PASTA)
+        self._podar()
+        for arquivo in self._arquivos():
+            try:
+                arquivo.chmod(PERMISSAO_DO_ARQUIVO)
+            except OSError:
+                continue
+
+    def _arquivos(self) -> list[Path]:
+        return [self.arquivo] + [
+            self.pasta / f"{ARQUIVO}.{indice}" for indice in range(1, self._copias + 1)
+        ]
+
+    def _podar(self) -> None:
+        """Retenção por idade: arquivo sem toque há mais de `dias_de_retencao` sai do disco."""
+        limite = self._relogio() - self._dias_de_retencao * SEGUNDOS_POR_DIA
+        for arquivo in self._arquivos():
+            try:
+                if arquivo.stat().st_mtime < limite:
+                    arquivo.unlink(missing_ok=True)
+            except OSError:
+                continue
 
     def _girar_se_preciso(self, acrescimo: int) -> None:
         try:
@@ -101,6 +290,7 @@ class TrilhaDeDiagnostico:
             if antigo.exists():
                 antigo.rename(self.pasta / f"{ARQUIVO}.{indice + 1}")
         self.arquivo.rename(self.pasta / f"{ARQUIVO}.1")
+        self._podar()
 
 
 def codigo_do_motivo(motivo: str) -> str:
@@ -140,16 +330,48 @@ def _ms(valor: object) -> str:
     return f"{float(valor):.0f} ms" if isinstance(valor, int | float) else "?"
 
 
+def limites(pasta: Path) -> list[str]:
+    """Onde a trilha mora e até onde cresce — o `--diagnostico` mostra antes do resumo."""
+    try:
+        tamanho = f"{pasta.joinpath(ARQUIVO).stat().st_size / 1024:.0f} KiB"
+    except OSError:
+        tamanho = "ainda não existe"
+    total = TAMANHO_MAXIMO * (COPIAS + 1) / (1024 * 1024)
+    return [
+        f"  arquivo {pasta / ARQUIVO} ({tamanho}; pasta 0700, arquivo 0600, nada sai da máquina)",
+        f"  rotação: {TAMANHO_MAXIMO // 1024} KiB por arquivo e {COPIAS} cópias "
+        f"(~{total:.0f} MB no total) · retenção: {DIAS_DE_RETENCAO} dias sem toque e o arquivo sai",
+    ]
+
+
 def resumo_do_ultimo_turno(pasta: Path) -> list[str]:
-    """O último turno em linhas curtas, para o `jarvis-voz --diagnostico`."""
+    """O último turno em linhas curtas, para o `jarvis-voz --diagnostico`.
+
+    Honesto por construção: diz quando não há turno, quando o turno não teve linha de fim e
+    quando uma ferramenta começou e não terminou — em vez de mostrar um turno pela metade como
+    se estivesse completo."""
     eventos = eventos_do_ultimo_turno(pasta)
     if not eventos:
-        return ["  nenhum turno registrado ainda (a trilha nasce no primeiro pedido)"]
+        return [
+            "  nenhum turno registrado (a trilha nasce no primeiro pedido; o que passa de "
+            f"{DIAS_DE_RETENCAO} dias é apagado)"
+        ]
     inicio = eventos[0]
     quando = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(inicio.get("t", 0))))
     linhas = [f"  turno {inicio.get('turno')} em {quando} · motor {inicio.get('motor', '?')}"]
+    comecadas: list[str] = []
     for evento in eventos[1:]:
+        tipo = evento.get("evento")
+        if tipo == "ferramenta.inicio":
+            comecadas.append(str(evento.get("tool_id")))
+            continue
+        if tipo == "ferramenta" and str(evento.get("tool_id")) in comecadas:
+            comecadas.remove(str(evento.get("tool_id")))
         linhas.append("  " + _linha(evento))
+    for tool_id in comecadas:
+        linhas.append(f"  ferramenta {tool_id}: começou e não terminou (sem resultado na trilha)")
+    if not any(e.get("evento") == "turno.fim" for e in eventos):
+        linhas.append("  sem linha de fim: o turno foi interrompido ou o app saiu antes")
     return linhas
 
 

@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from jarvis.trilha import (
     ARQUIVO,
+    CAMPOS,
+    DIAS_DE_RETENCAO,
+    EVENTOS,
+    FORA_DA_FORMA,
+    PERMISSAO_DA_PASTA,
+    PERMISSAO_DO_ARQUIVO,
+    SEGUNDOS_POR_DIA,
     TrilhaDeDiagnostico,
     codigo_do_motivo,
     eventos_do_ultimo_turno,
+    limites,
     resumo_do_ultimo_turno,
 )
 
@@ -92,3 +101,174 @@ def test_a_linha_da_ferramenta_diz_a_fase_e_a_do_fim_o_estado_do_objetivo(tmp_pa
     texto = "\n".join(resumo_do_ultimo_turno(tmp_path))
     assert "browser.read: ok em 5 ms (PDP ?) · fase verificando" in texto
     assert "objetivo concluido" in texto
+
+
+# --- allowlist de campos (dono, 2026-10-20): o que não está na lista não é gravado -------------
+
+
+def test_campo_de_fora_da_allowlist_nao_e_gravado_e_o_nome_aparece(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento(
+        "ferramenta",
+        tool_id="browser.click",
+        status="ok",
+        url="https://banco.example/conta/123?token=abc",
+        texto_da_pagina="saldo: 10 mil",
+        seletor="#senha",
+    )
+    evento = _linhas(tmp_path)[1]
+
+    assert set(evento) == {"t", "turno", "evento", "tool_id", "status", "campos_fora"}
+    assert evento["campos_fora"] == ["seletor", "texto_da_pagina", "url"]
+    bruto = (tmp_path / ARQUIVO).read_text("utf-8")
+    for proibido in ("banco.example", "token=abc", "saldo", "#senha"):
+        assert proibido not in bruto, proibido
+
+
+def test_campo_permitido_noutro_evento_nao_entra_neste(tmp_path: Path) -> None:
+    """`motivo` existe, mas não em `turno.inicio`: a allowlist é por evento, não global."""
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude", motivo="o dono pediu o extrato do banco")
+    evento = _linhas(tmp_path)[0]
+
+    assert evento["campos_fora"] == ["motivo"] and "motivo" not in evento
+    assert "extrato" not in (tmp_path / ARQUIVO).read_text("utf-8")
+
+
+def test_evento_desconhecido_grava_so_o_cabecalho(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento("fala.do.dono", motivo="minha senha é hunter2hunter2", tool_id="x")
+    evento = _linhas(tmp_path)[1]
+
+    fora = evento["campos_fora"]
+    assert set(evento) == {"t", "turno", "evento", "campos_fora"}
+    assert evento["evento"] == "fala.do.dono"
+    assert isinstance(fora, list) and sorted(fora) == ["motivo", "tool_id"]
+    assert "hunter2" not in (tmp_path / ARQUIVO).read_text("utf-8")
+
+
+def test_valor_fora_da_forma_do_campo_vira_marca(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento(
+        "ferramenta",
+        tool_id="olha o extrato do banco do dono",  # frase onde devia vir um código
+        status="ok",
+        ms="rápido",
+        argumentos={"path": "~/Documentos"},  # mapa onde devia vir a lista de nomes
+    )
+    evento = _linhas(tmp_path)[1]
+
+    assert evento["tool_id"] == FORA_DA_FORMA and evento["ms"] == FORA_DA_FORMA
+    assert evento["argumentos"] == FORA_DA_FORMA
+    assert "extrato" not in (tmp_path / ARQUIVO).read_text("utf-8")
+
+
+def test_a_lista_de_argumentos_guarda_nomes_e_nao_valores(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento("ferramenta", tool_id="files.list_dir", argumentos=["path", "minha senha"])
+    assert _linhas(tmp_path)[1]["argumentos"] == ["path", FORA_DA_FORMA]
+
+
+def test_todo_campo_de_todo_evento_tem_forma_declarada() -> None:
+    """Allowlist sem furo: nenhum evento pode permitir campo que `CAMPOS` não conhece."""
+    for tipo, permitidos in EVENTOS.items():
+        assert permitidos <= set(CAMPOS), tipo
+
+
+def test_motivo_perde_a_url_inteira_e_o_caminho(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento(
+        "ferramenta",
+        tool_id="browser.click",
+        status="erro",
+        motivo=(
+            "não achei o alvo (alvo_ausente) em https://conta.example/extrato/2026?cpf=111 "
+            "nem no arquivo /home/sodre/Documentos/extrato-do-banco.pdf"
+        ),
+    )
+    motivo = str(_linhas(tmp_path)[1]["motivo"])
+
+    assert "(alvo_ausente)" in motivo and "https://conta.example/…" in motivo
+    assert "extrato/2026" not in motivo and "cpf=111" not in motivo
+    assert "extrato-do-banco" not in motivo and "/…" in motivo
+
+
+# --- local, permissões, rotação e retenção ----------------------------------------------------
+
+
+def test_a_pasta_e_o_arquivo_ficam_so_para_o_dono(tmp_path: Path) -> None:
+    pasta = tmp_path / "diagnostico"
+    pasta.mkdir()
+    (pasta / ARQUIVO).write_text("", "utf-8")
+    (pasta / ARQUIVO).chmod(0o644)  # arquivo da versão antiga, com permissão frouxa
+    pasta.chmod(0o755)
+
+    TrilhaDeDiagnostico(pasta).evento("ferramenta", tool_id="x")
+
+    assert pasta.stat().st_mode & 0o777 == PERMISSAO_DA_PASTA
+    assert (pasta / ARQUIVO).stat().st_mode & 0o777 == PERMISSAO_DO_ARQUIVO
+
+
+def test_arquivo_sem_toque_alem_da_retencao_e_apagado(tmp_path: Path) -> None:
+    velho = TrilhaDeDiagnostico(tmp_path)
+    velho.novo_turno("t-velho", motor="claude")
+    (tmp_path / f"{ARQUIVO}.1").write_text('{"evento": "turno.inicio", "turno": "t-1"}\n', "utf-8")
+    assert (tmp_path / ARQUIVO).exists()
+
+    adiante = time.time() + (DIAS_DE_RETENCAO + 1) * SEGUNDOS_POR_DIA
+    TrilhaDeDiagnostico(tmp_path, relogio=lambda: adiante).evento("ferramenta", tool_id="x")
+
+    linhas = _linhas(tmp_path)
+    assert not (tmp_path / f"{ARQUIVO}.1").exists()
+    assert len(linhas) == 1 and linhas[0]["tool_id"] == "x"  # o antigo saiu, o novo nasceu
+
+
+def test_a_retencao_nao_apaga_o_que_esta_dentro_do_prazo(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    TrilhaDeDiagnostico(tmp_path).evento("ferramenta", tool_id="x")
+    assert [e["evento"] for e in _linhas(tmp_path)] == ["turno.inicio", "ferramenta"]
+
+
+def test_os_limites_dizem_onde_mora_quanto_gira_e_quanto_dura(tmp_path: Path) -> None:
+    TrilhaDeDiagnostico(tmp_path).evento("ferramenta", tool_id="x")
+    texto = "\n".join(limites(tmp_path))
+
+    assert str(tmp_path / ARQUIVO) in texto and "0600" in texto and "0700" in texto
+    assert "rotação: 512 KiB por arquivo e 3 cópias" in texto
+    assert f"retenção: {DIAS_DE_RETENCAO} dias" in texto and "nada sai da máquina" in texto
+
+
+# --- resumo honesto -----------------------------------------------------------------------------
+
+
+def test_ferramenta_que_comecou_e_nao_terminou_aparece_assim(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento("ferramenta.inicio", tool_id="browser.click", argumentos=["seletor"], pdp="allow")
+    texto = "\n".join(resumo_do_ultimo_turno(tmp_path))
+
+    assert "ferramenta browser.click: começou e não terminou (sem resultado na trilha)" in texto
+    assert "sem linha de fim: o turno foi interrompido ou o app saiu antes" in texto
+
+
+def test_inicio_com_fim_aparece_uma_vez_so(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento("ferramenta.inicio", tool_id="files.list_dir", argumentos=["path"], pdp="allow")
+    trilha.evento("ferramenta", tool_id="files.list_dir", status="ok", ms=3.0, pdp="allow")
+    trilha.evento("turno.fim", fim="concluido", ms_total=10.0, ferramentas=1)
+    texto = "\n".join(resumo_do_ultimo_turno(tmp_path))
+
+    assert texto.count("files.list_dir") == 1 and "começou e não terminou" not in texto
+    assert "sem linha de fim" not in texto
+
+
+def test_sem_turno_o_resumo_explica_e_cita_a_retencao(tmp_path: Path) -> None:
+    linha = resumo_do_ultimo_turno(tmp_path / "vazia")[0]
+    assert "nenhum turno registrado" in linha and f"{DIAS_DE_RETENCAO} dias" in linha

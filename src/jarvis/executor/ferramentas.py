@@ -643,6 +643,15 @@ class ExecutorDeFerramentas:
         """Passos 4 a 6: a confirmação que o PDP pediu, o corpo e a auditoria."""
         comeco = time.monotonic()
         veredito = str(avaliacao.decisao.veredito)
+        if self.trilha is not None:
+            # O início fica registrado antes do corpo: se a chamada travar ou o app sair no meio,
+            # a trilha mostra a ferramenta que começou e não terminou (dono, 2026-10-20).
+            self.trilha.evento(
+                "ferramenta.inicio",
+                tool_id=avaliacao.tool_id,
+                argumentos=chaves(avaliacao.argumentos.keys()),
+                pdp=veredito,
+            )
         resultado = self._concluir(
             avaliacao,
             cancelado=cancelado,
