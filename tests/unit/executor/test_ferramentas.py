@@ -526,10 +526,11 @@ def test_aberto_sem_janela_nenhuma_abrir_e_abrir_a_janela_dele(
     assert len(abertos) == 1
 
 
-def test_apps_launch_de_um_navegador_configurado_vai_pelo_mesmo_caminho(
+def test_apps_launch_de_um_navegador_ja_aberto_traz_a_janela_e_fechado_abre_como_app(
     tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
 ) -> None:
-    """«Abre o Brave» pelo apps.launch abriria outra janela do Brave já aberto."""
+    """«Abre o Brave» pelo apps.launch abriria outra janela do Brave já aberto — mesmo liberado só
+    como app, sem estar em Configuração → Navegadores. Fechado, ele abre como qualquer app."""
     from jarvis.executor.navegadores import AbridorDeNavegador
 
     apps = tmp_path / "apps"
@@ -542,19 +543,13 @@ def test_apps_launch_de_um_navegador_configurado_vai_pelo_mesmo_caminho(
         lancados.append(app)
         return 7
 
-    pelo_abridor: list[tuple[str, ...]] = []
+    def nunca(*_a: Any, **_k: Any) -> int:
+        raise AssertionError("o apps.launch abre pelo lançador do app, não pelo do navegador")
 
-    def lancar_navegador(argv: Any, **_: Any) -> int:
-        pelo_abridor.append(tuple(argv))
-        return 88
-
-    binario = tmp_path / "brave-stable"
-    binario.write_text("#!/bin/true\n")
-    binario.chmod(0o755)
     abridor = AbridorDeNavegador(
-        navegadores={"brave": str(binario)},
-        principal="brave",
-        lancar=lancar_navegador,
+        navegadores={},  # liberado só como app
+        principal="",
+        lancar=nunca,
         mostrar_aberto=lambda _f: {"visivel": True},
     )
     executor = _executor(
@@ -572,12 +567,17 @@ def test_apps_launch_de_um_navegador_configurado_vai_pelo_mesmo_caminho(
 
     assert r.status == "ok", r.motivo
     assert r.dados["ja_aberto"] is True and r.dados["visivel"] is True
-    assert lancados == [] and pelo_abridor == [], "nada foi lançado de novo"
+    assert lancados == [], "nada foi lançado de novo"
 
-    abridor.mostrar_aberto = lambda _f: None  # fechado: aí sim abre, uma vez
+    abridor.mostrar_aberto = lambda _f: None  # sem extensão conectada…
+    abridor.em_execucao = lambda _f: 4242  # …mas o processo do Brave rodando
+    rodando = executor.executar("apps.launch", {"nome": "brave"}, cancelado=NUNCA)
+    assert rodando.status == "ok" and rodando.dados["ja_aberto"] is True and lancados == []
+
+    abridor.em_execucao = lambda _f: None  # fechado: aí sim abre, uma vez, como app
     fechado = executor.executar("apps.launch", {"nome": "brave"}, cancelado=NUNCA)
-    assert fechado.status == "ok" and fechado.dados["pid"] == 88
-    assert pelo_abridor == [(str(binario),)] and lancados == []
+    assert fechado.status == "ok" and fechado.dados["pid"] == 7
+    assert [a.id for a in lancados] == ["brave-browser"]
 
 
 def test_site_so_http_e_dominio_liberado_abre_sem_perguntar(

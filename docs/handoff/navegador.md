@@ -385,14 +385,16 @@ Onde mora cada peça:
   concessão, sem faixa); o resultado diz `segundo_plano`.
 - **Abrir navegador** — `executor/navegadores.py`: `ReutilizarAba(url, familia, nova_aba)` devolve
   o resultado da extensão ou `None`; `abrir` vai pela extensão sempre que ela atende (também com
-  `nova_aba`); `abrir_sozinho` → `NavegadorAberto` (mostra pela extensão; sem ela, processo rodando
-  em `/proc/<pid>/exe` conta como aberto; aberto sem janela → lança); `navegador_em_execucao`,
-  `EXECUTAVEIS_DA_FAMILIA`. `executor/ferramentas.py`: `browser.launch` devolve `ja_aberto`/
-  `visivel`, e o `apps.launch` de um navegador configurado vai pelo `abrir_sozinho` (fechado, o foco
-  é acompanhado como antes). `voz/app.py`: `_controle_da_familia`, `_na_aba_atual(..., nova_aba)`,
-  `_mostrar_o_navegador` e `em_execucao=navegador_em_execucao` no abridor. `politica/metodo.py`:
-  `abre_o_navegador` deixa de fora o `apps.launch`. Catálogo: `browser.navigate`, `sites.open`,
-  `browser.launch` (texto e pós-condição) e os stubs.
+  `nova_aba`); `ja_aberto(familia)` (mostra pela extensão; sem ela, processo rodando em
+  `/proc/<pid>/exe` conta; aberto sem janela → `None`, lança) e `abrir_sozinho` →
+  `NavegadorAberto`; `navegador_em_execucao`, `EXECUTAVEIS_DA_FAMILIA`, `familia_de_navegador`.
+  `executor/ferramentas.py`: `browser.launch` devolve `ja_aberto`/`visivel`, e o `apps.launch` de um
+  app que é navegador (configurado ou só liberado) traz a janela se ele já está aberto — fechado,
+  abre como qualquer app, com o foco acompanhado. `voz/app.py`: `_controle_da_familia`,
+  `_na_aba_atual(..., nova_aba)`, `_mostrar_o_navegador` e `em_execucao=navegador_em_execucao` no
+  abridor. `politica/metodo.py`: só a nota do `abre_o_navegador` (o `apps.launch` fica — o
+  `cc119e8` o tirava e o ajuste desfez: o Brave liberado só como app não teria como abrir).
+  Catálogo: `browser.navigate`, `sites.open`, `browser.launch` (texto e pós-condição) e os stubs.
 
 Armadilhas medidas:
 
@@ -403,8 +405,10 @@ Armadilhas medidas:
   aba à vista); o Firefox captura qualquer uma. Leitura e mapa valem nas duas.
 - Extensão e host vão juntos: o host de antes recusa `fundo`/`modo` («parâmetro fora do contrato»)
   e a extensão de antes ignora `fundo`. Recarregar a extensão reinicia o host.
-- O app liga a leitura de `/proc` no `browser.launch`: teste que monta o app inteiro e chama o
-  `browser.launch` veria o navegador de verdade da máquina — os do executor injetam `em_execucao`.
+- O app liga a leitura de `/proc` (`em_execucao=navegador_em_execucao`): teste que monta o app
+  inteiro e pede «abre o brave» vê o navegador de verdade da máquina do dono — o
+  `test_janela_abrir_apps.py` troca o `navegador_em_execucao` do `voz.app` por um que não acha
+  nada; os do executor injetam `em_execucao`.
 
 O que o dono faz (nada rodou na máquina dele): `uv run jarvis-native-host --instalar` no
 repositório, **Recarregar** em `brave://extensions`, fechar a janela de trabalho do Jarvis que ficou

@@ -133,6 +133,9 @@ def _montar(
         "ExecutorDeFerramentas",
         partial(ExecutorDeFerramentas, lancar_app=maquina.lancar, abrir_site=maquina.abrir_site),
     )
+    # A máquina de mentira não tem navegador rodando: o app procura no `/proc` de verdade (um
+    # navegador já aberto não ganha outra janela, 2026-10-21), e o Brave do dono não vale aqui.
+    monkeypatch.setattr(modulo_app, "navegador_em_execucao", lambda _familia: None)
     config = CONFIGURACAO.com(**configuracao)
     arquivo = tmp_path / "jarvis-voz.toml"
     escrever(config, arquivo)

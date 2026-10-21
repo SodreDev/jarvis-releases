@@ -100,10 +100,11 @@ def test_o_que_cada_metodo_deixa_de_fora() -> None:
     assert escolher_metodo("roda o script no terminal", TUDO).evitar >= ENTRADA
     assert escolher_metodo("aperta ctrl+L", TUDO).evitar == frozenset()
     assert escolher_metodo("abre o spotify e o google", TUDO).evitar == frozenset()
-    # Uma instância só (dono, 2026-10-21): «abre o navegador» vai pelo browser.launch, que traz o
-    # navegador já aberto; o apps.launch abriria outra janela dele.
+    # Uma instância só (dono, 2026-10-21): «abre o navegador» diz que o browser.launch traz o que
+    # já está aberto; o apps.launch fica (o Brave liberado como app abre por ele, e com o Brave
+    # aberto ele também só traz a janela — o executor confere, não o roteador).
     navegador = escolher_metodo("abre o Brave", TUDO)
-    assert "apps.launch" in navegador.evitar and "browser.launch" not in navegador.evitar
+    assert {"apps.launch", "browser.launch"}.isdisjoint(navegador.evitar)
     assert "traz para a frente o que já está aberto" in navegador.nota()
     assert "Método deste pedido: navegador (cita_site)" in site.nota()
     assert escolher_metodo("qual a capital da França?", TUDO).nota() == ""

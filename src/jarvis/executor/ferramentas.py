@@ -32,7 +32,7 @@ from jarvis.executor.desfazer import LIXEIRA, Contaminacao, RegistroDeDesfazeres
 from jarvis.executor.janelas import PRAZO_DO_FOCO_S, PistaDoApp
 from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
 from jarvis.executor.nativas import CORPOS, DE_ARQUIVOS, PRECISAM_DE_AGENDA, Nativas
-from jarvis.executor.navegadores import AbridorDeNavegador
+from jarvis.executor.navegadores import AbridorDeNavegador, familia_de_navegador
 from jarvis.executor.organizar import OrganizacaoRecusada, Organizador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
 from jarvis.imagem import CHAVE_DOS_ANEXOS, Imagem
@@ -1123,6 +1123,16 @@ class ExecutorDeFerramentas:
             return self._organizar(tool_id, args, grant, caminho, marca, chamada)
         if tool_id == "apps.launch":
             app = self.registro_de_apps.resolver(str(args["nome"]))
+            familia = familia_de_navegador(app.nome)
+            aberto = (
+                self.navegadores.ja_aberto(familia)
+                if self.navegadores is not None and familia is not None
+                else None
+            )
+            if aberto is not None:
+                # O navegador já aberto não ganha outra janela (dono, 2026-10-21): a janela do
+                # dono vem para a frente, como no browser.launch. Fechado, abre como qualquer app.
+                return {"app": app.nome} | aberto.para_o_modelo()
             janelas = self.portas().janelas
             do_turno = marca is None or marca is self.turno
             # As janelas de antes do lançamento: a que aparecer depois é evidência (ADR-0037).
@@ -1131,20 +1141,7 @@ class ExecutorDeFerramentas:
                 if janelas is not None and do_turno
                 else frozenset()
             )
-            familia = self.navegadores.resolver(app.nome) if self.navegadores is not None else None
-            aberto = (
-                self.navegadores.abrir_sozinho(familia)
-                if self.navegadores is not None and familia is not None
-                else None
-            )
-            if aberto is not None and aberto.ja_aberto:
-                # O navegador já aberto não ganha outra janela (dono, 2026-10-21): o mesmo
-                # caminho do browser.launch, que só lança quando não há um ativo.
-                return {"app": app.nome} | aberto.para_o_modelo()
-            # Fechado, o navegador abre pelo que o dono configurou; e o foco é acompanhado.
-            pid = aberto.pid if aberto is not None and aberto.pid is not None else None
-            if pid is None:
-                pid = self.lancar_app(app)
+            pid = self.lancar_app(app)
             return {"app": app.nome, "pid": pid} | self._acompanhar_o_foco(
                 app, pid, antes, do_turno
             )

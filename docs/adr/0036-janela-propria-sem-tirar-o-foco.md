@@ -100,13 +100,14 @@ manda o fundo para a janela do Jarvis):
    próprio pedido já abriu, ou a «nova aba» vazia do dono (não há página dele nela), ou uma **guia
    nova** na janela dele. A aba que já está na página (só ativa) e a do mesmo site (navegada)
    continuam como na regra 4 da ADR-0027.
-4. **Abrir navegador só sem um ativo** (`executor/navegadores.py`): com a extensão conectada, o
-   `sites.open` vai por ela — também com `nova_aba` —; o «abre o navegador» (`browser.launch`, e o
-   `apps.launch` de um navegador configurado) traz a janela do dono para a frente (`tabs.show` da
-   aba atual, sem concessão nem faixa) e diz `ja_aberto`. Sem extensão, um processo do navegador
-   rodando também conta como aberto: lido em `/proc/<pid>/exe` — só o executável, nunca o ambiente
-   nem a linha de comando. Só sem nenhum dos dois (ou com ele aberto sem janela nenhuma) o navegador
-   é lançado. O roteador (ADR-0035) tira o `apps.launch` do «abre o navegador».
+4. **Abrir navegador só sem um ativo** (`executor/navegadores.py`, `AbridorDeNavegador.ja_aberto`):
+   com a extensão conectada, o `sites.open` vai por ela — também com `nova_aba` —; o «abre o
+   navegador» (`browser.launch`, e o `apps.launch` de um app que é navegador, configurado ou só
+   liberado) traz a janela do dono para a frente (`tabs.show` da aba atual, sem concessão nem
+   faixa) e diz `ja_aberto`. Sem extensão, um processo do navegador rodando também conta como
+   aberto: lido em `/proc/<pid>/exe` — só o executável, nunca o ambiente nem a linha de comando. Só
+   sem nenhum dos dois (ou com ele aberto sem janela nenhuma) o navegador é lançado — o
+   `apps.launch`, então, abre como qualquer app, com o foco acompanhado (ADR-0037).
 5. **Ditos:** aba pedida que não existe mais é `sem_aba` («essa aba não existe mais…: veja as abas
    abertas»), e não a falha crua; `windows.focused` conta as janelas (`janelas`), para a prova.
 

@@ -85,6 +85,12 @@ EmExecucao = Callable[[str], int | None]
 """O PID de um processo daquele navegador rodando agora (do próprio usuário), ou `None`."""
 
 
+def familia_de_navegador(nome: str) -> str | None:
+    """A família, se o app é um navegador conhecido («Brave Web Browser» → `brave`), ou `None`."""
+    familia = familia_de(nome)
+    return familia if familia in EXECUTAVEIS_DA_FAMILIA else None
+
+
 def navegador_em_execucao(familia: str, *, raiz: Path = Path("/proc")) -> int | None:
     """Um processo da família rodando agora: lê só o executável de cada processo (`exe`), nunca o
     ambiente nem a linha de comando; processo de outro usuário não se deixa ler e não conta."""
@@ -295,20 +301,29 @@ class AbridorDeNavegador:
         self.lancar((*argv, url), ambiente=self.ambiente)
         return familia, False
 
-    def abrir_sozinho(self, navegador: str = "") -> NavegadorAberto:
-        """Abre só o navegador, sem URL — se não houver um ativo (dono, 2026-10-21): com a extensão
-        conectada a janela do dono vem para a frente; com o processo rodando, nada se abre (abrir o
-        binário de novo daria outra janela). Só sem nenhum dos dois o navegador é lançado."""
-        familia = self.escolher(navegador)
+    def ja_aberto(self, familia: str) -> NavegadorAberto | None:
+        """O navegador daquela família já aberto, sem lançar nada (dono, 2026-10-21): com a
+        extensão conectada, a janela do dono vem para a frente; sem ela, o processo rodando basta
+        (abrir o binário de novo daria outra janela). `None` quando não há um ativo — ou quando a
+        extensão diz que ele está aberto sem janela nenhuma: aí abrir é abrir a janela dele, na
+        instância que já existe."""
         mostrado = self.mostrar_aberto(familia) if self.mostrar_aberto is not None else None
-        if mostrado is not None and not mostrado.get("sem_janela"):
+        if mostrado is not None:
+            if mostrado.get("sem_janela"):
+                return None
             return NavegadorAberto(
                 familia, None, ja_aberto=True, visivel=bool(mostrado.get("visivel"))
             )
-        # Aberto sem janela nenhuma (a extensão diz): lançar só abre a janela dele, na instância
-        # que já existe. Sem extensão, o processo rodando basta para não abrir outra janela.
-        if mostrado is None and self.em_execucao is not None and self.em_execucao(familia):
+        if self.em_execucao is not None and self.em_execucao(familia):
             return NavegadorAberto(familia, None, ja_aberto=True)
+        return None
+
+    def abrir_sozinho(self, navegador: str = "") -> NavegadorAberto:
+        """Abre só o navegador, sem URL — se não houver um ativo (`ja_aberto`)."""
+        familia = self.escolher(navegador)
+        aberto = self.ja_aberto(familia)
+        if aberto is not None:
+            return aberto
         argv = argv_da_entrada(self.navegadores[familia])
         if not argv:
             raise AppRecusado(
