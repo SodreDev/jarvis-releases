@@ -167,6 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from jarvis.gui.acesso import estado_do_navegador
     from jarvis.gui.ponte import Ponte
     from jarvis.voz.conversa import abrir_conversa
+    from jarvis.voz.vocabulario import RepositorioDoVocabulario
 
     aplicativo = QGuiApplication(sys.argv[:1])
     aplicativo.setApplicationName(NOME)
@@ -181,6 +182,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raiz=raiz,
         caminho_da_configuracao=args.config,
         conversa=conversa,
+        # O vocabulário do dono (ADR-0044), na pasta de configuração dele; a captura não o lê.
+        vocabulario=None if args.capturar is not None else RepositorioDoVocabulario.padrao(),
         # A tela de acesso diz se a extensão está conectada; a captura não sonda a sessão do dono.
         sondar_navegador=None if args.capturar is not None else estado_do_navegador,
     )

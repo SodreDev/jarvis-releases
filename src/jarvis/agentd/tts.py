@@ -222,6 +222,11 @@ class SintetizadorEmStreaming:
     pedacos_descartados: int = 0
     ao_esperar: Callable[[], object] = field(default=lambda: None)
     """Na linha do consumidor: mantém o controle responsivo enquanto texto/áudio não chega."""
+    pronunciar: Callable[[str], str] = field(default=lambda texto: texto)
+    """A grafia → a pronúncia do dono (`jarvis.voz.vocabulario`, ADR-0044), aplicada só ao texto
+    que o **motor** recebe: o `Trecho` (a tela, a conversa, o eco que a vigia reconhece) fica com a
+    grafia certa. É aqui, e não em cada motor, para valer igual na piper, na nuvem e no
+    OmniVoice."""
 
     def falar(self, texto: str, *, chunk_id: str = "tts") -> Fala:
         """Sintetiza tudo de uma vez (sem streaming) — útil para medição e para teste."""
@@ -280,7 +285,7 @@ class SintetizadorEmStreaming:
         def sintetizar_se_vivo(texto: str) -> bytes | None:
             if parar.is_set() or self.cancelado():
                 return None
-            amostras = self.motor.sintetizar(texto)
+            amostras = self.motor.sintetizar(self.pronunciar(texto))
             if parar.is_set() or self.cancelado():
                 return None
             return amostras

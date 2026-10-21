@@ -34,6 +34,7 @@ from jarvis.voz.conversa import ConversaPersistente
 from jarvis.voz.escuta import Escuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.teclado import ESPACO
+from jarvis.voz.vocabulario import RepositorioDoVocabulario
 
 PARAR: Final = "\x00parar"
 """Sentinela da fila de texto: o modo texto termina quando ela chega, sem `q` nenhum."""
@@ -104,6 +105,8 @@ class SessaoDeVoz:
     a todas, e o texto longo não volta a cada conversa."""
     conversa: ConversaPersistente | None = None
     """A conversa que sobrevive ao reinício (a ponte a abre uma vez e passa a todas as sessões)."""
+    vocabulario: RepositorioDoVocabulario | None = None
+    """O vocabulário do dono (ADR-0044), que a ponte passa a cada sessão."""
     modo_texto: bool = False
     """Começa no modo texto (sem abrir dispositivo). Vira verdadeiro sozinho se o áudio cair."""
 
@@ -136,6 +139,7 @@ class SessaoDeVoz:
             raiz=self.raiz,
             ambiente=self.ambiente,
             conversa=self.conversa,
+            vocabulario=self.vocabulario,
         )
 
     def _ligar(self, aplicativo: Aplicativo) -> Aplicativo:

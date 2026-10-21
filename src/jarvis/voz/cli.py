@@ -50,6 +50,7 @@ from jarvis.voz.omnivoice import linhas_do_diagnostico
 from jarvis.voz.registro import conferir, ler_motores, motores_de
 from jarvis.voz.teclado import preparado, teclado_do_ambiente
 from jarvis.voz.tela_config import TelaDeConfiguracao
+from jarvis.voz.vocabulario import RepositorioDoVocabulario, Vocabulario
 
 PASTA_DE_SESSAO: Final = "voz"
 
@@ -91,6 +92,26 @@ def _linhas_do_ruido(configuracao: Configuracao, pasta_da_trilha: Path) -> list[
         return linhas
     detalhe = " · ".join(f"{motivo} {vezes}" for motivo, vezes in contagem.items())
     linhas.append(f"  ruído que não virou pedido: {sum(contagem.values())} trecho(s) — {detalhe}")
+    return linhas
+
+
+def _linhas_do_vocabulario(ambiente: Mapping[str, str] | None) -> list[str]:
+    """Onde mora, quantos termos (do dono e aprendidos) e o que ficou de fora — sem os nomes:
+    a tela do diagnóstico pode ser compartilhada para pedir ajuda."""
+    repositorio = RepositorioDoVocabulario.padrao(ambiente)
+    if repositorio is None:
+        return ["  sem pasta de configuração neste ambiente: sem vocabulário"]
+    vocabulario: Vocabulario = repositorio.carregar()
+    aprendidos = sum(1 for termo in vocabulario.termos if termo.id)
+    com_fala = sum(1 for termo in vocabulario.termos if termo.fala)
+    existe = "" if repositorio.arquivo_do_dono.exists() else "  (ainda não existe)"
+    linhas = [
+        f"  arquivo do dono: {repositorio.arquivo_do_dono}{existe}",
+        f"  aprendido: {repositorio.arquivo_aprendido} · exemplo: docs/exemplos/vocabulario.toml",
+        f"  {len(vocabulario.termos)} termo(s), {aprendidos} aprendido(s), {com_fala} com "
+        f"pronúncia · {len(vocabulario.ignorar)} frase(s) a ignorar",
+    ]
+    linhas.extend(f"  ! {aviso}" for aviso in vocabulario.avisos)
     return linhas
 
 
@@ -141,6 +162,11 @@ def diagnosticar(
     for texto in resumo_do_ultimo_turno(pasta_da_trilha):
         linha(texto)
     for texto in _linhas_do_ruido(configuracao, pasta_da_trilha):
+        linha(texto)
+
+    linha("")
+    linha("vocabulário do dono (ADR-0044) — nomes que o Jarvis ouve e fala certo:")
+    for texto in _linhas_do_vocabulario(ambiente):
         linha(texto)
 
     linha("")
@@ -347,6 +373,7 @@ def main(argv: Sequence[str] | None = None, *, ambiente: Mapping[str, str] | Non
         raiz=_raiz_de_sessao(ambiente),
         ambiente=ambiente,
         teclado=teclado_do_ambiente(),
+        vocabulario=RepositorioDoVocabulario.padrao(ambiente),
     )
     try:
         if args.texto:

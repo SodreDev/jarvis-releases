@@ -70,6 +70,7 @@ from jarvis.voz.palavra import PalavraInvalida, exigir_limiar
 from jarvis.voz.provedores import CAMPO_DO_PAPEL, provedores, vozes_da_elevenlabs
 from jarvis.voz.registro import motor_registrado, motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
+from jarvis.voz.vocabulario import RepositorioDoVocabulario
 
 PAPEIS: Final = ("asr", "tts")
 AREA_DOS_PAINEIS: Final[dict[str, Area]] = {
@@ -221,6 +222,7 @@ class Ponte(QObject):
         ambiente: Mapping[str, str] | None = None,
         aplicativo: Aplicativo | None = None,
         conversa: ConversaPersistente | None = None,
+        vocabulario: RepositorioDoVocabulario | None = None,
         pastas_de_apps: tuple[str, ...] | None = None,
         lar: Path | None = None,
         sondar_navegador: Callable[[Configuracao], EstadoDaPonte] | None = None,
@@ -236,6 +238,8 @@ class Ponte(QObject):
         """Um laço já montado (teste, medição). `None` monta um na hora de conversar."""
         self._conversa = conversa
         """O histórico persistente: a conversa de antes volta à tela ao abrir (ADR-0026)."""
+        self._vocabulario = vocabulario
+        """O vocabulário do dono (ADR-0044): `None` = sem vocabulário (os testes da janela)."""
         self._espaco = Workspace()
         self._espaco.ao_mudar = self._publicar
         # O modo de escuta vivo (ADR-0021): o mesmo objeto para o laço, para o gerente (que
@@ -709,6 +713,7 @@ class Ponte(QObject):
             escuta=self._escuta,
             avisos_dados=self._avisos_dados,
             conversa=self._conversa,
+            vocabulario=self._vocabulario,
         )
         self._sessao.iniciar(self._aplicativo)
         self.conversaMudou.emit()

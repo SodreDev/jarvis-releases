@@ -1,0 +1,49 @@
+# Vocabulário do dono — EXEMPLO (ADR-0044). Copie para ~/.config/jarvis/vocabulario.toml e troque
+# pelos seus nomes. Este arquivo do repositório só tem nomes fictícios ou de apps comuns.
+#
+# Para cada nome que importa para você — um app pouco famoso, uma pessoa, um termo que você usa:
+#
+#   escrita  como se escreve. É o que a tela mostra e o que o ASR passa a escrever.
+#   ouvido   como o ASR costuma errar (os apelidos): trocados pela escrita depois do ASR.
+#            Evite palavra comum do português: ela seria trocada em toda frase ("disco" viraria
+#            "Discord" também em "formata o disco").
+#   fala     como o Jarvis deve pronunciar, escrito em português ("Stím", "Iutúbi"). Só o TTS ouve
+#            isto: a tela e a conversa continuam com a escrita.
+#   motores  em que vozes a `fala` vale (opcional; vazio = todas). Ex.: a ElevenLabs já fala
+#            "Spotify" certo, a voz local (tts-piper-epitran) não.
+#   tipo     app, pessoa ou termo (opcional, informativo).
+#
+# Nome composto escrito de outro jeito ("Kaua Chimenes") é achado pela fonética; palavra solta, só
+# pelos apelidos. Os primeiros termos (até 11, depois da palavra de ativação) também vão de dica
+# ao ASR — curta de propósito (ADR-0043).
+#
+# O Jarvis nunca reescreve este arquivo. O que ele aprende quando você diz "o certo é …" vai para
+# vocabulario-aprendido.toml, na mesma pasta.
+
+# Frases que o ASR inventa e que você quer descartadas sempre (além das de legenda, que já são).
+# Tem de vir antes do primeiro [[termo]].
+ignorar = ["fala galera"]
+
+[[termo]]
+escrita = "Steam"
+ouvido = ["stim", "estim"]
+fala = "Stím"
+motores = ["tts-piper-epitran"]
+tipo = "app"
+
+[[termo]]
+escrita = "Spotify"
+fala = "Spótifai"
+motores = ["tts-piper-epitran"]
+tipo = "app"
+
+[[termo]]
+escrita = "Kdenlive"
+ouvido = ["que dei live", "kden live"]
+fala = "Cadên laive"
+tipo = "app"
+
+[[termo]]
+escrita = "Kauã Ximenes"
+ouvido = ["calwash menes"]
+tipo = "pessoa"

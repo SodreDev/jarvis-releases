@@ -145,6 +145,7 @@ from jarvis.voz.ruido import (
 from jarvis.voz.ruido import Motivo as MotivoDoRuido
 from jarvis.voz.s2_provisorio import RespostaDeEco
 from jarvis.voz.teclado import ESPACO, TECLAS_DE_SAIDA, Teclado, TecladoMudo
+from jarvis.voz.vocabulario import VAZIO, RepositorioDoVocabulario, Vocabulario
 
 PASTA_DE_VOZES: Final = Path.home() / ".cache" / "jarvis" / "vozes"
 ID_DA_VOZ_NO_REGISTRO: Final = "rhasspy/piper-voices:{voz}"
@@ -455,6 +456,13 @@ class Aplicativo:
     encerrado: bool = False
     """O laço acabou porque o dono pediu para encerrar o Jarvis (`jarvis.encerrar`, ADR-0041): quem
     o rodou (a janela) fecha tudo, em vez de só parar a conversa."""
+    vocabulario: RepositorioDoVocabulario | None = field(default=None, repr=False)
+    """O vocabulário do dono (ADR-0044), em `~/.config/jarvis/`: os nomes que ele quer ouvidos e
+    falados certo — vão na dica do ASR, corrigem a transcrição e mudam a pronúncia do TTS. `None` =
+    sem vocabulário, que é o caso da suíte (ela nunca lê a pasta do dono): quem monta o laço de
+    produção (a janela, o `jarvis-voz`) passa o repositório."""
+    _vocabulario_lido: Vocabulario = field(default=VAZIO, repr=False)
+    _vocabulario_carregado: bool = field(default=False, repr=False)
     vigia: VigiaDeInterrupcao | None = field(default=None, repr=False)
     """Ouve o dono enquanto o Jarvis fala, para ele interromper por voz (ADR-0040): na palavra de
     ativação e na escuta contínua. Montada em `rodar_audio` (`interromper_por_voz`, ligado por
@@ -599,6 +607,9 @@ class Aplicativo:
         """
         cancelado = self._cancelado_do_turno_corrente
         self.raiz.mkdir(parents=True, exist_ok=True)
+        if not self._vocabulario_carregado:
+            # Antes do ASR: os termos do dono vão na dica dele (ADR-0044).
+            self._ler_o_vocabulario()
         try:
             if com_asr and self._asr is None:
                 self._asr = self._abrir_o_ouvido(cancelado)
@@ -1030,7 +1041,33 @@ class Aplicativo:
 
     def _dica_do_asr(self) -> str:
         """A dica do ASR (ADR-0043): a palavra de ativação e os termos do dono — curta."""
-        return dica_do_asr(self.configuracao.palavra)
+        return dica_do_asr(self.configuracao.palavra, self._vocabulario_lido.termos_da_dica())
+
+    # --- o vocabulário do dono (ADR-0044) -------------------------------------------------------
+    def _ler_o_vocabulario(self) -> None:
+        """Lê o vocabulário uma vez por abertura. O que não serve fica de fora com aviso — a voz
+        não cai por um arquivo torto; a tela diz quantas entradas e onde ver."""
+        self._vocabulario_carregado = True
+        if self.vocabulario is None:
+            return
+        self._vocabulario_lido = self.vocabulario.carregar()
+        if self._vocabulario_lido.avisos:
+            self.escrever_na_tela(
+                f"  (vocabulário: {len(self._vocabulario_lido.avisos)} entrada(s) ficaram de fora"
+                " — `jarvis-voz --diagnostico` diz quais)"
+            )
+
+    def recarregar_vocabulario(self) -> None:
+        """O dono corrigiu um nome (`vocabulario.aprender`, ou o "desfaz"): vale já — na
+        pós-correção, na pronúncia e na dica do ASR aberto, sem reabrir o motor."""
+        self._ler_o_vocabulario()
+        if self._asr is not None and hasattr(self._asr, "dica"):
+            self._asr.dica = self._dica_do_asr()
+
+    def _pronunciar(self, texto: str) -> str:
+        """O texto que o motor de TTS recebe: a grafia trocada pela pronúncia do dono."""
+        motor = str(getattr(self._tts, "registrado", "") or self.configuracao.tts)
+        return self._vocabulario_lido.pronunciar(texto, motor)
 
     def _abrir_o_ouvido(self, cancelado: Callable[[], bool]) -> MotorDeAsr:
         """O ASR escolhido — ou, se ele é de nuvem e não roda, o local, com uma linha dizendo.
@@ -1612,6 +1649,7 @@ class Aplicativo:
             epoch=epoch,
             cancelado=self.cancelado_de(epoch),
             ao_esperar=self._enquanto_fala,
+            pronunciar=self._pronunciar,
         )
         textos: list[str] = []
 
@@ -2145,7 +2183,11 @@ class Aplicativo:
             )
             self._mudar(self._repouso)
             return
-        hipotese = transcricao.hipotese._replace(texto=veredito.texto)
+        # Os nomes do dono escritos certo (ADR-0044): o apelido que o ASR errou e o nome composto
+        # escrito de outro jeito. Daqui em diante — palavra de ativação, pedido, tela — é este.
+        hipotese = transcricao.hipotese._replace(
+            texto=self._vocabulario_lido.corrigir(veredito.texto)
+        )
         if not hipotese.texto.strip():
             if self.modo_de_escuta.modo is ModoDeEscuta.PALAVRA:
                 # Esperando a chamada, ruído que não vira texto é o caso comum: avisar a cada
@@ -2195,8 +2237,9 @@ class Aplicativo:
     # --- ruído não vira pedido (ADR-0043) ------------------------------------------------------
     @property
     def politica_de_ruido(self) -> PoliticaDeRuido:
-        """Os limiares do filtro, da configuração viva (o dono troca com a sessão aberta)."""
-        return self.configuracao.politica_de_ruido()
+        """Os limiares do filtro, da configuração viva (o dono troca com a sessão aberta), e as
+        frases que ele mandou ignorar no vocabulário."""
+        return self.configuracao.politica_de_ruido(ignorar=self._vocabulario_lido.ignorar)
 
     def _palavras_da_dica(self) -> frozenset[str]:
         """O que foi de dica ao ASR (a palavra de ativação, os termos): é o eco que o filtro
