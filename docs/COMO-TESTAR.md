@@ -599,8 +599,9 @@ ls -l   "$XDG_RUNTIME_DIR/jarvis/navegador/"                    # srw------- …
 
 Sites de banco, pagamento e gerenciador de senhas pedem o seu sim **a cada clique/texto**; ler
 banco/senha/pagamento também pede. Em mensageiro e e-mail, abrir a conversa e escrever não pedem —
-**enviar** pede (lista versionada em `src/jarvis/navegador/risco.py`). Para conferir sem expor conta
-nenhuma, use o teste automático (`tests/unit/navegador/test_ferramentas_browser.py`).
+**enviar** pede (lista versionada em `src/jarvis/navegador/risco.py`), e o clique num botão sem nome
+(só ícone, sem aria-label, alt nem texto) também, porque pode ser o envio. Para conferir sem expor
+conta nenhuma, use o teste automático (`tests/unit/navegador/test_ferramentas_browser.py`).
 
 #### 0.7.7 Mapa da página e acionar (2026-10-20, ADR-0032)
 

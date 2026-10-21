@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from jarvis.navegador import risco
+from jarvis.politica.objetivo import Objetivo
 
 
 @pytest.mark.parametrize(
@@ -51,6 +52,45 @@ def test_palavra_de_risco_ignora_acento_e_caixa() -> None:
         "https://exemplo.org/", {}, "Reenviar? não", contaminado=False, liberados=frozenset()
     )
     assert sem_risco == risco.SEGUE  # «reenviar» não é a palavra inteira
+
+
+SO_ICONE = {"tag": "button", "papel": "button", "rotulo": "", "texto": "", "editavel": False}
+COMPOSITOR_SEM_NOME = SO_ICONE | {"tag": "div", "papel": "textbox", "editavel": True}
+DISCORD = "https://discord.com/channels/1/2"
+GMAIL = "https://mail.google.com/mail/u/0/"
+
+
+@pytest.mark.parametrize(
+    ("url", "dados", "pergunta"),
+    [
+        # o achado da auditoria: o botão de enviar só com ícone não casa palavra de risco nenhuma
+        (DISCORD, SO_ICONE, True),
+        (GMAIL, SO_ICONE, True),
+        (DISCORD, SO_ICONE | {"rotulo": None, "texto": "  "}, True),
+        # com nome, segue: abrir a conversa não pergunta
+        (DISCORD, SO_ICONE | {"rotulo": "Pedro", "texto": "Pedro"}, False),
+        (GMAIL, SO_ICONE | {"rotulo": "Caixa de entrada"}, False),
+        # clicar no compositor sem nome só põe o foco nele
+        (DISCORD, COMPOSITOR_SEM_NOME, False),
+        # fora de mensageiro e e-mail o ícone sem nome segue como antes
+        ("https://exemplo.org/", SO_ICONE, False),
+    ],
+)
+def test_em_mensageiro_e_email_o_clique_sem_nome_pede_o_sim_mesmo_dentro_do_objetivo(
+    url: str, dados: dict[str, object], pergunta: bool
+) -> None:
+    objetivo = Objetivo.do_pedido("mande um oi para o Pedro no discord e no google mail")
+    assert objetivo.dentro(url) or not risco.categoria(url)  # o dono citou o site
+    clique = risco.avaliar_clique(
+        url, dados, "o elemento", contaminado=True, liberados=frozenset(), objetivo=objetivo
+    )
+    enter = risco.avaliar_acionamento(
+        url, dados, "o elemento", "tecla", tecla="Enter", contaminado=True,
+        liberados=frozenset(), objetivo=objetivo,
+    )  # fmt: skip
+    assert bool(clique.confirmar) is pergunta, clique
+    if not dados["editavel"]:  # Enter num botão é o clique dele
+        assert enter == clique
 
 
 # --- acionar a ação do elemento (ADR-0032): equivale a clicar ------------------------------------

@@ -92,6 +92,9 @@ CATEGORIAS_DE_CADA_ACAO: Final = frozenset({"senha", "banco", "pagamento"})
 """Onde todo clique e todo texto pedem o sim: credencial e dinheiro (dono, 2026-10-20: "só o muito
 crítico"). Mensageiro e e-mail saíram daqui: abrir conversa e escrever não perguntam — enviar,
 responder, publicar e postar continuam perguntando pelas palavras de risco e pelo envio."""
+CATEGORIAS_EM_QUE_O_ICONE_ENVIA: Final = frozenset({"mensageiro", "email"})
+"""Onde um clique sem nome acessível pede o sim: o botão de enviar costuma ser só um ícone, e sem
+nome nenhuma palavra de risco o reconhece. Clicar num campo de texto (o compositor) não envia."""
 
 PALAVRAS_DE_RISCO: Final[dict[str, tuple[str, ...]]] = {
     "envia uma mensagem ou publicação": (
@@ -248,6 +251,12 @@ def _envio_de_formulario(dados: Mapping[str, Any]) -> str:
     return "envia um formulário"
 
 
+def _sem_nome(dados: Mapping[str, Any]) -> bool:
+    """O elemento não tem nome acessível (aria-label, alt, texto…) na inspeção da extensão. O texto
+    que o modelo deu ao alvo não conta: quem nomeia o elemento é a página."""
+    return not (str(dados.get("rotulo") or "").strip() or str(dados.get("texto") or "").strip())
+
+
 def avaliar_clique(
     url: str,
     dados: Mapping[str, Any],
@@ -268,6 +277,14 @@ def avaliar_clique(
     motivo = _palavra_de_risco(alvo, str(dados.get("texto", "")))
     if motivo:
         return Avaliacao(confirmar=f"clicar em «{alvo}» {motivo}")
+    if nome in CATEGORIAS_EM_QUE_O_ICONE_ENVIA and _sem_nome(dados) and not dados.get("editavel"):
+        # Nem o objetivo solta: o domínio citado é justamente onde a mensagem seria enviada.
+        return Avaliacao(
+            confirmar=(
+                f"{dominio(url)} é {ROTULO_DAS_CATEGORIAS[nome]} e o elemento não tem nome: "
+                "pode ser o botão de enviar"
+            )
+        )
     return _para_onde_leva(
         url,
         str(dados.get("destinoDoLink", "")),

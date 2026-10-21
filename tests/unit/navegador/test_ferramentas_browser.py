@@ -381,6 +381,50 @@ def test_mensageiro_e_email_so_pedem_o_sim_para_enviar(
     assert (p1, p2, len(p3)) == ([], [], 1)
 
 
+@pytest.mark.parametrize(
+    ("url", "pedido"),
+    [
+        ("https://discord.com/channels/1/2", "mande um oi para o Pedro no discord"),
+        ("https://mail.google.com/mail/u/0/", "responda o e-mail da Ana no google mail"),
+    ],
+)
+def test_em_mensageiro_e_email_o_botao_so_com_icone_pede_o_sim_mesmo_dentro_do_objetivo(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa, url: str, pedido: str
+) -> None:
+    """Achado da auditoria (2026-10-20): o botão de enviar só com ícone, sem aria-label, alt nem
+    texto, não casa palavra de risco nenhuma e, com o domínio no objetivo, era clicado sem o sim.
+    Sem nome, pode ser o envio: pergunta. Abrir a conversa (com nome) e pôr o foco no compositor
+    continuam sem pergunta."""
+    executor.novo_turno(pedido)
+    pagina.abas[0]["url"] = url
+    pagina.no_mapa("ab1.1", "Pedro", papel="link", tag="a")
+    pagina.no_mapa("ab1.2", "", papel="textbox", tag="div", editavel=True)
+    pagina.no_mapa("ab1.3", "")  # o ícone de enviar: sem aria-label, alt nem texto
+
+    _rodar(executor, "browser.read", {})  # ler mensageiro e e-mail é livre, e contamina o turno
+    assert executor.contaminado
+    assert executor.objetivo is not None and executor.objetivo.dentro(url)
+
+    conversa, p1 = _rodar(executor, "browser.click", {"ref": "ab1.1"})
+    compositor, p2 = _rodar(executor, "browser.click", {"ref": "ab1.2"})
+    icone, p3 = _rodar(executor, "browser.click", {"ref": "ab1.3"}, sim=False)
+    enter, p4 = _rodar(
+        executor, "browser.acionar", {"ref": "ab1.3", "acao": "tecla", "tecla": "Enter"}, sim=False
+    )
+    assert (conversa.status, compositor.status) == ("ok", "ok")
+    assert p1 == p2 == []
+    assert (icone.status, enter.status) == ("negado", "negado")
+    assert len(p3) == len(p4) == 1
+    assert p3[0].por_acao  # nenhum "sim" do portão responde a esta
+    assert "não tem nome" in p3[0].motivo
+    clicados = [p.get("ref") for m, p in pagina.chamadas if m in {"page.click", "page.act"}]
+    assert clicados == ["ab1.1", "ab1.2"]  # o não do dono impede o envio
+
+    aceito, _ = _rodar(executor, "browser.click", {"ref": "ab1.3"}, sim=True)
+    assert aceito.status == "ok"
+    assert [p.get("ref") for m, p in pagina.chamadas if m == "page.click"][-1] == "ab1.3"
+
+
 def test_ler_banco_pede_o_sim_mas_ler_mensageiro_e_livre(
     executor: ExecutorDeFerramentas, pagina: PaginaFalsa
 ) -> None:
