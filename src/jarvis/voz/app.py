@@ -109,6 +109,7 @@ from jarvis.s2.motor import (
 )
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
+from jarvis.s2.orcamento_da_fala import orcar, quer_detalhe
 from jarvis.s2.portao import PortaoDeAcao
 from jarvis.s2.protocolo import sem_protocolo
 from jarvis.tarefas.gestor import (
@@ -474,6 +475,9 @@ class Aplicativo:
     """A fila é mexida pela linha do laço, pelas das tarefas e pela da janela."""
     _falas_dos_avisos: dict[str, str] = field(default_factory=dict, repr=False)
     """O texto inteiro de cada aviso de um pedido (o `resumo` do evento corta em 280)."""
+    _telas_dos_avisos: dict[str, str] = field(default_factory=dict, repr=False)
+    """A resposta de uma tarefa como a tela a mostra, quando ela passou do orçamento da fala: a voz
+    diz o que cabe (`_falas_dos_avisos`), a tela, tudo."""
 
     def __post_init__(self) -> None:
         self.avisos = FilaDeAvisos(session_id=self.session_id)
@@ -724,17 +728,26 @@ class Aplicativo:
             frase = tarefa.resposta or f"Não consegui terminar o que você pediu: {motivo}."
         else:
             tipo, frase = "evento", "Parei o que você tinha pedido."
-        self._aviso_da_tarefa(tarefa, f"tarefa-{tarefa.id}", tipo, frase)
+        # Falar menos (dono, 2026-10-21): a voz resume a execução em até quatro frases, a não ser
+        # que o pedido peça detalhe; o que passar disso vai só para a tela.
+        falado, _so_na_tela = orcar(sem_protocolo(frase), livre=quer_detalhe(tarefa.descricao))
+        self._aviso_da_tarefa(tarefa, f"tarefa-{tarefa.id}", tipo, falado, na_tela=frase)
 
-    def _aviso_da_tarefa(self, tarefa: Tarefa, identificador: str, tipo: str, frase: str) -> None:
+    def _aviso_da_tarefa(
+        self, tarefa: Tarefa, identificador: str, tipo: str, frase: str, *, na_tela: str = ""
+    ) -> None:
         """Algo da tarefa de um pedido para o dono (a pergunta que ela espera, o aviso de uma
         moderada, a resposta): entra na fila com a origem do pedido — que fala o texto como ele é
-        e não espera o teto dos avisos espontâneos —, e nunca por cima da fala em andamento."""
+        e não espera o teto dos avisos espontâneos —, e nunca por cima da fala em andamento.
+        `na_tela` é o texto inteiro quando a voz diz só o que cabe no orçamento da fala."""
         texto = sem_protocolo(frase)
         if not texto:
             return
+        tela = sem_protocolo(na_tela)
         with self._trava_dos_avisos:
             self._falas_dos_avisos[identificador] = texto
+            if tela and tela != texto:
+                self._telas_dos_avisos[identificador] = tela
             self.avisos.receber(
                 notificacao(
                     self.session_id,
@@ -798,7 +811,12 @@ class Aplicativo:
         self._turno_cancelado = False
         pedacos: list[dict[str, Any]] = []
         resposta = cerebro.avisar(avisos, epoch=epoch, publicar=pedacos.append)
-        texto = " ".join(frase_do_aviso(a) for a in avisos)
+        # A tela mostra a resposta inteira; a voz, o que coube no orçamento da fala.
+        with self._trava_dos_avisos:
+            telas = {a.notif_id: self._telas_dos_avisos.pop(a.notif_id, "") for a in avisos}
+        texto = " ".join(telas[a.notif_id] or frase_do_aviso(a) for a in avisos)
+        so_na_tela = [orcar(telas[a.notif_id])[1] for a in avisos if telas[a.notif_id]]
+        resposta.so_na_tela = " ".join(t for t in so_na_tela if t)
         if self.ao_pedaco is not None:
             self.ao_pedaco(texto)
         fala, turno = self._tocar(
@@ -1475,6 +1493,8 @@ class Aplicativo:
             caracteres_de_raciocinio=len(resposta.raciocinio) if resposta else 0,
             raciocinio_descartado=resposta.raciocinio_descartado if resposta else 0,
             narracao_retida=resposta.narracao_retida if resposta else 0,
+            # Falar menos (emenda de 2026-10-21 à ADR-0031): o tamanho do que ficou só na tela.
+            caracteres_so_na_tela=len(resposta.so_na_tela) if resposta else 0,
             resultados_podados=resposta.resultados_podados if resposta else 0,
             objetivo=resposta.estado_do_objetivo if resposta else "",
             erro=falha[0] if falha else "",

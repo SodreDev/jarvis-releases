@@ -55,13 +55,3 @@ código e testados em `tests/unit/politica/test_metodo.py`:
   tocar, assistir, «pra eu ver»), e não para o Jarvis ler por ele (pesquisar, ler, conferir). As
   `browser.*` usam isso para terminar a página à vista dele ou trabalhar na janela do Jarvis
   (ADR-0036, emenda de 2026-10-21). É do código, pela fala, como o método — nunca do modelo.
-
-## Emenda de 2026-10-21 — «abre o navegador» com ele já aberto (uma instância só)
-
-Pedido do dono (ADR-0036, emenda (2)): o Jarvis só abre um navegador se não houver um ativo. No
-roteador, o caso `abre_o_navegador` passa a deixar de fora também o `apps.launch` — que abriria
-outra janela do navegador já aberto — e a nota diz «use browser.launch (só o navegador: traz para a
-frente o que já está aberto, ou abre um)»; o `browser.launch` é quem confere se há um ativo. O
-`apps.launch` de um navegador configurado, quando chega por outro método (pedido misto), vai pelo
-mesmo caminho no executor. `quer_ver` não muda: pedido de ver termina à vista; o trabalho de fundo,
-agora numa aba de segundo plano da janela do dono. Testes: `tests/unit/politica/test_metodo.py`.

@@ -37,3 +37,16 @@ Mais dois achados do código: cada rodada do laço é um pedido **novo** ao moto
 ## Como invalidar esta decisão
 
 O dono pedir de volta o acompanhamento passo a passo, ou a trilha mostrar `narracao_retida` alta com a resposta final faltando informação que só a narração tinha.
+
+## Emenda de 2026-10-21 — falar menos: a voz cabe num orçamento, a tela recebe tudo
+
+**Pedido:** dono, 2026-10-21 — "FALAR MENOS. No system prompt/persona (e no que couber em código): resumir a EXECUÇÃO de ações em 3 a 4 frases curtas, a menos que o dono peça para detalhar o que achou/fez; resposta falada curta por padrão, texto longo vai para a tela (não para o TTS) quando o dono não pediu detalhe; sem narração passo a passo. Idealmente com um teto verificável (ex.: orçamento de frases para o que vai ao TTS) e teste."
+
+1. **O teto é do código** (`jarvis.s2.orcamento_da_fala.OrcamentoDaFala`), entre o texto do motor e o fatiador de fala: até **quatro frases e 60 palavras** vão para o TTS. Passou disso, a voz diz as três primeiras e o fecho «O resto está na tela.» — quatro frases no total, nunca mais. A quarta frase espera para saber se vem uma quinta (o lote da terceira ainda está tocando: a espera não se ouve). Uma frase só, comprida demais, é cortada na última vírgula (ou palavra) dentro das 60 palavras. Fim de frase é `.`, `!`, `?`, `…` ou quebra de linha; abreviação ("Sr.", "etc."), inicial ("J.") e decimal ("3.5") não fecham frase.
+2. **A tela recebe tudo**, como antes (`mostrar`, e a linha "Jarvis: …" do fim). O que ficou só na tela entra na conversa do modelo marcado ("[só na tela, não falado: …]"), para ele saber que o dono viu e não ouviu; o livro de memória guarda o que tocou, como sempre (P4). A trilha conta o tamanho (`caracteres_so_na_tela` no `turno.fim`), nunca o texto.
+3. **Sem teto quando o dono pede detalhe** (`quer_detalhe`, pela fala dele, nunca pelo modelo): "explica", "detalha", "o que você achou", "o que você fez", "lê pra mim", "passo a passo", "me conta", uma história…
+4. **Vale para a resposta do turno e para a resposta de uma tarefa** (ADR-0038: a tela/o card mostram a resposta inteira; a voz, o resumo). **Nunca** para uma pergunta — cortada, ela não poderia ser respondida (o "sim" só vale depois de ela tocar inteira) — nem para as frases do código (o aviso de uma moderada, a frase ao delegar).
+5. **Persona v13**, parágrafo FALAR POUCO: resumir a execução em três ou quatro frases curtas; detalhar só quando o dono pedir; o que é longo vai para a tela.
+
+**Risco aceito:** a lista de pedidos de detalhe é por palavras: um "fala tudo sobre isso" dito de outro jeito não tira o teto, e o dono ouve o resumo e lê o resto. **Não provado:** o `claude -p` de verdade seguindo o parágrafo novo da persona (os testes usam o motor roteirizado). Testes: `tests/unit/s2/test_falar_menos.py` (o orçamento em stream e de uma vez, a quarta que espera, a frase comprida, abreviação, lista, detalhe; o cérebro; a resposta de tarefa; a pergunta que não é cortada; a persona).
+

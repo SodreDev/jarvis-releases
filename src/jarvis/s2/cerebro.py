@@ -19,6 +19,9 @@ para o contrato ser testado inteiro em memória:
 - **Pensar não é falar** (ADR-0031, dono 2026-10-20). O `Raciocinio` do motor fica com o turno,
   com teto, e volta só para o motor na rodada seguinte; a fala é o resultado, uma pergunta
   necessária e no máximo um aviso curto antes da primeira ferramenta.
+- **Falar menos** (emenda de 2026-10-21 à ADR-0031). O texto do motor vai inteiro para a tela, e
+  para a voz só até o orçamento (`jarvis.s2.orcamento_da_fala`: quatro frases, 60 palavras), com
+  o fecho «O resto está na tela.» — a não ser que o dono tenha pedido detalhe.
 """
 
 from __future__ import annotations
@@ -60,6 +63,7 @@ from jarvis.s2.motor import (
     Texto,
     aceita_imagem,
 )
+from jarvis.s2.orcamento_da_fala import OrcamentoDaFala, quer_detalhe
 from jarvis.s2.pendencias import Espera, RegistroDePendencias
 from jarvis.s2.persona import prompt_de_sistema
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
@@ -152,6 +156,9 @@ class Resposta:
     tarefa_id: str = ""
     """O pedido virou a tarefa deste id (ADR-0038): o turno acabou na frase curta, e o resultado
     chega pela fila de avisos quando ela terminar."""
+    so_na_tela: str = ""
+    """O que passou do orçamento da fala e foi só para a tela (emenda de 2026-10-21 à ADR-0031):
+    entra na conversa marcado, para o modelo saber que o dono viu e não ouviu."""
 
     @property
     def cancelada(self) -> bool:
@@ -334,6 +341,8 @@ class Cerebro:
             memoria=memoria,
         )
         fatiador = FatiadorDeFala()
+        # O que vai para a voz cabe no orçamento; a tela recebe tudo (dono, 2026-10-21).
+        orcamento = OrcamentoDaFala(livre=quer_detalhe(texto_do_dono))
         crescer = _tela(resposta, mostrar)
         visto_cancelamento = self._falar_avisos(
             avisos, resposta, publicar, comeco, cancelado, crescer
@@ -385,6 +394,7 @@ class Cerebro:
                 comeco,
                 crescer,
                 segurar=passo > 1,
+                orcamento=orcamento,
             )
             if prazo_esgotado() and not cancelado():
                 visto_cancelamento = None
@@ -462,8 +472,12 @@ class Cerebro:
                 (parado - visto_cancelamento) * 1000.0 if visto_cancelamento is not None else 0.0
             )
         else:
+            # A quarta frase que esperava, a última sem ponto, ou o fecho do que ficou na tela.
+            for pedaco in fatiador.alimentar(orcamento.fechar()):
+                self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             for pedaco in fatiador.fechar():
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
+        resposta.so_na_tela = orcamento.so_na_tela
         objetivo = self.ferramentas.objetivo if self.ferramentas is not None else None
         if resposta.tarefa_id:
             # O objetivo foi com a tarefa: é ela que o conclui.
@@ -682,6 +696,7 @@ class Cerebro:
         crescer: Callable[[], None],
         *,
         segurar: bool = False,
+        orcamento: OrcamentoDaFala | None = None,
     ) -> tuple[list[PedidoDeTool], float | None]:
         """Uma chamada ao motor: publica o texto em pedaços e junta os pedidos de ferramenta.
 
@@ -702,10 +717,12 @@ class Cerebro:
         deltas = self.motor.gerar(contexto, modo, cancelado)
 
         def falar(texto: str) -> bool:
-            """Tela e fala; devolve se o cancelamento chegou no meio."""
+            """Tela e fala; devolve se o cancelamento chegou no meio. A tela recebe tudo; a voz, o
+            que cabe no orçamento."""
             resposta.gerado += texto
             crescer()  # a tela, já: o lote de fala pode levar 14 palavras para fechar
-            for pedaco in fatiador.alimentar(texto):
+            falado = orcamento.passar(texto) if orcamento is not None else texto
+            for pedaco in fatiador.alimentar(falado):
                 if cancelado():
                     return True
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
@@ -884,7 +901,12 @@ class Cerebro:
             self._esquecer_pergunta_nao_ouvida(resposta, texto_tocado)
         if not (texto_tocado or interrompida):
             return
-        self.conversa.turnos.append(Mensagem("jarvis", texto_tocado, interrompida))
+        lembrado = texto_tocado
+        if resposta.so_na_tela and not interrompida:
+            # O que passou do orçamento da fala o dono viu na tela e não ouviu: o modelo fica
+            # sabendo, para não repetir nem achar que ficou por dizer.
+            lembrado = f"{texto_tocado} [só na tela, não falado: {resposta.so_na_tela}]"
+        self.conversa.turnos.append(Mensagem("jarvis", lembrado, interrompida))
         if self.livro is not None:
             self.livro.gravar_turno(
                 session_id=self.id_da_conversa or self.session_id,

@@ -43,3 +43,28 @@ transcrevendo "Jarvis" por cima do próprio Jarvis, o tempo do ASR com a CPU dis
 
 **Próximos passos possíveis:** medir no F1-16 (trilha `interrupcao`); ligar a AEC medida e deixar o
 VAD cortar direto; um interruptor na tela de Configuração para `interromper_por_voz`.
+
+## 2. Falar menos (emenda à ADR-0031)
+
+**O problema:** a persona pedia resposta curta, mas nada no código segurava o que ia para o TTS; a
+resposta de uma tarefa (ADR-0038) era falada inteira.
+
+**Onde está:**
+
+- `src/jarvis/s2/orcamento_da_fala.py` — `OrcamentoDaFala` (stream: `passar`/`fechar`, a quarta
+  frase guardada até saber se vem a quinta, corte na vírgula de frase comprida, `so_na_tela`),
+  `orcar` (texto inteiro) e `quer_detalhe` (a fala do dono que tira o teto).
+- `src/jarvis/s2/cerebro.py` — `responder` cria o orçamento pela fala do dono; `_rodada.falar` passa
+  o texto por ele antes do fatiador (a tela segue recebendo tudo); o fim do turno solta a quarta
+  frase ou o fecho; `Resposta.so_na_tela`; `ouvido` põe o que ficou na tela na conversa, marcado.
+- `src/jarvis/voz/app.py` — `_resposta_da_tarefa` orça a resposta da tarefa
+  (`quer_detalhe(tarefa.descricao)`); `_aviso_da_tarefa(na_tela=…)` guarda o texto inteiro para a
+  tela (`_telas_dos_avisos`); `_falar_os_avisos` mostra o inteiro e fala o orçado; a trilha ganha
+  `caracteres_so_na_tela`.
+- `src/jarvis/s2/persona.md` — v13, parágrafo FALAR POUCO.
+
+**Testes:** `tests/unit/s2/test_falar_menos.py`. Os testes de TTS que pedem "uma história" seguem
+falando tudo (história é pedido de detalhe).
+
+**Não provado:** o `claude -p` real seguindo a v13.
+
