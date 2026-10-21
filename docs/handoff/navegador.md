@@ -354,6 +354,80 @@ O que o dono faz: `uv run jarvis-native-host --instalar` no repositório (copia 
 **Recarregar** a extensão em `brave://extensions`, F5 nas abas que já estavam abertas (a faixa só
 aparece em página carregada depois da extensão nova) e reiniciar o `uv run jarvis`.
 
+## Uma instância só (2026-10-21, ADR-0036 emenda (2))
+
+Relato do dono depois de testar o `8cc7bf6`: o Jarvis começou no Brave dele, depois **abriu outra
+instância** (a janela própria do Jarvis) e o vídeo abriu **nela**. Regras novas: só abrir navegador
+sem um ativo; havendo, guia nova na janela dele (ou o reuso de sempre); trabalho de fundo em aba de
+segundo plano da janela dele; janela própria só num modo `automacao_social`, desligado. Causa, pela
+trilha dele (21/10 15:30–15:32, só metadados): o `web.buscar` sem chave (`page.readUrl`) criou a
+janela do Jarvis; depois o modelo mandou um `tab_id` velho, ouviu "falha" crua e caiu num
+`sites.open` com `nova_aba`, que **pulava a extensão** e executava `/usr/bin/brave-browser-stable
+<url>` (o principal dele é o `brave-browser.desktop`) — o Brave aberto pôs a URL na última janela
+ativa dele, a do Jarvis (no Wayland do KDE o navegador não pega o foco de volta).
+
+Onde mora cada peça:
+
+- **Extensão** — `extensao/background.js`: `MODO_AUTOMACAO_SOCIAL`; `abrirAba` (`fundo` → aba na
+  janela do dono com `active: false`; `modo` → janela do Jarvis), `lerEmSegundoPlano` (a busca numa
+  aba de fundo da janela do dono; a janela própria só no modo), `abaDoPedido` (aba que não existe
+  mais → `sem_aba`, dito), `focoAtual` (`janelas`). `janela.html` diz que a janela é da automação
+  social e que pode fechar.
+- **Protocolo e cliente** — `navegador/protocolo.py`: `tabs.open` aceita `fundo` e `modo`,
+  `page.readUrl` aceita `modo`, `MODOS = {"automacao_social"}`; o parâmetro `janela` saiu.
+  `navegador/cliente.py`: `ClienteDoNavegador.automacao_social` (o gancho, desligado, copiado no
+  `sob`) — sem ele `abrir(segundo_plano=True)` manda `fundo` e nada manda `modo`.
+- **Corpos** — `navegador/ferramentas.py`: `Trabalho.abertas` (as abas que o pedido abriu);
+  `_navegar` (fundo também com `nova_aba`; o passo de fundo de um pedido de ver só vem à frente no
+  fim, pelo `_mostrar_no_fim`); `_aba_para_ver` (mesma URL → só ativa; mesmo site → navega; a guia
+  do próprio pedido ou a «nova aba» vazia → navega; senão `None` → **guia nova**); `_aba_de_fundo`
+  (só a aba que o pedido abriu e que continua em segundo plano); `mostrar_o_navegador` (sem
+  concessão, sem faixa); o resultado diz `segundo_plano`.
+- **Abrir navegador** — `executor/navegadores.py`: `ReutilizarAba(url, familia, nova_aba)` devolve
+  o resultado da extensão ou `None`; `abrir` vai pela extensão sempre que ela atende (também com
+  `nova_aba`); `abrir_sozinho` → `NavegadorAberto` (mostra pela extensão; sem ela, processo rodando
+  em `/proc/<pid>/exe` conta como aberto; aberto sem janela → lança); `navegador_em_execucao`,
+  `EXECUTAVEIS_DA_FAMILIA`. `executor/ferramentas.py`: `browser.launch` devolve `ja_aberto`/
+  `visivel`, e o `apps.launch` de um navegador configurado vai pelo `abrir_sozinho` (fechado, o foco
+  é acompanhado como antes). `voz/app.py`: `_controle_da_familia`, `_na_aba_atual(..., nova_aba)`,
+  `_mostrar_o_navegador` e `em_execucao=navegador_em_execucao` no abridor. `politica/metodo.py`:
+  `abre_o_navegador` deixa de fora o `apps.launch`. Catálogo: `browser.navigate`, `sites.open`,
+  `browser.launch` (texto e pós-condição) e os stubs.
+
+Armadilhas medidas:
+
+- Para contar instâncias em `/proc`, a linha de comando dos filhos não serve: o Chromium (e parte
+  dos do Firefox) a reescreve sem os separadores NUL. O processo principal é o do navegador cujo
+  pai não é do navegador (medido no contêiner: uma raiz só, nos dois).
+- A tela (`page.capture`) de uma aba de fundo é `aba_escondida` no Chromium (a captura dele é da
+  aba à vista); o Firefox captura qualquer uma. Leitura e mapa valem nas duas.
+- Extensão e host vão juntos: o host de antes recusa `fundo`/`modo` («parâmetro fora do contrato»)
+  e a extensão de antes ignora `fundo`. Recarregar a extensão reinicia o host.
+- O app liga a leitura de `/proc` no `browser.launch`: teste que monta o app inteiro e chama o
+  `browser.launch` veria o navegador de verdade da máquina — os do executor injetam `em_execucao`.
+
+O que o dono faz (nada rodou na máquina dele): `uv run jarvis-native-host --instalar` no
+repositório, **Recarregar** em `brave://extensions`, fechar a janela de trabalho do Jarvis que ficou
+aberta (a da `janela.html`), F5 nas abas abertas e reiniciar o `uv run jarvis`.
+
+Provas: `background_navegacao.test.mjs` (a busca e a aba de fundo na janela do dono sem `active`,
+nenhum pedido cria janela sem o modo, `sem_aba`, o modo social), `test_extensao.py` (um
+`windows.create` só, alcançável só pelo modo), `test_ferramentas_browser.py`,
+`test_quadro_e_protocolo.py`, `test_ligacao_ao_app.py` (o app inteiro com o host de verdade: guia
+nova pela extensão, `browser.launch` sem lançar), `tests/unit/executor/test_navegadores.py` e
+`test_ferramentas.py` (o caso do `nova_aba`, o processo em `/proc`, «sem navegador ativo abre um»,
+o `apps.launch`), `test_metodo.py`; os novos falham no código de antes. E o roteiro em contêiner,
+41/41 no Chromium 155 e no Firefox 158 — com uma prévia em que o próprio Jarvis abre o navegador de
+verdade quando não há um. O mesmo roteiro no código de antes (`src/`, `extensao/` e `catalogo/` do
+`6ed4134` montados por cima, só leitura, num contêiner) reproduz o bug: 2 janelas depois da busca
+(com a do Jarvis e a `janela.html`), o `sites.open` com `nova_aba` executando
+`/usr/bin/chromium-browser <url>` / `/usr/bin/firefox <url>`, e o `browser.launch` lançando de novo
+com o navegador aberto (Chromium 32/41, Firefox 33/41).
+
+**Não provado:** o Brave e o KWin/Wayland de verdade; o YouTube de verdade; a janela do Jarvis que
+ficou aberta no Brave do dono (não é fechada sozinha: pode ter uma aba dele). **Não feito:** a
+automação social com digitação humanizada (só o gancho), um grupo de abas «Jarvis».
+
 ## Verificações já verdes
 
 Os comandos abaixo passaram para a fatia 2, sem navegador ou dispositivo real:
