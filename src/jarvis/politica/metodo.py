@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
+from jarvis.politica.fechamento import Fechamento, fechamento
+
 
 class Metodo(StrEnum):
     NAVEGADOR = "navegador"
@@ -93,7 +95,7 @@ _ENCERRAR_O_JARVIS: Final = re.compile(
 """O dono pede para encerrar o próprio Jarvis ("encerra o sistema", "pode fechar o Jarvis",
 "desliga você"): é `jarvis.encerrar` (ADR-0041) — não é desligar o computador nem fechar outro
 programa."""
-FERRAMENTAS_DE_JANELA: Final = frozenset({"window.close_app"})
+FERRAMENTAS_DE_JANELA: Final = frozenset({"window.close", "apps.quit"})
 """Fechar janela ou app: no pedido de encerrar o Jarvis ficam de fora (a janela do Jarvis não se
 fecha por elas; quem a fecha é o encerramento limpo)."""
 
@@ -166,6 +168,29 @@ def escolher_metodo(fala: str, contexto: ContextoDoMetodo) -> Escolha:
     if _algum(texto, _TECLADO):
         return Escolha(Metodo.ENTRADA_VIRTUAL, "pede_teclado_ou_mouse")
     candidatos: list[Escolha] = []
+    # Fechar a janela × encerrar o app (ADR-0042): pela fala, do código. Vem antes dos outros: com
+    # o app citado, o mesmo método (`app`), e é este o caminho que vale.
+    fechar = fechamento(fala)
+    if fechar is Fechamento.APP:
+        candidatos.append(
+            Escolha(
+                Metodo.APP,
+                "encerra_app",
+                ENTRADA | frozenset({"window.close"}),
+                "use apps.quit (encerra o app inteiro: os processos dele, que o código acha pelo "
+                "PID); window.close só fecharia a janela",
+            )
+        )
+    elif fechar is Fechamento.JANELA:
+        candidatos.append(
+            Escolha(
+                Metodo.APP,
+                "fecha_janela",
+                ENTRADA | frozenset({"apps.quit"}),
+                "use window.close (fecha a janela, como o X dela; sem nome, a da frente); encerrar "
+                "o app inteiro só se o dono disser todo, inteiro, de vez, mata ou encerra",
+            )
+        )
     if _algum(texto, _TERMINAL):
         candidatos.append(
             Escolha(

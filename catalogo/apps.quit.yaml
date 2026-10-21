@@ -1,0 +1,67 @@
+# Encerrar um aplicativo inteiro, por PID (dono, 2026-10-21; ADR-0042).
+id: apps.quit
+title: Encerrar um aplicativo
+description: Encerra um aplicativo inteiro, com os processos dele — o que o dono pede com "fecha o X todo", "fecha o X
+  inteiro", "fecha de vez", "mata o X" ou "encerra o X". Pede ao app para sair e só força o que não sair em poucos
+  segundos. Sem nome, o app da janela em primeiro plano ("encerra esse aí"); com janela_id, o app daquela janela. Para
+  fechar só a janela ("fecha o X"), use window.close. Nunca encerra o próprio Jarvis (para isso, jarvis.encerrar), a
+  sessão do desktop nem processo de outro usuário; app que pode ter trabalho não salvo, com mais de uma instância, o
+  navegador do dono ou programa do sistema pedem o sim antes, e o sistema pergunta sozinho.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    app:
+      type: string
+      minLength: 2
+      maxLength: 60
+    janela_id:
+      type: string
+      pattern: ^(0x[0-9a-fA-F]{1,8}|\{[0-9a-fA-F-]{36}\})$
+output_schema:
+  type: object
+  required:
+  - app
+  - conferido
+  properties:
+    app:
+      type: string
+    instancias:
+      type: integer
+    processos:
+      type: integer
+    sigterm:
+      type: integer
+    sigkill:
+      type: integer
+    conferido:
+      type: boolean
+preconditions: []
+postcondition: os processos do app escolhido pelo código saíram, conferidos por PID e pelo início de cada um
+capability: apps.quit
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: metadata
+confirmation: never
+tier: moderado
+aviso_falado: Encerrei o {app}.
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 8000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-apps
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

@@ -70,6 +70,12 @@ CRITERIOS: Final[dict[str, str]] = {
     "memoria": "anotado ou achado, e dito ao dono",
 }
 """O critério de pronto pelo método do pedido (ADR-0035): o que conta como "ficou pronto"."""
+CRITERIOS_POR_MOTIVO: Final[dict[str, str]] = {
+    "fecha_janela": "a janela fechada e conferida: saiu da lista (ou o app ficou perguntando)",
+    "encerra_app": "o app encerrado e conferido: os processos dele saíram",
+    "encerra_o_jarvis": "o Jarvis encerrado, limpo",
+}
+"""Quando o motivo do método diz mais que o método (ADR-0041, ADR-0042): fechar não é abrir."""
 METODOS_QUE_CONFEREM: Final = frozenset({"navegador", "entrada_virtual"})
 """Os métodos em que o efeito pode não acontecer sem erro nenhum (a aba não mudou, o clique caiu
 fora): o objetivo só fica pronto depois de uma leitura que o confira (ADR-0038)."""
@@ -165,13 +171,13 @@ class Objetivo:
     """Uma leitura que deu certo veio depois do último efeito que deu certo."""
 
     @classmethod
-    def do_pedido(cls, fala: str, metodo: str = "") -> Objetivo:
+    def do_pedido(cls, fala: str, metodo: str = "", motivo: str = "") -> Objetivo:
         limpo = " ".join(redigir(fala).texto.split())
         curto = limpo if len(limpo) <= CARACTERES_DO_PEDIDO else limpo[:CARACTERES_DO_PEDIDO] + "…"
         return cls(
             pedido=curto,
             _termos=frozenset(termos(fala)),
-            criterio=CRITERIOS.get(metodo, CRITERIO_PADRAO),
+            criterio=CRITERIOS_POR_MOTIVO.get(motivo) or CRITERIOS.get(metodo, CRITERIO_PADRAO),
             pede_conferencia=metodo in METODOS_QUE_CONFEREM,
         )
 

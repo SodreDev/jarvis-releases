@@ -208,6 +208,14 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "pedido_misto",
         "sem_metodo_especifico",
         "encerra_o_jarvis",
+        "fecha_janela",
+        "encerra_app",
+        # fechar a janela × encerrar o app (`jarvis.executor.fechar`, ADR-0042)
+        "alvo_ausente",
+        "alvo_ambiguo",
+        "alvo_protegido",
+        "sem_janelas",
+        "sem_suporte",
         # a vigia que ouve o dono enquanto o Jarvis fala (`jarvis.voz.interrupcao`)
         "suspeita",
         "palavra_de_ativacao",

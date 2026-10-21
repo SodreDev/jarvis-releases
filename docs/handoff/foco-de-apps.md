@@ -44,7 +44,7 @@ apps.launch (executor, pelo PDP)
 - `src/jarvis/executor/ferramentas.py`: `_acompanhar_o_foco` (só do turno; sem porta ou sem gestor,
   nada muda) e o campo `prazo_do_foco_s`.
 - `src/jarvis/executor/nativas.py`: `window.list` e `window.focus_app` pela porta quando há
-  (`Nativas.janelas`); sem ela, o `wmctrl` de `desktop.py`, como antes. `window.close_app` não mudou.
+  (`Nativas.janelas`); sem ela, o `wmctrl` de `desktop.py`, como antes. (2026-10-21: a `window.close_app` virou `window.close` + `apps.quit`, pela mesma porta — ADR-0042.)
 - `src/jarvis/voz/app.py` e `config.py`: a porta ligada em `abrir` (fora de `CI=1`), o
   `prazo_do_foco_s` (10 a 1800, padrão 300) e o aviso do fim.
 - `catalogo/window.focus_app.yaml` (`janela_id`), `catalogo/window.list.yaml`, persona v12 e a nota

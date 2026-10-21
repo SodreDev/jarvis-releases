@@ -463,8 +463,8 @@ pergunta.
 janelas, área de transferência, notificação) foram testados só com lançador falso — **o seu desktop
 fecha esta conta**; `wmctrl` só vê janelas X11/XWayland (janela Wayland nativa pode não aparecer: ele
 diz "nenhuma"); a busca é a da Wikipédia (boa para fato, fraca para notícia — para busca geral
-configure `BRAVE_SEARCH_API_KEY`, também não verificada); `window.close_app` e o brilho por D-Bus
-dependem do KDE responder; Windows: só a leitura de hora, web e arquivos são portáveis; copiar pasta
+configure `BRAVE_SEARCH_API_KEY`, também não verificada); fechar janela (`window.close`, desde
+2026-10-21, §0.26) e o brilho por D-Bus dependem do KDE responder; Windows: só a leitura de hora, web e arquivos são portáveis; copiar pasta
 inteira ainda não.
 
 **Resolvedor de apps na voz (Codex, ligado em 2026-10-18):** os nomes dos apps instalados vão ao ASR
@@ -1297,6 +1297,30 @@ a janela fecha. Abra de novo: a conversa continua de onde parou. **Provado** em 
 (`tests/unit/voz/test_encerrar_o_jarvis.py`, 17 testes; `tests/unit/politica/test_tiers.py`).
 **Não provado:** o Qt fechando a janela de verdade pelo sinal (o teste da sessão para no aviso), o
 modelo de verdade chamando a tool, a extensão de verdade soltando as abas no fim.
+
+### 0.26 «Fecha o Discord» × «fecha o Discord todo» (2026-10-21, ADR-0042)
+
+- **«fecha o Discord», «fecha a janela», «fecha esse aí»** → fecha a **janela**, como o X dela (o
+  app pode perguntar se salva, ou ir para a bandeja). Sem nome, é a janela da frente. Com várias
+  janelas do app e nenhuma na frente, ele pergunta qual. Não pede o sim — só a janela do seu
+  navegador e a de programa do sistema pedem.
+- **«fecha o Discord todo», «inteiro», «de vez», «mata o Discord», «encerra o Steam inteiro»** →
+  **encerra o app**: pede para ele sair e só força o que não sair em 3 s. Pergunta antes se o app
+  pode ter trabalho não salvo (editor, documento), se há um **jogo** aberto pelo Steam, se é o seu
+  navegador, se é programa do sistema, ou se há mais de uma instância aberta.
+- **Nunca:** o próprio Jarvis (para isso, §0.25), o terminal em que ele roda, a sessão do desktop
+  (painel, compositor, áudio…), processo de outro usuário ou do root. Nome parecido com dois apps é
+  pergunta, nunca palpite. Não usa `pkill` nem `killall`: o sinal vai por PID, só aos processos do
+  app que ele achou (pelo executável do `.desktop` e pelos PIDs das janelas), conferindo cada um.
+
+**No seu KDE (Wayland)** a lista de janelas precisa do `kdotool` (o mesmo do foco, §0.18): sem
+ele, «fecha a janela» diz que não vê as janelas, e «encerra o X» ainda funciona pelo nome (não há
+«o da frente»). **Como conferir:** abra o Kate com um arquivo sem salvar e diga «fecha o Kate» → a
+janela pede «salvar?»; «fecha o Kate todo» → ele pergunta antes (trabalho não salvo). Com o Discord
+aberto: «fecha o Discord» → vai para a bandeja; «mata o Discord» → sai de vez, sem perguntar.
+**Provado** com portas falsas e com dois processos descartáveis de verdade, criados pelo teste
+(`tests/unit/executor/test_fechar_e_encerrar.py`, 35 testes). **Não provado:** o KWin, o Steam, o
+Discord e o Flatpak de verdade; se o `kdotool windowclose` é sempre o fechamento educado.
 
 ---
 

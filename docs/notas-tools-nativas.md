@@ -29,7 +29,7 @@ Aproveitado, **como contrato tipado do Jarvis**:
 | `write` (sem sobrescrever) | `files.write_draft`, `files.create_dir`, `files.copy`, `files.move` | moderado |
 | `Task` | `tarefa.iniciar/cancelar/estado` (item 5) | moderado / livre |
 | `question` / `ask_owner` | a confirmação na faixa da janela (tier perigoso) | — |
-| — (específico de assistente) | `system.*` (hora, estado, volume, brilho), `media.*`, `window.*`, `clipboard.*` | livre; `window.close_app` perigoso; `clipboard.text.write` moderado |
+| — (específico de assistente) | `system.*` (hora, estado, volume, brilho), `media.*`, `window.*`, `clipboard.*` | livre; `window.close` livre e `apps.quit` moderado (ADR-0042, 2026-10-21: era `window.close_app`, perigoso); `clipboard.text.write` moderado |
 
 ## Decisões
 

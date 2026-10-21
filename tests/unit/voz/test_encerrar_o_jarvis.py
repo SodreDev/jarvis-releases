@@ -60,7 +60,7 @@ def _encerra_quando_pedem(contexto: Contexto) -> Sequence[Parte]:
 def test_os_pedidos_de_encerrar_vao_para_o_metodo_dele(fala: str) -> None:
     escolha = escolher_metodo(fala, ContextoDoMetodo(apps=frozenset({"discord"})))
     assert escolha.motivo == "encerra_o_jarvis"
-    assert "window.close_app" in escolha.evitar, "fechar a janela do Jarvis não é encerrar limpo"
+    assert {"window.close", "apps.quit"} <= escolha.evitar, "fechar a janela dele não é encerrar"
     assert "jarvis.encerrar" in escolha.nota()
 
 

@@ -22,6 +22,7 @@ from jarvis.executor.comandos import (
     executar,
 )
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
+from jarvis.executor.janelas import JanelasPorWmctrl
 from jarvis.executor.nativas import Nativas
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
@@ -353,21 +354,53 @@ def test_app_inexistente_ou_ambiguo_volta_com_a_frase(executor: ExecutorDeFerram
     assert ambiguo.status == "erro" and "Diga qual" in ambiguo.motivo
 
 
-def test_fechar_app_pergunta_ao_dono_e_sem_o_sim_nao_fecha(executor: ExecutorDeFerramentas) -> None:
-    falso = _com(executor, LancadorFalso({"wmctrl": Saida(0, WMCTRL)}))
+def test_fechar_a_janela_e_como_o_x_e_nao_pergunta(executor: ExecutorDeFerramentas) -> None:
+    """ADR-0042: fechar a janela é livre — quem pergunta se salva é o próprio app, como no X. Era a
+    `window.close_app`, perigosa, que perguntava sempre."""
+    lxp = (
+        "0x03a00003 -1 1001 desktop.plasmashell host Área de trabalho\n"
+        "0x05600001  0 2002 kate.Kate host notas.md — Kate\n"
+    )
+    falso = LancadorFalso(
+        {
+            "wmctrl": Saida(0, lxp),
+            "xprop": Saida(0, "_NET_ACTIVE_WINDOW(WINDOW): window id # 0x5600001"),
+        }
+    )
+    instantes = iter(range(100))
+    _com(
+        executor,
+        falso,
+        janelas=JanelasPorWmctrl(falso),
+        processos=SemProcessos(),
+        dormir=lambda _s: None,
+        relogio=lambda: float(next(instantes)),
+    )
     perguntas: list[Confirmacao] = []
 
     def nao(p: Confirmacao) -> bool:
         perguntas.append(p)
         return False
 
-    negado = _rodar(executor, "window.close_app", {"app": "firefox"}, confirmar=nao)
-    assert negado.status == "negado" and len(perguntas) == 1
-    assert not [c for c in falso.chamadas if "-c" in c], "sem o sim, nada foi fechado"
+    fechou = _rodar(executor, "window.close", {"app": "kate"}, confirmar=nao)
 
-    aprovado = _rodar(executor, "window.close_app", {"app": "firefox"}, confirmar=lambda _p: True)
-    assert aprovado.status == "ok" and aprovado.aviso == "", "quem confirmou foi o dono"
-    assert ["wmctrl", "-i", "-c", "0x04200004"] in falso.chamadas
+    assert fechou.status == "ok" and not perguntas, "fechar a janela não pede o sim"
+    assert ["wmctrl", "-i", "-c", "0x05600001"] in falso.chamadas
+    # A lista falsa não muda: a janela "continua aberta", e a resposta diz o que pode ser.
+    assert fechou.dados["fechada"] is False and "perguntando se salva" in fechou.dados["nota"]
+
+
+class SemProcessos:
+    """A tabela de processos vazia: o teste não lê o /proc da máquina."""
+
+    def listar(self) -> list[Any]:
+        return []
+
+    def ler(self, _pid: int) -> None:
+        return None
+
+    def argumentos(self, _pid: int) -> tuple[str, ...]:
+        return ()
 
 
 # --- área de transferência ------------------------------------------------------------
@@ -441,7 +474,8 @@ def test_o_modelo_so_ve_estas_tools_nativas_no_catalogo(executor: ExecutorDeFerr
     assert {
         "system.clock.now", "system.machine.status", "system.volume.get", "system.volume.set",
         "system.brightness.set", "media.player.control", "media.player.status", "window.list",
-        "window.focus_app", "window.close_app", "clipboard.text.read", "clipboard.text.write",
+        "window.focus_app", "window.close", "apps.quit", "clipboard.text.read",
+        "clipboard.text.write",
         "notify.desktop.send", "web.buscar", "web.ler", "files.create_dir", "files.copy",
         "files.move",
     } <= ids  # fmt: skip

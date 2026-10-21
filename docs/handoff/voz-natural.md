@@ -93,3 +93,35 @@ virtual nem as abas, nem fechava a conversa.
 
 **Não provado:** o Qt de verdade fechando pela ponte; o `claude -p` real chamando a tool.
 
+## 4. Fechar a janela × encerrar o app (ADR-0042)
+
+**O problema:** só havia `window.close_app` (perigosa, pelo `wmctrl`, nome casado por pedaço), e
+nenhum jeito de encerrar um app — e `pkill`/`killall` são proibidos.
+
+**Onde está:**
+
+- `src/jarvis/politica/fechamento.py` — `fechamento(fala)`: janela ("fecha…") ou app ("todo",
+  "inteiro", "de vez", "mata", "encerra"…); aba é do navegador.
+- `src/jarvis/politica/metodo.py` — os casos `fecha_janela` (sem `apps.quit`) e `encerra_app` (sem
+  `window.close`), antes de `cita_app`; `objetivo.py` — `CRITERIOS_POR_MOTIVO`.
+- `src/jarvis/executor/fechar.py` — `Fechador` (`janela`, `fechar_janela`, `app`,
+  `encerrar_app`), `TabelaDoProc` (o `/proc`: `stat`, dono, `exe`, linha de comando só para o
+  jogo do Steam; nunca o ambiente), `Jarvis` (ele, os ancestrais, a sessão), `protecao`,
+  `PROTEGIDOS`, as regras do sim.
+- `src/jarvis/executor/janelas.py` — `FechaJanelas` e o `fechar` das duas portas (`kdotool
+  windowclose`, `wmctrl -i -c`).
+- `src/jarvis/executor/ferramentas.py` — `FERRAMENTAS_DE_FECHAR`, `_fechador`, o alvo resolvido em
+  `_exige_o_sim` (recusa antes do PDP) e de novo no `_corpo`; `nativas.py` — as portas
+  `processos`, `sinalizar`, `relogio`, `jarvis`.
+- `catalogo/window.close.yaml` (era `window.close_app`), `catalogo/apps.quit.yaml` e os stubs.
+
+**Testes:** `tests/unit/executor/test_fechar_e_encerrar.py` (35, dois com processos descartáveis
+de verdade: `sleep` e `bash` copiados com nome único, numa sessão nova), mais os de tiers, de
+nativas e do executor.
+
+**Não provado:** o KWin de verdade (o `windowclose` como o X é suposição), o Steam, o Discord, o
+Flatpak, o Wayland do dono (sem `kdotool` lá).
+
+**Próximos passos possíveis:** conferências no `tools/harness_janelas.py` (openbox, `xterm`)
+para o `window.close` e o `apps.quit`; confirmar no KDE do dono o `windowclose`.
+

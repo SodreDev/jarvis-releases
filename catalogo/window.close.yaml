@@ -1,0 +1,64 @@
+# Fechar uma janela, como o X dela (dono, 2026-10-21; ADR-0042). Era a window.close_app (perigosa).
+id: window.close
+title: Fechar uma janela
+description: Fecha uma janela, como o X dela — o aplicativo pode perguntar se salva, ou seguir na bandeja. Use para
+  "fecha o Discord", "fecha a janela", "fecha esse aí". Sem nome, fecha a janela em primeiro plano; com o nome, a
+  janela daquele app (com várias abertas, a que está na frente, senão pergunta qual); com janela_id (do window.list),
+  aquela. Não encerra o aplicativo — para "fecha o X todo", "fecha o X inteiro", "mata o X" ou "encerra o X" existe
+  apps.quit — e não fecha a janela do próprio Jarvis (para isso, jarvis.encerrar).
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    app:
+      type: string
+      minLength: 2
+      maxLength: 60
+    janela_id:
+      type: string
+      pattern: ^(0x[0-9a-fA-F]{1,8}|\{[0-9a-fA-F-]{36}\})$
+output_schema:
+  type: object
+  required:
+  - app
+  - fechada
+  properties:
+    app:
+      type: string
+    titulo:
+      type: string
+    janela_id:
+      type: string
+    fechada:
+      type: boolean
+    nota:
+      type: string
+preconditions: []
+postcondition: a janela escolhida pelo código na lista real recebeu o pedido de fechar e saiu da lista (ou o app
+  ficou perguntando, e a resposta diz isso)
+capability: window.close
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: metadata
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 4000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 2

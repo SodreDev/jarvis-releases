@@ -30,7 +30,7 @@ import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, runtime_checkable
 
 from jarvis.executor import desktop
 from jarvis.executor.comandos import (
@@ -104,6 +104,16 @@ class Janelas(Protocol):
         ...
 
 
+@runtime_checkable
+class FechaJanelas(Protocol):
+    """A porta que também fecha uma janela (ADR-0042): o pedido educado do gerenciador de janelas,
+    como o X dela — o app pode perguntar se salva. Nunca mata o processo."""
+
+    def fechar(self, janela_id: str) -> bool:
+        """`False` = o gerenciador de janelas não aceitou o pedido."""
+        ...
+
+
 def _rodar(lancar: Lancador, *argv: str) -> str | None:
     """A saída, ou `None` quando o programa falhou, não existe ou não respondeu."""
     try:
@@ -169,6 +179,12 @@ class JanelasPorKdotool:
             return False
         return _rodar(self._lancar, "kdotool", "windowactivate", janela_id) is not None
 
+    def fechar(self, janela_id: str) -> bool:
+        """`kdotool windowclose {uuid}` ("Close a window", no `--help` dele): o pedido do KWin."""
+        if not id_de_janela(janela_id):
+            return False
+        return _rodar(self._lancar, "kdotool", "windowclose", janela_id) is not None
+
 
 def _blocos_do_kdotool(linhas: list[str]) -> list[JanelaDoSistema] | None:
     """Os quatro blocos (ids, títulos, classes, PIDs) e a ativa no fim; `None` se desalinhou."""
@@ -224,6 +240,12 @@ class JanelasPorWmctrl:
         if not id_de_janela(janela_id):
             return False
         return _rodar(self._lancar, "wmctrl", "-i", "-a", janela_id) is not None
+
+    def fechar(self, janela_id: str) -> bool:
+        """`wmctrl -i -c`: o `_NET_CLOSE_WINDOW` do X11, o mesmo do X da janela."""
+        if not id_de_janela(janela_id):
+            return False
+        return _rodar(self._lancar, "wmctrl", "-i", "-c", janela_id) is not None
 
 
 def janelas_do_ambiente(

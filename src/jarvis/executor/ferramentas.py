@@ -15,6 +15,7 @@ O modelo **propõe** (`tool_id` + argumentos nomeados); daqui para baixo, só c�
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -29,6 +30,7 @@ from jarvis.entrada.controle import FERRAMENTAS_DE_ENTRADA, ControleDeEntrada
 from jarvis.executor import arquivos, desktop
 from jarvis.executor.comandos import ComandoIndisponivel
 from jarvis.executor.desfazer import LIXEIRA, Contaminacao, RegistroDeDesfazeres, aviso_falado
+from jarvis.executor.fechar import AlvoRecusado, Fechador, TabelaDoProc
 from jarvis.executor.janelas import PRAZO_DO_FOCO_S, PistaDoApp
 from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
 from jarvis.executor.nativas import CORPOS, DE_ARQUIVOS, PRECISAM_DE_AGENDA, Nativas
@@ -123,6 +125,10 @@ FERRAMENTAS_DE_MEMORIA: Final = frozenset(
 """As `memoria.*` (ADR-0026): o corpo é do `FerramentasDeMemoria`, e só existem para o modelo
 quando há livro aberto (o histórico persistente) — sem ele, a persona não promete o que não há."""
 
+FERRAMENTAS_DE_FECHAR: Final = frozenset({"window.close", "apps.quit"})
+"""Fechar a janela × encerrar o app (ADR-0042): o alvo é resolvido pelo código (`jarvis.executor.
+fechar`), antes do PDP — o que não está aberto, o ambíguo e o protegido voltam negados com o
+porquê — e de novo no corpo, na hora de agir."""
 FERRAMENTA_DE_ENCERRAR: Final = "jarvis.encerrar"
 """Encerrar o próprio Jarvis (ADR-0041): o corpo é do aplicativo (`Encerramento`), e a tool só
 existe para o modelo quando há um laço que possa ser encerrado."""
@@ -372,7 +378,9 @@ class ExecutorDeFerramentas:
                 ),
             )
             # O objetivo do pedido, com o critério de pronto do método escolhido (C2).
-            self.objetivo = Objetivo.do_pedido(pedido_do_dono, str(self.metodo.metodo))
+            self.objetivo = Objetivo.do_pedido(
+                pedido_do_dono, str(self.metodo.metodo), motivo=self.metodo.motivo
+            )
             if self.trilha is not None:
                 self.trilha.evento(
                     "metodo",
@@ -441,6 +449,8 @@ class ExecutorDeFerramentas:
             return self.estado_do_navegador is not None
         if tool_id == FERRAMENTA_DE_ENCERRAR:
             return self.encerramento is not None
+        if tool_id in FERRAMENTAS_DE_FECHAR:
+            return True
         if tool_id == FERRAMENTA_DA_TELA:
             return self.navegador is not None and self.motor_ve_imagem()
         if tool_id in FERRAMENTAS_DO_NAVEGADOR:
@@ -610,6 +620,14 @@ class ExecutorDeFerramentas:
             familia = self.navegadores.resolver(dito) if dito else None
             if familia is not None:  # «Brave» → a família configurada, que é o que o PDP conhece
                 argumentos["navegador"] = familia
+        try:
+            exige_o_sim = self._exige_o_sim(tool_id, argumentos)
+        except AlvoRecusado as erro:
+            # Fechar e encerrar (ADR-0042): não está aberto, é ambíguo ou é protegido — volta ao
+            # modelo com o porquê (a pergunta, quando é dúvida), sem chegar ao PDP.
+            return ResultadoDeFerramenta(
+                tool_id, "negado", motivo=str(erro), call_id=chamada, causa=erro.causa
+            )
         pedido = Pedido(
             tool_id=tool_id,
             args=argumentos,
@@ -619,7 +637,7 @@ class ExecutorDeFerramentas:
             proveniencia=proveniencia,
             contaminado=marca.valor,
             objetivo=self.objetivo_de(marca),
-            exige_o_sim=self._exige_o_sim(tool_id, argumentos),
+            exige_o_sim=exige_o_sim,
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
 
@@ -628,7 +646,32 @@ class ExecutorDeFerramentas:
         Encerrar o Jarvis com tarefa em andamento ou pergunta esperando: o sim (ADR-0041)."""
         if tool_id == FERRAMENTA_DE_ENCERRAR and self.encerramento is not None:
             return self.encerramento.pendente()
+        if tool_id == "window.close":
+            return self._fechador().janela(*_alvo_de(_argumentos)).exige_o_sim
+        if tool_id == "apps.quit":
+            return self._fechador().app(*_alvo_de(_argumentos)).exige_o_sim
         return ""
+
+    def _fechador(self) -> Fechador:
+        """As portas de fechar e encerrar (ADR-0042), do jeito desta sessão: a lista de janelas, o
+        `/proc`, os apps instalados e os navegadores que o dono configurou."""
+        if os.name == "nt":  # pragma: no cover — sem /proc e sem as portas de janela do Linux
+            raise AlvoRecusado(
+                "fechar e encerrar aplicativo no Windows ainda não foi implementado", "sem_suporte"
+            )
+        portas = self.portas()
+        return Fechador(
+            janelas=portas.janelas,
+            tabela=portas.processos or TabelaDoProc(),
+            catalogo=self.registro_de_apps.catalogo,
+            navegadores=frozenset(self.navegadores.familias())
+            if self.navegadores is not None
+            else frozenset(),
+            sinalizar=portas.sinalizar,
+            dormir=portas.dormir,
+            relogio=portas.relogio,
+            jarvis=portas.jarvis,
+        )
 
     def pergunta_de(
         self, avaliacao: Avaliacao, motivo: str = "", causa: str = "confirmacao_do_pdp"
@@ -1158,6 +1201,13 @@ class ExecutorDeFerramentas:
             assert self.encerramento is not None  # _ligada filtra antes
             # Só o pedido: o laço termina o turno (a despedida toca) e então encerra, limpo.
             return {"encerrando": True, "tarefas_canceladas": self.encerramento.pedir()}
+        if tool_id == "window.close":
+            # De novo, na hora de agir: entre a pergunta e o sim a janela pode ter mudado.
+            fechador = self._fechador()
+            return fechador.fechar_janela(fechador.janela(*_alvo_de(args)))
+        if tool_id == "apps.quit":
+            fechador = self._fechador()
+            return fechador.encerrar_app(fechador.app(*_alvo_de(args)))
         if tool_id in CORPOS:
             return CORPOS[tool_id](self.portas(), args)
         if tool_id in DE_ARQUIVOS:
@@ -1302,6 +1352,10 @@ class ExecutorDeFerramentas:
             return f"abrir o navegador «{args.get('navegador') or 'principal'}»"
         if tool_id == FERRAMENTA_DE_ENCERRAR:
             return "encerrar o Jarvis (as tarefas em andamento são canceladas)"
+        if tool_id == "window.close":
+            return f"fechar a janela {_de_quem(args)}"
+        if tool_id == "apps.quit":
+            return f"encerrar {_o_app(args)} inteiro, com os processos dele"
         return f"{tool_id} com {json.dumps(dict(args), ensure_ascii=False)[:160]}"
 
     def _falado(self, tool_id: str, args: Mapping[str, Any]) -> str:
@@ -1309,6 +1363,10 @@ class ExecutorDeFerramentas:
         nunca o id nem os argumentos em JSON, que a janela mostra no `detalhe`."""
         if tool_id in FALADO_IGUAL_AO_DETALHE:
             return self._detalhe(tool_id, args)
+        if tool_id == "window.close":
+            return f"fechar a janela {_de_quem(args)}"
+        if tool_id == "apps.quit":
+            return f"encerrar {_o_app(args)} inteiro"
         titulo = str(self.manifestos[tool_id]["title"]).strip()
         texto = titulo[:1].lower() + titulo[1:]
         url = args.get("url")
@@ -1373,3 +1431,18 @@ FALADO_IGUAL_AO_DETALHE: Final = frozenset(
 def _resumo(args: Mapping[str, Any]) -> str:
     """Os argumentos em uma linha para o dono ler na confirmação (texto puro, truncado)."""
     return json.dumps(dict(args), ensure_ascii=False)[:160]
+
+
+def _alvo_de(args: Mapping[str, Any]) -> tuple[str, str]:
+    """O nome e a janela que o modelo deu para fechar ou encerrar (os dois podem faltar)."""
+    return str(args.get("app") or "").strip(), str(args.get("janela_id") or "").strip()
+
+
+def _de_quem(args: Mapping[str, Any]) -> str:
+    app = str(args.get("app") or "").strip()
+    return f"do «{app[:60]}»" if app else "que está na frente"
+
+
+def _o_app(args: Mapping[str, Any]) -> str:
+    app = str(args.get("app") or "").strip()
+    return f"o «{app[:60]}»" if app else "o aplicativo da janela da frente"

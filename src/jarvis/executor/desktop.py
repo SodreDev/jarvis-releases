@@ -2,8 +2,9 @@
 
 Cada função monta o `argv` inteiro a partir de **argumentos tipados** (enum, id de janela que veio
 da lista real, texto que vai por `stdin` ou depois de `--`): o modelo nunca escolhe programa nem
-flag. Os efeitos mais fortes pedem mais: **fechar janela é perigoso** (pergunta ao dono), e o que a
-área de transferência devolve passa pela redação de segredos antes de chegar ao modelo.
+flag. O que a área de transferência devolve passa pela redação de segredos antes de chegar ao
+modelo. Fechar janela e encerrar app moram em `fechar.py` (ADR-0042), com o alvo resolvido pelo
+código e as proteções de processo.
 
 **Não verificado ao vivo** (só o falso nos testes): MPRIS por `gdbus`/`playerctl` e `wmctrl` no
 desktop do dono. `wmctrl` só enxerga janelas X11/XWayland: o que for Wayland nativo (Qt/KDE) pode
@@ -181,14 +182,6 @@ def focar(lancar: Lancador, app: str) -> dict[str, Any]:
     janela = achar_janela(listar_janelas(lancar), app)
     if not lancar(["wmctrl", "-i", "-a", janela["id"]], 3.0, None).ok:
         raise ComandoIndisponivel("o gerenciador de janelas não deixou focar")
-    return {"app": janela["app"], "titulo": janela["titulo"]}
-
-
-def fechar(lancar: Lancador, app: str) -> dict[str, Any]:
-    """Pede o fechamento **educado** (o app pode perguntar se salva), nunca mata o processo."""
-    janela = achar_janela(listar_janelas(lancar), app)
-    if not lancar(["wmctrl", "-i", "-c", janela["id"]], 3.0, None).ok:
-        raise ComandoIndisponivel("o gerenciador de janelas não deixou fechar")
     return {"app": janela["app"], "titulo": janela["titulo"]}
 
 

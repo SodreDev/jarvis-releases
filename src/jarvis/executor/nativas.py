@@ -11,6 +11,7 @@ pode dizer. Arquivos (criar pasta, copiar, mover) precisam do grant e moram em `
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from typing import Any, Final
 from jarvis.executor import desktop, sistema, web
 from jarvis.executor.alarmes import AgendaDeAlarmes, quando_da_fala
 from jarvis.executor.comandos import ComandoIndisponivel, Lancador, executar
+from jarvis.executor.fechar import Jarvis, TabelaDeProcessos
 from jarvis.executor.janelas import Janelas, focar, listar_para_o_modelo
 
 
@@ -41,6 +43,13 @@ class Nativas:
     janelas: Janelas | None = None
     """Quem lista e foca as janelas (`kdotool` no KDE, `wmctrl` no X11; ADR-0037). `None` = o
     `wmctrl` de antes nas `window.*`, e nada de acompanhar o foco de um app aberto."""
+    processos: TabelaDeProcessos | None = None
+    """A tabela de processos (`/proc`) de `apps.quit` (ADR-0042). `None` = a de verdade."""
+    sinalizar: Callable[[int, int], None] = os.kill
+    """O sinal por PID de `apps.quit`: só aos processos que o código resolveu e conferiu."""
+    relogio: Callable[[], float] = time.monotonic
+    jarvis: Jarvis | None = None
+    """Quem é o próprio Jarvis (nunca alvo). `None` = este processo, lido na hora."""
     anterior_da_area: str = field(default="", repr=False)
     """O texto que a área de transferência tinha antes da última escrita — é o do "desfazer"."""
 
@@ -148,7 +157,6 @@ CORPOS: Final[dict[str, Corpo]] = {
     "media.player.status": lambda n, a: desktop.estado_da_midia(n.lancar),
     "window.list": _janelas,
     "window.focus_app": _focar,
-    "window.close_app": lambda n, a: desktop.fechar(n.lancar, str(a["app"])),
     "clipboard.text.read": lambda n, a: desktop.texto_da_area(n.lancar, n.ambiente),
     "clipboard.text.write": _area_write,
     "notify.desktop.send": lambda n, a: desktop.notificar(
