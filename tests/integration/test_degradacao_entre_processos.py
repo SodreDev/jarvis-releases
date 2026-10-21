@@ -16,6 +16,7 @@ import pytest
 
 from jarvis.agentd.aviso import avisos_falados
 from jarvis.barramento import LogDeEventos, Tipo
+from jarvis.barramento.envelope import Envelope
 from jarvis.microfone import Modo, ler_estado
 from jarvis.rede import (
     VARIAVEL_ARQUIVO,
@@ -23,6 +24,7 @@ from jarvis.rede import (
     frase_de_queda,
     ler_degradacao,
 )
+from jarvis.s2.__main__ import call_id_do_turno
 from jarvis.supervisao import Supervisor
 from jarvis.ui.atalhos import VARIAVEL_ARQUIVO as VARIAVEL_TECLA
 from jarvis.ui.atalhos import VARIAVEL_BACKEND as VARIAVEL_ATALHO
@@ -71,12 +73,16 @@ def esperar(condicao: Callable[[], bool], descricao: str, *, limite: float = ESP
     raise AssertionError(f"não aconteceu em {limite}s: {descricao}")
 
 
-def tipos(raiz: Path) -> list[Tipo]:
+def envelopes(raiz: Path) -> list[Envelope]:
     arquivo = raiz / "eventos.sqlite"
     if not arquivo.exists():
         return []
     with LogDeEventos(arquivo) as log:
-        return [r.envelope.type for r in log.ler()]
+        return [r.envelope for r in log.ler()]
+
+
+def tipos(raiz: Path) -> list[Tipo]:
+    return [e.type for e in envelopes(raiz)]
 
 
 def tela(raiz: Path) -> str:
@@ -123,14 +129,19 @@ def test_rede_cai_microfone_cai_para_ptt_e_a_ui_diz(supervisor: Supervisor) -> N
     assert avisos_falados(raiz)[0].frase == frase_de_queda(SERVICO)
 
     # O dono continua falando, agora por PTT e sem rede: o pedido CAI e fica registrado como
-    # descartado. É o pedido que a volta da rede não pode ressuscitar.
+    # descartado. É o pedido que a volta da rede não pode ressuscitar. Espera-se um descarte
+    # **novo**: o turno que caiu junto com a rede já pode estar na lista, e aí "a lista não está
+    # vazia" passaria sem o turno do PTT ter acontecido.
+    antes_do_ptt = len(ler_degradacao(raiz).descartados)
     tecla(base, apertada=True)
     esperar(lambda: ler_estado(raiz).aberta, "o PTT abrir a fonte com a rede fora")
     esperar(
-        lambda: bool(ler_degradacao(raiz).descartados), "o pedido do turno cair e ser descartado"
+        lambda: len(ler_degradacao(raiz).descartados) > antes_do_ptt,
+        "o pedido do turno falado no PTT cair e ser descartado",
     )
-    descartados = ler_degradacao(raiz).descartados
     tecla(base, apertada=False)
+    esperar(lambda: not ler_estado(raiz).aberta, "soltar a tecla fechar a fonte")
+    descartados = ler_degradacao(raiz).descartados
     pedidos_sem_rede = tipos(raiz).count(Tipo.TOOL_CALL_REQUESTED)
 
     assert pedidos_sem_rede == pedidos_com_rede, "sem rede, nenhum pedido novo entra no barramento"
@@ -139,12 +150,34 @@ def test_rede_cai_microfone_cai_para_ptt_e_a_ui_diz(supervisor: Supervisor) -> N
 
     esperar(lambda: not ler_degradacao(raiz).ativa, "a volta da rede limpar a degradação")
     esperar(lambda: ler_estado(raiz).aberta, "a volta restaurar a escuta contínua")
+    # A escuta que volta ouve de verdade: a fonte sintética reaberta tem fala, e fala nova é
+    # turno novo — que tem de ser atendido, senão a volta deixou o Jarvis surdo. Até o defeito
+    # do `call_id` (ver `call_id_do_turno`), esse turno era recusado como se fosse o que caiu,
+    # e era isso que fazia "nenhum pedido depois da volta" parecer verdade.
+    esperar(
+        lambda: tipos(raiz).count(Tipo.TOOL_CALL_REQUESTED) > pedidos_com_rede,
+        "um turno novo, falado depois da volta, ser atendido",
+    )
     time.sleep(1.0)  # tempo de sobra para um pedido velho ressuscitar, se fosse ressuscitar
 
-    assert tipos(raiz).count(Tipo.TOOL_CALL_REQUESTED) == pedidos_com_rede, (
+    trilha = envelopes(raiz)
+    pedidos = [e for e in trilha if e.type is Tipo.TOOL_CALL_REQUESTED]
+    transcricoes = {call_id_do_turno(e): e for e in trilha if e.type is Tipo.FINAL_TRANSCRIPT}
+    epoch_que_caiu = max(transcricoes[c].epoch for c in descartados)
+    ids = [str(p.payload["call_id"]) for p in pedidos]
+    depois_da_volta = pedidos[pedidos_com_rede:]
+
+    assert not set(ids) & set(descartados), (
         "a volta da rede não pode ressuscitar pedido velho (§3.3 regra 5, aceite (c))"
     )
+    assert len(set(ids)) == len(ids), "cada pedido é de um turno: nenhum call_id se repete"
+    for pedido in depois_da_volta:
+        origem = transcricoes[str(pedido.payload["call_id"])]
+        assert pedido.epoch == origem.epoch > epoch_que_caiu, (
+            "depois da volta, só turno nascido depois do último que caiu vira pedido"
+        )
     assert ler_degradacao(raiz).descartados == descartados, (
         "a lista de descartados sobrevive à volta: é ela que impede o ressuscitar"
     )
+    assert len(avisos_falados(raiz)) == 1, "a volta não repete o aviso por voz"
     assert supervisor.vivo("s2") and supervisor.vivo("ui") and supervisor.vivo("audio-io")

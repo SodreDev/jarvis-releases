@@ -15,7 +15,7 @@ import sys
 import time
 from collections.abc import Callable
 
-from jarvis.barramento.envelope import Envelope, Prioridade, Tipo, Trust, uuid7
+from jarvis.barramento.envelope import Envelope, Prioridade, Tipo, Trust
 from jarvis.processo import Processo, analisador
 from jarvis.rede import AdaptadorRemoto, sonda_do_ambiente
 
@@ -61,15 +61,32 @@ def reacao_com_rede(adaptador: AdaptadorRemoto) -> Callable[..., list[Envelope]]
     ) -> list[Envelope]:
         if envelope.type is not Tipo.FINAL_TRANSCRIPT or envelope.epoch < processo.epoch:
             return reagir(processo, envelope, veredito)
-        call_id = f"c-{envelope.event_id[:8]}"
         pedido = adaptador.chamar(
-            lambda _prazo: _pedido_de_tool(processo, envelope, call_id=call_id),
-            call_id=call_id,
+            lambda _prazo: _pedido_de_tool(processo, envelope),
+            call_id=call_id_do_turno(envelope),
             epoch=envelope.epoch,
         )
         return [] if pedido is None else [pedido]
 
     return reagir_com_adaptador
+
+
+def call_id_do_turno(origem: Envelope) -> str:
+    """O `call_id` do pedido é a identidade **inteira** da transcrição que o originou.
+
+    **Isto é correção de um defeito que a repetição do teste do F1-14 pegou.** O id era
+    `c-{event_id[:8]}`, e os oito primeiros dígitos de um uuid7 são os 32 bits altos do
+    milissegundo: só mudam a cada 65,5 s. Todo turno dentro da mesma janela ganhava o **mesmo**
+    `call_id`, e três coisas erradas saíam daí: depois que um pedido caía com a rede, cada turno
+    **novo** da janela era recusado como "descartado" (a escuta voltava, mas o Jarvis ficava
+    surdo por até um minuto); o executor engolia o segundo turno da janela por idempotência; e,
+    quando a janela virava entre a queda e a volta, os turnos novos passavam — o que fazia o
+    teste de integração falhar uma vez em vinte e parecer pedido velho ressuscitando.
+
+    Com o id inteiro, a mesma transcrição reentregue tem o mesmo `call_id` — e continua
+    descartada para sempre (§3.3 regra 5) —, e turno novo tem `call_id` novo.
+    """
+    return f"c-{origem.event_id}"
 
 
 def _revisao_de_hipotese(processo: Processo, origem: Envelope) -> Envelope:
@@ -95,7 +112,7 @@ def _revisao_de_hipotese(processo: Processo, origem: Envelope) -> Envelope:
     )
 
 
-def _pedido_de_tool(processo: Processo, origem: Envelope, *, call_id: str = "") -> Envelope:
+def _pedido_de_tool(processo: Processo, origem: Envelope) -> Envelope:
     return Envelope(
         session_id=processo.session_id,
         epoch=origem.epoch,
@@ -104,7 +121,7 @@ def _pedido_de_tool(processo: Processo, origem: Envelope, *, call_id: str = "") 
         priority=Prioridade.P2,
         type=Tipo.TOOL_CALL_REQUESTED,
         payload={
-            "call_id": call_id or f"c-{uuid7()[:8]}",
+            "call_id": call_id_do_turno(origem),
             "tool_id": TOOL_DO_ESQUELETO,
             "args": {"sobre": origem.payload["text"]},
             "dry_run": True,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import socket
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,9 @@ import pytest
 
 from jarvis.agentd.aviso import avisos_falados, falar_aviso
 from jarvis.agentd.turno_completo import PONTOS, TurnoCompleto
+from jarvis.barramento.envelope import Envelope, Tipo, uuid7
 from jarvis.microfone import Modo
+from jarvis.processo import Processo
 from jarvis.rede import (
     PRAZO_DA_SONDA_S,
     PRAZO_PADRAO_S,
@@ -36,7 +39,9 @@ from jarvis.rede import (
     ler_degradacao,
     sonda_do_ambiente,
 )
+from jarvis.s2.__main__ import call_id_do_turno, reacao_com_rede, reagir
 from jarvis.ui.painel import PainelDoMicrofone
+from tests.fabricas import evento
 
 SERVICO = "o serviço de raciocínio"
 
@@ -332,3 +337,94 @@ def test_dois_escritores_ao_mesmo_tempo_nao_perdem_call_id(
 
     descartados = set(ler_degradacao(tmp_path).descartados)
     assert esperados <= descartados, f"perdidos: {sorted(esperados - descartados)}"
+
+
+# --- repetição do F1-14: a identidade do pedido é a do turno -------------------------
+SESSAO = "01a15c68-0000-7000-8000-000000000000"
+JANELA_DO_UUID7_MS = 1 << 16
+"""Os 8 primeiros dígitos de um uuid7 são os 32 bits altos do milissegundo: 65,5 s."""
+DISTANCIAS = {
+    "mesmo milissegundo": 0,
+    "mesma janela do uuid7": 1_000,
+    "janela seguinte do uuid7": JANELA_DO_UUID7_MS,
+}
+
+
+def transcricao_no_milissegundo(epoch: int, ms: int) -> Envelope:
+    """Um `FinalTranscript` com o relógio do uuid7 fixado; o aleatório continua do gerador.
+
+    É o que torna a corrida determinística: a janela que o defeito precisava (dois turnos na
+    mesma janela de 65,5 s, ou um de cada lado da virada) deixa de depender da hora do teste.
+    """
+    tempo = f"{ms:012x}"
+    return replace(
+        evento(Tipo.FINAL_TRANSCRIPT, SESSAO, epoch=epoch),
+        event_id=f"{tempo[:8]}-{tempo[8:]}-{uuid7()[14:]}",
+    )
+
+
+@pytest.mark.parametrize("distancia_ms", DISTANCIAS.values(), ids=DISTANCIAS.keys())
+def test_a_volta_atende_turno_novo_e_nunca_o_que_caiu(tmp_path: Path, distancia_ms: int) -> None:
+    """Aceite (c) pela identidade do pedido, no caminho de verdade do `s2` — sem processo e sem
+    `sleep`.
+
+    O defeito: o `call_id` era `c-{event_id[:8]}`, igual para todo turno da mesma janela de
+    65,5 s. Depois da queda, turno **novo** da janela era recusado como descartado; quando a
+    janela virava entre a queda e a volta, ele passava. O teste de integração só via isso uma
+    vez em vinte. Aqui as três posições da janela são forçadas, e o resultado tem de ser o
+    mesmo nas três: o que caiu fica morto, e o que é novo é atendido.
+    """
+    adaptador, sonda = montar(tmp_path)
+    processo = Processo(nome="s2", raiz=tmp_path, reacao=reagir, session_id=SESSAO)
+    reagir_com_rede = reacao_com_rede(adaptador)
+    inicio = (0x01A15C68 << 16) + 100
+
+    def ouvir(transcricao: Envelope) -> list[Envelope]:
+        # O que `Processo.recebidos` faz antes da reação: o epoch segue o maior entregue.
+        processo.epoch = max(processo.epoch, transcricao.epoch)
+        return reagir_com_rede(processo, transcricao, "aceitar")
+
+    com_rede = transcricao_no_milissegundo(1, inicio)
+    que_caiu = transcricao_no_milissegundo(2, inicio + distancia_ms)
+    novo = transcricao_no_milissegundo(3, inicio + 2 * distancia_ms)
+    mesma_janela = distancia_ms < JANELA_DO_UUID7_MS
+    assert (que_caiu.event_id[:8] == novo.event_id[:8]) is mesma_janela, "a janela está forçada"
+
+    atendido = ouvir(com_rede)
+    sonda.ligada = False
+    assert ouvir(que_caiu) == [], "sem rede, o pedido cai e não entra no barramento"
+    sonda.ligada = True
+    adaptador.conferir(epoch=processo.epoch)
+    reentregue = ouvir(que_caiu)
+    depois_da_volta = ouvir(novo)
+
+    pedido_com_rede = atendido[0].payload["call_id"]
+    descartados = ler_degradacao(tmp_path).descartados
+    assert descartados == (call_id_do_turno(que_caiu),), "o que caiu é o turno, pela identidade"
+    assert pedido_com_rede not in descartados, "pedido atendido não divide id com o que caiu"
+    assert reentregue == [], "a mesma transcrição reentregue depois da volta continua morta"
+    assert adaptador.recusas_por_descarte == 1
+    assert len(depois_da_volta) == 1, (
+        "turno novo depois da volta é atendido: a escuta não volta surda"
+    )
+    pedido_novo = depois_da_volta[0]
+    assert pedido_novo.type is Tipo.TOOL_CALL_REQUESTED
+    assert pedido_novo.epoch == novo.epoch > que_caiu.epoch
+    assert pedido_novo.payload["call_id"] == call_id_do_turno(novo)
+    assert len({pedido_com_rede, *descartados, pedido_novo.payload["call_id"]}) == 3
+
+
+def test_sem_rede_tambem_cada_turno_tem_o_seu_pedido(tmp_path: Path) -> None:
+    """Sem o adaptador, o mesmo defeito fazia o executor engolir o segundo turno da janela: ele
+    não roda duas vezes o mesmo `call_id` (idempotência). Turno novo, id novo; a mesma
+    transcrição, o mesmo id — e aí a idempotência acerta."""
+    processo = Processo(nome="s2", raiz=tmp_path, reacao=reagir, session_id=SESSAO, epoch=2)
+    primeiro = transcricao_no_milissegundo(2, 0x01A15C68 << 16)
+    segundo = transcricao_no_milissegundo(2, 0x01A15C68 << 16)
+
+    ids = [reagir(processo, t, "aceitar")[0].payload["call_id"] for t in (primeiro, segundo)]
+    de_novo = reagir(processo, primeiro, "aceitar")[0].payload["call_id"]
+
+    assert primeiro.event_id[:8] == segundo.event_id[:8], "a janela do defeito está forçada"
+    assert ids[0] != ids[1]
+    assert de_novo == ids[0]

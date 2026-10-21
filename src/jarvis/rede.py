@@ -282,6 +282,10 @@ class AdaptadorRemoto:
 
         `fazer` recebe o **prazo restante** em segundos: é assim que não existe `timeout`
         herdado — quem chama o serviço recebe o nosso prazo, não o padrão do SDK.
+
+        `call_id` é a identidade do pedido, e tem de ser **única por pedido**: um id que se
+        repete entre pedidos diferentes faz o pedido novo ser recusado como se fosse o que caiu
+        (ver `jarvis.s2.__main__.call_id_do_turno`).
         """
         if call_id in self._degradacao.descartados:
             # Regra 5: pedido que caiu não volta. Nem sendo pedido de novo pelo mesmo id.
