@@ -117,7 +117,7 @@ test("tabs.show leva a aba da janela do Jarvis para a janela do dono", async () 
   const aberta = await pedir(porta, {
     id: "n7",
     method: "tabs.open",
-    params: { url: "https://www.youtube.com/watch?v=1", janela: "jarvis" },
+    params: { url: "https://www.youtube.com/watch?v=1", modo: "automacao_social" },
   });
   assert.equal(aberta.result.janela, "jarvis");
   assert.equal(aberta.result.visivel, false);
@@ -142,7 +142,7 @@ test("a janela do Jarvis segura-se com a página dela e é reconhecida depois qu
   await pedir(primeira, {
     id: "n9",
     method: "tabs.open",
-    params: { url: "https://x.example/a", janela: "jarvis" },
+    params: { url: "https://x.example/a", modo: "automacao_social" },
   });
   assert.equal(nav.criadas[0].url, `${ORIGEM}janela.html`);
   nav.foco = 50; // o navegador deixou a janela do Jarvis em foco
@@ -152,7 +152,7 @@ test("a janela do Jarvis segura-se com a página dela e é reconhecida depois qu
   await pedir(depois, {
     id: "n11",
     method: "tabs.open",
-    params: { url: "https://x.example/b", janela: "jarvis" },
+    params: { url: "https://x.example/b", modo: "automacao_social" },
   });
 
   assert.equal(atual.result.aba.id, 7, "a aba do dono, não a da janela do Jarvis");
@@ -184,7 +184,7 @@ test("tabs.open do dono nasce na janela dele, mesmo com a do Jarvis em foco", as
   await pedir(porta, {
     id: "n13",
     method: "tabs.open",
-    params: { url: "https://x.example/a", janela: "jarvis" },
+    params: { url: "https://x.example/a", modo: "automacao_social" },
   });
   nav.foco = 50;
 
@@ -205,7 +205,7 @@ test("tabs.list marca as abas da janela do Jarvis", async () => {
   await pedir(porta, {
     id: "n15",
     method: "tabs.open",
-    params: { url: "https://x.example/a", janela: "jarvis" },
+    params: { url: "https://x.example/a", modo: "automacao_social" },
   });
 
   const lista = await pedir(porta, { id: "n16", method: "tabs.list", params: {} });
@@ -215,8 +215,13 @@ test("tabs.list marca as abas da janela do Jarvis", async () => {
   assert.equal(lista.result.abas.find((aba) => aba.id === 7).janelaDoJarvis, false);
 });
 
-// --- a janela do Jarvis (ADR-0036), no navegador falso com eventos ---------------------------------
-test("page.readUrl lê numa aba da janela do Jarvis, sem foco, e a fecha no fim", async () => {
+// --- uma instância só: o fundo na janela do dono (ADR-0036, emenda de 2026-10-21) -----------------
+// O dono testou o 8cc7bf6: o Jarvis começou no Brave dele e depois abriu "outra instância" — a janela
+// própria do Jarvis, criada pela busca sem chave — e o vídeo foi parar nela. Sem o modo da automação
+// social, a extensão não cria janela nenhuma.
+const janelasCriadas = (nav) => nav.criadas.filter((c) => c.aba === undefined);
+
+test("page.readUrl lê numa aba em segundo plano da janela do dono, sem janela nova nem foco, e a fecha", async () => {
   const nav = new NavegadorFalso({ janelas: [DONO] });
   const porta = nav.carregarFundo();
 
@@ -227,12 +232,94 @@ test("page.readUrl lê numa aba da janela do Jarvis, sem foco, e a fecha no fim"
   });
 
   assert.equal(resposta.ok, true);
+  assert.deepEqual(janelasCriadas(nav), [], "nenhuma janela nova (era a «outra instância» do dono)");
+  const daBusca = nav.criadas.find((c) => c.url === "https://search.brave.com/search?q=x");
+  assert.equal(daBusca.windowId, 1, "na janela do dono");
+  assert.equal(daBusca.active, false, "em segundo plano: a aba dele continua a que está à vista");
+  assert.equal(nav.aba(7).active, true);
+  assert.equal(nav.abas.has(daBusca.aba), false, "a aba de fundo foi fechada");
+  assert.deepEqual(nav.focadas, [], "o foco do dono não foi tocado");
+  assert.equal(nav.foco, 1);
+  assert.ok(nav.mensagens.every((m) => m.tabId === daBusca.aba), "leu a aba de fundo, não a do dono");
+});
+
+test("tabs.open com fundo: a aba nasce na janela do dono em segundo plano, e o foco não muda", async () => {
+  const nav = new NavegadorFalso({ janelas: [DONO] });
+  const porta = nav.carregarFundo();
+
+  const aberta = await pedir(porta, {
+    id: "j1b",
+    method: "tabs.open",
+    params: { url: "https://www.youtube.com/@primorico", fundo: true },
+  });
+
+  assert.equal(aberta.ok, true);
+  assert.equal(aberta.result.aba.janelaId, 1, "na janela do dono");
+  assert.equal(aberta.result.aba.ativa, false, "sem active: a aba que ele vê não muda");
+  assert.equal(aberta.result.janela, "dono");
+  assert.equal(aberta.result.visivel, false);
+  assert.equal(aberta.result.carregou, true, "conferida como as outras");
+  assert.equal(nav.aba(7).active, true);
+  assert.deepEqual(janelasCriadas(nav), []);
+  assert.deepEqual(nav.focadas, []);
+});
+
+test("sem o modo da automação social nenhum pedido cria janela, nem a busca, nem o fundo", async () => {
+  const nav = new NavegadorFalso({ janelas: [DONO] });
+  const porta = nav.carregarFundo();
+
+  const pedidos = [
+    { method: "page.readUrl", params: { url: "https://search.brave.com/search?q=gatos" } },
+    { method: "tabs.open", params: { url: "https://www.youtube.com/results?q=gatos", fundo: true } },
+    { method: "tabs.open", params: { url: "https://www.youtube.com/watch?v=1" } },
+    { method: "tabs.navigate", params: { url: "https://www.youtube.com/watch?v=2" } },
+    { method: "windows.focused", params: {} },
+  ];
+  for (const [indice, pedido] of pedidos.entries()) {
+    const resposta = await pedir(porta, { id: `u${indice}`, ...pedido });
+    assert.equal(resposta.ok, true, `${pedido.method}: ${JSON.stringify(resposta.error)}`);
+  }
+
+  assert.deepEqual(janelasCriadas(nav), [], "uma instância só: a janela do dono");
+  assert.equal(nav.janelas.size, 1);
+  const foco = await pedir(porta, { id: "u9", method: "windows.focused", params: {} });
+  assert.equal(foco.result.janelas, 1);
+  assert.equal(foco.result.janelaDoJarvisId, null);
+});
+
+test("aba pedida que não existe mais é sem_aba, dito, e não a falha crua do navegador", async () => {
+  // No caso do dono o modelo mandou um tab_id velho, ouviu "falha" e largou a extensão.
+  const nav = new NavegadorFalso({ janelas: [DONO] });
+  const porta = nav.carregarFundo();
+
+  const resposta = await pedir(porta, {
+    id: "j1c",
+    method: "tabs.navigate",
+    params: { tabId: 999, url: "https://www.youtube.com/" },
+  });
+
+  assert.equal(resposta.ok, false);
+  assert.equal(resposta.error.codigo, "sem_aba");
+  assert.match(resposta.error.mensagem, /não existe mais/);
+});
+
+// --- a janela do Jarvis, só no modo automacao_social (ADR-0036) -----------------------------------
+test("no modo automacao_social o page.readUrl lê na janela do Jarvis, sem foco, e fecha a aba", async () => {
+  const nav = new NavegadorFalso({ janelas: [DONO] });
+  const porta = nav.carregarFundo();
+
+  const resposta = await pedir(porta, {
+    id: "j1d",
+    method: "page.readUrl",
+    params: { url: "https://search.brave.com/search?q=x", modo: "automacao_social" },
+  });
+
+  assert.equal(resposta.ok, true);
   const daBusca = nav.criadas.find((c) => c.url === "https://search.brave.com/search?q=x");
   assert.equal(daBusca.windowId, 50, "na janela do Jarvis");
   assert.equal(nav.abas.has(daBusca.aba), false, "a aba de fundo foi fechada");
   assert.equal(nav.criadas[0].focused, false);
   assert.deepEqual(nav.focadas, [], "o foco do dono não foi tocado");
-  assert.ok(nav.mensagens.every((m) => m.tabId === daBusca.aba), "leu a aba de fundo, não a do dono");
 });
 
 test("page.readUrl fecha a aba de fundo mesmo quando a página não responde", async () => {
@@ -249,21 +336,22 @@ test("page.readUrl fecha a aba de fundo mesmo quando a página não responde", a
   assert.equal(resposta.error.codigo, "pagina_indisponivel");
   const daBusca = nav.criadas.find((c) => c.url === "https://search.brave.com/search?q=x");
   assert.equal(nav.abas.has(daBusca.aba), false);
+  assert.deepEqual(janelasCriadas(nav), []);
 });
 
-test("tabs.open na janela do Jarvis cria a janela sem foco uma vez e a reaproveita depois", async () => {
+test("no modo automacao_social, tabs.open cria a janela do Jarvis sem foco uma vez e a reaproveita", async () => {
   const nav = new NavegadorFalso({ janelas: [DONO] });
   const porta = nav.carregarFundo();
 
   const primeira = await pedir(porta, {
     id: "j3",
     method: "tabs.open",
-    params: { url: "https://x.example/a", janela: "jarvis" },
+    params: { url: "https://x.example/a", modo: "automacao_social" },
   });
   await pedir(porta, {
     id: "j4",
     method: "tabs.open",
-    params: { url: "https://x.example/b", janela: "jarvis" },
+    params: { url: "https://x.example/b", modo: "automacao_social" },
   });
 
   assert.equal(primeira.ok, true);
@@ -279,14 +367,14 @@ test("tabs.open na janela do Jarvis cria a janela sem foco uma vez e a reaprovei
   assert.deepEqual(nav.focadas, [], "o foco do dono não foi tocado");
 });
 
-test("se o navegador tomar o foco ao criar a janela, ele volta para a janela do dono", async () => {
+test("no modo automacao_social, se o navegador tomar o foco ao criar a janela, ele volta para o dono", async () => {
   const nav = new NavegadorFalso({ janelas: [DONO], roubaFoco: true });
   const porta = nav.carregarFundo();
 
   await pedir(porta, {
     id: "j5",
     method: "tabs.open",
-    params: { url: "https://x.example/a", janela: "jarvis" },
+    params: { url: "https://x.example/a", modo: "automacao_social" },
   });
 
   assert.deepEqual(nav.focadas, [{ id: 1, focused: true }]);
@@ -304,6 +392,7 @@ test("windows.focused diz a janela e a aba ativa do dono", async () => {
     abaAtivaId: 7,
     janelaDoJarvisId: null,
     janelaDoDonoId: 1,
+    janelas: 1,
   });
 });
 

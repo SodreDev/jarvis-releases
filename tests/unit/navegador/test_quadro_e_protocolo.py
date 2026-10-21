@@ -63,8 +63,14 @@ def test_pedidos_do_vocabulario_passam() -> None:
     # O mapa da página e a ação pela referência dele (ADR-0032).
     assert validar_pedido(_pedido("page.map", tabId=7)).method == "page.map"
     assert validar_pedido(_pedido("page.capture", tabId=7)).method == "page.capture"
-    fundo = validar_pedido(_pedido("tabs.open", url="https://x.example", janela="jarvis"))
-    assert fundo.params["janela"] == "jarvis"  # a janela própria do Jarvis (ADR-0036)
+    # A aba de fundo nasce na janela do dono; a janela própria só no modo da automação social
+    # (ADR-0036, emenda de 2026-10-21).
+    fundo = validar_pedido(_pedido("tabs.open", url="https://x.example", fundo=True))
+    assert fundo.params["fundo"] is True
+    social = validar_pedido(_pedido("tabs.open", url="https://x.example", modo="automacao_social"))
+    assert social.params["modo"] == "automacao_social"
+    busca_social = _pedido("page.readUrl", url="https://x.example", modo="automacao_social")
+    assert validar_pedido(busca_social).params["modo"] == "automacao_social"
     assert validar_pedido(_pedido("windows.focused")).method == "windows.focused"
     lida = validar_pedido(_pedido("page.readUrl", url="https://search.brave.com/search?q=x"))
     assert lida.params == {"url": "https://search.brave.com/search?q=x"}
@@ -97,7 +103,10 @@ def test_pedidos_do_vocabulario_passam() -> None:
         _pedido("page.map", alvo="x"),  # o mapa é da página inteira
         _pedido("page.capture", formato="png"),  # a captura não escolhe nada
         _pedido("page.readUrl"),  # ler o quê?
-        _pedido("tabs.open", url="https://x.example", janela="outra"),
+        _pedido("tabs.open", url="https://x.example", janela="jarvis"),  # saiu: é o modo agora
+        _pedido("tabs.open", url="https://x.example", modo="outro"),
+        _pedido("tabs.open", url="https://x.example", fundo="sim"),  # booleano
+        _pedido("page.readUrl", url="https://x.example", modo="jarvis"),
         _pedido("windows.focused", janelaId=3),  # só pergunta, não escolhe
         _pedido("page.readUrl", url="file:///etc/passwd"),
         _pedido("page.readUrl", url="https://x.example", tabId=7),  # a aba é sempre nova, de fundo

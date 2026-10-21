@@ -140,11 +140,12 @@ def test_ligar_o_navegador_com_a_conversa_aberta_nao_some_com_memoria_tarefas_e_
     assert {"browser.read", "browser.click"} <= ids_depois
 
 
-def test_sites_open_troca_a_url_da_aba_atual_pela_extensao_e_nao_abre_o_navegador(
+def test_sites_open_abre_guia_nova_pela_extensao_na_janela_do_dono_e_nao_abre_o_navegador(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """Dono, 2026-10-20: cada link abria uma aba nova. Com a extensão conectada, `sites.open` leva
-    a aba atual ao endereço; o binário configurado (inofensivo aqui) nem é chamado."""
+    """Dono, 2026-10-21: com o navegador aberto, nunca outra instância — e a aba dele de outro site
+    fica: `sites.open` abre uma guia nova na janela dele, pela extensão, à vista; o binário
+    configurado (inofensivo aqui) nem é chamado."""
     curto = tmp_path_factory.mktemp("s")
     aba = {"id": 5, "janelaId": 1, "ativa": True, "url": "https://antes.example/", "titulo": "A"}
 
@@ -158,9 +159,9 @@ def test_sites_open_troca_a_url_da_aba_atual_pela_extensao_e_nao_abre_o_navegado
             return {"id": pedido["id"], "ok": True, "result": {"visivel": True, "janela": "dono"}}
         if metodo.startswith("controle."):
             return {"id": pedido["id"], "ok": True, "result": {}}
-        assert metodo == "tabs.navigate", pedido
+        assert metodo == "tabs.open", pedido
         url = pedido["params"]["url"]
-        nova = aba | {"url": url}
+        nova = aba | {"id": 6, "url": url}
         conferido = {"comecou": True, "carregou": True, "pagina": {"url": url, "titulo": "D"}}
         return {
             "id": pedido["id"],
@@ -193,15 +194,13 @@ def test_sites_open_troca_a_url_da_aba_atual_pela_extensao_e_nao_abre_o_navegado
         navegador.fechar()
 
     assert aberto.status == "ok", aberto.motivo
-    assert aberto.dados["reutilizou_aba"] is True
     # Conferido e à vista (auditoria de 2026-10-21): quem abre um site quer ver o site.
     metodos = [p["method"] for p in navegador.recebidos if not p["method"].startswith("controle.")]
-    assert metodos == ["tabs.current", "tabs.list", "tabs.navigate", "tabs.show"]
-    navegou = next(p for p in navegador.recebidos if p["method"] == "tabs.navigate")
-    assert {k: v for k, v in navegou["params"].items() if k != "controle"} == {
-        "tabId": 5,
+    assert metodos == ["tabs.current", "tabs.list", "tabs.open", "tabs.show"]
+    abriu = next(p for p in navegador.recebidos if p["method"] == "tabs.open")
+    assert {k: v for k, v in abriu["params"].items() if k != "controle"} == {
         "url": "https://exemplo.org/depois",
-    }
+    }, "na janela do dono, à vista: nem fundo, nem a janela própria do Jarvis"
 
 
 # --- o PARAR e o sites.open pela extensão (ADR-0027 regra 4; dono, 2026-10-21) --------------------

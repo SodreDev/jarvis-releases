@@ -24,6 +24,11 @@ const TENTATIVAS_DO_ESTADO = 8;
 const INTERVALO_DO_ESTADO_MS = 250;
 const PAGINA_DA_JANELA = "janela.html";
 const NORMAIS = { windowTypes: ["normal"] };
+// A janela própria do Jarvis (ADR-0036) ficou só para a automação de redes sociais, e-mail e agenda,
+// que ainda não existe (dono, 2026-10-21: ela parecia outra instância do Brave, e o vídeo abriu nela).
+// Sem este modo no pedido a extensão nunca cria janela: o trabalho que o dono não pediu para ver é
+// uma aba em segundo plano NA JANELA DELE, sem `active` e sem mexer no foco.
+const MODO_AUTOMACAO_SOCIAL = "automacao_social";
 // O controle (ADR-0027, regra 4): enquanto o Jarvis age numa aba, ela mostra a faixa "no controle"
 // e o botão da extensão fica com o selo. Cada pedido traz a concessão do objetivo que o fez.
 const COM_CONTROLE = new Set([
@@ -279,9 +284,22 @@ async function abaAtiva() {
   return tab;
 }
 
+function automacaoSocial(params) {
+  return params.modo === MODO_AUTOMACAO_SOCIAL;
+}
+
 async function abaDoPedido(params) {
   if (typeof params.tabId === "number" && Number.isInteger(params.tabId) && params.tabId >= 0) {
-    return api.tabs.get(params.tabId);
+    try {
+      return await api.tabs.get(params.tabId);
+    } catch {
+      // O "No tab with id" do navegador virava "falha" crua, e o modelo largava a extensão para
+      // abrir o navegador pela linha de comando (o caso do dono, 2026-10-21).
+      throw erro(
+        "sem_aba",
+        "essa aba não existe mais (foi fechada ou o id é de outra sessão): veja as abas abertas",
+      );
+    }
   }
   return abaAtiva();
 }
@@ -341,9 +359,10 @@ async function devolverOFoco(doDono) {
 }
 
 async function janelaDoJarvis() {
-  // A janela própria do Jarvis, atrás das do dono: lembrada (ou achada) e refeita se o dono a
-  // fechou. A página dela (`janela.html`) a segura aberta entre um trabalho e outro, diz ao dono o
-  // que ela é e é por onde o fundo a reconhece depois de reiniciar.
+  // A janela própria do Jarvis, atrás das do dono — só no modo `automacao_social` (quem chama aqui
+  // é só o caminho desse modo): lembrada (ou achada) e refeita se o dono a fechou. A página dela
+  // (`janela.html`) a segura aberta entre um trabalho e outro, diz ao dono o que ela é e é por onde
+  // o fundo a reconhece depois de reiniciar.
   const existente = await idDaJanelaDoJarvis();
   if (typeof existente === "number") {
     return existente;
@@ -524,7 +543,8 @@ async function mostrarAba(params) {
 }
 
 async function focoAtual() {
-  // Para provar que o trabalho do Jarvis não mexeu no foco do dono (e para o diagnóstico).
+  // Para provar que o trabalho do Jarvis não mexeu no foco do dono nem abriu janela (e para o
+  // diagnóstico): `janelas` conta as janelas normais e popups que o navegador tem agora.
   await idDaJanelaDoJarvis();
   const janelaId = await janelaEmFoco();
   const ativas =
@@ -534,6 +554,7 @@ async function focoAtual() {
     abaAtivaId: typeof ativas[0]?.id === "number" ? ativas[0].id : null,
     janelaDoJarvisId: typeof janelaDoJarvisId === "number" ? janelaDoJarvisId : null,
     janelaDoDonoId: typeof janelaDoDonoId === "number" ? janelaDoDonoId : null,
+    janelas: (await api.windows.getAll({})).length,
   };
 }
 
@@ -617,14 +638,26 @@ function esperarCarregar(tabId) {
 }
 
 async function lerEmSegundoPlano(params) {
-  // A busca na web pelo navegador do dono (ADR-0033): uma aba de fundo, que não ganha o foco nem
-  // troca a aba que ele está vendo, lida e fechada no fim — inclusive quando algo falha.
+  // A busca na web pelo navegador do dono (ADR-0033): uma aba em segundo plano NA JANELA DELE — sem
+  // `active`, então ela não ganha o foco nem troca a aba que ele está vendo —, lida e fechada no
+  // fim, inclusive quando algo falha. Antes ela nascia na janela do Jarvis, que aparecia para o
+  // dono como outra instância do navegador (ADR-0036, emenda de 2026-10-21); a janela própria fica
+  // só para a automação social.
   const url = urlHttp(params.url);
-  // Na janela do Jarvis (ADR-0036), não na do dono: nem a aba de fundo aparece para ele.
-  const doDono = await janelaEmFoco();
-  const janelaId = await janelaDoJarvis();
-  const aba = await api.tabs.create({ windowId: janelaId, url, active: true });
-  await devolverOFoco(doDono);
+  let aba;
+  if (automacaoSocial(params)) {
+    const doDono = await janelaEmFoco();
+    const janelaId = await janelaDoJarvis();
+    aba = await api.tabs.create({ windowId: janelaId, url, active: true });
+    await devolverOFoco(doDono);
+  } else {
+    const dono = await janelaDoDono();
+    aba = await api.tabs.create({
+      url,
+      active: false,
+      ...(typeof dono === "number" ? { windowId: dono } : {}),
+    });
+  }
   try {
     await esperarCarregar(aba.id);
     let ultima;
@@ -646,16 +679,17 @@ async function lerEmSegundoPlano(params) {
 
 async function abrirAba(params, concessao) {
   const url = urlHttp(params.url);
-  if (params.janela === "jarvis") {
+  if (automacaoSocial(params)) {
     return abrirNaJanelaDoJarvis(url, concessao);
   }
   // Na janela do dono, dita pelo id: sem ele a aba nova nascia na "janela atual" do navegador,
-  // que pode ser a do Jarvis.
+  // que pode ser outra. Com `fundo` (o trabalho que o dono não pediu para ver), a aba nasce em
+  // segundo plano: sem `active`, a aba que ele está vendo continua a mesma e o foco não muda.
   const dono = await janelaDoDono();
   const resultado = await criarEConferir(
     {
       url,
-      active: true,
+      active: params.fundo !== true,
       ...(typeof dono === "number" ? { windowId: dono } : {}),
     },
     concessao,

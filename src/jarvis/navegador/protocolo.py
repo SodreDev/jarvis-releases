@@ -6,8 +6,10 @@ seletor CSS: o alvo de uma ação é o **texto ou rótulo visível** do elemento
 uma ação de uma lista fechada (`page.act`); `page.capture` traz a tela da aba com o mapa do mesmo
 instante; `page.readUrl` lê um endereço numa aba de fundo, que fecha no fim (a busca na web,
 ADR-0033); `tabs.navigate` e `tabs.open` só voltam depois de conferir que a aba saiu do lugar e a
-página abriu, e `tabs.show` põe uma aba à vista do dono (auditoria de 2026-10-21). O host valida
-de novo o que o cliente já validou — o socket é uma fronteira, e a extensão não confia em ninguém.
+página abriu, e `tabs.show` põe uma aba à vista do dono (auditoria de 2026-10-21). A aba nova e a de
+fundo nascem na janela do dono (`fundo`: em segundo plano, sem tirar o foco); a janela própria do
+Jarvis só com `modo: automacao_social` (ADR-0036, emenda de 2026-10-21). O host valida de novo o
+que o cliente já validou — o socket é uma fronteira, e a extensão não confia em ninguém.
 
 O **controle** (ADR-0027 regra 4): cada pedido que mexe numa aba leva a concessão do objetivo que o
 fez (`controle`); a extensão mostra o indicador "no controle" nas abas dela até o Jarvis soltar
@@ -41,8 +43,11 @@ PADRAO_DA_REF: Final = re.compile(r"[a-z0-9]{1,16}\.[0-9]{1,4}")
 ACOES: Final = frozenset({"clicar", "focar", "passar_o_mouse", "tecla", "enviar", "selecionar"})
 TECLAS: Final = frozenset({"Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"})
 LIMITE_DO_VALOR: Final = 200
-JANELAS: Final = frozenset({"jarvis", "dono"})
-"""`tabs.open`: a janela própria do Jarvis, atrás das do dono (ADR-0036), ou a do dono."""
+MODO_AUTOMACAO_SOCIAL: Final = "automacao_social"
+MODOS: Final = frozenset({MODO_AUTOMACAO_SOCIAL})
+"""`tabs.open` e `page.readUrl`: o único caminho para a janela própria do Jarvis (ADR-0036, emenda
+de 2026-10-21) — reservado à automação de redes sociais, e-mail e agenda, que ainda não existe.
+Sem `modo`, a aba nova nasce na janela do dono; com `fundo`, em segundo plano, sem tirar o foco."""
 PADRAO_DA_CONCESSAO: Final = re.compile(r"[a-z0-9]{8,32}")
 """A concessão de controle de um objetivo: aleatória, gerada pelo Jarvis (`navegador.controle`)."""
 EVENTOS: Final = frozenset({"parar"})
@@ -74,12 +79,12 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     "windows.focused": {},
     "tabs.current": {"tabId": int},
     "tabs.navigate": {"tabId": int, "url": str, "controle": str},
-    "tabs.open": {"url": str, "janela": str, "controle": str},
+    "tabs.open": {"url": str, "fundo": bool, "modo": str, "controle": str},
     "tabs.show": {"tabId": int, "controle": str},
     "page.read": {"tabId": int, "controle": str},
     "page.map": {"tabId": int, "controle": str},
     "page.capture": {"tabId": int, "controle": str},
-    "page.readUrl": {"url": str},
+    "page.readUrl": {"url": str, "modo": str},
     "page.inspect": {"tabId": int, "alvo": str, "ref": str, "controle": str},
     "page.click": {"tabId": int, "alvo": str, "ref": str, "controle": str},
     "page.type": {
@@ -189,8 +194,8 @@ def validar_pedido(bruto: object) -> PedidoDaPonte:
         raise PedidoInvalido("selecionar pede o valor (o texto da opção)")
     if "valor" in params:
         _tamanho("valor", params["valor"], LIMITE_DO_VALOR)
-    if "janela" in params and params["janela"] not in JANELAS:
-        raise PedidoInvalido(f"janela fora da lista: {sorted(JANELAS)}")
+    if "modo" in params and params["modo"] not in MODOS:
+        raise PedidoInvalido(f"modo fora da lista: {sorted(MODOS)}")
     if "controle" in params and not PADRAO_DA_CONCESSAO.fullmatch(params["controle"]):
         raise PedidoInvalido("controle fora do formato da concessão")
     if "texto" in params:

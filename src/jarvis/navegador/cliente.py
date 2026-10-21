@@ -23,6 +23,7 @@ from jarvis.navegador.protocolo import (
     COM_CONTROLE,
     LIMITE_DA_RESPOSTA,
     LIMITE_DO_PEDIDO,
+    MODO_AUTOMACAO_SOCIAL,
     PedidoDaPonte,
     PedidoInvalido,
     validar_evento,
@@ -251,6 +252,11 @@ class ClienteDoNavegador:
         """Para falar com um só (`firefox` | `chromium`); vazio = o que abriu por último."""
         self.concessao: str | None = None
         """O controle do objetivo que pediu (`sob`): vai em todo pedido que mexe numa aba."""
+        self.automacao_social = False
+        """O gancho da automação de redes sociais, e-mail e agenda (com digitação humanizada, que
+        ainda não existe): o **único** caminho para a janela própria do Jarvis (ADR-0036, emenda de
+        2026-10-21). Desligado — o padrão, e sem chave na configuração por enquanto —, o trabalho de
+        fundo é uma aba em segundo plano na janela do dono, e nada abre janela nem instância."""
 
     def _sequencial(self) -> str:
         return f"j{os.getpid()}-{next(self._contador)}"
@@ -265,7 +271,11 @@ class ClienteDoNavegador:
         copia = ClienteDoNavegador(self._transporte, novo_id=self._novo_id)
         copia.navegador = self.navegador
         copia.concessao = concessao
+        copia.automacao_social = self.automacao_social
         return copia
+
+    def _modo(self) -> str | None:
+        return MODO_AUTOMACAO_SOCIAL if self.automacao_social else None
 
     def chamar(self, metodo: str, **params: Any) -> dict[str, Any]:
         if metodo in COM_CONTROLE and self.concessao is not None and "controle" not in params:
@@ -306,8 +316,9 @@ class ClienteDoNavegador:
         return self.chamar("page.capture", tabId=tab_id)
 
     def ler_em_segundo_plano(self, url: str) -> dict[str, Any]:
-        """A leitura (`pagina`) de um endereço numa aba de fundo, sem foco, fechada no fim."""
-        return self.chamar("page.readUrl", url=url)
+        """A leitura (`pagina`) de um endereço numa aba de fundo da janela do dono (sem `active`,
+        sem foco), fechada no fim."""
+        return self.chamar("page.readUrl", url=url, modo=self._modo())
 
     def inspecionar(
         self, tab_id: int, alvo: str | None = None, *, ref: str | None = None
@@ -357,10 +368,14 @@ class ClienteDoNavegador:
         return self.chamar("tabs.navigate", tabId=tab_id, url=url)
 
     def abrir(self, url: str, *, segundo_plano: bool = False) -> dict[str, Any]:
-        """Uma aba **nova**: na janela do dono, à vista (ele pediu), ou — `segundo_plano` — na
-        janela própria do Jarvis, atrás das dele, sem tirar o foco (ADR-0036). Conferida como em
-        `navegar`."""
-        return self.chamar("tabs.open", url=url, janela="jarvis" if segundo_plano else None)
+        """Uma aba **nova** na janela do dono: ativa (ele vai ver), ou — `segundo_plano` — em
+        segundo plano, sem `active` e sem tirar o foco (ADR-0036, emenda de 2026-10-21; na
+        automação social, na janela própria do Jarvis). Conferida como em `navegar`."""
+        if not segundo_plano:
+            return self.chamar("tabs.open", url=url)
+        if self.automacao_social:
+            return self.chamar("tabs.open", url=url, modo=MODO_AUTOMACAO_SOCIAL)
+        return self.chamar("tabs.open", url=url, fundo=True)
 
     def mostrar(self, tab_id: int) -> dict[str, Any]:
         """Põe a aba à vista do dono (ativa, com a janela dela na frente; a da janela do Jarvis vai

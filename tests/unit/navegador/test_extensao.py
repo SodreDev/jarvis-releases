@@ -123,6 +123,17 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
     assert "time[datetime]" in conteudo
 
 
+def test_so_a_automacao_social_chega_a_criar_janela() -> None:
+    """Uma instância só (dono, 2026-10-21: a janela própria do Jarvis parecia outro Brave, e o
+    vídeo abriu nela). O único `windows.create` da extensão é o da janela do Jarvis, e só o caminho
+    do modo `automacao_social` chama quem a cria (o comportamento: `background_navegacao`)."""
+    fundo = (EXTENSAO / "background.js").read_text(encoding="utf-8")
+    assert fundo.count("windows.create(") == 1
+    assert fundo.count("await janelaDoJarvis()") == 2  # a aba social e a busca social
+    assert fundo.count("return abrirNaJanelaDoJarvis(url, concessao);") == 1
+    assert 'const MODO_AUTOMACAO_SOCIAL = "automacao_social"' in fundo
+
+
 @pytest.mark.parametrize(
     "roteiro",
     [TESTE_RECONEXAO, TESTE_RESPOSTAS, TESTE_NAVEGACAO, TESTE_CONTROLE, TESTE_INDICADOR],

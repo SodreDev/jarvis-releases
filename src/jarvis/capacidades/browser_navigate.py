@@ -10,9 +10,10 @@ Política desta capacidade (decidida no repositório, nunca pelo modelo):
   tier: moderado
   risco: transitorio_reversivel · confirmação: never · egress: local
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
-  pós-condição verificada pelo executor: a aba (a atual, a escolhida, uma nova se pedida ou uma na
-    janela do Jarvis) mostra a página pedida, conferida pela extensão, sem credencial; à vista do
-    dono quando ele pediu para ver, e sem tirar o foco dele no trabalho de fundo
+  pós-condição verificada pelo executor: a aba (a que já tinha o site, a escolhida, uma guia nova ou
+    uma de fundo, sempre na janela do dono) mostra a página pedida, conferida pela extensão, sem
+    credencial; à vista do dono quando ele pediu para ver, e sem tirar o foco dele nem abrir janela
+    no trabalho de fundo
 """
 
 from __future__ import annotations
@@ -32,9 +33,9 @@ IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 15000
 ROOTS: Final[tuple[str, ...]] = ()
 POSTCONDITION: Final = (
-    "a aba (a atual, a escolhida, uma nova se pedida ou uma na janela do Jarvis) mostra a página "
-    "pedida, conferida pela extensão, sem credencial; à vista do dono quando ele pediu para ver, e "
-    "sem tirar o foco dele no trabalho de fundo"
+    "a aba (a que já tinha o site, a escolhida, uma guia nova ou uma de fundo, sempre na janela do "
+    "dono) mostra a página pedida, conferida pela extensão, sem credencial; à vista do dono quando "
+    "ele pediu para ver, e sem tirar o foco dele nem abrir janela no trabalho de fundo"
 )
 
 

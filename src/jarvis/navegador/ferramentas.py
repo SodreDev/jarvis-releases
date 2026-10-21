@@ -12,7 +12,7 @@ from __future__ import annotations
 import threading
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final
 from urllib.parse import urlsplit
 
@@ -72,6 +72,17 @@ CATEGORIAS_QUE_NAO_SE_TROCA: Final = frozenset(
 compra no meio): o que ele pediu abre numa aba nova ao lado."""
 TRABALHOS_LEMBRADOS: Final = 16
 """Objetivos (o pedido do turno, os das tarefas) cujo trabalho no navegador fica lembrado."""
+ABAS_VAZIAS: Final = frozenset({"about:blank", "about:newtab", "about:home"})
+INICIO_DAS_ABAS_VAZIAS: Final = (
+    "chrome://newtab",
+    "chrome://new-tab-page",
+    "brave://newtab",
+    "edge://newtab",
+    "vivaldi://newtab",
+    "chrome-search://local-ntp",
+)
+"""A «nova aba» do navegador: não é página de ninguém, então o pedido de ver a usa em vez de deixar
+uma aba vazia ao lado da guia nova."""
 
 
 @dataclass(slots=True)
@@ -86,6 +97,9 @@ class Trabalho:
     aba: int | None = None
     """A aba em que ele está trabalhando: a última que ele abriu, navegou ou em que agiu. A
     próxima `browser.*` sem `tab_id` age nela — e não na aba do dono que estiver à frente."""
+    abertas: set[int] = field(default_factory=set)
+    """As abas que este pedido abriu (à vista ou em segundo plano): só nelas o Jarvis navega de
+    novo sem perguntar onde — a aba do dono com outro site não tem a página trocada."""
     mostrada: bool = False
     """A página do pedido já ficou à vista do dono: no fim, não se puxa o navegador de novo para a
     frente (o dono pode ter ido para outro programa)."""
@@ -184,6 +198,13 @@ def _site(url: str) -> str:
     partes = urlsplit(url)
     porta = f":{partes.port}" if partes.port else ""
     return f"{(partes.hostname or '').lower().removeprefix('www.')}{porta}"
+
+
+def _vazia(url: str) -> bool:
+    """A aba está na «nova aba» do navegador (ou em branco): não há página do dono nela. URL que
+    não se vê não conta como vazia."""
+    limpa = url.strip().lower().split("#")[0].rstrip("/")
+    return limpa in ABAS_VAZIAS or limpa.startswith(INICIO_DAS_ABAS_VAZIAS)
 
 
 def _assinatura_do(cliente: ClienteDoNavegador) -> Callable[[], Assinatura] | None:
@@ -586,25 +607,25 @@ class CorposDoNavegador:
         nova_aba = bool(args.get("nova_aba", False))
         explicita = args.get("tab_id") is not None
         ver = ver_sempre or (trabalho is not None and trabalho.ver)
-        # Segundo plano (ADR-0036): a janela própria do Jarvis, atrás das do dono. É também o
-        # caminho de todo trabalho que o dono não pediu para ver (pesquisar, ler, conferir: C3) —
-        # antes ele trocava a página da aba que o dono estava usando. Com tab_id, navega aquela aba,
-        # onde ela estiver.
-        fundo = (
-            not explicita
-            and not nova_aba
-            and (bool(args.get("segundo_plano", False)) or (trabalho is not None and not ver))
+        # Segundo plano: o trabalho que o dono não pediu para ver (pesquisar, ler, conferir) vai
+        # numa aba em segundo plano NA JANELA DELE — sem `active`, sem tirar o foco nem trocar a
+        # aba que ele está vendo. Nunca outra janela nem outra instância (ADR-0036, emenda de
+        # 2026-10-21: a janela própria do Jarvis parecia outro Brave, e o vídeo abriu nela; ela
+        # ficou para a automação social). Com tab_id, navega aquela aba, onde ela estiver.
+        fundo = not explicita and (
+            bool(args.get("segundo_plano", False)) or (trabalho is not None and not ver)
         )
         alvo: int | None = None
         reuso = ""
         if explicita:
             alvo = self._aba(args)[0]
         elif fundo:
-            alvo = self._aba_de_fundo(trabalho)
+            alvo = None if nova_aba else self._aba_de_fundo(trabalho)
         elif not nova_aba:
-            # O que o dono vai ver: a aba que já tem a página ou o site (reuso), senão a atual
-            # (dono, 2026-10-20: link aberto em aba nova a cada passo enchia o navegador) — a de
-            # trabalho, se este pedido já tem uma.
+            # O que o dono vai ver: a aba que já tem a página ou o site (reuso); senão a aba que
+            # este pedido abriu (dono, 2026-10-20: aba nova a cada passo enchia o navegador) ou uma
+            # «nova aba» vazia; senão, guia nova na janela dele (dono, 2026-10-21) — a página da
+            # aba que ele estava usando não é trocada.
             alvo, reuso = self._aba_para_ver(url, args, trabalho)
         if reuso in ("mesma_url", "mesmo_site_sensivel") and alvo is not None:
             return self._ja_aberta(url, alvo, trabalho, ver=ver, reuso=reuso)
@@ -617,7 +638,7 @@ class CorposDoNavegador:
             feito = self.cliente.abrir(url, segundo_plano=fundo)
         else:
             feito = self.cliente.navegar(alvo, url)
-        resultado = self._conferido(url, feito, trabalho, ver=ver, nova=alvo is None)
+        resultado = self._conferido(url, feito, trabalho, ver=ver, nova=alvo is None, fundo=fundo)
         if reuso:
             resultado["reutilizou"] = reuso
         return resultado
@@ -627,8 +648,10 @@ class CorposDoNavegador:
     ) -> tuple[int | None, str]:
         """Onde abrir o que o dono vai ver (pedido do dono, 2026-10-21): a aba que **já está** na
         URL pedida (só ativa, sem recarregar); senão uma aba do **mesmo site** (navega ela); senão
-        a atual. A aba do dono em banco, senha, pagamento, mensageiro ou e-mail não tem a página
-        trocada: do mesmo site, ela vem como está; de outro site, o pedido abre numa aba nova."""
+        a aba que este pedido abriu, ou a atual se ela é uma «nova aba» vazia; senão (`None`) uma
+        **guia nova** na janela do dono — a aba dele com outro site não tem a página trocada. A aba
+        em banco, senha, pagamento, mensageiro ou e-mail também não: do mesmo site, ela vem como
+        está."""
         atual_id, atual_url, _ = self._aba(self._na_aba_de_trabalho(args, trabalho))
         try:
             abas = [
@@ -660,7 +683,9 @@ class CorposDoNavegador:
             return int(do_site[0]["id"]), "mesmo_site_sensivel" if sensivel else "mesmo_site"
         if risco.categoria(atual_url) in CATEGORIAS_QUE_NAO_SE_TROCA:
             return None, ""  # a conversa, o extrato, a compra do dono ficam: aba nova
-        return atual_id, ""
+        if (trabalho is not None and atual_id in trabalho.abertas) or _vazia(atual_url):
+            return atual_id, ""
+        return None, ""  # a página que o dono estava usando fica: guia nova ao lado
 
     def _ja_aberta(
         self, url: str, tab_id: int, trabalho: Trabalho | None, *, ver: bool, reuso: str
@@ -701,9 +726,10 @@ class CorposDoNavegador:
         return resultado
 
     def _aba_de_fundo(self, trabalho: Trabalho | None) -> int | None:
-        """A aba de trabalho deste pedido, se ela está na janela do Jarvis: navegar nela não enche a
-        janela de abas. Sem ela, uma aba nova lá."""
-        if trabalho is None or trabalho.aba is None:
+        """A aba de trabalho deste pedido, se foi ele que a abriu e ela continua em segundo plano
+        (ou na janela do Jarvis, na automação social): navegar nela não enche de abas a janela do
+        dono. Aba do dono, aba que ele trouxe para a frente ou aba fechada: uma nova, de fundo."""
+        if trabalho is None or trabalho.aba is None or trabalho.aba not in trabalho.abertas:
             return None
         try:
             aba = self.cliente.aba(trabalho.aba)
@@ -711,7 +737,7 @@ class CorposDoNavegador:
             trabalho.aba = None
             return None
         identificador = aba.get("id")
-        if aba.get("janelaDoJarvis") and isinstance(identificador, int):
+        if isinstance(identificador, int) and (aba.get("janelaDoJarvis") or not aba.get("ativa")):
             return identificador
         return None
 
@@ -723,16 +749,20 @@ class CorposDoNavegador:
         *,
         ver: bool,
         nova: bool,
+        fundo: bool = False,
     ) -> dict[str, Any]:
         """O que a extensão conferiu depois de navegar (auditoria de 2026-10-21): o dono pediu "abra
         um vídeo no YouTube", a ferramenta disse ok em 25 ms com a URL de antes, e o navegador dele
         "continuou igual". Agora: a aba que não saiu do lugar e a página que não abriu são erro,
         dito como é; a URL é a da página nova; e, se o dono pediu para ver, a aba vem para a frente
-        — o resultado diz se ficou à vista."""
+        — o resultado diz se ficou à vista. O passo de fundo de um pedido de ver só vem para a
+        frente no fim do pedido (`_mostrar_no_fim`), se nada dele ficou à vista."""
         aba = dict(feito.get("aba") or {})
         tab_id = aba.get("id") if isinstance(aba.get("id"), int) else None
         if trabalho is not None and tab_id is not None:
             trabalho.aba = tab_id
+            if nova:
+                trabalho.abertas.add(tab_id)
         pedido = dominio(url)
         if not feito.get("comecou") and not feito.get("carregou"):
             onde = dominio(str(aba.get("url", ""))) or "onde estava"
@@ -751,7 +781,7 @@ class CorposDoNavegador:
         final = str((pagina or {}).get("url") or aba.get("url") or url)
         janela = "jarvis" if feito.get("janela") == "jarvis" else "dono"
         visivel = bool(feito.get("visivel"))
-        if ver and tab_id is not None and not visivel:
+        if ver and not fundo and tab_id is not None and not visivel:
             mostrado = self.cliente.mostrar(tab_id)
             visivel = bool(mostrado.get("visivel"))
             janela = "jarvis" if mostrado.get("janela") == "jarvis" else "dono"
@@ -766,9 +796,11 @@ class CorposDoNavegador:
             "carregou": bool(feito.get("carregou")),
             "visivel": visivel,
         }
+        if fundo and not visivel:
+            resultado["segundo_plano"] = True
         if not resultado["carregou"]:
             resultado["situacao"] = "a página ainda está carregando: leia antes de dizer que abriu"
-        elif ver and not visivel:
+        elif ver and not fundo and not visivel:
             resultado["situacao"] = (
                 "a página abriu, mas o navegador não veio para a frente (o sistema segurou o "
                 "foco): diga ao dono que ela está aberta na aba do navegador"

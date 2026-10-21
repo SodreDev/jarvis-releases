@@ -19,9 +19,15 @@ trocam quadros do Native Messaging (tamanho de 32 bits na ordem nativa + JSON UT
 0600, par conferido por `SO_PEERCRED`) — não há porta de rede. Os métodos que o Jarvis usa são:
 
 - `tabs.list`, `tabs.current` (`tabId` opcional), `tabs.navigate` (`url`, `tabId`), `tabs.open`
-  (`url`, `janela`: a do dono ou a do Jarvis), `tabs.show` (`tabId`), `windows.focused`;
+  (`url`; `fundo`: em segundo plano; `modo`), `tabs.show` (`tabId`), `windows.focused`;
 - `page.read`, `page.inspect`, `page.click`, `page.type`, `page.scroll`, `page.map`, `page.act`,
-  `page.capture`, `page.readUrl`.
+  `page.capture`, `page.readUrl` (`url`, `modo`).
+
+**Uma instância só (2026-10-21, ADR-0036 emendada):** a aba nova e a de fundo nascem **na janela
+do dono** — com `fundo` (e no `page.readUrl`, a busca), sem `active`: a aba que ele está vendo
+continua a mesma e o foco não muda. A extensão **nunca cria janela**, a não ser com
+`modo: "automacao_social"`, o gancho da automação de redes sociais, e-mail e agenda, que ainda não
+existe e fica desligado no Jarvis — é o único caminho para a janela própria do Jarvis.
 
 `tabs.navigate` e `tabs.open` só respondem depois de **conferir** (2026-10-21): a aba saiu do lugar
 (`comecou`), terminou de carregar (`carregou`) e o conteúdo da extensão respondeu na página nova
@@ -29,7 +35,9 @@ trocam quadros do Native Messaging (tamanho de 32 bits na ordem nativa + JSON UT
 está (`janela`: `dono` | `jarvis`) e se ficou à vista (`visivel`: a aba ativa da janela que está na
 frente). `tabs.show` põe a aba à vista do dono (a da janela do Jarvis vai para a janela dele). A
 "aba atual" é a ativa da última janela **normal** do dono — nunca popup, app, DevTools ou a janela
-do Jarvis, que se segura com `janela.html` e é reconhecida por ela depois que o fundo reinicia.
+do Jarvis (só da automação social), que se segura com `janela.html` e é reconhecida por ela depois
+que o fundo reinicia. Aba pedida que não existe mais volta `sem_aba`, dito. `windows.focused` conta
+também as janelas abertas (`janelas`): é como a prova confere que nada abriu outra.
 
 `tabs.active` continua na extensão, mas o host não o repassa.
 
