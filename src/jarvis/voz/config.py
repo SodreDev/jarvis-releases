@@ -42,6 +42,7 @@ from jarvis.voz.palavra import (
     exigir_palavra,
 )
 from jarvis.voz.registro import Motor, MotorRecusado, exigir_modelo, ler_motores, motor_registrado
+from jarvis.voz.ruido import FALA_MINIMA_MS, MARGEM_DB, SEM_FALA_MAXIMO, PoliticaDeRuido
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 
 ARQUIVO: Final = "jarvis-voz.toml"
@@ -127,6 +128,15 @@ class Configuracao:
     """O motor de decisão que diz se uma fala é para o Jarvis (ADR-0029): hoje só
     `decisao-jev-openrouter`. Vazio = desligado, e na escuta contínua todo trecho segue virando
     pedido. Motor de nuvem: também precisa estar em `nuvem_ligada` — escolher não liga."""
+    filtro_de_ruido: bool = True
+    """Ruído do microfone não vira pedido (ADR-0043): antes do ASR, o trecho tem de ter fala que
+    dure (`fala_minima_ms` seguidos, `margem_de_fala_db` acima do fundo); depois, o texto que o
+    ASR inventa no silêncio é descartado em silêncio, só contado. Desligado = como antes."""
+    fala_minima_ms: float = FALA_MINIMA_MS
+    margem_de_fala_db: float = MARGEM_DB
+    sem_fala_maximo: float = SEM_FALA_MAXIMO
+    """O `no_speech_prob` do ASR a partir do qual, com a confiança baixa, o trecho "não era
+    fala"."""
     interromper_por_voz: bool = True
     """Enquanto o Jarvis fala, o microfone segue ouvindo, e o dono o corta pela voz (ADR-0040): com
     a palavra de ativação, nos dois modos que ouvem sozinhos; na contínua, também com uma ordem de
@@ -206,6 +216,10 @@ class Configuracao:
             "atalho_global": self.atalho_global,
             "enderecamento": self.enderecamento,
             "interromper_por_voz": self.interromper_por_voz,
+            "filtro_de_ruido": self.filtro_de_ruido,
+            "fala_minima_ms": self.fala_minima_ms,
+            "margem_de_fala_db": self.margem_de_fala_db,
+            "sem_fala_maximo": self.sem_fala_maximo,
             "nuvem_ligada": list(self.nuvem_ligada),
             "nuvem_sem_termos": list(self.nuvem_sem_termos),
             "acesso": self.acesso,
@@ -252,6 +266,16 @@ class Configuracao:
     def com(self, **mudancas: Any) -> Configuracao:
         return replace(self, **mudancas)
 
+    def politica_de_ruido(self, ignorar: Sequence[str] = ()) -> PoliticaDeRuido:
+        """Os limiares do filtro de ruído (ADR-0043): os quatro do dono e os padrões do resto."""
+        return PoliticaDeRuido(
+            ligada=self.filtro_de_ruido,
+            fala_minima_ms=self.fala_minima_ms,
+            margem_db=self.margem_de_fala_db,
+            sem_fala_maximo=self.sem_fala_maximo,
+            ignorar=tuple(ignorar),
+        )
+
 
 def _texto_toml(configuracao: Configuracao) -> str:
     """TOML escrito à mão: são dezesseis campos e nenhuma dependência nova por isso."""
@@ -296,6 +320,15 @@ enderecamento = {aspas(configuracao.enderecamento)}
 # Interromper o Jarvis pela voz enquanto ele fala (ADR-0040): a palavra de ativação corta; na
 # escuta contínua, também "para"/"chega" e, com o detector ligado, a fala dirigida a ele.
 interromper_por_voz = {"true" if configuracao.interromper_por_voz else "false"}
+# Ruído do microfone não vira pedido (ADR-0043). Antes do ASR, o trecho precisa de fala que dure:
+# `fala_minima_ms` seguidos, `margem_de_fala_db` acima do fundo (estalo, tecla e ventilador ficam
+# de fora). Depois, o texto que o ASR inventa no silêncio ("Legendas pela comunidade Amara.org",
+# "Obrigado." solto, o eco da dica) é descartado em silêncio — só a contagem vai ao diagnóstico.
+# `sem_fala_maximo` é o no_speech_prob do ASR a partir do qual, com a confiança baixa, não era fala.
+filtro_de_ruido = {"true" if configuracao.filtro_de_ruido else "false"}
+fala_minima_ms = {configuracao.fala_minima_ms!r}
+margem_de_fala_db = {configuracao.margem_de_fala_db!r}
+sem_fala_maximo = {configuracao.sem_fala_maximo!r}
 nuvem_ligada = {lista(configuracao.nuvem_ligada)}
 nuvem_sem_termos = {lista(configuracao.nuvem_sem_termos)}
 
@@ -404,6 +437,18 @@ def validar(configuracao: Configuracao) -> Configuracao:
     if configuracao.enderecamento:
         exigir("enderecamento", configuracao.enderecamento, "decisao")
 
+    if not 0 <= configuracao.fala_minima_ms <= 1000:
+        raise ConfiguracaoInvalida(
+            f"fala_minima_ms = {configuracao.fala_minima_ms} fora de 0 a 1000"
+        )
+    if not 0 <= configuracao.margem_de_fala_db <= 30:
+        raise ConfiguracaoInvalida(
+            f"margem_de_fala_db = {configuracao.margem_de_fala_db} fora de 0 a 30"
+        )
+    if not 0.05 <= configuracao.sem_fala_maximo <= 1.0:
+        raise ConfiguracaoInvalida(
+            f"sem_fala_maximo = {configuracao.sem_fala_maximo} fora de 0,05 a 1,0"
+        )
     if not 1 <= configuracao.laco_max_passos <= 50:
         raise ConfiguracaoInvalida(
             f"laco_max_passos = {configuracao.laco_max_passos} fora de 1 a 50"
@@ -556,6 +601,10 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         atalho_global=_logico(dados, "atalho_global"),
         enderecamento=_texto(dados, "enderecamento", ""),
         interromper_por_voz=_logico(dados, "interromper_por_voz", padrao=True),
+        filtro_de_ruido=_logico(dados, "filtro_de_ruido", padrao=True),
+        fala_minima_ms=_numero(dados, "fala_minima_ms", FALA_MINIMA_MS),
+        margem_de_fala_db=_numero(dados, "margem_de_fala_db", MARGEM_DB),
+        sem_fala_maximo=_numero(dados, "sem_fala_maximo", SEM_FALA_MAXIMO),
         nuvem_ligada=_lista(dados, "nuvem_ligada"),
         nuvem_sem_termos=_lista(dados, "nuvem_sem_termos"),
         acesso=_texto(dados, "acesso", ACESSO_PADRAO),

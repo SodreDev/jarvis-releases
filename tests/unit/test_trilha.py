@@ -21,6 +21,7 @@ from jarvis.trilha import (
     eventos_do_ultimo_turno,
     limites,
     resumo_do_ultimo_turno,
+    ruidos_descartados,
 )
 
 
@@ -311,3 +312,23 @@ def test_inicio_com_fim_aparece_uma_vez_so(tmp_path: Path) -> None:
 def test_sem_turno_o_resumo_explica_e_cita_a_retencao(tmp_path: Path) -> None:
     linha = resumo_do_ultimo_turno(tmp_path / "vazia")[0]
     assert "nenhum turno registrado" in linha and f"{DIAS_DE_RETENCAO} dias" in linha
+
+
+def test_o_evento_de_ruido_leva_codigos_e_numeros_e_a_contagem_sai_por_motivo(
+    tmp_path: Path,
+) -> None:
+    """ADR-0043: o trecho que não virou pedido — etapa, motivo e números. Um campo de texto que
+    alguém tente pôr ali (o que o ASR ouviu) não é gravado: só o nome dele aparece."""
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.evento("ruido", turno="escuta", etapa="trecho", motivo="impulso", maior_fala_ms=40.0)
+    trilha.evento(
+        "ruido", turno="escuta", etapa="texto", motivo="sem_fala", sem_fala=0.55, texto="Obrigado."
+    )
+    trilha.evento("ruido", turno="escuta", etapa="trecho", motivo="impulso", contraste_db=35.7)
+
+    linhas = [json.loads(linha) for linha in (tmp_path / ARQUIVO).read_text().splitlines()]
+    assert linhas[0]["motivo"] == "impulso" and linhas[0]["maior_fala_ms"] == 40.0
+    assert "texto" not in linhas[1] and linhas[1]["campos_fora"] == ["texto"]
+    assert "Obrigado" not in (tmp_path / ARQUIVO).read_text()
+    assert ruidos_descartados(tmp_path) == {"impulso": 2, "sem_fala": 1}
+    assert ruidos_descartados(tmp_path / "nao-existe") == {}

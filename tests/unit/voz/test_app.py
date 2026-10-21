@@ -77,7 +77,12 @@ def wav_de(caminho: Path, segundos: float = 2.0) -> Path:
 
 
 def aplicativo_de(tmp_path: Path, **extras: object) -> Aplicativo:
-    configuracao = Configuracao(asr="asr-whisper-local", tts="tts-parametrico", s2="eco")
+    # O áudio destes testes é um nível constante (`wav_de`) e quem diz "fala" é o VAD falso: o
+    # portão de ruído (ADR-0043) recusaria esse trecho, com razão. O alvo aqui é o laço; o filtro
+    # ligado tem os testes dele, com fala sintética e ruído (`test_ruido_no_laco.py`).
+    configuracao = Configuracao(
+        asr="asr-whisper-local", tts="tts-parametrico", s2="eco", filtro_de_ruido=False
+    )
     app = Aplicativo(
         configuracao=configuracao,
         raiz=tmp_path / "sessao",

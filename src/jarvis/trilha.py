@@ -92,14 +92,18 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "caracteres_falados": Forma.NUMERO,
     "caracteres_so_na_tela": Forma.NUMERO,
     "codigo": Forma.CODIGO,
+    "contraste_db": Forma.NUMERO,
     "de_fora": Forma.NUMERO,
     "decisao": Forma.CODIGO,
     "epoch": Forma.NUMERO,
     "erro": Forma.MOTIVO,
+    "etapa": Forma.CODIGO,
     "fase": Forma.CODIGO,
     "ferramentas": Forma.NUMERO,
     "fim": Forma.CODIGO,
     "jev": Forma.MOTIVO,
+    "logprob": Forma.NUMERO,
+    "maior_fala_ms": Forma.NUMERO,
     "metodo": Forma.CODIGO,
     "modo": Forma.CODIGO,
     "motivo": Forma.CAUSA,
@@ -116,6 +120,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "raciocinio_descartado": Forma.NUMERO,
     "resposta": Forma.CODIGO,
     "resultados_podados": Forma.NUMERO,
+    "sem_fala": Forma.NUMERO,
     "status": Forma.CODIGO,
     "tool_id": Forma.CODIGO,
 }
@@ -153,6 +158,11 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     # Interromper por voz (ADR-0040): o modo de escuta, o que a vigia fez, por quê e em quantos ms
     # de trecho — nunca o que o dono disse nem o que o ASR ouviu.
     "interrupcao": frozenset({"modo", "decisao", "motivo", "ms"}),
+    # Ruído que não virou pedido (ADR-0043): em que etapa caiu (o portão do trecho ou o filtro da
+    # transcrição), o código do motivo e os números que decidiram — nunca o áudio nem o texto.
+    "ruido": frozenset(
+        {"etapa", "motivo", "modo", "ms", "maior_fala_ms", "contraste_db", "sem_fala", "logprob"}
+    ),
 }
 """Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
 dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""
@@ -226,6 +236,15 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "sem_chamada",
         "nao_era_comigo",
         "prazo_da_pausa",
+        # o ruído que não virou pedido (`jarvis.voz.ruido`, ADR-0043)
+        "impulso",
+        "fundo",
+        "so_simbolos",
+        "alucinacao",
+        "repeticao",
+        "eco_da_dica",
+        "incerto_curto",
+        "sim_incerto",
     }
 )
 """A allowlist do `motivo`: códigos que o nosso código escolhe pelo caminho que tomou. Código novo
@@ -414,6 +433,18 @@ def eventos_do_ultimo_turno(pasta: Path) -> list[dict[str, Any]]:
         return []
     turno = inicios[-1].get("turno")
     return [e for e in eventos if e.get("turno") == turno]
+
+
+def ruidos_descartados(pasta: Path) -> dict[str, int]:
+    """Quantos trechos de ruído não viraram pedido, por motivo, no arquivo vivo da trilha e no
+    anterior (ADR-0043). É o que o `--diagnostico` mostra para calibrar o filtro na máquina do
+    dono — só a contagem: o evento nunca leva o áudio nem o texto."""
+    contagem: dict[str, int] = {}
+    for evento in _eventos(pasta):
+        if evento.get("evento") == "ruido":
+            motivo = str(evento.get("motivo") or SEM_CAUSA)
+            contagem[motivo] = contagem.get(motivo, 0) + 1
+    return dict(sorted(contagem.items(), key=lambda item: (-item[1], item[0])))
 
 
 def _ms(valor: object) -> str:

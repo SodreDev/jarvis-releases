@@ -38,7 +38,11 @@ from tests.unit.gui.test_janela import (  # noqa: F401 — fixtures
 )
 from tests.unit.voz.test_app import MotorDeAsrFalso
 
-CONFIGURACAO = Configuracao(asr="asr-whisper-local", tts="tts-parametrico", s2="eco", escuta="ptt")
+# `wav_longo` é um nível constante: o portão de ruído (ADR-0043) recusaria o trecho do botão, com
+# razão. O alvo aqui é o botão de falar; o filtro ligado tem testes próprios.
+CONFIGURACAO = Configuracao(
+    asr="asr-whisper-local", tts="tts-parametrico", s2="eco", escuta="ptt", filtro_de_ruido=False
+)
 
 
 def _esperar(app: QGuiApplication, segundos: float, ate: Callable[[], bool] | None = None) -> None:

@@ -110,7 +110,7 @@ from jarvis.s2.motor import (
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.s2.orcamento_da_fala import orcar, quer_detalhe
-from jarvis.s2.portao import PortaoDeAcao
+from jarvis.s2.portao import PortaoDeAcao, RespostaDoDono, resposta_literal
 from jarvis.s2.protocolo import sem_protocolo
 from jarvis.tarefas.gestor import (
     EstadoDaTarefa,
@@ -126,11 +126,22 @@ from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import ASR_PADRAO, TTS_OMNIVOICE, TTS_PADRAO, Configuracao
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
-from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde
+from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde, Sinais, transcrever_com_sinais
 from jarvis.voz.interrupcao import Acao as AcaoDaVigia
 from jarvis.voz.interrupcao import VigiaDeInterrupcao, so_ordem_de_parar
 from jarvis.voz.prontidao import o_que_falta
 from jarvis.voz.registro import MotorRecusado, motor_registrado
+from jarvis.voz.ruido import (
+    MedidaDoTrecho,
+    PoliticaDeRuido,
+    julgar_audio,
+    julgar_texto,
+    medir_trecho,
+    palavras_da_dica,
+    sinais_fortes,
+    so_cortesia,
+)
+from jarvis.voz.ruido import Motivo as MotivoDoRuido
 from jarvis.voz.s2_provisorio import RespostaDeEco
 from jarvis.voz.teclado import ESPACO, TECLAS_DE_SAIDA, Teclado, TecladoMudo
 
@@ -1764,8 +1775,17 @@ class Aplicativo:
         asr, trava = self._asr, self._trava_do_asr
 
         def transcrever(amostras: bytes) -> str:
+            # O mesmo filtro do turno (ADR-0043): o "Jarvis." que o ASR inventa na respiração
+            # não corta a fala dele — a vigia recebe vazio, que é "não era fala".
             with trava:
-                return asr.transcrever(amostras).texto
+                transcricao = transcrever_com_sinais(asr, amostras)
+            veredito = julgar_texto(
+                transcricao.hipotese.texto,
+                transcricao.sinais,
+                politica=self.politica_de_ruido,
+                dica=self._palavras_da_dica(),
+            )
+            return "" if veredito.descartado else veredito.texto
 
         enderecada: Callable[[str], bool] | None = None
         detector = self.detector
@@ -2091,11 +2111,41 @@ class Aplicativo:
         (ADR-0040): a vigia já decidiu que era com ele, e o começo pode ser o eco do fim da fala."""
         assert self._asr is not None
         self._mudar(Estado.PENSANDO)
+        politica = self.politica_de_ruido
+        medida = medir_trecho(amostras, politica)
+        motivo = None if por_cima else julgar_audio(medida, politica)
+        if motivo is not None:
+            # Estalo, tecla, ventilador (ADR-0043): o ASR nem roda — nem a Groq cobra os 10 s.
+            # Descarte em silêncio: só a contagem e a trilha (códigos e números).
+            self._ruido_descartado(motivo, "trecho", medida)
+            self._mudar(self._repouso)
+            return
         comeco = time.monotonic()
         with self._trava_do_asr:
-            hipotese = self._asr.transcrever(amostras)
+            transcricao = transcrever_com_sinais(self._asr, amostras)
         asr_ms = (time.monotonic() - comeco) * 1000.0
         ouvido_ms = 1000.0 * (len(amostras) // BYTES_POR_AMOSTRA) / TAXA_PADRAO
+        veredito = julgar_texto(
+            transcricao.hipotese.texto,
+            transcricao.sinais,
+            politica=politica,
+            dica=self._palavras_da_dica(),
+        )
+        if veredito.descartado:
+            assert veredito.motivo is not None
+            self._ruido_descartado(veredito.motivo, "texto", medida, transcricao.sinais)
+            self._mudar(self._repouso)
+            return
+        if self._sim_sem_certeza(veredito.texto, transcricao.sinais):
+            # Um "sim" para a pergunta pendente que o ASR não teve certeza de ter ouvido: não
+            # confirma nada. A pergunta segue de pé — o dono repete, ou responde na tela.
+            self._ruido_descartado(MotivoDoRuido.SIM_INCERTO, "texto", medida, transcricao.sinais)
+            self.escrever_na_tela(
+                "  (não tive certeza de ter ouvido o seu «sim»: repita, ou responda na tela)"
+            )
+            self._mudar(self._repouso)
+            return
+        hipotese = transcricao.hipotese._replace(texto=veredito.texto)
         if not hipotese.texto.strip():
             if self.modo_de_escuta.modo is ModoDeEscuta.PALAVRA:
                 # Esperando a chamada, ruído que não vira texto é o caso comum: avisar a cada
@@ -2142,6 +2192,53 @@ class Aplicativo:
             self.escrever_na_tela(f"Jarvis: {completo.respondeu}")
         self.escrever_na_tela(completo.resumo())
 
+    # --- ruído não vira pedido (ADR-0043) ------------------------------------------------------
+    @property
+    def politica_de_ruido(self) -> PoliticaDeRuido:
+        """Os limiares do filtro, da configuração viva (o dono troca com a sessão aberta)."""
+        return self.configuracao.politica_de_ruido()
+
+    def _palavras_da_dica(self) -> frozenset[str]:
+        """O que foi de dica ao ASR (a palavra de ativação, os termos): é o eco que o filtro
+        reconhece quando o modelo devolve a própria dica no meio do ruído."""
+        dica = getattr(self._asr, "dica", "") or getattr(self._asr, "dicas", "")
+        return palavras_da_dica(dica) if isinstance(dica, str) else frozenset()
+
+    def _sim_sem_certeza(self, texto: str, sinais: Sinais) -> bool:
+        """Um "sim" literal para a pergunta pendente, sem os sinais fortes do ASR? Ruído que vira
+        "Sim." é o pior caso de todos: confirmaria a ação que o dono não autorizou."""
+        cerebro = self._cerebro
+        if cerebro is None or cerebro.pendencias.valida() is None:
+            return False
+        if resposta_literal(texto) is not RespostaDoDono.SIM:
+            return False
+        return not sinais_fortes(sinais, self.politica_de_ruido)
+
+    def _ruido_descartado(
+        self,
+        motivo: MotivoDoRuido,
+        etapa: str,
+        medida: MedidaDoTrecho,
+        sinais: Sinais | None = None,
+    ) -> None:
+        """Conta e registra o trecho que não virou pedido — em silêncio: nada na tela, nada no
+        histórico, e na trilha só o código e os números (`turno` = "escuta": não é de um turno)."""
+        self.modo_de_escuta.descartar_ruido()
+        self.trilha.evento(
+            "ruido",
+            turno="escuta",
+            etapa=etapa,
+            motivo=str(motivo),
+            modo=str(self.modo_de_escuta.modo),
+            ms=medida.duracao_ms,
+            maior_fala_ms=medida.maior_fala_ms,
+            contraste_db=round(medida.contraste_db, 1),
+            sem_fala=None
+            if sinais is None or sinais.sem_fala is None
+            else round(sinais.sem_fala, 3),
+            logprob=None if sinais is None or sinais.logprob is None else round(sinais.logprob, 3),
+        )
+
     def _enderecada_ao_jarvis(self, texto: str) -> bool:
         """O detector de endereçamento (ADR-0029), só na escuta contínua e só se o dono o ligou.
 
@@ -2176,7 +2273,7 @@ class Aplicativo:
         escuta = self.modo_de_escuta
         achado = escuta.detector.achar(texto)
         if achado is not None:
-            if achado.depois:
+            if achado.depois and not so_cortesia(achado.depois):
                 escuta.desarmar()
                 return achado.depois
             escuta.armar(self.relogio.mono_ns())
@@ -2207,7 +2304,9 @@ class Aplicativo:
         if achado is None and not armado:
             escuta.descartar()
             return None
-        if achado is not None and achado.so_o_nome:
+        if achado is not None and (achado.so_o_nome or so_cortesia(achado.comando)):
+            # "Jarvis. Obrigado." é o dono chamando: a cortesia depois do nome é o que o ASR
+            # inventa no silêncio do fim do trecho (ADR-0043) — e agradecer não pede resposta.
             escuta.armar(agora)
             self.escrever_na_tela(f"  (ouvi “{achado.ouvido}”: pode falar)")
             return None

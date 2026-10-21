@@ -30,7 +30,7 @@ from jarvis.navegador.cliente import TransporteUnix
 from jarvis.navegador.estado import sondar
 from jarvis.rede import ErroDeRede
 from jarvis.trilha import limites as limites_da_trilha
-from jarvis.trilha import resumo_do_ultimo_turno
+from jarvis.trilha import resumo_do_ultimo_turno, ruidos_descartados
 from jarvis.voz.app import PASTA_DA_TRILHA, Aplicativo, AplicativoIndisponivel
 from jarvis.voz.chaves import (
     VARIAVEIS,
@@ -74,6 +74,24 @@ def _raiz_de_sessao(ambiente: Mapping[str, str] | None = None) -> Path:
     except OSError:  # pragma: no cover — sem HOME gravável
         raiz = Path(tempfile.mkdtemp(prefix="jarvis-voz-"))
     return raiz
+
+
+def _linhas_do_ruido(configuracao: Configuracao, pasta_da_trilha: Path) -> list[str]:
+    """O filtro de ruído (ADR-0043): como está e quantos trechos ele segurou — só a contagem por
+    motivo, que é o que a trilha guarda (nem o áudio, nem o texto)."""
+    estado = "ligado" if configuracao.filtro_de_ruido else "DESLIGADO"
+    linhas = [
+        f"  filtro de ruído: {estado} · fala mínima {configuracao.fala_minima_ms:.0f} ms seguidos"
+        f" · margem {configuracao.margem_de_fala_db:.0f} dB · sem fala a partir de "
+        f"{configuracao.sem_fala_maximo:.2f}"
+    ]
+    contagem = ruidos_descartados(pasta_da_trilha)
+    if not contagem:
+        linhas.append("  ruído que não virou pedido: nenhum na trilha")
+        return linhas
+    detalhe = " · ".join(f"{motivo} {vezes}" for motivo, vezes in contagem.items())
+    linhas.append(f"  ruído que não virou pedido: {sum(contagem.values())} trecho(s) — {detalhe}")
+    return linhas
 
 
 def diagnosticar(
@@ -121,6 +139,8 @@ def diagnosticar(
     for texto in limites_da_trilha(pasta_da_trilha):
         linha(texto)
     for texto in resumo_do_ultimo_turno(pasta_da_trilha):
+        linha(texto)
+    for texto in _linhas_do_ruido(configuracao, pasta_da_trilha):
         linha(texto)
 
     linha("")

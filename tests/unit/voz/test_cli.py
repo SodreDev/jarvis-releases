@@ -126,3 +126,27 @@ def test_diagnostico_mostra_o_ultimo_turno_da_trilha(tmp_path: Path) -> None:
     texto = "\n".join(linhas)
     assert "último turno" in texto
     assert "ferramenta web.buscar: erro em 120 ms (PDP allow)" in texto
+
+
+def test_diagnostico_mostra_o_filtro_de_ruido_e_quanto_ele_segurou(tmp_path: Path) -> None:
+    """ADR-0043: a contagem por motivo, para calibrar o filtro — nunca o áudio nem o texto."""
+    ambiente = {"CI": "1", "XDG_STATE_HOME": str(tmp_path / "estado"), "HOME": str(tmp_path)}
+    trilha = TrilhaDeDiagnostico(tmp_path / "estado" / "jarvis" / "voz" / PASTA_DA_TRILHA)
+    for motivo in ("impulso", "impulso", "alucinacao"):
+        trilha.evento("ruido", turno="escuta", etapa="trecho", motivo=motivo, ms=1800.0)
+    linhas: list[str] = []
+
+    diagnosticar(linhas.append, caminho=tmp_path / "nao-existe.toml", ambiente=ambiente)
+
+    texto = "\n".join(linhas)
+    assert "filtro de ruído: ligado · fala mínima 100 ms seguidos" in texto
+    assert "ruído que não virou pedido: 3 trecho(s) — impulso 2 · alucinacao 1" in texto
+
+
+def test_diagnostico_sem_ruido_na_trilha_diz_que_nao_ha(tmp_path: Path) -> None:
+    ambiente = {"CI": "1", "XDG_STATE_HOME": str(tmp_path / "estado"), "HOME": str(tmp_path)}
+    linhas: list[str] = []
+
+    diagnosticar(linhas.append, caminho=tmp_path / "nao-existe.toml", ambiente=ambiente)
+
+    assert "  ruído que não virou pedido: nenhum na trilha" in linhas

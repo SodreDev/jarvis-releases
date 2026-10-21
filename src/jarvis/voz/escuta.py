@@ -218,6 +218,9 @@ class Escuta:
     armado_ate_ns: int = 0
     descartados: int = 0
     """Trechos ouvidos sem a palavra, nesta sessão. O texto deles não fica em lugar nenhum."""
+    ruidos: int = 0
+    """Trechos de ruído que não viraram pedido nesta sessão (ADR-0043): estalo, tecla, respiração,
+    o texto que o ASR inventou no silêncio. Nada deles fica — nem o áudio, nem o texto."""
     ao_mudar: Callable[[], None] | None = None
 
     @classmethod
@@ -267,6 +270,10 @@ class Escuta:
         self.descartados += 1
         self._avisar()
 
+    def descartar_ruido(self) -> None:
+        self.ruidos += 1
+        self._avisar()
+
     def desarmar(self) -> None:
         if self.armado_ate_ns:
             self.armado_ate_ns = 0
@@ -295,6 +302,7 @@ class Escuta:
             "atalhoGlobal": self.atalho_global,
             "armado": self.armado(agora_ns),
             "descartados": self.descartados,
+            "ruidos": self.ruidos,
             "frase": self.frase(agora_ns),
         }
 

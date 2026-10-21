@@ -49,8 +49,12 @@ def wav_longo(caminho: Path, segundos: float = 30.0) -> Path:
 
 @pytest.fixture
 def sessao(tmp_path: Path) -> SessaoDeVoz:
+    # `wav_longo` é um nível constante: o portão de ruído (ADR-0043) o recusaria, com razão. O alvo
+    # aqui é a ponte entre a janela e o laço; o filtro ligado tem testes próprios.
     return SessaoDeVoz(
-        configuracao=Configuracao(asr="asr-whisper-local", tts="tts-parametrico", s2="eco"),
+        configuracao=Configuracao(
+            asr="asr-whisper-local", tts="tts-parametrico", s2="eco", filtro_de_ruido=False
+        ),
         raiz=tmp_path / "sessao",
         ambiente={"JARVIS_AUDIO_BACKEND": "arquivo"},
     )
