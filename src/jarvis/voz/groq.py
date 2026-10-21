@@ -70,6 +70,9 @@ class MotorAsrGroq:
     prazo_s: float = PRAZO_PADRAO_S
     sonda: Sonda | None = None
     ambiente: Mapping[str, str] | None = None
+    dica: str = ""
+    """O `prompt` da transcrição (até 224 tokens na Groq): a palavra de ativação e os termos do
+    dono, montados por `jarvis.voz.dica` — curto de propósito (ADR-0043). Vazio = sem prompt."""
 
     nome: str = ""
     licenca: str = ""
@@ -151,6 +154,8 @@ class MotorAsrGroq:
             "response_format": "verbose_json",
             "temperature": "0",
         }
+        if self.dica:
+            campos["prompt"] = self.dica
         campos_sem_segredo(campos, [chave])
         corpo, tipo = corpo_multipart(
             campos, nome_do_arquivo="turno.wav", conteudo=envelope_wav(amostras)

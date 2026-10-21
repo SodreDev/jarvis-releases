@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from jarvis.apps.medicao import CasoDePronuncia, medir
-from jarvis.apps.resolvedor import RepositorioDeAliases, ResolvedorDeApps, dicas_de_apps
+from jarvis.apps.resolvedor import RepositorioDeAliases, ResolvedorDeApps
 from jarvis.executor.lancador import (
     App,
     AppRecusado,
@@ -156,13 +156,6 @@ def test_binarios_do_path_sao_descobertos_sem_serem_autorizados(tmp_path: Path) 
         ).autorizados
         == {}
     )
-
-
-def test_dicas_respeitam_orcamento_e_preservam_nomes_canonicos() -> None:
-    dicas = dicas_de_apps(("Discord", "TeamSpeak", "Discord", "x" * 500), primeira="jarvis")
-
-    assert dicas.startswith("jarvis, Discord, TeamSpeak")
-    assert len(dicas) <= 480
 
 
 def test_medicao_publica_top_1_top_3_e_falso_aceite() -> None:

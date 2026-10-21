@@ -222,9 +222,10 @@ def test_o_motor_whisper_declara_modelo_e_licenca_sem_carregar_nada() -> None:
     assert motor.nome == "faster-whisper@small"
 
 
-def test_a_dica_do_asr_local_vai_para_o_modelo_com_inicial_maiuscula() -> None:
-    # Medido em 2026-10-17: "jarvis" em minúsculas não muda a saída do whisper ("Diazis");
-    # "Jarvis" muda ("Jarvis, que horas são").
+def test_a_dica_do_asr_local_vai_so_como_texto_inicial() -> None:
+    """ADR-0043: a dica vai em `initial_prompt` e **não** em `hotwords` — medido com áudio
+    sintético, a dica em `hotwords` vazou no ruído ("Jarvis" na respiração) e como texto inicial
+    não. A inicial maiúscula já vem de `jarvis.voz.dica` (2026-10-17: "jarvis" não muda a saída)."""
     chamadas: list[dict[str, object]] = []
 
     class ModeloFalso:
@@ -232,32 +233,14 @@ def test_a_dica_do_asr_local_vai_para_o_modelo_com_inicial_maiuscula() -> None:
             chamadas.append(argumentos)
             return [], None
 
-    motor = MotorWhisper(dicas="jarvis")
+    motor = MotorWhisper(dica="Jarvis, Discord, TeamSpeak.")
     motor._modelo = ModeloFalso()
     motor.transcrever(bytes(640))
-    assert str(chamadas[0]["hotwords"]) == "Jarvis"
-    assert str(chamadas[0]["initial_prompt"]) == "Abra Jarvis."
+    assert chamadas[0]["initial_prompt"] == "Jarvis, Discord, TeamSpeak."
+    assert "hotwords" not in chamadas[0] or chamadas[0]["hotwords"] is None
 
     chamadas.clear()
     sem_dica = MotorWhisper()
     sem_dica._modelo = ModeloFalso()
     sem_dica.transcrever(bytes(640))
-    assert chamadas[0]["hotwords"] is None
     assert chamadas[0]["initial_prompt"] is None
-
-
-def test_as_dicas_de_apps_vao_para_hotwords_e_prompt_sem_perder_camelcase() -> None:
-    chamadas: list[dict[str, object]] = []
-
-    class ModeloFalso:
-        def transcribe(self, audio: object, **argumentos: object) -> tuple[list[object], None]:
-            chamadas.append(argumentos)
-            return [], None
-
-    motor = MotorWhisper(dicas="Jarvis, Discord, TeamSpeak")
-    motor._modelo = ModeloFalso()
-
-    motor.transcrever(bytes(640))
-
-    assert chamadas[0]["hotwords"] == "Jarvis, Discord, TeamSpeak"
-    assert chamadas[0]["initial_prompt"] == "Abra Jarvis, Discord, TeamSpeak."

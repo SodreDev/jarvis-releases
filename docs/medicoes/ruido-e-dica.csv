@@ -1,0 +1,81 @@
+cena,tipo,variante,texto,virou_texto,acertou,sem_fala,logprob,compressao,filtro,portao,maior_fala_ms,contraste_db,asr_ms,portao_us
+silencio_sala,ruido,sem_dica,,0,,,,,,fundo,0.0,0.8,1558.6,4857.9
+silencio_sala,ruido,lista_de_apps,"Calculadora, Kdenlive, Konsole,",1,,0.644,-0.888,0.84,sem_fala,fundo,0.0,0.8,1937.8,4857.9
+silencio_sala,ruido,hotwords_jarvis,Jarvis,1,,0.593,-0.89,0.43,sem_fala,fundo,0.0,0.8,1555.7,4857.9
+silencio_sala,ruido,dica_so_palavra,,0,,,,,,fundo,0.0,0.8,1654.7,4857.9
+silencio_sala,ruido,dica_com_vocabulario,,0,,,,,,fundo,0.0,0.8,1627.0,4857.9
+clique_do_mouse,ruido,sem_dica,,0,,,,,,fundo,20.0,1.0,1532.9,403.0
+clique_do_mouse,ruido,lista_de_apps,,0,,,,,,fundo,20.0,1.0,19912.2,403.0
+clique_do_mouse,ruido,hotwords_jarvis,,0,,,,,,fundo,20.0,1.0,1530.5,403.0
+clique_do_mouse,ruido,dica_so_palavra,,0,,,,,,fundo,20.0,1.0,5501.2,403.0
+clique_do_mouse,ruido,dica_com_vocabulario,,0,,,,,,fundo,20.0,1.0,1707.0,403.0
+teclado,ruido,sem_dica,,0,,,,,,impulso,40.0,34.1,1528.5,458.7
+teclado,ruido,lista_de_apps,,0,,,,,,impulso,40.0,34.1,23182.0,458.7
+teclado,ruido,hotwords_jarvis,,0,,,,,,impulso,40.0,34.1,21322.4,458.7
+teclado,ruido,dica_so_palavra,,0,,,,,,impulso,40.0,34.1,1637.8,458.7
+teclado,ruido,dica_com_vocabulario,,0,,,,,,impulso,40.0,34.1,1676.0,458.7
+respiracao,ruido,sem_dica,,0,,,,,,,480.0,23.6,1588.2,394.7
+respiracao,ruido,lista_de_apps,,0,,,,,,,480.0,23.6,22644.5,394.7
+respiracao,ruido,hotwords_jarvis,"Um, dois, três, fffff",1,,0.563,-1.262,0.85,sem_fala,,480.0,23.6,12177.7,394.7
+respiracao,ruido,dica_so_palavra,,0,,,,,,,480.0,23.6,1707.9,394.7
+respiracao,ruido,dica_com_vocabulario,,0,,,,,,,480.0,23.6,1601.2,394.7
+respiracao_forte,ruido,sem_dica,,0,,,,,,,680.0,31.7,1562.9,413.2
+respiracao_forte,ruido,lista_de_apps,,0,,,,,,,680.0,31.7,17759.4,413.2
+respiracao_forte,ruido,hotwords_jarvis,,0,,,,,,,680.0,31.7,1716.3,413.2
+respiracao_forte,ruido,dica_so_palavra,,0,,,,,,,680.0,31.7,1703.2,413.2
+respiracao_forte,ruido,dica_com_vocabulario,,0,,,,,,,680.0,31.7,1589.9,413.2
+tosse,ruido,sem_dica,,0,,,,,,,300.0,34.3,1586.0,422.3
+tosse,ruido,lista_de_apps,"Calculadora, Kdenlive, Konsole, Elisa, Firefox, GIMP, Gwenview,",1,,0.532,-0.997,0.95,sem_fala,,300.0,34.3,22559.2,422.3
+tosse,ruido,hotwords_jarvis,,0,,,,,,,300.0,34.3,11999.4,422.3
+tosse,ruido,dica_so_palavra,Caramba!,1,,0.578,-1.494,0.5,sem_fala,,300.0,34.3,7755.2,422.3
+tosse,ruido,dica_com_vocabulario,,0,,,,,,,300.0,34.3,9503.9,422.3
+ventilador,ruido,sem_dica,,0,,,,,,fundo,20.0,5.6,1539.4,514.3
+ventilador,ruido,lista_de_apps,,0,,,,,,fundo,20.0,5.6,1772.9,514.3
+ventilador,ruido,hotwords_jarvis,,0,,,,,,fundo,20.0,5.6,1776.9,514.3
+ventilador,ruido,dica_so_palavra,,0,,,,,,fundo,20.0,5.6,1676.7,514.3
+ventilador,ruido,dica_com_vocabulario,Legendas pela comunidade de Amara.org,1,,0.943,-0.736,0.86,alucinacao,fundo,20.0,5.6,1691.0,514.3
+chiado,ruido,sem_dica,,0,,,,,,fundo,0.0,0.9,1545.3,468.0
+chiado,ruido,lista_de_apps,"Calculadora, Kdenlive, Konsole, LibreOffice, Steam, Telegram Desktop, Web Browser, Calculadora,",1,,0.861,-0.773,1.07,sem_fala,fundo,0.0,0.9,2305.0,468.0
+chiado,ruido,hotwords_jarvis,Jarvis,1,,0.641,-0.916,0.43,sem_fala,fundo,0.0,0.9,1553.3,468.0
+chiado,ruido,dica_so_palavra,,0,,,,,,fundo,0.0,0.9,11712.0,468.0
+chiado,ruido,dica_com_vocabulario,Legendas pela comunidade de Amara.org,1,,0.953,-0.717,0.86,alucinacao,fundo,0.0,0.9,4559.8,468.0
+fala:Sim.,fala,sem_dica,Tchau.,1,0,0.144,-0.805,0.43,alucinacao,,260.0,32.9,1583.8,411.9
+fala:Sim.,fala,lista_de_apps,Tchau.,1,0,0.047,-0.808,0.43,alucinacao,,260.0,32.9,1827.6,411.9
+fala:Sim.,fala,hotwords_jarvis,Tchau!,1,0,0.065,-0.868,0.43,alucinacao,,260.0,32.9,2525.8,411.9
+fala:Sim.,fala,dica_so_palavra,Tchau!,1,0,0.045,-1.053,0.43,alucinacao,,260.0,32.9,3964.9,411.9
+fala:Sim.,fala,dica_com_vocabulario,Tchau.,1,0,0.056,-0.801,0.43,alucinacao,,260.0,32.9,2069.7,411.9
+fala:Não.,fala,sem_dica,Não.,1,1,0.167,-0.5,0.38,,,280.0,32.8,1570.5,420.4
+fala:Não.,fala,lista_de_apps,Não.,1,1,0.064,-0.463,0.38,,,280.0,32.8,1792.5,420.4
+fala:Não.,fala,hotwords_jarvis,Não.,1,1,0.067,-0.439,0.38,,,280.0,32.8,1563.9,420.4
+fala:Não.,fala,dica_so_palavra,Não.,1,1,0.072,-0.386,0.38,,,280.0,32.8,1568.6,420.4
+fala:Não.,fala,dica_com_vocabulario,Não.,1,1,0.051,-0.51,0.38,,,280.0,32.8,1577.0,420.4
+fala:Para.,fala,sem_dica,Valeu.,1,0,0.109,-0.778,0.43,,,220.0,28.4,1572.8,375.7
+fala:Para.,fala,lista_de_apps,Valeu.,1,0,0.026,-0.662,0.43,,,220.0,28.4,1812.3,375.7
+fala:Para.,fala,hotwords_jarvis,Para.,1,0,0.082,-0.752,0.38,,,220.0,28.4,1562.2,375.7
+fala:Para.,fala,dica_so_palavra,Para.,1,0,0.062,-0.647,0.38,,,220.0,28.4,1561.2,375.7
+fala:Para.,fala,dica_com_vocabulario,Valeu.,1,0,0.084,-0.689,0.43,,,220.0,28.4,1598.1,375.7
+fala:Jarvis.,fala,sem_dica,Derrubi-se.,1,0,0.099,-0.908,0.58,,,380.0,32.7,2064.0,454.5
+fala:Jarvis.,fala,lista_de_apps,Jarvis.,1,1,0.007,-0.426,0.47,,,380.0,32.7,1802.4,454.5
+fala:Jarvis.,fala,hotwords_jarvis,Jarvis,1,1,0.041,-0.382,0.43,,,380.0,32.7,1566.3,454.5
+fala:Jarvis.,fala,dica_so_palavra,Jarvis.,1,1,0.041,-0.345,0.47,,,380.0,32.7,1577.5,454.5
+fala:Jarvis.,fala,dica_com_vocabulario,Jarvis.,1,1,0.048,-0.512,0.47,,,380.0,32.7,1569.8,454.5
+"fala:Jarvis, que horas são?",fala,sem_dica,Eu vi isso que horas são.,1,0,0.032,-0.589,0.76,,,620.0,38.2,1635.7,396.7
+"fala:Jarvis, que horas são?",fala,lista_de_apps,"Jarvis, Que Hora São!",1,0,0.006,-0.759,0.73,,,620.0,38.2,1884.6,396.7
+"fala:Jarvis, que horas são?",fala,hotwords_jarvis,Jarvis que ora são,1,0,0.004,-0.654,0.7,,,620.0,38.2,1601.8,396.7
+"fala:Jarvis, que horas são?",fala,dica_so_palavra,Jarvis que ora são.,1,0,0.004,-0.667,0.71,,,620.0,38.2,1619.3,396.7
+"fala:Jarvis, que horas são?",fala,dica_com_vocabulario,"Jarvis, que horas são?",1,1,0.005,-0.472,0.74,,,620.0,38.2,1658.6,396.7
+fala:Abre o Discord.,fala,sem_dica,Abre o Discord.,1,1,0.062,-0.531,0.65,,,780.0,36.5,1607.6,431.3
+fala:Abre o Discord.,fala,lista_de_apps,Abra o Discord.,1,0,0.029,-0.456,0.65,,,780.0,36.5,1845.2,431.3
+fala:Abre o Discord.,fala,hotwords_jarvis,Abre o Discord,1,1,0.05,-0.496,0.64,,,780.0,36.5,1618.2,431.3
+fala:Abre o Discord.,fala,dica_so_palavra,Abre o Discord.,1,1,0.031,-0.473,0.65,,,780.0,36.5,1601.1,431.3
+fala:Abre o Discord.,fala,dica_com_vocabulario,Abre o Discord.,1,1,0.013,-0.551,0.65,,,780.0,36.5,1621.0,431.3
+fala:Abre o Spotify.,fala,sem_dica,Abrir o Spotify.,1,0,0.045,-0.753,0.67,,,860.0,35.5,1607.3,499.9
+fala:Abre o Spotify.,fala,lista_de_apps,Abrir o Spotify.,1,0,0.006,-0.591,0.67,,,860.0,35.5,1838.6,499.9
+fala:Abre o Spotify.,fala,hotwords_jarvis,Abrir o Spotify,1,0,0.01,-0.576,0.65,,,860.0,35.5,1596.9,499.9
+fala:Abre o Spotify.,fala,dica_so_palavra,Abrir o spotife.,1,0,0.013,-0.661,0.67,,,860.0,35.5,1613.8,499.9
+fala:Abre o Spotify.,fala,dica_com_vocabulario,Abrir o Spotify.,1,0,0.016,-0.581,0.67,,,860.0,35.5,1615.0,499.9
+fala:Manda mensagem para o Kauã Ximenes.,fala,sem_dica,Manda a mensagem para o Calwash Menes.,1,0,0.02,-0.627,0.83,,,1720.0,38.7,1742.7,459.3
+fala:Manda mensagem para o Kauã Ximenes.,fala,lista_de_apps,Manda mensagem para o Call of Chimenez.,1,0,0.006,-0.667,0.85,,,1720.0,38.7,1973.3,459.3
+fala:Manda mensagem para o Kauã Ximenes.,fala,hotwords_jarvis,Manda a mensagem para o Calwash Menes,1,0,0.01,-0.583,0.82,,,1720.0,38.7,1695.9,459.3
+fala:Manda mensagem para o Kauã Ximenes.,fala,dica_so_palavra,Manda a mensagem para o Calwash Menes.,1,0,0.013,-0.581,0.83,,,1720.0,38.7,1725.2,459.3
+fala:Manda mensagem para o Kauã Ximenes.,fala,dica_com_vocabulario,Manda a mensagem para o Kauã Ximenes.,1,1,0.01,-0.277,0.84,,,1720.0,38.7,1798.4,459.3

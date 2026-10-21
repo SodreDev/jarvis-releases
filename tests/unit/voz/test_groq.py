@@ -378,3 +378,14 @@ def test_o_modelo_da_groq_vem_do_motor_escolhido_e_nunca_do_tamanho_do_whisper_l
         motor.transcrever(audio_de(1200))
 
     assert servico.pedidos[0].campo("model") == esperado
+
+
+def test_a_dica_curta_vai_como_prompt_e_sem_dica_nao_ha_prompt(tmp_path: Path) -> None:
+    """ADR-0043: o `prompt` da Groq leva a palavra de ativação e os termos do dono — curto."""
+    with ServicoFalso(roteiro=Roteiro(corpo=resposta_boa())) as servico:
+        motor_em(servico, tmp_path, dica="Jarvis, Thiago Nigro.").transcrever(audio_de(1200))
+        motor_em(servico, tmp_path).transcrever(audio_de(1200))
+
+        com_dica, sem_dica = servico.pedidos
+        assert com_dica.campo("prompt") == "Jarvis, Thiago Nigro."
+        assert sem_dica.campo("prompt") == ""  # o campo nem vai

@@ -101,11 +101,13 @@ class MotorWhisper:
     onde: Onde = Onde.LOCAL
     registrado: str = "asr-whisper-local"
     """Id no `licenses/motores.toml`: é o portão que diz se este motor pode rodar."""
-    dicas: str = ""
-    """Palavras que o modelo deve preferir (`hotwords` do faster-whisper). Nome próprio é onde o
-    whisper pequeno mais erra: "jarvis" sai "Dia 10" (medido em 2026-10-17 com a voz do piper);
-    com a dica sai "Jarvis". Vazio = sem dica. A dica vai com inicial maiúscula: o modelo ignora
-    "jarvis" em minúsculas (medido: "Diazis"), e só "Jarvis" muda a saída."""
+    dica: str = ""
+    """O texto que vai antes do áudio (`initial_prompt`), já montado por `jarvis.voz.dica`: a
+    palavra de ativação e poucos termos do dono ("Jarvis, Thiago Nigro."). Nome próprio é onde o
+    whisper pequeno mais erra ("jarvis" sai "Dia 10" sem dica, medido em 2026-10-17). **Curta de
+    propósito** (ADR-0043): a lista de apps instalados que ia aqui fez todo ruído forçado no whisper
+    virar texto, e em `hotwords` a dica vazou mais do que como texto inicial — por isso só ele.
+    Vazio = sem dica."""
     _modelo: Any = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -149,8 +151,7 @@ class MotorWhisper:
             language=self.idioma,
             beam_size=self.beam,
             vad_filter=False,
-            hotwords=self._dicas_para_modelo() or None,
-            initial_prompt=self._prompt_inicial() or None,
+            initial_prompt=self.dica or None,
         )
         partes = list(trechos)
         texto = " ".join(t.text for t in partes).strip()
@@ -164,16 +165,6 @@ class MotorWhisper:
             compressao=max(float(t.compression_ratio) for t in partes),
         )
         return Transcricao(Hipotese(texto, float(min(1.0, max(0.0, 2.718281828**media)))), sinais)
-
-    def _dicas_para_modelo(self) -> str:
-        """Capitaliza só palavras inteiramente minúsculas e preserva nomes como TeamSpeak."""
-        return " ".join(
-            parte.capitalize() if parte.islower() else parte for parte in self.dicas.strip().split()
-        )
-
-    def _prompt_inicial(self) -> str:
-        dicas = self._dicas_para_modelo()
-        return f"Abra {dicas}." if dicas else ""
 
 
 @dataclass(frozen=True, slots=True)

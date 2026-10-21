@@ -55,7 +55,7 @@ from jarvis.agentd.tts import (
     fatiar,
 )
 from jarvis.ambiente import ambiente_ou_os, em_ci
-from jarvis.apps.resolvedor import RepositorioDeAliases, dicas_de_apps
+from jarvis.apps.resolvedor import RepositorioDeAliases
 from jarvis.audio_io.ambiente import Backend, backend_escolhido
 from jarvis.audio_io.backend import dispositivo_pedido, fonte_do_ambiente, sumidouro_do_ambiente
 from jarvis.audio_io.captura import Captura
@@ -75,7 +75,7 @@ from jarvis.executor import desktop
 from jarvis.executor.alarmes import Alarme, agenda_compartilhada
 from jarvis.executor.ferramentas import Confirmacao, Encerramento, ExecutorDeFerramentas
 from jarvis.executor.janelas import janelas_do_ambiente
-from jarvis.executor.lancador import RegistroDeApps, listar_apps
+from jarvis.executor.lancador import RegistroDeApps
 from jarvis.executor.navegadores import AbridorDeNavegador, navegador_em_execucao, separar
 from jarvis.memoryd.conversa import ConversaPersistente
 from jarvis.memoryd.ferramentas import FerramentasDeMemoria
@@ -124,6 +124,7 @@ from jarvis.tarefas.motores import MotorDeAgente
 from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import ASR_PADRAO, TTS_OMNIVOICE, TTS_PADRAO, Configuracao
+from jarvis.voz.dica import dica_do_asr
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde, Sinais, transcrever_com_sinais
@@ -227,13 +228,14 @@ def motor_de_asr(
     raiz: Path,
     cancelado: Callable[[], bool],
     ambiente: Mapping[str, str] | None = None,
-    dicas_apps: Iterable[str] = (),
+    dica: str = "",
 ) -> MotorDeAsr:
     """O motor de ASR que a configuração pediu, já pelo portão (ADR-0017).
 
-    `dicas_apps` são os nomes dos apps instalados: o ASR local os recebe como `hotwords` e
-    `initial_prompt`, para "abre o Discord" não virar "abre o disco" (pedido do dono, 2026-10-18; o
-    resolvedor de `jarvis.apps` faz o resto, contra o registro)."""
+    `dica` é o texto que vai antes do áudio — a palavra de ativação e os termos do dono, montados
+    por `jarvis.voz.dica` —, nos dois motores: `initial_prompt` no local, `prompt` na Groq. Curta de
+    propósito (ADR-0043): a lista de apps instalados que ia aqui fazia ruído virar nome de app; quem
+    casa a fala com o app é o resolvedor de `jarvis.apps`, contra o registro, depois do ASR."""
     falta = o_que_falta(
         configuracao.asr, configuracao, ambiente=ambiente, pasta_de_vozes=PASTA_DE_VOZES
     )
@@ -252,6 +254,7 @@ def motor_de_asr(
             nuvem_ligada=configuracao.nuvem_ligada,
             cancelado=cancelado,
             ambiente=ambiente,
+            dica=dica,
         )
         motor.abrir()
         return motor
@@ -263,7 +266,7 @@ def motor_de_asr(
     local = MotorWhisper(
         tamanho=configuracao.modelo_do_asr,
         pasta=str(PASTA_DE_VOZES.parent),
-        dicas=dicas_de_apps(dicas_apps, primeira=configuracao.palavra),
+        dica=dica,
     )
     local.abrir()
     return local
@@ -1025,12 +1028,9 @@ class Aplicativo:
         self.registrar_aviso("falhou", "endereçamento", frase)
         return None
 
-    def _nomes_dos_apps(self) -> list[str]:
-        """Os apps instalados (`.desktop`), pelo nome que o dono fala — dica para o ASR."""
-        try:
-            return [app.nome for app in listar_apps()]
-        except OSError:  # sem pasta de apps legível, o ASR só perde a dica
-            return []
+    def _dica_do_asr(self) -> str:
+        """A dica do ASR (ADR-0043): a palavra de ativação e os termos do dono — curta."""
+        return dica_do_asr(self.configuracao.palavra)
 
     def _abrir_o_ouvido(self, cancelado: Callable[[], bool]) -> MotorDeAsr:
         """O ASR escolhido — ou, se ele é de nuvem e não roda, o local, com uma linha dizendo.
@@ -1046,7 +1046,7 @@ class Aplicativo:
                 raiz=self.raiz,
                 cancelado=cancelado,
                 ambiente=self.ambiente,
-                dicas_apps=self._nomes_dos_apps(),
+                dica=self._dica_do_asr(),
             )
         except (OuvidoIndisponivel, MotorRecusado, SegredoAusente, ErroDeRede, ImportError) as erro:
             escolhido = motor_registrado(self.configuracao.asr)
@@ -1057,7 +1057,7 @@ class Aplicativo:
                         raiz=self.raiz,
                         cancelado=cancelado,
                         ambiente=self.ambiente,
-                        dicas_apps=self._nomes_dos_apps(),
+                        dica=self._dica_do_asr(),
                     )
                 except (AplicativoIndisponivel, MotorRecusado, ErroDeRede, ImportError):
                     local = None
@@ -2201,7 +2201,7 @@ class Aplicativo:
     def _palavras_da_dica(self) -> frozenset[str]:
         """O que foi de dica ao ASR (a palavra de ativação, os termos): é o eco que o filtro
         reconhece quando o modelo devolve a própria dica no meio do ruído."""
-        dica = getattr(self._asr, "dica", "") or getattr(self._asr, "dicas", "")
+        dica = getattr(self._asr, "dica", "")
         return palavras_da_dica(dica) if isinstance(dica, str) else frozenset()
 
     def _sim_sem_certeza(self, texto: str, sinais: Sinais) -> bool:

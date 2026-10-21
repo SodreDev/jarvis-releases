@@ -26,7 +26,6 @@ MARGEM_PADRAO: Final = 0.08
 """Diferença mínima entre primeiro e segundo para uma escolha automática."""
 LIMITE_DE_ALIASES: Final = 128
 LIMITE_DE_CARACTERES: Final = 160
-LIMITE_DE_DICAS: Final = 480
 
 
 class AppDoCatalogo(Protocol):
@@ -265,20 +264,3 @@ class RepositorioDeAliases:
         parcial = self.caminho.with_name(self.caminho.name + ".tmp")
         parcial.write_text(json.dumps(corpo, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         parcial.replace(self.caminho)
-
-
-def dicas_de_apps(nomes: Iterable[str], *, primeira: str = "") -> str:
-    """Nomes instalados para ``hotwords``/``initial_prompt``, com orçamento explícito."""
-    escolhidos: list[str] = []
-    vistos: set[str] = set()
-    for nome in (primeira, *nomes):
-        limpo = " ".join(nome.split())
-        chave = normalizar(limpo)
-        if not chave or chave in vistos:
-            continue
-        proximo = ", ".join((*escolhidos, limpo))
-        if len(proximo) > LIMITE_DE_DICAS:
-            break
-        vistos.add(chave)
-        escolhidos.append(limpo)
-    return ", ".join(escolhidos)
