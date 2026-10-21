@@ -73,7 +73,7 @@ from jarvis.entrada.foco import foco_do_ambiente
 from jarvis.entrada.limite import Interruptor
 from jarvis.executor import desktop
 from jarvis.executor.alarmes import Alarme, agenda_compartilhada
-from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
+from jarvis.executor.ferramentas import Confirmacao, Encerramento, ExecutorDeFerramentas
 from jarvis.executor.janelas import janelas_do_ambiente
 from jarvis.executor.lancador import RegistroDeApps, listar_apps
 from jarvis.executor.navegadores import AbridorDeNavegador, navegador_em_execucao, separar
@@ -151,6 +151,8 @@ PREFIXO_DA_PERGUNTA: Final = "pergunta-"
 """O `notif_id` do aviso que leva à voz a pergunta de uma tarefa: o resto é o id da pendência."""
 ERRO_CRU: Final = r"^[A-Z]\w*(?:Error|Exception)\b"
 """O motivo que é nome de exceção (a tarefa caiu num erro inesperado): não vai cru para a voz."""
+MOTOR_DO_FOCO: Final = "foco"
+"""A tarefa que só acompanha o foco de um app aberto (ADR-0037): encerrar não perde nada dela."""
 QUADROS_POR_PUBLICACAO: Final = 25
 """Com o Jarvis falando, o indicador do microfone é renovado a cada meio segundo (ADR-0040)."""
 
@@ -436,6 +438,9 @@ class Aplicativo:
     """Diz, na escuta contínua, se a fala transcrita é para o Jarvis (ADR-0029). `None` = desligado
     (o padrão): todo trecho que o VAD abre segue virando pedido. Montado em `abrir` quando o dono
     escolheu e ligou o motor; injetável para o teste."""
+    encerrado: bool = False
+    """O laço acabou porque o dono pediu para encerrar o Jarvis (`jarvis.encerrar`, ADR-0041): quem
+    o rodou (a janela) fecha tudo, em vez de só parar a conversa."""
     vigia: VigiaDeInterrupcao | None = field(default=None, repr=False)
     """Ouve o dono enquanto o Jarvis fala, para ele interromper por voz (ADR-0040): na palavra de
     ativação e na escuta contínua. Montada em `rodar_audio` (`interromper_por_voz`, ligado por
@@ -615,6 +620,10 @@ class Aplicativo:
         self._sincronizar_conversa(self._cerebro)
         if self.ferramentas.tarefas is None:
             self.ferramentas.tarefas = self._montar_tarefas(self.ferramentas)
+        # Encerrar o Jarvis pela voz (ADR-0041): o executor pergunta o que está no ar e pede o fim.
+        self.ferramentas.encerramento = Encerramento(
+            pendente=self._o_que_esta_no_ar, pedir=self._pedir_o_fim
+        )
         self.ferramentas.portas().ambiente = self.ambiente
         if self.ferramentas.portas().janelas is None and not em_ci(self.ambiente):
             # Quem vê e foca as janelas (ADR-0037): o critério da entrada virtual — `kdotool` no
@@ -856,6 +865,51 @@ class Aplicativo:
         """O "sim" do dono para um passo perigoso de uma tarefa: a mesma faixa da conversa, mas a
         tarefa **espera sozinha** — o estado do núcleo e o epoch da fala não são dela."""
         return self._confirmar(pergunta, tarefa_cancelada=cancelada)
+
+    # --- encerrar o Jarvis (ADR-0041) ---------------------------------------------------------
+    def _o_que_esta_no_ar(self) -> str:
+        """O que encerrar agora interromperia — e por isso pede o sim: uma tarefa do dono rodando
+        ou uma pergunta esperando a resposta dele. Acompanhar o foco de um app (ADR-0037) não conta:
+        parar isso não perde nada."""
+        gestor = self.ferramentas.tarefas if self.ferramentas is not None else None
+        rodando = [
+            t
+            for t in (gestor.tarefas.values() if gestor is not None else ())
+            if not t.estado.final and t.motor != MOTOR_DO_FOCO
+        ]
+        if rodando:
+            nomes = ", ".join(f"«{t.descricao[:50]}»" for t in rodando[:2])
+            if len(rodando) == 1:
+                return f"a tarefa {nomes} ainda está rodando e vai ser cancelada"
+            return f"as {len(rodando)} tarefas {nomes} ainda estão rodando e vão ser canceladas"
+        if self._cerebro is not None and self._cerebro.pendencias.valida() is not None:
+            return "há uma pergunta esperando a sua resposta, e ela vai ser descartada"
+        return ""
+
+    def _fim_pedido(self) -> bool:
+        """Lido por método: o pedido de fim chega no meio do turno, de dentro do executor."""
+        return self._encerrar_pedido
+
+    def _pedir_o_fim(self) -> int:
+        """O corpo da `jarvis.encerrar`: só marca. O laço acaba o turno (a despedida toca) e então
+        sai pelo caminho de sempre — e `_encerrar_limpo` faz o resto."""
+        self._encerrar_pedido = True
+        gestor = self.ferramentas.tarefas if self.ferramentas is not None else None
+        if gestor is None:
+            return 0
+        return sum(1 for t in gestor.tarefas.values() if not t.estado.final)
+
+    def _encerrar_limpo(self) -> None:
+        """O fim que o dono pediu: além do de sempre (tarefas canceladas, microfone e alto-falante
+        fechados, a voz solta), solta o mouse e o teclado virtuais e as abas do navegador. A
+        conversa já está no livro, turno a turno; quem a fecha é quem a abriu (a janela)."""
+        with contextlib.suppress(Exception):  # sem extensão conectada, não há aba a soltar
+            self.parar_navegador()
+        self.interruptor_de_entrada.parar("o Jarvis foi encerrado")
+        if self.conversa is not None:
+            self.conversa.indexar_depois()
+        self.encerrado = True
+        self.escrever_na_tela("  ⏻ Jarvis encerrado")
 
     def _cancelar_tarefas(self) -> None:
         if self._cerebro is not None:
@@ -1232,6 +1286,7 @@ class Aplicativo:
             novo.destino_onde = antigo.destino_onde
             novo.destino_motor = antigo.destino_motor
             novo.prazo_do_foco_s = antigo.prazo_do_foco_s
+            novo.encerramento = antigo.encerramento
             if antigo.tarefas is not None:
                 antigo.tarefas.executor = novo
                 novo.tarefas = antigo.tarefas
@@ -1340,6 +1395,8 @@ class Aplicativo:
     _fonte_acabou: bool = False
     _trava_do_asr: threading.Lock = field(default_factory=threading.Lock, repr=False)
     """O ASR é um só: o turno do laço e a vigia (numa linha à parte) não transcrevem juntos."""
+    _encerrar_pedido: bool = False
+    """O dono pediu o fim (`jarvis.encerrar`): o laço termina o turno — a despedida toca — e sai."""
     _escuta_por_cima: ThreadPoolExecutor | None = field(default=None, repr=False)
     _vigia_montada_aqui: bool = False
     _decisoes_na_trilha: int = 0
@@ -1789,6 +1846,8 @@ class Aplicativo:
         )
         try:
             for linha in linhas:
+                if self._fim_pedido():
+                    break  # o dono pediu para encerrar o Jarvis, e a despedida já tocou
                 if linha is None:
                     self.entregar_avisos(fila)
                     continue
@@ -1802,8 +1861,12 @@ class Aplicativo:
                 if turno.respondeu:
                     self.escrever_na_tela(f"Jarvis: {turno.respondeu}")
                 self.escrever_na_tela(turno.resumo())
+                if self._fim_pedido():
+                    break
         finally:
             self._cancelar_tarefas()
+            if self._fim_pedido():
+                self._encerrar_limpo()
             if sumidouro is not None:
                 sumidouro.fechar()
             self._fechar_a_voz()
@@ -1898,6 +1961,8 @@ class Aplicativo:
         turnos = 0
         try:
             while limite_de_turnos is None or turnos < limite_de_turnos:
+                if self._fim_pedido():
+                    break  # o dono pediu para encerrar o Jarvis, e a despedida já tocou
                 self._publicar_estado(captura, aberta=True)
                 if self._olhar_o_teclado() in TECLAS_DE_SAIDA:
                     break
@@ -1958,6 +2023,7 @@ class Aplicativo:
                     not falando
                     and not audio
                     and not fila.pedacos_na_fila
+                    and not self._fim_pedido()
                     and self.entregar_avisos(fila)
                 ):
                     # Piso livre: a resposta de uma tarefa (ou a pergunta dela) saiu agora — e o
@@ -1977,6 +2043,8 @@ class Aplicativo:
                     audio = continuado if continuado is not None else bytearray()
         finally:
             self._cancelar_tarefas()
+            if self._fim_pedido():
+                self._encerrar_limpo()
             self._captura_viva = self._fila_viva = None
             self._soltar_a_vigia()
             self._publicar_estado(captura, aberta=False)

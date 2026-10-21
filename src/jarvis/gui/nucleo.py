@@ -81,6 +81,9 @@ class SessaoDeVoz:
     ao_estado: Callable[[Estado], None] = _nada
     ao_terminar: Callable[[str], None] = _nada
     """Fim da sessão: frase do erro, ou vazio quando terminou porque mandaram parar."""
+    ao_encerrar: Callable[[], None] = lambda: None
+    """O dono pediu para encerrar o Jarvis (`jarvis.encerrar`, ADR-0041) e o laço saiu limpo: quem
+    abriu a sessão fecha o aplicativo. Chamada da thread de trabalho, depois de `ao_terminar`."""
     ao_mudar_avisos: Callable[[], None] = lambda: None
     ao_pedaco: Callable[[str], None] = _nada
     ao_pedir_confirmacao: Callable[[Any], None] = _nada
@@ -284,6 +287,8 @@ class SessaoDeVoz:
                     "falhou", "conversa", f"a conversa parou: {erro_final}"
                 )
             self.ao_terminar(erro_final)
+            if self.aplicativo.encerrado:
+                self.ao_encerrar()
 
     def _laco_de_audio(self) -> None:
         assert self.aplicativo is not None

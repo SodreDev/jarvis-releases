@@ -1,0 +1,50 @@
+# Encerrar o próprio Jarvis (dono, 2026-10-21; ADR-0041).
+id: jarvis.encerrar
+title: Encerrar o Jarvis
+description: Encerra o próprio Jarvis, limpo — cancela as tarefas, solta o mouse e o teclado virtuais e as abas do
+  navegador, guarda a conversa e fecha a janela. Use quando o dono pedir para encerrar, fechar, desligar ou sair do
+  Jarvis ("encerra o sistema", "pode fechar o Jarvis", "desliga o Jarvis"). Não desliga nem reinicia o computador e
+  não fecha nenhum outro programa. Com tarefa em andamento ou pergunta esperando o dono, o sistema pede o sim antes.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - encerrando
+  properties:
+    encerrando:
+      type: boolean
+    tarefas_canceladas:
+      type: integer
+preconditions: []
+postcondition: o laço de voz para no fim do turno, com as tarefas canceladas, a entrada virtual solta, as abas soltas e a
+  conversa guardada; a janela fecha
+capability: jarvis.encerrar
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: true
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: moderado
+aviso_falado: Encerrando o Jarvis. Até mais.
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-sistema
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

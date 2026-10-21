@@ -211,7 +211,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     janela.show()
     if args.segundos > 0:
         QTimer.singleShot(int(args.segundos * 1000), aplicativo.quit)
-    return int(aplicativo.exec())
+    # «Encerra o Jarvis» (ADR-0041): o laço já cancelou as tarefas e soltou a entrada virtual e as
+    # abas; a janela fecha, e a conversa — que já está no livro — é fechada com a indexação inteira.
+    ponte.encerramentoPedido.connect(aplicativo.quit)
+    codigo = int(aplicativo.exec())
+    if conversa is not None:
+        conversa.fechar()
+    return codigo
 
 
 def _esperar(aplicativo: QGuiApplication, milissegundos: int) -> None:

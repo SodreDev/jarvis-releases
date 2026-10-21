@@ -123,6 +123,9 @@ FERRAMENTAS_DE_MEMORIA: Final = frozenset(
 """As `memoria.*` (ADR-0026): o corpo é do `FerramentasDeMemoria`, e só existem para o modelo
 quando há livro aberto (o histórico persistente) — sem ele, a persona não promete o que não há."""
 
+FERRAMENTA_DE_ENCERRAR: Final = "jarvis.encerrar"
+"""Encerrar o próprio Jarvis (ADR-0041): o corpo é do aplicativo (`Encerramento`), e a tool só
+existe para o modelo quando há um laço que possa ser encerrado."""
 FERRAMENTA_DA_TELA: Final = "browser.tela"
 """Só existe quando o motor do chat recebe imagem (`motor_ve_imagem`): sem isso a captura não
 teria como chegar ao modelo, e a tool fica desligada com o motivo dito em `browser.estado`."""
@@ -175,10 +178,19 @@ class Confirmacao:
     falado: str = ""
     """O que a **voz** diz da ação (ADR-0038): sem id de ferramenta nem argumento em JSON, que ficam
     no `detalhe`, para a janela. Vazio = o `detalhe` já é frase de gente."""
+    razao_falada: str = ""
+    """Por que **este alvo** pede o sim, em frase de gente (o `exige_o_sim` do pedido, ADR-0041 e
+    0042): "a tarefa «…» ainda está rodando e vai ser cancelada". Vai na pergunta falada."""
 
     @property
     def para_ouvir(self) -> str:
         return self.falado or self.detalhe
+
+    @property
+    def pergunta_falada(self) -> str:
+        """A pergunta que a voz faz: a ação e, quando o alvo pede o sim por um motivo, o motivo."""
+        razao = f": {self.razao_falada}" if self.razao_falada else ""
+        return f"Preciso do seu sim para {self.para_ouvir}{razao}. Posso?"
 
 
 Confirmar = Callable[[Confirmacao], bool]
@@ -256,6 +268,18 @@ class ResultadoDeFerramenta:
 
 
 @dataclass(frozen=True, slots=True)
+class Encerramento:
+    """Quem encerra o Jarvis — o aplicativo liga (ADR-0041). O executor só pergunta o que ainda
+    está no ar (para pedir o sim) e pede o fim; quem para o laço, cancela as tarefas, solta a
+    entrada virtual e as abas e fecha a janela é o laço, no fim do turno."""
+
+    pendente: Callable[[], str]
+    """O que encerrar agora interromperia, em frase de gente (vazio = nada)."""
+    pedir: Callable[[], int]
+    """Pede o fim limpo; devolve quantas tarefas vão ser canceladas."""
+
+
+@dataclass(frozen=True, slots=True)
 class Avaliacao:
     """Uma chamada validada e julgada pelo PDP, ainda sem efeito (o que `avaliar` devolve)."""
 
@@ -298,6 +322,8 @@ class ExecutorDeFerramentas:
     para o modelo dizer a verdade em vez de negar a extensão. Sem ele, a tool não aparece."""
     entrada: ControleDeEntrada | None = None
     """Mouse e teclado virtuais (ADR-0027, fatia 4). Sem ele, as `input.*` não existem."""
+    encerramento: Encerramento | None = None
+    """Quem encerra o Jarvis (ADR-0041). Sem ele, a `jarvis.encerrar` não existe."""
     motor_ve_imagem: Callable[[], bool] = field(default=lambda: False)
     """Se o motor do chat de agora recebe imagem (`jarvis.s2.motor.aceita_imagem`): é o que liga a
     `browser.tela`. Perguntado na hora, porque o motor muda com o chat e o provedor."""
@@ -413,6 +439,8 @@ class ExecutorDeFerramentas:
             return self.tarefas is not None
         if tool_id == FERRAMENTA_DE_ESTADO:
             return self.estado_do_navegador is not None
+        if tool_id == FERRAMENTA_DE_ENCERRAR:
+            return self.encerramento is not None
         if tool_id == FERRAMENTA_DA_TELA:
             return self.navegador is not None and self.motor_ve_imagem()
         if tool_id in FERRAMENTAS_DO_NAVEGADOR:
@@ -591,8 +619,16 @@ class ExecutorDeFerramentas:
             proveniencia=proveniencia,
             contaminado=marca.valor,
             objetivo=self.objetivo_de(marca),
+            exige_o_sim=self._exige_o_sim(tool_id, argumentos),
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
+
+    def _exige_o_sim(self, tool_id: str, _argumentos: Mapping[str, Any]) -> str:
+        """Por que o alvo desta chamada pede o sim, resolvido pelo código (vazio = o tier decide).
+        Encerrar o Jarvis com tarefa em andamento ou pergunta esperando: o sim (ADR-0041)."""
+        if tool_id == FERRAMENTA_DE_ENCERRAR and self.encerramento is not None:
+            return self.encerramento.pendente()
+        return ""
 
     def pergunta_de(
         self, avaliacao: Avaliacao, motivo: str = "", causa: str = "confirmacao_do_pdp"
@@ -608,6 +644,7 @@ class ExecutorDeFerramentas:
             argumentos=dict(avaliacao.argumentos),
             causa=causa,
             falado=self._falado(avaliacao.tool_id, avaliacao.argumentos),
+            razao_falada=avaliacao.pedido.exige_o_sim,
         )
 
     def descartar(self, avaliacao: Avaliacao, status: str, motivo: str, *, causa: str) -> None:
@@ -1117,6 +1154,10 @@ class ExecutorDeFerramentas:
         if tool_id == FERRAMENTA_DE_ESTADO:
             assert self.estado_do_navegador is not None  # _ligada filtra antes
             return self.estado_do_navegador().para_o_modelo()
+        if tool_id == FERRAMENTA_DE_ENCERRAR:
+            assert self.encerramento is not None  # _ligada filtra antes
+            # Só o pedido: o laço termina o turno (a despedida toca) e então encerra, limpo.
+            return {"encerrando": True, "tarefas_canceladas": self.encerramento.pedir()}
         if tool_id in CORPOS:
             return CORPOS[tool_id](self.portas(), args)
         if tool_id in DE_ARQUIVOS:
@@ -1259,6 +1300,8 @@ class ExecutorDeFerramentas:
             return f"{self.manifestos[tool_id]['title'].lower()} ({_resumo(args)})"
         if tool_id == "browser.launch":
             return f"abrir o navegador «{args.get('navegador') or 'principal'}»"
+        if tool_id == FERRAMENTA_DE_ENCERRAR:
+            return "encerrar o Jarvis (as tarefas em andamento são canceladas)"
         return f"{tool_id} com {json.dumps(dict(args), ensure_ascii=False)[:160]}"
 
     def _falado(self, tool_id: str, args: Mapping[str, Any]) -> str:

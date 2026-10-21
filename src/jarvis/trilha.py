@@ -207,6 +207,7 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "pede_memoria",
         "pedido_misto",
         "sem_metodo_especifico",
+        "encerra_o_jarvis",
         # a vigia que ouve o dono enquanto o Jarvis fala (`jarvis.voz.interrupcao`)
         "suspeita",
         "palavra_de_ativacao",

@@ -46,8 +46,10 @@ MAXIMO_DE_TAREFAS_AO_MESMO_TEMPO: Final = 2
 MAXIMO_DE_PASSOS: Final = 6
 PRAZO_DA_TAREFA_S: Final = 300.0
 TAREFAS_NO_CARD: Final = 8
-FORA_DA_ALLOWLIST: Final = ("tarefa.", "acao.desfazer")
-"""Profundidade 1: tarefa não cria tarefa. E desfazer é do dono na conversa, não de uma tarefa."""
+FORA_DA_ALLOWLIST: Final = ("tarefa.", "acao.desfazer", "jarvis.")
+"""Profundidade 1: tarefa não cria tarefa. Desfazer é do dono na conversa, não de uma tarefa. E
+encerrar o Jarvis (`jarvis.encerrar`, ADR-0041) roda no turno em que o dono pediu: uma tarefa em
+segundo plano não desliga o assistente."""
 MOTORES_DE_TAREFA: Final = ("direto", "agente")
 
 

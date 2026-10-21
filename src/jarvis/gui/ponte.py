@@ -204,6 +204,9 @@ class Ponte(QObject):
     confirmacaoPedida = Signal(str, str)
     """(id, frase) de uma confirmação de ferramenta pedida pelo laço (ADR-0028)."""
     confirmacaoEncerrada = Signal(str)
+    encerramentoPedido = Signal()
+    """O dono pediu para encerrar o Jarvis e o laço já saiu limpo (ADR-0041): o aplicativo fecha.
+    Vem da thread de trabalho; o Qt o entrega na da janela."""
     """O texto acumulado da resposta em curso, vindo do laço a cada pedaço (ADR-0025)."""
     """A fila de avisos do laço mudou: o card é renovado na thread da janela."""
     """Apertar/soltar do atalho global. Vem da thread do portal; o Qt entrega na da janela."""
@@ -696,6 +699,7 @@ class Ponte(QObject):
             ao_linha=lambda linha: self.linhaNova.emit("jarvis", linha),
             ao_estado=self._mudar_estado,
             ao_terminar=self._fim_da_conversa,
+            ao_encerrar=self.encerramentoPedido.emit,
             ao_mudar_avisos=self.avisosMudaram.emit,
             ao_mudar_tarefas=self.tarefasMudaram.emit,
             ao_mudar_navegador=self.navegadorMudou.emit,

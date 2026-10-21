@@ -85,6 +85,17 @@ _MEMORIA: Final = (
 _ABRIR_O_NAVEGADOR: Final = re.compile(
     r"\babr[ae]\b.{0,20}\b(?:navegador|brave|firefox|chrome|chromium)\b"
 )
+_ENCERRAR_O_JARVIS: Final = re.compile(
+    r"\b(?:encerr\w*|fech\w*|deslig\w*|sai|sair|termin\w*|finaliz\w*)\s+"
+    r"(?:(?:o|do|da|de)\s+)?(?:jarvis|sistema|assistente)\b(?! operacional)"
+    r"|\bse deslig\w*\b|\bdeslig\w*\s+voce\b"
+)
+"""O dono pede para encerrar o próprio Jarvis ("encerra o sistema", "pode fechar o Jarvis",
+"desliga você"): é `jarvis.encerrar` (ADR-0041) — não é desligar o computador nem fechar outro
+programa."""
+FERRAMENTAS_DE_JANELA: Final = frozenset({"window.close_app"})
+"""Fechar janela ou app: no pedido de encerrar o Jarvis ficam de fora (a janela do Jarvis não se
+fecha por elas; quem a fecha é o encerramento limpo)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +155,14 @@ def quer_ver(fala: str) -> bool:
 def escolher_metodo(fala: str, contexto: ContextoDoMetodo) -> Escolha:
     """A tabela de casos (ADR-0035, testada em `test_metodo.py`): a primeira regra inequívoca."""
     texto = _dobrar(fala)
+    if _ENCERRAR_O_JARVIS.search(texto):
+        return Escolha(
+            Metodo.SISTEMA,
+            "encerra_o_jarvis",
+            ENTRADA | FERRAMENTAS_DE_JANELA,
+            "use jarvis.encerrar (encerra o próprio Jarvis, limpo); não é desligar o computador "
+            "nem fechar outro programa",
+        )
     if _algum(texto, _TECLADO):
         return Escolha(Metodo.ENTRADA_VIRTUAL, "pede_teclado_ou_mouse")
     candidatos: list[Escolha] = []

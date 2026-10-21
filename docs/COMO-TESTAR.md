@@ -1282,6 +1282,22 @@ Brave (o Jarvis não a fecha sozinho). Testes: `tests/unit/navegador/background_
 `tests/unit/navegador/test_ferramentas_browser.py`, `tests/unit/executor/test_navegadores.py`,
 `tests/unit/executor/test_ferramentas.py`, `tests/unit/navegador/test_ligacao_ao_app.py`.
 
+### 0.25 «Encerra o sistema»: o Jarvis se encerra limpo (2026-10-21, ADR-0041)
+
+Diga **«encerra o sistema»**, **«pode fechar o Jarvis»** ou **«desliga o Jarvis»**: ele diz
+«Encerrando o Jarvis. Até mais.», cancela o que estava fazendo em segundo plano, solta o mouse e o
+teclado virtuais e as abas do navegador (a faixa «Jarvis no controle» some), guarda a conversa e a
+janela fecha. Se houver uma tarefa rodando (ou uma pergunta esperando você), ele **pergunta antes**
+e diz qual — «sim» encerra, «não» deixa como está. Não desliga o computador e não fecha nenhum outro
+programa («desliga o computador» não é com ele).
+
+**Como conferir:** peça algo demorado («procura as fotos da viagem nas minhas pastas») e, enquanto
+o card mostra a tarefa, diga «pode fechar o Jarvis» → ele pergunta, citando a tarefa; diga «sim» →
+a janela fecha. Abra de novo: a conversa continua de onde parou. **Provado** em modo texto
+(`tests/unit/voz/test_encerrar_o_jarvis.py`, 17 testes; `tests/unit/politica/test_tiers.py`).
+**Não provado:** o Qt fechando a janela de verdade pelo sinal (o teste da sessão para no aviso), o
+modelo de verdade chamando a tool, a extensão de verdade soltando as abas no fim.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

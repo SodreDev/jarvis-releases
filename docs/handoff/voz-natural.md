@@ -68,3 +68,28 @@ falando tudo (história é pedido de detalhe).
 
 **Não provado:** o `claude -p` real seguindo a v13.
 
+## 3. Encerrar o Jarvis (ADR-0041)
+
+**O problema:** não havia como fechar o Jarvis pela voz, e fechar a janela não soltava a entrada
+virtual nem as abas, nem fechava a conversa.
+
+**Onde está:**
+
+- `catalogo/jarvis.encerrar.yaml` (+ o stub em `src/jarvis/capacidades/`) — moderado, sem
+  argumentos, aviso «Encerrando o Jarvis. Até mais.».
+- `src/jarvis/executor/ferramentas.py` — `Encerramento` (a porta: `pendente`, `pedir`),
+  `FERRAMENTA_DE_ENCERRAR`, `_exige_o_sim` (monta `Pedido.exige_o_sim`), `Confirmacao.razao_falada`
+  e `pergunta_falada` (a pergunta em voz com o porquê).
+- `src/jarvis/politica/pdp.py` — `Pedido.exige_o_sim`: confirma, e só o "sim" do dono solta.
+- `src/jarvis/tarefas/gestor.py` — `jarvis.` em `FORA_DA_ALLOWLIST` (roda no turno).
+- `src/jarvis/voz/app.py` — `_o_que_esta_no_ar` (tarefa do dono rodando, menos a do foco; pergunta
+  esperando), `_pedir_o_fim`, `_encerrar_limpo` (abas, entrada virtual, indexação), `encerrado`; os
+  dois laços saem no topo da volta depois do turno.
+- `src/jarvis/gui/nucleo.py`, `ponte.py`, `principal.py` — `ao_encerrar` → `encerramentoPedido` →
+  `QGuiApplication.quit`, e o `main` fecha a conversa.
+- `src/jarvis/politica/metodo.py` — o caso `encerra_o_jarvis` do roteador.
+
+**Testes:** `tests/unit/voz/test_encerrar_o_jarvis.py`, `tests/unit/politica/test_tiers.py`.
+
+**Não provado:** o Qt de verdade fechando pela ponte; o `claude -p` real chamando a tool.
+

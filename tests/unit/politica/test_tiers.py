@@ -71,6 +71,9 @@ TIER_ESPERADO: dict[str, str] = {
     "window.list": "livre",
     "window.focus_app": "livre",
     "window.close_app": "perigoso",
+    # Encerrar o próprio Jarvis (dono, 2026-10-21; ADR-0041): moderado — o sim só com tarefa em
+    # andamento ou pergunta esperando, decidido pelo código (`Pedido.exige_o_sim`).
+    "jarvis.encerrar": "moderado",
     "clipboard.text.read": "livre",
     "clipboard.text.write": "moderado",
     "notify.desktop.send": "livre",
@@ -305,6 +308,7 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "window.list": _pedido(pdp, "window.list", {}),
         "window.focus_app": _pedido(pdp, "window.focus_app", {"app": "firefox"}),
         "window.close_app": _pedido(pdp, "window.close_app", {"app": "firefox"}),
+        "jarvis.encerrar": _pedido(pdp, "jarvis.encerrar", {}),
         "clipboard.text.read": _pedido(pdp, "clipboard.text.read", {}),
         "clipboard.text.write": _pedido(pdp, "clipboard.text.write", {"texto": "x"}),
         "notify.desktop.send": _pedido(pdp, "notify.desktop.send", {"titulo": "a", "texto": "b"}),
@@ -426,3 +430,16 @@ def test_site_livre_vira_confirmacao_depois_de_ler_conteudo_de_terceiros(pdp: Pd
 def test_esquema_de_site_perigoso_continua_negado(pdp: Pdp) -> None:
     for url in ("javascript:alert(1)", "file:///etc/passwd", "https://eu:senha@banco.com"):
         assert pdp.decidir(Pedido("sites.open", {"url": url})).veredito is Veredito.DENY
+
+
+def test_o_alvo_que_pede_o_sim_aperta_o_moderado_e_so_o_dono_solta(pdp: Pdp) -> None:
+    """`Pedido.exige_o_sim` (ADR-0041/0042): o executor, depois de resolver o alvo, diz por que ele
+    pede o sim — e o PDP confirma o que o tier deixaria passar. Só o "sim" do dono solta."""
+    from dataclasses import replace
+
+    livre = casos(pdp)["jarvis.encerrar"]
+    assert pdp.decidir(livre).veredito is Veredito.ALLOW
+    com_tarefa = replace(livre, exige_o_sim="a tarefa «x» ainda está rodando e vai ser cancelada")
+    decisao = pdp.decidir(com_tarefa)
+    assert decisao.veredito is Veredito.CONFIRM and "ainda está rodando" in decisao.motivo
+    assert pdp.decidir(com_tarefa, confirmado_pelo_dono=True).veredito is Veredito.ALLOW

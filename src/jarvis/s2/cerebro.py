@@ -595,7 +595,7 @@ class Cerebro:
                 gestor.avisar(tarefa, anunciadas[-1], "precisa_decisao", frase)
 
             def na_voz(pergunta: Confirmacao) -> None:
-                anunciar(pergunta, f"Preciso do seu sim para {pergunta.para_ouvir}. Posso?")
+                anunciar(pergunta, pergunta.pergunta_falada)
 
             def confirmar_na_janela(pergunta: Confirmacao) -> bool:
                 # A pergunta por ação (o que está sob o clique) e a que nasce sem o portão: a faixa

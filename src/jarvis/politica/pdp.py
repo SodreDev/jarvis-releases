@@ -74,6 +74,11 @@ class Pedido:
     """O objetivo do turno (`jarvis.politica.objetivo`): nasce da fala do dono e cresce com o que
     as ferramentas do objetivo alcançaram — quem monta é o executor, nunca o modelo. Dentro dele,
     navegar não pergunta mesmo com o turno contaminado; dado do dono para site não citado, sim."""
+    exige_o_sim: str = ""
+    """Por que **este alvo** pede o sim, dito pelo executor depois de resolvê-lo (ADR-0041,
+    ADR-0042): uma tarefa em andamento ao encerrar o Jarvis; trabalho que pode não estar salvo, mais
+    de uma instância, o navegador do dono ou coisa do sistema ao encerrar um app. Vazio = o tier
+    decide. Não há argumento do modelo que chegue aqui: o campo é do código, como `contaminado`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +222,18 @@ class Pdp:
             # ADR-0026: a política de memória decide antes da matriz comum — nega o que não tem
             # origem, e o grant de turno libera só o que é fala literal do dono neste turno.
             return self._registrar(pedido, Veredito(regra.veredito), regra.motivo, None, capacidade)
+        if pedido.exige_o_sim:
+            # O alvo que o executor resolveu aperta o que o tier deixaria passar (ADR-0041/0042):
+            # confirma, e só o "sim" do dono solta.
+            if confirmado_pelo_dono:
+                return self._registrar(
+                    pedido,
+                    Veredito.ALLOW,
+                    f"confirmado pelo dono na janela — {pedido.exige_o_sim}",
+                    None,
+                    capacidade,
+                )
+            return self._registrar(pedido, Veredito.CONFIRM, pedido.exige_o_sim, None, capacidade)
 
         canonico: CaminhoCanonico | None = None
         raiz_escolhida: Raiz | None = None

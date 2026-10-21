@@ -120,7 +120,7 @@ class FluxoDeAcao:
                 "ele. Não repita a pergunta nem diga que fez; espere a resposta."
             ),
             call_id=chamada,
-            aviso=f"Preciso do seu sim para {pergunta.para_ouvir}. Posso?",
+            aviso=pergunta.pergunta_falada,
         )
 
     def chamar_na_tarefa(
