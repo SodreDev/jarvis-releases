@@ -438,6 +438,14 @@ def test_apple_silicon_usa_mps_e_gpu_pequena_avisa() -> None:
         sistema="Linux", maquina="x86_64", nvidia=lambda: "GPU pequena, 580.1, 2048"
     )
     assert pequena.dispositivo == "cuda" and "2048 MiB" in pequena.aviso
+    media = detectar_dispositivo(
+        sistema="Linux", maquina="x86_64", nvidia=lambda: "GPU de 4 GB, 580.1, 4096"
+    )
+    assert "4096 MiB" in media.aviso and "4,1 GB" in media.aviso
+    oito = detectar_dispositivo(
+        sistema="Linux", maquina="x86_64", nvidia=lambda: "RTX 4060, 595.1, 8188"
+    )
+    assert oito.backend == "cu128" and not oito.aviso
 
 
 # --- os pesos do registro de verdade --------------------------------------------------------

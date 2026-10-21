@@ -91,7 +91,9 @@ PyPI em 2026-10-21 (Apache-2.0). O resto (transformers ≥ 5.3, …) o `uv` reso
 DRIVERS: Final[tuple[tuple[int, str], ...]] = ((570, "cu128"), (560, "cu126"))
 """Driver NVIDIA mínimo (Linux) para a roda CUDA do PyTorch 2.8: 12.8 pede 570.26, 12.6 pede
 560.28 (tabela de compatibilidade da NVIDIA). Comparamos o número principal."""
-MEMORIA_SUGERIDA_MIB: Final = 4096
+MEMORIA_SUGERIDA_MIB: Final = 6144
+"""O modelo carregado em fp16 ocupou ~4,1 GB numa RTX 4060 (docs/medicoes/omnivoice-gpu-rtx4060.md);
+abaixo disto, com o desktop e a folga do PyTorch, tende a faltar."""
 FRASE_DE_ACEITE: Final = "aceito uso pessoal"
 TRABALHADOR_DO_REPOSITORIO: Final = Path(__file__).with_name("omnivoice_trabalhador.py")
 AVISO_DE_CPU: Final = (
@@ -196,9 +198,9 @@ def detectar_dispositivo(
     aviso = ""
     if memoria.isdigit() and int(memoria) < MEMORIA_SUGERIDA_MIB:
         aviso = (
-            f"a GPU tem {memoria} MiB; o OmniVoice em fp16 deve ocupar uns 2–3 GB [SUPOSIÇÃO "
-            "pelo tamanho dos pesos, não medido]. Se faltar memória, o Jarvis volta ao motor "
-            "padrão sozinho"
+            f"a GPU tem {memoria} MiB; o OmniVoice em fp16 ocupou ~4,1 GB numa RTX 4060 "
+            "(docs/medicoes/omnivoice-gpu-rtx4060.md). Se faltar memória — ou um jogo ocupar a "
+            "GPU —, o Jarvis volta ao motor padrão sozinho"
         )
     return Deteccao("cuda", backend, descricao, aviso)
 
