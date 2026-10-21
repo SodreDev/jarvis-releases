@@ -38,6 +38,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -125,6 +126,8 @@ from jarvis.voz.config import ASR_PADRAO, TTS_OMNIVOICE, TTS_PADRAO, Configuraca
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde
+from jarvis.voz.interrupcao import Acao as AcaoDaVigia
+from jarvis.voz.interrupcao import VigiaDeInterrupcao, so_ordem_de_parar
 from jarvis.voz.prontidao import o_que_falta
 from jarvis.voz.registro import MotorRecusado, motor_registrado
 from jarvis.voz.s2_provisorio import RespostaDeEco
@@ -147,6 +150,8 @@ PREFIXO_DA_PERGUNTA: Final = "pergunta-"
 """O `notif_id` do aviso que leva à voz a pergunta de uma tarefa: o resto é o id da pendência."""
 ERRO_CRU: Final = r"^[A-Z]\w*(?:Error|Exception)\b"
 """O motivo que é nome de exceção (a tarefa caiu num erro inesperado): não vai cru para a voz."""
+QUADROS_POR_PUBLICACAO: Final = 25
+"""Com o Jarvis falando, o indicador do microfone é renovado a cada meio segundo (ADR-0040)."""
 
 
 class AplicativoIndisponivel(RuntimeError):
@@ -430,6 +435,10 @@ class Aplicativo:
     """Diz, na escuta contínua, se a fala transcrita é para o Jarvis (ADR-0029). `None` = desligado
     (o padrão): todo trecho que o VAD abre segue virando pedido. Montado em `abrir` quando o dono
     escolheu e ligou o motor; injetável para o teste."""
+    vigia: VigiaDeInterrupcao | None = field(default=None, repr=False)
+    """Ouve o dono enquanto o Jarvis fala, para ele interromper por voz (ADR-0040): na palavra de
+    ativação e na escuta contínua. Montada em `rodar_audio` (`interromper_por_voz`, ligado por
+    padrão); injetável para o teste. Fora do laço de áudio — o modo texto —, não há microfone."""
     epoch: int = 1
     estado: Estado = Estado.PARADO
     session_id: str = field(default_factory=lambda: str(uuid7()))
@@ -1280,6 +1289,19 @@ class Aplicativo:
     _turno_cancelado: bool = False
     _escutando: bool = False
     """Verdadeiro enquanto o laço de áudio está com a fonte aberta (define o repouso)."""
+    _captura_viva: Captura | None = field(default=None, repr=False)
+    _fila_viva: FilaDePlayback | None = field(default=None, repr=False)
+    """A captura e a fila do laço de áudio que está rodando: é por elas que a vigia ouve o dono
+    durante a fala (ADR-0040). `None` fora do `rodar_audio`."""
+    _fala_por_cima: bytes | None = field(default=None, repr=False)
+    """O trecho em que o dono cortou o Jarvis (ou já falava quando ele acabou): o laço o continua
+    como o começo do turno novo, em vez de jogar fora o que ele disse."""
+    _fonte_acabou: bool = False
+    _trava_do_asr: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    """O ASR é um só: o turno do laço e a vigia (numa linha à parte) não transcrevem juntos."""
+    _escuta_por_cima: ThreadPoolExecutor | None = field(default=None, repr=False)
+    _vigia_montada_aqui: bool = False
+    _decisoes_na_trilha: int = 0
 
     # --- um turno -----------------------------------------------------------------------
     def responder(self, texto: str, *, fila: FilaDePlayback | None = None) -> Turno:
@@ -1469,12 +1491,16 @@ class Aplicativo:
         assert self._tts is not None
         if self.epoch == epoch:
             self._mudar(Estado.PENSANDO)
+        # A vigia ouve o dono desde já — enquanto a fala é preparada e enquanto toca (ADR-0040).
+        vigia = self.vigia if self._captura_viva is not None and fila is not None else None
+        if vigia is not None:
+            vigia.comecar(self.modo_de_escuta.modo, palavra=self.modo_de_escuta.detector)
         sintetizador = SintetizadorEmStreaming(
             motor=self._tts,
             session_id=self.session_id,
             epoch=epoch,
             cancelado=self.cancelado_de(epoch),
-            ao_esperar=self._olhar_o_teclado,
+            ao_esperar=self._enquanto_fala,
         )
         textos: list[str] = []
 
@@ -1515,22 +1541,34 @@ class Aplicativo:
                     break
                 tocados.append(pedaco)
                 mapa.append(trecho)
-                # Drena o pedaço quadro a quadro, olhando o teclado entre eles: é aqui que a
-                # barra interrompe **no meio** do pedaço, e não só entre pedaços.
+                if vigia is not None:
+                    vigia.falando(trecho.texto)  # é com isto que o eco dele é reconhecido
+                # Drena o pedaço quadro a quadro, olhando o teclado **e o microfone** entre eles:
+                # é aqui que a barra — ou a voz do dono — interrompe no meio do pedaço, e não só
+                # entre pedaços. Pausada (a contínua conferindo quem falou), a fila não anda e
+                # quem dá o ritmo é o microfone.
                 while fila.pedacos_na_fila and self.epoch == epoch:
                     antes = fila.sumidouro.amostras_consumidas
                     fila.tick()
                     tocadas += fila.sumidouro.amostras_consumidas - antes
-                    self._olhar_o_teclado()
+                    self._enquanto_fala()
                 if self.epoch > epoch:
                     break
         finally:
             fechar = getattr(fluxo, "close", None)
             if fechar is not None:
                 fechar()
+            if fila is not None:
+                fila.pausado = False
             if fila is not None and self.epoch > epoch:
                 # Vale também durante a espera pelo primeiro áudio, sem entrar no playback.
                 fila.cancelar(reason="barge_in", epoch_novo=self.epoch)
+            if vigia is not None and self.epoch == epoch:
+                # O Jarvis acabou de falar com o dono já falando: o que ele disse não se perde.
+                continuado = vigia.terminar()
+                if continuado and self._fala_por_cima is None:
+                    self._fala_por_cima = continuado
+            self._trilhar_a_vigia()
         cancelado = self.epoch > epoch or recusado
         fala = Fala(
             texto=texto if texto is not None else " ".join(textos),
@@ -1558,6 +1596,119 @@ class Aplicativo:
         self._mudar(self._repouso)
         self.escrever_na_tela(f"  ⟂ interrompido ({motivo})")
         return self.epoch
+
+    # --- interromper por voz (ADR-0040) -------------------------------------------------------
+    def _enquanto_fala(self) -> None:
+        """Entre um quadro tocado e o próximo (e enquanto a fala é preparada): a tecla e o
+        microfone. É aqui que o dono interrompe — pelo botão, como sempre, ou pela voz."""
+        self._olhar_o_teclado()
+        self._ouvir_por_cima()
+
+    def _ouvir_por_cima(self) -> None:
+        """Um quadro do microfone para a vigia, e o que ela decidir: pausar (a contínua conferindo
+        quem falou), retomar, ou cortar — o epoch morre, como no botão, e o trecho do dono vira o
+        começo do turno novo. No atalho quem interrompe é o dedo (a barra), como antes."""
+        captura, fila, vigia = self._captura_viva, self._fila_viva, self.vigia
+        if captura is None or fila is None or vigia is None or self._fonte_acabou:
+            return
+        if self.modo_de_escuta.modo is ModoDeEscuta.ATALHO:
+            return
+        antes = captura.quadros
+        captura.tick()
+        quadro = captura.ultimo_quadro
+        if quadro is None or captura.quadros == antes:
+            # A fonte acabou (o WAV terminou): ninguém mais fala por cima; o laço sai depois.
+            self._fonte_acabou = True
+            fila.pausado = False
+            return
+        if captura.quadros % QUADROS_POR_PUBLICACAO == 0:
+            # O indicador do F1-13 diz o que a fonte faz — e agora ela segue lendo durante a fala.
+            self._publicar_estado(captura, aberta=True)
+        acao = vigia.ouvir(quadro, fala_no_vad=bool(captura.detector.falando))
+        if acao is AcaoDaVigia.PAUSAR:
+            fila.pausado = True
+        elif acao is AcaoDaVigia.RETOMAR:
+            fila.pausado = False
+        elif acao is AcaoDaVigia.CORTAR:
+            fila.pausado = False
+            self._fala_por_cima = vigia.audio_do_corte()
+            with self._trava_dos_avisos:
+                self.avisos.dono_falando(True, self.relogio_dos_avisos())
+            self.interromper("voz")
+        if acao is not AcaoDaVigia.NADA:
+            self._trilhar_a_vigia()
+
+    def _trilhar_a_vigia(self) -> None:
+        """Cada decisão da vigia vai para a trilha: o modo, o que fez, o motivo (código) e em
+        quantos milissegundos de trecho — nunca o que o dono disse."""
+        vigia = self.vigia
+        if vigia is None:
+            return
+        for decisao in vigia.decisoes[self._decisoes_na_trilha :]:
+            self.trilha.evento(
+                "interrupcao",
+                modo=str(vigia.modo),
+                decisao=str(decisao.acao),
+                motivo=str(decisao.motivo),
+                ms=decisao.ms,
+            )
+        self._decisoes_na_trilha = len(vigia.decisoes)
+
+    def _montar_a_vigia(self) -> VigiaDeInterrupcao | None:
+        """A vigia do laço de áudio, com o ASR da sessão numa linha à parte (o áudio não espera a
+        transcrição) e, na contínua, o detector de endereçamento, se o dono o ligou."""
+        if self.vigia is not None:
+            return self.vigia  # já montada (ou injetada pelo teste)
+        if not self.configuracao.interromper_por_voz or self._asr is None:
+            return None
+        asr, trava = self._asr, self._trava_do_asr
+
+        def transcrever(amostras: bytes) -> str:
+            with trava:
+                return asr.transcrever(amostras).texto
+
+        enderecada: Callable[[str], bool] | None = None
+        detector = self.detector
+        if detector is not None:
+
+            def com_o_jarvis(texto: str) -> bool:
+                return detector.avaliar(texto, jarvis_perguntou=False).agir
+
+            enderecada = com_o_jarvis
+        self._escuta_por_cima = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="jarvis-por-cima"
+        )
+        self.vigia = VigiaDeInterrupcao(
+            transcrever=transcrever,
+            palavra=self.modo_de_escuta.detector,
+            enderecada=enderecada,
+            enviar=self._escuta_por_cima.submit,
+        )
+        self._vigia_montada_aqui = True
+        return self.vigia
+
+    def _soltar_a_vigia(self) -> None:
+        if self._escuta_por_cima is not None:
+            self._escuta_por_cima.shutdown(wait=False, cancel_futures=True)
+            self._escuta_por_cima = None
+        if self._vigia_montada_aqui:
+            self.vigia = None
+            self._vigia_montada_aqui = False
+        self._decisoes_na_trilha = 0
+
+    def _continuar_o_dono(self, antes_da_fala: deque[bytes]) -> bytearray | None:
+        """Depois de o Jarvis falar: o trecho em que o dono o cortou (ou já falava quando ele
+        acabou) volta ao laço como o começo do turno dele. Sem isso, o "antes da fala" do turno
+        seguinte são os últimos quadros que a vigia ouviu — não os de antes de o Jarvis falar."""
+        continuado, self._fala_por_cima = self._fala_por_cima, None
+        if continuado is None:
+            if self.vigia is not None and self._captura_viva is not None:
+                antes_da_fala.clear()
+                antes_da_fala.extend(self.vigia.ultimos_quadros())
+            return None
+        with self._trava_dos_avisos:
+            self.avisos.dono_falando(True, self.relogio_dos_avisos())
+        return bytearray(continuado)
 
     def _olhar_o_teclado(self) -> str | None:
         tecla = self.teclado.tecla()
@@ -1687,8 +1838,14 @@ class Aplicativo:
         )
         transcritor = TranscritorIncremental(motor=self._asr) if self._asr is not None else None
         assert transcritor is not None
+        vigia = self._montar_a_vigia()
+        if vigia is not None:
+            # A referência do eco é o que saiu para o alto-falante, fatia a fatia (ADR-0040).
+            fila.escuta = vigia.portao.referencia
+        self._captura_viva, self._fila_viva, self._fonte_acabou = captura, fila, False
 
         falando = False
+        por_cima = False  # o turno em curso começou cortando o Jarvis (ADR-0040)
         silencio_ms = 0.0
         audio = bytearray()
         # Os últimos quadros ANTES de o VAD disparar: a fala começa antes de o VAD notar, e sem
@@ -1705,7 +1862,9 @@ class Aplicativo:
                 if digitado:
                     turnos += 1
                     self._turno_digitado(digitado, fila)
-                    falando, silencio_ms, audio = False, 0.0, bytearray()
+                    continuado = self._continuar_o_dono(antes_da_fala)
+                    falando = por_cima = continuado is not None
+                    silencio_ms, audio = 0.0, continuado if continuado is not None else bytearray()
                     continue
                 quadros_antes = captura.quadros
                 eventos = captura.tick()
@@ -1717,11 +1876,14 @@ class Aplicativo:
                 # PTT, onde nenhum turno fecha e a saída tinha de vir do fim da fonte.
                 if quadro is None or captura.quadros == quadros_antes:
                     break
+                if vigia is not None:
+                    # Com o Jarvis calado, o portão aprende o ambiente (a TV ligada) e o fim do eco.
+                    vigia.portao.ver(quadro)
                 if self._quer_falar(captura):
                     if not falando:
                         with self._trava_dos_avisos:
                             self.avisos.dono_falando(True, self.relogio_dos_avisos())
-                        falando = True
+                        falando, por_cima = True, False
                         audio = bytearray(b"".join(antes_da_fala))
                         antes_da_fala.clear()
                         if fila.pedacos_na_fila:
@@ -1742,21 +1904,38 @@ class Aplicativo:
                             self.avisos.dono_falando(False, self.relogio_dos_avisos())
                         falando = False
                         turnos += 1
-                        self._turno_de_audio(bytes(audio), transcritor, fila)
-                        audio = bytearray()
+                        self._turno_de_audio(bytes(audio), transcritor, fila, por_cima=por_cima)
+                        continuado = self._continuar_o_dono(antes_da_fala)
+                        falando = por_cima = continuado is not None
+                        silencio_ms = 0.0
+                        audio = continuado if continuado is not None else bytearray()
                 if not falando and not self._pelo_dedo:
                     antes_da_fala.append(quadro.amostras)
-                if not falando and not audio and not fila.pedacos_na_fila:
-                    # Piso livre: a resposta de uma tarefa (ou a pergunta dela) sai agora.
-                    self.entregar_avisos(fila)
+                if (
+                    not falando
+                    and not audio
+                    and not fila.pedacos_na_fila
+                    and self.entregar_avisos(fila)
+                ):
+                    # Piso livre: a resposta de uma tarefa (ou a pergunta dela) saiu agora — e o
+                    # dono pode tê-la cortado por voz (ADR-0040).
+                    continuado = self._continuar_o_dono(antes_da_fala)
+                    falando = por_cima = continuado is not None
+                    silencio_ms = 0.0
+                    audio = continuado if continuado is not None else bytearray()
                 _ = eventos
                 if len(audio) > MAXIMO_DE_AUDIO_POR_TURNO_S * TAXA_PADRAO * BYTES_POR_AMOSTRA:
                     falando = False
                     turnos += 1
-                    self._turno_de_audio(bytes(audio), transcritor, fila)
-                    audio = bytearray()
+                    self._turno_de_audio(bytes(audio), transcritor, fila, por_cima=por_cima)
+                    continuado = self._continuar_o_dono(antes_da_fala)
+                    falando = por_cima = continuado is not None
+                    silencio_ms = 0.0
+                    audio = continuado if continuado is not None else bytearray()
         finally:
             self._cancelar_tarefas()
+            self._captura_viva = self._fila_viva = None
+            self._soltar_a_vigia()
             self._publicar_estado(captura, aberta=False)
             captura.fechar()
             sumidouro.fechar()
@@ -1790,12 +1969,20 @@ class Aplicativo:
         self.escrever_na_tela(turno.resumo())
 
     def _turno_de_audio(
-        self, amostras: bytes, transcritor: TranscritorIncremental, fila: FilaDePlayback
+        self,
+        amostras: bytes,
+        transcritor: TranscritorIncremental,
+        fila: FilaDePlayback,
+        *,
+        por_cima: bool = False,
     ) -> None:
+        """Um trecho do dono → pedido → resposta. `por_cima` = o trecho começou cortando o Jarvis
+        (ADR-0040): a vigia já decidiu que era com ele, e o começo pode ser o eco do fim da fala."""
         assert self._asr is not None
         self._mudar(Estado.PENSANDO)
         comeco = time.monotonic()
-        hipotese = self._asr.transcrever(amostras)
+        with self._trava_do_asr:
+            hipotese = self._asr.transcrever(amostras)
         asr_ms = (time.monotonic() - comeco) * 1000.0
         ouvido_ms = 1000.0 * (len(amostras) // BYTES_POR_AMOSTRA) / TAXA_PADRAO
         if not hipotese.texto.strip():
@@ -1807,11 +1994,20 @@ class Aplicativo:
                 self.escrever_na_tela("  (não entendi nada nesse trecho)")
             self._mudar(self._repouso)
             return
-        if not self._enderecada_ao_jarvis(hipotese.texto):
+        if not por_cima and not self._enderecada_ao_jarvis(hipotese.texto):
             self._mudar(self._repouso)
             return
-        pedido = self._pedido_do_trecho(hipotese.texto)
+        pedido = (
+            self._pedido_por_cima(hipotese.texto)
+            if por_cima
+            else self._pedido_do_trecho(hipotese.texto)
+        )
         if pedido is None:
+            self._mudar(self._repouso)
+            return
+        if por_cima and so_ordem_de_parar(pedido):
+            # "Para", "chega", "Jarvis, silêncio": o corte já foi o pedido; não há o que responder.
+            self.escrever_na_tela("  (parei)")
             self._mudar(self._repouso)
             return
         self.escrever_na_tela(f"Você: {pedido}")
@@ -1860,6 +2056,23 @@ class Aplicativo:
         else:
             self.modo_de_escuta.descartar()
         return False
+
+    def _pedido_por_cima(self, texto: str) -> str | None:
+        """O pedido do turno que cortou o Jarvis (ADR-0040). O microfone pegou o fim da fala dele
+        junto com a do dono, então o que vem **antes** da chamada é eco: com a palavra de ativação,
+        o pedido é o que vem depois dela (sem nada depois, ele só chamou — arma a escuta, como no
+        modo palavra); sem ela (a contínua), o trecho sem o prefixo que era o Jarvis falando."""
+        escuta = self.modo_de_escuta
+        achado = escuta.detector.achar(texto)
+        if achado is not None:
+            if achado.depois:
+                escuta.desarmar()
+                return achado.depois
+            escuta.armar(self.relogio.mono_ns())
+            self.escrever_na_tela(f"  (ouvi “{achado.ouvido}”: pode falar)")
+            return None
+        limpo = self.vigia.sem_o_eco(texto) if self.vigia is not None else texto
+        return limpo.strip() or None
 
     def _pedido_do_trecho(self, texto: str) -> str | None:
         """O que vira pedido neste trecho — ou `None`, que é descartar (ADR-0021).

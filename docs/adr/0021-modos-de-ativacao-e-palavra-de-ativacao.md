@@ -150,7 +150,10 @@ o padrão continua sendo o `simples` porque roda onde o `epitran` não está.
   provisório da ADR-0018 só devolve texto.
 - **Barge-in por voz continua ligado no modo palavra.** Fala por cima (inclusive de TV)
   interrompe o Jarvis enquanto ele fala, como na contínua. Se isso incomodar, é decisão do dono
-  exigir a palavra também para interromper.
+  exigir a palavra também para interromper. **Corrigido pela ADR-0040 (2026-10-21):** o laço do
+  `jarvis-voz` não lia o microfone durante a fala, então nada interrompia pela voz; agora, no
+  modo palavra, só a palavra de ativação dita por cima corta (a TV não), e na contínua ele pausa,
+  confere e corta com a palavra, uma ordem de parar ou o detector de endereçamento.
 - **Palavra escolhida pelo dono muda o degrau.** O limiar foi medido para `jarvis`; para outra
   palavra o harness roda de novo com ela trocada no código.
 

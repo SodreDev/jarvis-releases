@@ -1159,6 +1159,59 @@ Testes: `tests/unit/navegador/background_controle.test.mjs`, `indicador.test.mjs
 `test_controle.py`, `test_host.py`, `test_ferramentas_browser.py`, `test_ligacao_ao_app.py`,
 `tests/unit/gui/test_parar_navegador_na_janela.py`.
 
+### 0.22 Interromper o Jarvis pela voz (2026-10-21, ADR-0040)
+
+Antes só o botão interrompia: enquanto falava, o Jarvis não lia o microfone. Agora ele ouve você
+durante a fala — e o que corta depende do modo de escuta:
+
+- **Palavra de ativação:** diga **«Jarvis»** por cima dele («Jarvis, para», «Jarvis, que horas
+  são?»). Ele cala, joga fora o resto da resposta e atende o pedido novo; «Jarvis, para» só cala.
+  Fala por cima **sem** o nome (você conversando com alguém, a TV) não corta e não pausa.
+- **Escuta contínua:** quando você começa a falar, ele **pausa na hora** e confere o que ouviu:
+  com «Jarvis», uma ordem de parar («para», «chega», «espera aí», «silêncio») ou — se o detector
+  «é comigo?» (§0.0d) estiver ligado — qualquer fala dirigida a ele, ele corta e atende; senão,
+  **retoma** de onde parou. Sem o detector, fala comum por cima pausa e ele retoma (essa fala não
+  vira pedido: diga «Jarvis» ou ligue o detector).
+- **Atalho (segurar para falar):** como antes — o botão (ou a barra) interrompe.
+
+Desligar: `interromper_por_voz = false` no `jarvis-voz.toml` (volta a ser só o botão).
+
+**Como testar** (é o teste de ouvido que só você pode fazer): escuta «palavra», peça algo longo
+(«Jarvis, me conta uma história comprida») e, no meio, diga «Jarvis, que horas são?». Ele tem de
+parar em menos de um segundo e responder a hora. Repita **sem** dizer «Jarvis»: não pode parar.
+Repita com a TV ligada perto, e com o volume do alto-falante alto: ele não pode se interromper
+sozinho nem pela TV. Na contínua, diga «chega» por cima. Depois, `uv run jarvis-voz --diagnostico`
+mostra o último turno; a trilha (`~/.local/state/jarvis/voz/diagnostico/turnos.jsonl`, eventos
+`interrupcao`) diz o que a vigia fez e por quê (`palavra_de_ativacao`, `ordem_de_parar`,
+`enderecada`, `eco_do_jarvis`, `sem_chamada`, `nao_era_comigo`…) — nunca o que você disse.
+
+**Se ele se interromper sozinho** (a trilha com `cortar` sem ninguém ter falado): use fone de
+ouvido, abaixe o volume, ou ligue o cancelamento de eco do PipeWire (cria uma entrada «Echo-Cancel
+Source»; escolha-a em Configuração → Voz — ouvir):
+
+```bash
+mkdir -p ~/.config/pipewire/pipewire.conf.d
+cat > ~/.config/pipewire/pipewire.conf.d/60-echo-cancel.conf <<'CONF'
+context.modules = [ { name = libpipewire-module-echo-cancel
+  args = { library.name = aec/libspa-aec-webrtc
+           source.props = { node.name = "echo-cancel-source" node.description = "Echo-Cancel Source" }
+           sink.props = { node.name = "echo-cancel-sink" node.description = "Echo-Cancel Sink" } } } ]
+CONF
+systemctl --user restart pipewire pipewire-pulse wireplumber
+```
+
+(Isso mexe no áudio da sua sessão: só se quiser; para desfazer, apague o arquivo e reinicie os
+mesmos serviços. Não foi testado nesta máquina.)
+
+**Provado** com áudio sintético e ASR falso (`tests/unit/voz/test_interromper_por_voz.py`, 21
+testes): o eco do próprio Jarvis não passa no portão; o dono por cima passa; a TV ligada antes e
+durante não passa; o nome por cima corta a resposta no laço inteiro e o pedido novo é atendido;
+fala sem o nome não corta; «Jarvis, para» não vira pedido; a contínua pausa em 240 ms e retoma sem
+perder áudio; o nome dito pelo próprio Jarvis no eco não corta; o «sim» dito por cima de uma
+pergunta não a confirma. **Não provado:** microfone e alto-falante de verdade, a sua voz, a sua sala,
+a TV de verdade, o whisper transcrevendo «Jarvis» por cima do próprio Jarvis, o tempo do ASR com a
+CPU disputada, e o cancelamento de eco do PipeWire.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

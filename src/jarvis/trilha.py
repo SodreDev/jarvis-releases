@@ -100,6 +100,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "fim": Forma.CODIGO,
     "jev": Forma.MOTIVO,
     "metodo": Forma.CODIGO,
+    "modo": Forma.CODIGO,
     "motivo": Forma.CAUSA,
     "motor": Forma.CODIGO,
     "ms": Forma.NUMERO,
@@ -147,6 +148,9 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     "portao": frozenset({"tool_id", "pdp", "jev", "decisao", "ms"}),
     "permissao": frozenset({"tool_id", "origem", "motivo", "resposta"}),
     "metodo": frozenset({"metodo", "motivo", "de_fora"}),
+    # Interromper por voz (ADR-0040): o modo de escuta, o que a vigia fez, por quê e em quantos ms
+    # de trecho — nunca o que o dono disse nem o que o ASR ouviu.
+    "interrupcao": frozenset({"modo", "decisao", "motivo", "ms"}),
 }
 """Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
 dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""
@@ -201,6 +205,16 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "pede_memoria",
         "pedido_misto",
         "sem_metodo_especifico",
+        # a vigia que ouve o dono enquanto o Jarvis fala (`jarvis.voz.interrupcao`)
+        "suspeita",
+        "palavra_de_ativacao",
+        "ordem_de_parar",
+        "enderecada",
+        "eco_do_jarvis",
+        "sem_fala",
+        "sem_chamada",
+        "nao_era_comigo",
+        "prazo_da_pausa",
     }
 )
 """A allowlist do `motivo`: códigos que o nosso código escolhe pelo caminho que tomou. Código novo

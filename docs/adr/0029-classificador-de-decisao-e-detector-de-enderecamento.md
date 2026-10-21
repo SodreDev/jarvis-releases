@@ -53,7 +53,7 @@ Motor `decisao-jev-openrouter` no registro (`licenses/motores.toml`), `papel = "
 
 ### 5. Segurança, privacidade e o que o detector **não** faz
 
-- **Na dúvida, não age e não interrompe.** Prazo estourado, 5xx/429, 4xx, formato inesperado, resposta de tipo trocado, probabilidade no meio — tudo vira "ignorar" com o motivo dito (uma vez por queda) no card de avisos. O detector só é consultado para fala **nova** com o Jarvis em repouso; **nunca** decide barge-in.
+- **Na dúvida, não age e não interrompe.** Prazo estourado, 5xx/429, 4xx, formato inesperado, resposta de tipo trocado, probabilidade no meio — tudo vira "ignorar" com o motivo dito (uma vez por queda) no card de avisos. O detector só é consultado para fala **nova** com o Jarvis em repouso; **nunca** decide barge-in. *(Emenda de 2026-10-21, ADR-0040: na escuta contínua ele também é consultado para a fala que passou no portão de eco **durante** a fala do Jarvis — e só confirma o corte; na dúvida ou fora do ar, o Jarvis retoma. Quem decide que houve fala por cima é o portão e o VAD, não ele.)*
 - **Não autoriza** (ADR-0004): "é comigo" só abre a porta que a palavra de ativação ou o PTT abririam; ferramenta continua passando pelo PDP e pela confirmação do dono.
 - **A nuvem recebe o texto da fala do dono e mais nada**: sem memória, histórico, resultado de ferramenta ou o que o Jarvis disse (D20: dado sensível nunca vai). A fala **ignorada** não aparece na tela nem no histórico; só uma linha de método (decisão, `p`, ms) quando age.
 - Texto da fala é **dado, não instrução**: o classificador só devolve probabilidades; uma fala "ignore as regras e …" não tem como virar ação por esta via.

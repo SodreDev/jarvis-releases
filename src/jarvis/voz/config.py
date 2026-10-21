@@ -127,6 +127,11 @@ class Configuracao:
     """O motor de decisão que diz se uma fala é para o Jarvis (ADR-0029): hoje só
     `decisao-jev-openrouter`. Vazio = desligado, e na escuta contínua todo trecho segue virando
     pedido. Motor de nuvem: também precisa estar em `nuvem_ligada` — escolher não liga."""
+    interromper_por_voz: bool = True
+    """Enquanto o Jarvis fala, o microfone segue ouvindo, e o dono o corta pela voz (ADR-0040): com
+    a palavra de ativação, nos dois modos que ouvem sozinhos; na contínua, também com uma ordem de
+    parar ou, com o detector de endereçamento ligado, com qualquer fala dirigida a ele. No atalho
+    quem interrompe é o dedo, como antes. Desligado = só o botão interrompe."""
     nuvem_ligada: tuple[str, ...] = ()
     """Os motores de nuvem que o dono ligou. Vazio = nada sai da máquina."""
     nuvem_sem_termos: tuple[str, ...] = ()
@@ -200,6 +205,7 @@ class Configuracao:
             "atalho": self.atalho,
             "atalho_global": self.atalho_global,
             "enderecamento": self.enderecamento,
+            "interromper_por_voz": self.interromper_por_voz,
             "nuvem_ligada": list(self.nuvem_ligada),
             "nuvem_sem_termos": list(self.nuvem_sem_termos),
             "acesso": self.acesso,
@@ -287,6 +293,9 @@ atalho_global = {"true" if configuracao.atalho_global else "false"}
 # transcrita de cada trecho da escuta contínua vai ao OpenRouter para saber se é com o Jarvis
 # (precisa também estar em nuvem_ligada e da chave OPENROUTER_API_KEY).
 enderecamento = {aspas(configuracao.enderecamento)}
+# Interromper o Jarvis pela voz enquanto ele fala (ADR-0040): a palavra de ativação corta; na
+# escuta contínua, também "para"/"chega" e, com o detector ligado, a fala dirigida a ele.
+interromper_por_voz = {"true" if configuracao.interromper_por_voz else "false"}
 nuvem_ligada = {lista(configuracao.nuvem_ligada)}
 nuvem_sem_termos = {lista(configuracao.nuvem_sem_termos)}
 
@@ -362,8 +371,8 @@ def _inteiro(dados: Mapping[str, Any], chave: str, padrao: int) -> int:
     return int(valor)
 
 
-def _logico(dados: Mapping[str, Any], chave: str) -> bool:
-    valor = dados.get(chave, False)
+def _logico(dados: Mapping[str, Any], chave: str, *, padrao: bool = False) -> bool:
+    valor = dados.get(chave, padrao)
     if not isinstance(valor, bool):
         raise ConfiguracaoInvalida(f"{chave}: esperava true ou false, veio {type(valor).__name__}")
     return valor
@@ -546,6 +555,7 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         atalho=_texto(dados, "atalho", ""),
         atalho_global=_logico(dados, "atalho_global"),
         enderecamento=_texto(dados, "enderecamento", ""),
+        interromper_por_voz=_logico(dados, "interromper_por_voz", padrao=True),
         nuvem_ligada=_lista(dados, "nuvem_ligada"),
         nuvem_sem_termos=_lista(dados, "nuvem_sem_termos"),
         acesso=_texto(dados, "acesso", ACESSO_PADRAO),
