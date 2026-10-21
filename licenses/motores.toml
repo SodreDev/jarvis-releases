@@ -17,7 +17,10 @@
 #     (ADR-0017, política 4). É o que mantém o `tts-edge` fora até o dono decidir;
 #   - `marca_dagua` é declaração obrigatória: áudio que sai marcado é fato do produto
 #     (ADR-0017, política 5);
-#   - licença não permissiva do **cliente** bloqueia como qualquer dependência (ADR-0011).
+#   - licença não permissiva do **cliente** bloqueia como qualquer dependência (ADR-0011);
+#   - `estado = "uso_pessoal"` (pesos não comerciais, ADR-0039) nasce `ligado = false` e só roda
+#     com a declaração do dono na configuração (`chave_do_aceite`); `licenca_dos_pesos`,
+#     `uso_comercial`, `chave_do_aceite` e `fonte_dos_pesos` vazios barram, sem exceção.
 #
 # `fonte` é a página oficial do serviço ou o registro oficial do pacote — nunca agregador.
 
@@ -243,6 +246,40 @@ pacote declara LGPL-3.0 e o endpoint não tem página de termos para ler — o R
 vínculo com a Microsoft. Por isso os quatro campos obrigatórios estão **vazios**, e vazio \
 barra: o motor está implementado e o portão o recusa até o dono decidir explicitamente. O \
 caminho oficial com contrato é o Azure Speech, que é outro motor e ainda não existe aqui."""
+
+# --- TTS local de USO PESSOAL (não comercial) — ADR-0039 ------------------------------
+#
+# Local (nada sai da máquina), mas os PESOS são não comerciais: o motor nasce desligado, nunca é
+# o padrão, não é dependência do produto, não vai no pacote e só roda com a declaração do dono
+# na configuração dele (`chave_do_aceite = true`). A biblioteca e o PyTorch moram num venv
+# isolado que `tools/instalar_omnivoice.py` cria fora do repositório e do pacote; o Jarvis fala
+# com eles por um processo separado, sem importar nenhum dos dois.
+
+[[motor]]
+id = "tts-omnivoice"
+papel = "tts"
+onde = "local"
+ligado = false
+implementacao = "jarvis.voz.omnivoice:MotorTtsOmniVoice"
+modelo = "k2-fsa/OmniVoice"
+voz = "(voz de referência cadastrada pelo dono, com declaração de autorização)"
+licenca_do_cliente = "Apache-2.0"
+cliente = "omnivoice 0.2.1 + PyTorch 2.8.0 num venv isolado fora do pacote (extra de uso pessoal, instalado pelo dono)"
+estado = "uso_pessoal"
+licenca_dos_pesos = "CC-BY-NC (k2-fsa/OmniVoice) + Boson Higgs Audio 2 Community License (audio_tokenizer)"
+uso_comercial = "proibido: os pesos são CC-BY-NC (\"due to constraints from its training data (e.g., Emilia)\") — só uso pessoal do dono"
+chave_do_aceite = "omnivoice_uso_pessoal"
+marca_dagua = "não declarada"
+fonte = "https://pypi.org/pypi/omnivoice/json"
+fonte_tecnica = "https://github.com/k2-fsa/OmniVoice"
+fonte_dos_pesos = "https://huggingface.co/k2-fsa/OmniVoice/raw/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/README.md"
+data_de_acesso = "2026-10-21"
+nota = """Código Apache-2.0 (PyPI 0.2.1 `License-Expression: Apache-2.0`; LICENSE do GitHub \
+Apache-2.0). Pesos CC-BY-NC, e o tokenizador de áudio com a licença comunitária da Boson — ver \
+licenses/modelos.toml. O model card PROÍBE clonagem sem autorização, imitação de pessoa, fraude \
+e golpe: o motor só usa voz que o dono cadastrou localmente com a declaração "a voz é minha" ou \
+"tenho permissão do titular", e nenhuma ferramenta do assistente cadastra voz. O VoiceStudio \
+(debpalash/VoiceStudio, AGPL-3.0) é programa à parte: citado como referência, nunca embutido."""
 
 # --- Decisão (classificador de perguntas fechadas) — ADR-0029 -------------------------
 

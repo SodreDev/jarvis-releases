@@ -252,6 +252,8 @@ def test_motores_locais_do_produto_passam_no_portao() -> None:
     for motor in motores_de(onde=Onde.LOCAL):
         if motor.id == "tts-piper-espeak":
             continue  # linha de base de medição, fora do produto por licença (ADR-0016)
+        if motor.de_uso_pessoal:
+            continue  # pesos não comerciais: só com a declaração do dono (ADR-0039, abaixo)
         assert exigir_motor(motor.id).id == motor.id
 
 

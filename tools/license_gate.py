@@ -18,14 +18,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tomllib
 import urllib.error
 import urllib.request
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Final
 
 from jarvis.licencas import (
@@ -48,6 +50,19 @@ ARQUIVOS_DE_ATRIBUICAO: Final[tuple[Path, ...]] = (
     RAIZ / "README.md",
 )
 """Onde a atribuição obrigatória (CC-BY) tem de aparecer, além da tela "sobre" da `ui`."""
+ARQUIVO_PYPROJECT: Final = RAIZ / "pyproject.toml"
+ARQUIVO_TRAVA: Final = RAIZ / "uv.lock"
+PASTA_DE_FONTES: Final = RAIZ / "src"
+USO_PESSOAL: Final = "uso_pessoal"
+NUNCA_NO_PROJETO: Final = frozenset({"omnivoice"})
+"""Biblioteca de motor de uso pessoal (ADR-0039): mora no venv isolado que o instalador de
+`tools/` cria fora do repositório. Não entra no `pyproject.toml` (nem em grupo opcional), na
+trava, nem no ambiente do projeto — entrar em qualquer um é o primeiro passo para o pacote."""
+IMPORTA_DE_FORA_DO_PRODUTO: Final = re.compile(
+    r"^\s*(?:from|import)\s+(omnivoice|torch|torchaudio)\b", re.MULTILINE
+)
+"""O processo do Jarvis fala com o motor de uso pessoal por um processo à parte, com outro
+Python: `src/` que importa a biblioteca ou o PyTorch puxaria os dois para o pacote."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,9 +90,13 @@ class Item:
         abrir o derivado é decisão do dono, não de uma dependência que entrou de lado. A mesma
         ferramenta com estado `fora_do_produto` (geração de dado, em processo separado) só gera
         aviso — é o caso do espeak-ng no cartão F1-02.
+
+        Modelo `uso_pessoal` (não comercial, ADR-0039) também não bloqueia **aqui**: ele não é
+        produto. Que continue fora — sem dependência, sem trava, sem pacote, sem padrão — é o
+        que `conferir_uso_pessoal` cobra, e ela falha a porta sozinha.
         """
-        if self.estado == "barrado":
-            return False  # registrado justamente para ficar fora
+        if self.estado in {"barrado", USO_PESSOAL}:
+            return False  # barrado: registrado para ficar fora; uso pessoal: conferido à parte
         if self.categoria is Categoria.NAO_COMERCIAL:
             return True
         if (
@@ -355,12 +374,190 @@ def avisos_de_motores(arquivo: Path = ARQUIVO_MOTORES) -> list[str]:
             )
         if motor.marca_o_audio:
             frases.append(f"MARCA D'ÁGUA: {motor.id} — {motor.marca_dagua}")
-        if motor.estado == "extra_opcional":
+        if motor.estado in {"extra_opcional", USO_PESSOAL}:
             frases.append(
                 f"EXTRA OPCIONAL: {motor.id} usa {motor.cliente} ({motor.licenca_do_cliente}) — "
                 "não é dependência do produto e não é distribuído junto; o dono instala"
             )
+        if motor.de_uso_pessoal:
+            frases.append(
+                f"NÃO COMERCIAL (uso pessoal): {motor.id} — pesos {motor.licenca_dos_pesos}; "
+                f"nunca padrão, nunca no pacote, só com {motor.chave_do_aceite} = true na "
+                "configuração do dono (ADR-0039)"
+            )
     return frases
+
+
+def _nome_do_requisito(requisito: str) -> str:
+    """`"torch==2.8.0+cu128 ; sys_platform == 'linux'"` → `torch`, normalizado (PEP 503)."""
+    nome = re.split(r"[\s\[<>=!~;@(,]", requisito.strip(), maxsplit=1)[0]
+    return re.sub(r"[-_.]+", "-", nome).lower()
+
+
+def _pacotes_alcancaveis(trava: dict[str, Any], raizes: Iterable[str]) -> set[str]:
+    """Os pacotes que a trava instala a partir de `raizes`, com os extras pedidos.
+
+    Marcadores de plataforma são **ignorados**: o fecho fica maior do que qualquer instalação
+    real, e é esse o lado certo do erro para quem quer provar que algo não está lá.
+    """
+    por_nome: dict[str, list[dict[str, Any]]] = {}
+    for pacote in trava.get("package", []):
+        por_nome.setdefault(_nome_do_requisito(str(pacote["name"])), []).append(pacote)
+    vistos: set[tuple[str, str]] = set()
+    pilha: list[tuple[str, str]] = [(_nome_do_requisito(raiz), "") for raiz in raizes]
+    while pilha:
+        nome, extra = pilha.pop()
+        if (nome, extra) in vistos:
+            continue
+        vistos.add((nome, extra))
+        for pacote in por_nome.get(nome, []):
+            if extra:
+                dependencias = pacote.get("optional-dependencies", {}).get(extra, [])
+            else:
+                dependencias = pacote.get("dependencies", [])
+            for dependencia in dependencias:
+                alvo = _nome_do_requisito(str(dependencia["name"]))
+                pilha.append((alvo, ""))
+                pilha += [(alvo, str(e)) for e in dependencia.get("extra", [])]
+    return {nome for nome, _ in vistos}
+
+
+def _empacotador() -> ModuleType:
+    """`tools/empacotar.py` é quem diz o que vai no pacote — a porta só lê.
+
+    Importado aqui porque esta porta também roda como script (`python tools/license_gate.py`),
+    e aí a raiz do repositório não está no `sys.path`. Entra no **fim**: no começo, a pasta
+    `packaging/` da raiz esconderia a biblioteca `packaging` de quem viesse depois.
+    """
+    if str(RAIZ) not in sys.path:
+        sys.path.append(str(RAIZ))
+    from tools import empacotar
+
+    return empacotar
+
+
+def conferir_uso_pessoal(
+    *,
+    modelos: Path = ARQUIVO_MODELOS,
+    motores: Path = ARQUIVO_MOTORES,
+    pyproject: Path = ARQUIVO_PYPROJECT,
+    trava: Path = ARQUIVO_TRAVA,
+    fontes: Path = PASTA_DE_FONTES,
+    aviso_legal: Path = RAIZ / "NOTICE",
+    pastas_de_pacotes: Sequence[str] | None = None,
+    padroes: Collection[str] | None = None,
+) -> list[str]:
+    """O que é de uso pessoal (pesos não comerciais, ADR-0039) continua **fora** do produto?
+
+    Devolve as falhas — cada uma é motivo para a porta falhar. Fora do produto quer dizer, e
+    cada linha abaixo é uma conferência por máquina:
+
+    1. **registro**: modelo `uso_pessoal` não tem `baixar_de`/`destino` (o download do
+       produto, `jarvis-voz --baixar-voz`), tem `instalar_de` e arquivos com sha256, aponta
+       para um motor `uso_pessoal` que nasce desligado e não é o padrão, e aparece no NOTICE;
+    2. **dependências**: a biblioteca não está no `pyproject.toml` (nem em grupo), e nem ela
+       nem o PyTorch estão nas dependências do produto ou nos grupos que o empacotador instala;
+    3. **trava**: `uv.lock` não tem a biblioteca, e o fecho do que vai no pacote não alcança
+       nenhum pacote que o empacotador recusa;
+    4. **ambiente**: a biblioteca não está instalada no ambiente do projeto;
+    5. **código**: nada em `src/` importa a biblioteca nem o PyTorch.
+    """
+    from jarvis.voz.config import ASR_PADRAO, TTS_PADRAO
+    from jarvis.voz.registro import ler_motores
+
+    empacotar = _empacotador()
+    fora_do_pacote = frozenset(empacotar.FORA_DO_PACOTE) | NUNCA_NO_PROJETO
+    grupos_do_pacote = tuple(empacotar.GRUPOS)
+    padroes_do_produto = set(padroes if padroes is not None else (TTS_PADRAO, ASR_PADRAO))
+    falhas: list[str] = []
+
+    pessoais = {m.id: m for m in ler_motores(motores) if m.de_uso_pessoal}
+    for motor in pessoais.values():
+        if motor.ligado:
+            falhas.append(f"motor {motor.id}: é de uso pessoal e está `ligado = true` no registro")
+        if motor.id in padroes_do_produto:
+            falhas.append(f"motor {motor.id}: é de uso pessoal e virou o padrão do produto")
+
+    dados_modelos = tomllib.loads(modelos.read_text(encoding="utf-8"))
+    texto_do_aviso = aviso_legal.read_text(encoding="utf-8") if aviso_legal.exists() else ""
+    for modelo in dados_modelos.get("modelo", []):
+        if str(modelo.get("estado", "")) != USO_PESSOAL:
+            continue
+        identificador = str(modelo["id"])
+        if modelo.get("baixar_de") or modelo.get("destino"):
+            falhas.append(
+                f"modelo {identificador}: é de uso pessoal e tem `baixar_de`/`destino` — entraria "
+                "no download do produto (`jarvis-voz --baixar-voz`)"
+            )
+        if not str(modelo.get("instalar_de", "")).startswith("https://"):
+            falhas.append(f"modelo {identificador}: uso pessoal sem `instalar_de` em https")
+        arquivos = modelo.get("arquivo", [])
+        if not arquivos or any(
+            not re.fullmatch(r"[0-9a-f]{64}", str(a.get("sha256", "")))
+            or int(a.get("bytes", 0)) <= 0
+            for a in arquivos
+        ):
+            falhas.append(f"modelo {identificador}: arquivo sem tamanho ou sem sha256 conferível")
+        if str(modelo.get("motor", "")) not in pessoais:
+            falhas.append(
+                f"modelo {identificador}: `motor = {modelo.get('motor', '')!r}` não é um motor "
+                "de uso pessoal registrado"
+            )
+        if identificador not in texto_do_aviso:
+            falhas.append(f"modelo {identificador}: não aparece no NOTICE (atribuição e aviso)")
+
+    projeto = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    do_produto = [str(r) for r in projeto.get("project", {}).get("dependencies", [])]
+    grupos = {
+        str(g): [str(r) for r in rs] for g, rs in projeto.get("dependency-groups", {}).items()
+    }
+    opcionais = projeto.get("project", {}).get("optional-dependencies", {})
+    for nome, requisitos in [
+        ("dependencies", do_produto),
+        *((f"grupo {g}", rs) for g, rs in grupos.items()),
+        *((f"extra {e}", [str(r) for r in rs]) for e, rs in opcionais.items()),
+    ]:
+        for requisito in requisitos:
+            pacote = _nome_do_requisito(requisito)
+            no_pacote = nome == "dependencies" or nome.removeprefix("grupo ") in grupos_do_pacote
+            if pacote in NUNCA_NO_PROJETO or (no_pacote and pacote in fora_do_pacote):
+                falhas.append(
+                    f"pyproject.toml, {nome}: {requisito!r} — de uso pessoal, mora no venv "
+                    "isolado do instalador (ADR-0039)"
+                )
+
+    if trava.exists():
+        dados_trava = tomllib.loads(trava.read_text(encoding="utf-8"))
+        travados = {_nome_do_requisito(str(p["name"])) for p in dados_trava.get("package", [])}
+        for pacote in sorted(travados & NUNCA_NO_PROJETO):
+            falhas.append(f"uv.lock: {pacote} está na trava do projeto")
+        raizes_do_pacote = [*do_produto, *(r for g in grupos_do_pacote for r in grupos.get(g, []))]
+        alcancados = _pacotes_alcancaveis(dados_trava, raizes_do_pacote)
+        for pacote in sorted(alcancados & fora_do_pacote):
+            falhas.append(
+                f"uv.lock: {pacote} é alcançável a partir do que vai no pacote "
+                f"(dependências do produto + grupos {', '.join(grupos_do_pacote)})"
+            )
+
+    distribuicoes = (
+        metadata.distributions(path=list(pastas_de_pacotes))
+        if pastas_de_pacotes
+        else metadata.distributions()
+    )
+    for dist in distribuicoes:
+        if _nome_do_requisito(str(dist.metadata["Name"] or "")) in NUNCA_NO_PROJETO:
+            falhas.append(
+                f"ambiente: {dist.metadata['Name']} {dist.version} está instalado no ambiente do "
+                "projeto — ele mora no venv isolado de tools/instalar_omnivoice.py"
+            )
+
+    for arquivo in sorted(fontes.rglob("*.py")):
+        for achado in IMPORTA_DE_FORA_DO_PRODUTO.finditer(arquivo.read_text(encoding="utf-8")):
+            falhas.append(
+                f"{arquivo.relative_to(fontes.parent)}: importa {achado.group(1)} — o produto "
+                "fala com o motor de uso pessoal por processo à parte, nunca importando"
+            )
+    return falhas
 
 
 def conferir_online(
@@ -542,6 +739,15 @@ def tabela_de_modelos(modelos: Sequence[Item], ferramentas: Sequence[Item] = ())
         + ", ".join(f"`{i.nome}` ({i.licenca})" for i in modelos if i.estado == "barrado")
         + ".\n"
     )
+    pessoais = [i for i in modelos if i.estado == USO_PESSOAL]
+    if pessoais:
+        rodape += (
+            "\n**Uso pessoal** (ADR-0039 — não comerciais, **fora** do produto: nunca "
+            "dependência, nunca no pacote, nunca padrão; o dono instala para si com "
+            "`tools/instalar_omnivoice.py` e declara o uso pessoal na configuração): "
+            + ", ".join(f"`{i.nome}` ({i.licenca})" for i in pessoais)
+            + ".\n"
+        )
     tabela = CABECALHO_TABELA + "\n".join(linhas) + "\n" + rodape
     if ferramentas:
         tabela += (
@@ -618,6 +824,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="trata copyleft forte (GPL/AGPL/SSPL) como bloqueio, não como aviso",
     )
+    analisador.add_argument(
+        "--pyproject", type=Path, default=ARQUIVO_PYPROJECT, help="outro pyproject.toml (testes)"
+    )
+    analisador.add_argument(
+        "--trava", type=Path, default=ARQUIVO_TRAVA, help="outro uv.lock (usado nos testes)"
+    )
+    analisador.add_argument(
+        "--fontes", type=Path, default=PASTA_DE_FONTES, help="outra pasta src/ (testes)"
+    )
     args = analisador.parse_args(argv)
 
     modelos = inventariar_modelos(args.modelos)
@@ -683,12 +898,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         i for i in itens if i.categoria is Categoria.ATRIBUICAO and i.estado != "barrado"
     ]
     barrados = [i for i in modelos if i.estado == "barrado"]
+    pessoais = [i for i in modelos if i.estado == USO_PESSOAL]
 
     print(
         f"\nporta de licença: {len(modelos)} modelos, {len(dependencias)} dependências, "
         f"{len(ferramentas)} ferramenta(s) externa(s), {len(motores)} motor(es) de voz, "
         f"{len(bibliotecas)} biblioteca(s) distribuída(s), "
-        f"{len(barrados)} barrados por registro"
+        f"{len(barrados)} barrados por registro, {len(pessoais)} de uso pessoal fora do produto"
     )
     for frase in avisos_de_motores(args.motores):
         print(frase)
@@ -709,10 +925,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             "não comercial" if item.categoria is Categoria.NAO_COMERCIAL else "licença desconhecida"
         )
         print(f"BLOQUEIO ({motivo}): {item.tipo} {item.nome} — {item.licenca} — {item.origem}")
+    # O de uso pessoal (ADR-0039) vem depois do bloqueio: licença não comercial **dentro** do
+    # produto é a falha mais grave e fica com o código 1; a 6 é o que é de uso pessoal entrando.
+    falhas_de_uso_pessoal = conferir_uso_pessoal(
+        modelos=args.modelos,
+        motores=args.motores,
+        pyproject=args.pyproject,
+        trava=args.trava,
+        fontes=args.fontes,
+        pastas_de_pacotes=args.pasta_pacotes,
+    )
+    for falha in falhas_de_uso_pessoal:
+        print(f"USO PESSOAL NO CAMINHO DO PRODUTO: {falha}")
 
     if bloqueios:
         print(f"\nFALHOU: {len(bloqueios)} item(ns) incompatível(is) com uso comercial (ADR-0011)")
         return 1
+    if falhas_de_uso_pessoal:
+        print(
+            f"\nFALHOU: {len(falhas_de_uso_pessoal)} sinal(is) de que o que é de uso pessoal "
+            "(pesos não comerciais) entrou no caminho do produto (ADR-0039)"
+        )
+        return 6
     if avisos and args.estrito_copyleft:
         print(f"\nFALHOU: {len(avisos)} item(ns) copyleft forte com --estrito-copyleft")
         return 1

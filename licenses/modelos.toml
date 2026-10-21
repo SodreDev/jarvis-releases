@@ -9,7 +9,11 @@
 # consulta — é o que torna a verificação repetível.
 #
 # Estados: `candidato` (pode ser medido), `em_uso` (está no caminho do produto),
-# `barrado` (verificado e recusado; fica registrado para ninguém tentar de novo).
+# `barrado` (verificado e recusado; fica registrado para ninguém tentar de novo),
+# `uso_pessoal` (não comercial, **fora** do produto: nunca dependência, nunca no pacote, nunca
+# padrão; o dono instala para si — ADR-0039). Modelo `uso_pessoal` não tem `baixar_de` (o
+# download do produto) e sim `instalar_de`, que só o instalador de `tools/` lê; a porta de
+# licença confere que ele continua fora do caminho do produto e falha se entrar.
 
 data_da_verificacao = "2026-10-15"
 verificado_por = "executor"
@@ -270,3 +274,105 @@ fonte = "https://huggingface.co/api/models/coqui/XTTS-v2"
 revisao = "6c2b0d75eae4"
 data_de_acesso = "2026-10-15"
 nota = "CPML (https://coqui.ai/cpml): uso não comercial. Barrado pela ADR-0011."
+
+# --- TTS de USO PESSOAL (não comercial; fora do produto, instalado pelo dono) ----------------
+#
+# ADR-0039. Os dois registros abaixo são o MESMO repositório do Hugging Face, na mesma revisão,
+# com duas licenças: o modelo (CC-BY-NC) e o tokenizador de áudio que vem dentro dele
+# (`audio_tokenizer/`, Boson Higgs Audio 2 Community License). `instalar_de` + `[[modelo.arquivo]]`
+# é o que `tools/instalar_omnivoice.py` baixa — DEPOIS de mostrar o aviso de licença e de o dono
+# aceitar o uso pessoal — para a pasta dele (`~/.local/share/jarvis/omnivoice`), nunca para o
+# pacote. Hashes: os arquivos LFS trazem o `lfs.sha256` que a API do Hugging Face publica; os
+# pequenos (não LFS, a API só dá o blob do git) foram baixados nesta revisão e calculados aqui.
+
+[[modelo]]
+id = "k2-fsa/OmniVoice"
+papel = "tts"
+licenca = "CC-BY-NC"
+estado = "uso_pessoal"
+motor = "tts-omnivoice"
+fonte = "https://huggingface.co/k2-fsa/OmniVoice/raw/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/README.md"
+revisao = "c5fdb5ccb189"
+data_de_acesso = "2026-10-21"
+instalar_de = "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/"
+nota = """TTS zero-shot de 600+ idiomas (pt incluído), clona voz de 3–10 s de referência; LLM \
+Qwen3-0.6B ajustado (base Apache-2.0, o ajuste não). A licença NÃO está nos metadados do card \
+(cardData sem `license`): está na prosa do README, seção License — "Our code is released under \
+the Apache 2.0 License. The pre-trained model is licensed under the CC-BY-NC due to constraints \
+from its training data (e.g., Emilia)" — sem a versão da CC. E o Disclaimer: proibido usar para \
+"unauthorized voice cloning, voice impersonation, fraud, scams". Por isso a fonte é o README na \
+revisão, e não a API (a `--online` o pula em vez de acusar divergência falsa)."""
+
+[[modelo.arquivo]]
+nome = "model.safetensors"
+bytes = 2450344112
+sha256 = "730839316de585f4c8298ec0e1712efc10fb19c6fa4e36eb741cb8d51ebcf6aa"
+
+[[modelo.arquivo]]
+nome = "config.json"
+bytes = 2238
+sha256 = "5e359117e13b420c5e0c925d4aba650d624767131f1d1746928f8b850d5dc372"
+
+[[modelo.arquivo]]
+nome = "tokenizer.json"
+bytes = 11423986
+sha256 = "408f669b7e2b045fdf54201d815bd364e6667dbd845115da81239c40bc6dcfd1"
+
+[[modelo.arquivo]]
+nome = "tokenizer_config.json"
+bytes = 533
+sha256 = "49f78845596a82bf15c83673794bdf9f76f812b11f60ab6a2239d9be65b00676"
+
+[[modelo.arquivo]]
+nome = "chat_template.jinja"
+bytes = 4168
+sha256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+
+[[modelo.arquivo]]
+nome = "README.md"
+bytes = 9424
+sha256 = "b5d645a1874baa96a460a0e3a7d5a262811d682d04ce235878a16d5fed287fd3"
+
+[[modelo]]
+id = "k2-fsa/OmniVoice:audio_tokenizer"
+papel = "tts"
+licenca = "Boson Higgs Audio 2 Community License"
+estado = "uso_pessoal"
+motor = "tts-omnivoice"
+fonte = "https://huggingface.co/k2-fsa/OmniVoice/raw/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/audio_tokenizer/LICENSE"
+revisao = "c5fdb5ccb189"
+data_de_acesso = "2026-10-21"
+instalar_de = "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/"
+nota = """O tokenizador de áudio (HiggsAudioV2TokenizerModel, 24 kHz) que vem DENTRO do repositório \
+do OmniVoice, com licença própria: Boson Higgs Audio 2 Community License (release 2025-06-20), \
+derivada da Meta Llama 3 Community License e incorporando a Acceptable Use Policy do Llama 3. \
+Quem distribui ou disponibiliza produto que o usa tem de exibir "Built with Higgs Materials \
+licensed from Boson AI USA, Inc. ... and Meta Llama 3 ..." (§1.b.i), levar o NOTICE (§1.b.iii) \
+e pedir licença à Boson acima de 100 000 usuários ativos por ano (§2); proíbe usar a saída para \
+melhorar outro LLM (§1.b.v). Uso pessoal do dono não distribui nada — a atribuição está no \
+NOTICE mesmo assim."""
+
+[[modelo.arquivo]]
+nome = "audio_tokenizer/model.safetensors"
+bytes = 805665628
+sha256 = "fe7c5e8785e0a05833e1bfc3e002ec7f55af21e306b2e7154a448c1f54ccfb0d"
+
+[[modelo.arquivo]]
+nome = "audio_tokenizer/config.json"
+bytes = 2531
+sha256 = "eefb20806f7104e77c9a5277c9df0f9bb8826b08eb1d4e8ab2b9829b6ef9fac1"
+
+[[modelo.arquivo]]
+nome = "audio_tokenizer/preprocessor_config.json"
+bytes = 206
+sha256 = "ae61eea88558608ee2fa86d2aec9fce8d99a5ff75d09cb7651ccce21ae1d9084"
+
+[[modelo.arquivo]]
+nome = "audio_tokenizer/LICENSE"
+bytes = 9171
+sha256 = "ac933dc084d119bd20401956b90d11ae87c248b2da62622cd580d82cdf2fa049"
+
+[[modelo.arquivo]]
+nome = "audio_tokenizer/README.md"
+bytes = 5174
+sha256 = "0336368f8274a5ed09f54cee8d56a851ecee96026d9f391a6735762c16608a60"

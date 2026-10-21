@@ -5,7 +5,7 @@ acima: ali a pergunta é "esta voz pode entrar no produto?"; aqui é "este **mot
 e o áudio do dono pode sair da máquina?". As duas respostas vêm de **arquivo de dados**
 (`licenses/motores.toml`), não de prosa e não de quem chama.
 
-Quatro recusas, na ordem em que acontecem:
+Cinco recusas, na ordem em que acontecem:
 
 1. **motor não registrado** — licença que ninguém verificou não é permissiva por otimismo
    (ADR-0012);
@@ -16,11 +16,16 @@ Quatro recusas, na ordem em que acontecem:
    *read-aloud* do Edge não tem página de termos para ler;
 4. **nuvem não ligada pelo dono** — o registro nasce com todo motor de nuvem desligado, e
    ligar é escolha que vem da configuração do dono, nunca de frase, de capacidade ou de
-   argumento de quem chama (P12, §5.5).
+   argumento de quem chama (P12, §5.5);
+5. **uso pessoal sem a declaração do dono** — motor local cujos **pesos** são não comerciais
+   (`estado = "uso_pessoal"`, ADR-0039): nada sai da máquina, mas a licença dos pesos proíbe
+   uso comercial, então ele só roda quando a configuração do dono traz a chave que o registro
+   nomeia (`chave_do_aceite`, hoje `omnivoice_uso_pessoal = true`). Escolher o motor não basta,
+   do mesmo jeito que escolher um motor de nuvem não o liga.
 
 E uma obrigação: `frase_de_aviso` monta, **dos campos**, o que a UI tem de mostrar ao ligar
-nuvem. Não é texto escrito à mão em cada tela — é derivado do registro, então mudar o fato
-muda o aviso, e esquecer o fato barra o motor.
+nuvem — e, no motor de uso pessoal, o aviso de licença. Não é texto escrito à mão em cada tela
+— é derivado do registro, então mudar o fato muda o aviso, e esquecer o fato barra o motor.
 """
 
 from __future__ import annotations
@@ -51,6 +56,18 @@ CAMPOS_DE_PROCEDENCIA: Final[tuple[str, ...]] = ("fonte", "data_de_acesso")
 CAMPOS_DOS_MODELOS: Final[tuple[str, ...]] = ("fonte_dos_modelos", "data_dos_modelos")
 """Motor com lista de modelos tem de dizer onde a lista foi lida e quando — a lista muda
 mais depressa que o contrato (modelo novo, modelo aposentado)."""
+
+USO_PESSOAL: Final = "uso_pessoal"
+"""O estado do motor local de pesos não comerciais (ADR-0039)."""
+
+CAMPOS_DE_USO_PESSOAL: Final[tuple[str, ...]] = (
+    "licenca_dos_pesos",
+    "uso_comercial",
+    "chave_do_aceite",
+    "fonte_dos_pesos",
+)
+"""O que um motor de uso pessoal tem de declarar. Como a procedência, vazio barra **sem**
+saída: é deles que sai o aviso de licença e o nome da chave que o dono escreve para ligar."""
 
 
 def _ou_desconhecido(valor: str) -> str:
@@ -101,6 +118,12 @@ class Motor:
     serviço (`fonte_dos_modelos`, `data_dos_modelos`): modelo que não está aqui não roda."""
     fonte_dos_modelos: str = ""
     data_dos_modelos: str = ""
+    licenca_dos_pesos: str = ""
+    """Só no motor de uso pessoal: a licença dos **pesos**, que é o que o proíbe no produto.
+    `licenca_do_cliente` continua sendo a da biblioteca, e é ela que a régua da ADR-0011 mede."""
+    chave_do_aceite: str = ""
+    """O campo da configuração do dono que liga o motor de uso pessoal (`... = true`)."""
+    fonte_dos_pesos: str = ""
 
     @property
     def categoria_da_licenca(self) -> Categoria:
@@ -111,12 +134,18 @@ class Motor:
         return self.onde is Onde.NUVEM
 
     @property
+    def de_uso_pessoal(self) -> bool:
+        return self.estado == USO_PESSOAL
+
+    @property
     def campos_vazios(self) -> tuple[str, ...]:
         """Campos obrigatórios que ninguém preencheu. Para nuvem, qualquer um deles barra."""
         obrigatorios = CAMPOS_DE_PROCEDENCIA + (CAMPOS_DE_NUVEM if self.na_nuvem else ())
         if self.modelos:
             obrigatorios += CAMPOS_DOS_MODELOS
-        return tuple(campo for campo in obrigatorios if not str(getattr(self, campo)).strip())
+        if self.de_uso_pessoal:
+            obrigatorios += CAMPOS_DE_USO_PESSOAL
+        return tuple(dict.fromkeys(c for c in obrigatorios if not str(getattr(self, c)).strip()))
 
     @property
     def modelos_permitidos(self) -> tuple[str, ...]:
@@ -141,14 +170,32 @@ class Motor:
         return "o texto que o Jarvis vai falar"
 
     @property
+    def aviso_de_uso_pessoal(self) -> str:
+        """O aviso de licença do motor de uso pessoal, montado dos campos (ADR-0039).
+
+        Não fala de dado saindo da máquina — não sai —, fala do que a licença dos pesos proíbe.
+        """
+        if not self.de_uso_pessoal:
+            return ""
+        return (
+            f"USO PESSOAL, NÃO COMERCIAL: {self.id} roda na sua máquina, mas os pesos são "
+            f"{_ou_desconhecido(self.licenca_dos_pesos)}. Uso comercial: "
+            f"{_ou_desconhecido(self.uso_comercial)}. Clonar voz sem autorização, imitar "
+            "pessoa e fraude são proibidos pelo model card: só vale voz sua ou com permissão do "
+            f"titular. Ligar: {_ou_desconhecido(self.chave_do_aceite)} = true na configuração. "
+            f"Fonte: {self.fonte_dos_pesos} (lida em {self.data_de_acesso})."
+        )
+
+    @property
     def frase_de_aviso(self) -> str:
         """O aviso obrigatório de nuvem, montado **dos campos** (ADR-0017, política 3).
 
-        Motor local não tem aviso: nada sai da máquina, e inventar uma frase aqui ensinaria o
-        dono a ignorar as que importam.
+        Motor local não tem aviso de nuvem: nada sai da máquina, e inventar uma frase aqui
+        ensinaria o dono a ignorar as que importam. A exceção é o motor de **uso pessoal**,
+        cujo aviso é de licença, não de rede (`aviso_de_uso_pessoal`).
         """
         if not self.na_nuvem:
-            return ""
+            return self.aviso_de_uso_pessoal
         partes: list[str] = []
         if set(self.campos_vazios) & set(CAMPOS_DE_NUVEM):
             partes.append(
@@ -216,8 +263,9 @@ def exigir_motor(
     nuvem_ligada: Collection[str] = (),
     permitir_fora_do_produto: bool = False,
     sem_termos_aceitos: Collection[str] = (),
+    uso_pessoal_aceito: Collection[str] = (),
 ) -> Motor:
-    """Devolve o motor, ou recusa dizendo qual das quatro regras barrou.
+    """Devolve o motor, ou recusa dizendo qual das cinco regras barrou.
 
     `nuvem_ligada` é a lista de motores de nuvem que **o dono** ligou na configuração dele. Ela
     entra por parâmetro, e não é lida aqui de variável de ambiente, para a origem do
@@ -229,6 +277,10 @@ def exigir_motor(
     caminho de produto. É a mesma assimetria do registro de ferramentas externas (a porta de
     licença avisa em vez de bloquear quando a GPL roda fora do produto), e quem passa o
     parâmetro é `tools/`, onde isso é permitido. `src/` nunca passa, e há teste para isso.
+
+    `uso_pessoal_aceito` é a lista de motores de uso pessoal que **o dono** declarou na
+    configuração (`chave_do_aceite = true`). Pela mesma razão de `nuvem_ligada`, entra por
+    parâmetro: quem declara é o arquivo do dono, lido pelo aplicativo.
     """
     motor = motor_registrado(identificador, arquivo=arquivo)
     if motor is None:
@@ -250,8 +302,14 @@ def exigir_motor(
         # se está aceitando. Já os quatro campos de termo podem faltar porque o serviço não
         # publica contrato — e aí a escolha de usar assim mesmo é do dono, motor por motor,
         # escrita na configuração dele (`nuvem_sem_termos`). O aviso passa a abrir dizendo
-        # que não há termos verificados, e continua dizendo isso toda vez.
-        sem_procedencia = set(vazios) & set(CAMPOS_DE_PROCEDENCIA)
+        # que não há termos verificados, e continua dizendo isso toda vez. Os campos de uso
+        # pessoal também não têm saída: sem eles não há aviso de licença nem chave para ligar.
+        # (Só no motor de uso pessoal: `uso_comercial` é também campo de termo de nuvem, e lá
+        # a saída explícita do dono continua valendo.)
+        inegociaveis = {*CAMPOS_DE_PROCEDENCIA}
+        if motor.de_uso_pessoal:
+            inegociaveis |= set(CAMPOS_DE_USO_PESSOAL)
+        sem_procedencia = set(vazios) & inegociaveis
         if sem_procedencia or identificador not in sem_termos_aceitos:
             raise MotorRecusado(
                 f"motor {identificador!r} está com campo obrigatório vazio no registro: "
@@ -262,6 +320,12 @@ def exigir_motor(
             f"motor {identificador!r} é de nuvem e está desligado: {motor.o_que_sai} sairia "
             f"desta máquina para {motor.servico}. Ligar é escolha do dono, na configuração "
             "(ADR-0017, política 1 e 2; SPEC §5.5/P12)"
+        )
+    if motor.de_uso_pessoal and identificador not in uso_pessoal_aceito:
+        raise MotorRecusado(
+            f"motor {identificador!r} é de uso pessoal: roda na sua máquina, mas os pesos são "
+            f"{motor.licenca_dos_pesos} e não permitem uso comercial. Só liga com a sua "
+            f"declaração na configuração: {motor.chave_do_aceite} = true (ADR-0039)"
         )
     return motor
 
@@ -296,6 +360,7 @@ def conferir(
     arquivo: Path = ARQUIVO_MOTORES,
     nuvem_ligada: Collection[str] = (),
     ambiente: Collection[str] = (),
+    uso_pessoal_aceito: Collection[str] = (),
 ) -> tuple[Falta, ...]:
     """Varredura do registro: o que está pronto e o que falta, sem carregar nada.
 
@@ -306,7 +371,12 @@ def conferir(
     faltas: list[Falta] = []
     for motor in ler_motores(arquivo):
         try:
-            exigir_motor(motor.id, arquivo=arquivo, nuvem_ligada=nuvem_ligada)
+            exigir_motor(
+                motor.id,
+                arquivo=arquivo,
+                nuvem_ligada=nuvem_ligada,
+                uso_pessoal_aceito=uso_pessoal_aceito,
+            )
         except MotorRecusado as erro:
             faltas.append(Falta(motor=motor.id, motivo=str(erro)))
             continue

@@ -43,6 +43,30 @@ de citar um item que o produto distribui.
   `.dist-info` e o aviso de copyright; o texto da BSD-3 do SecretStorage está em
   `licenses/texto/SecretStorage-BSD-3-Clause.txt`, porque a roda dele não o traz.
 
+## Uso pessoal, não distribuído (ADR-0039)
+
+O motor de TTS **OmniVoice** é opcional e de **uso pessoal, não comercial**: não é dependência
+do produto, não vai no AppImage, no `.deb` nem no `.rpm`, nunca é o padrão e só roda depois de o
+dono instalá-lo com `tools/instalar_omnivoice.py`, aceitar o aviso de licença e escrever
+`omnivoice_uso_pessoal = true` na configuração. O padrão do Jarvis continua o motor local
+`tts-piper-epitran`, de uso comercial permitido. As atribuições abaixo valem para quem o instala
+(`tools/license_gate.py` falha se um destes ids sair daqui):
+
+- **k2-fsa/OmniVoice** — *OmniVoice: Towards Omnilingual Zero-Shot Text-to-Speech with
+  Diffusion Language Models*, Han Zhu, Lingxuan Ye, Wei Kang, Zengwei Yao, Liyong Guo, Fangjun
+  Kuang, Zhifeng Han, Weiji Zhuang, Long Lin e Daniel Povey (k2-fsa, 2026, arXiv:2604.00688).
+  Código sob Apache-2.0; **pesos sob CC-BY-NC** "due to constraints from its training data
+  (e.g., Emilia)" — uso não comercial. O model card proíbe clonagem de voz sem autorização,
+  imitação de pessoa, fraude e golpe.
+- **k2-fsa/OmniVoice:audio_tokenizer** — "Built with Higgs Materials licensed from Boson AI USA,
+  Inc., Copyright Boson AI USA, Inc., All Rights Reserved and Meta Llama 3 licensed under the Meta
+  Llama 3 Community License, Copyright Meta Platforms, Inc., All Rights Reserved." "Meta Llama 3
+  is licensed under the Meta Llama 3 Community License, Copyright © Meta Platforms, Inc. All
+  Rights Reserved." "Boson Higgs Audio 2 is licensed under the Boson Community License, Copyright
+  © Boson AI USA, Inc. All Rights Reserved." Uso sujeito à Acceptable Use Policy do Llama 3.
+- **VoiceStudio** (`debpalash/VoiceStudio`, AGPL-3.0) é citado só como referência, um programa
+  à parte: nenhum código dele está neste repositório nem no pacote.
+
 ## Outros componentes de terceiros (sem obrigação de atribuição, registrados por clareza)
 
 - `openai/whisper-small` e `openai/whisper-large-v3` — Apache-2.0.

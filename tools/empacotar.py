@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -49,7 +50,13 @@ GRUPOS: Final[tuple[str, ...]] = ("gui", "voz", "asr", "dispositivo", "memoria")
 """O que vai dentro do pacote: a janela, a voz local, o ASR local e o dispositivo de áudio.
 
 `edge` fica de fora de propósito — é extra LGPL de um motor barrado por padrão (ADR-0017), e
-o que não é caminho de produto não é distribuído."""
+o que não é caminho de produto não é distribuído. O OmniVoice nem grupo tem: é de uso pessoal
+(pesos não comerciais, ADR-0039) e mora num venv isolado fora do repositório."""
+
+FORA_DO_PACOTE: Final = frozenset({"omnivoice", "torch", "torchaudio"})
+"""Pacotes que nenhum artefato leva (ADR-0039): a biblioteca do motor de uso pessoal e o
+PyTorch que só ela usa. O empacotador **recusa** montar se a trava exportada ou o AppDir
+instalado tiver qualquer um deles — e a porta de licença confere o mesmo na trava, antes."""
 
 DADOS: Final[tuple[str, ...]] = (
     "licenses",
@@ -227,6 +234,40 @@ def tamanho(caminho: Path) -> str:
     return f"{total / 1_000_000:.1f} MB"
 
 
+def _nome_normalizado(nome: str) -> str:
+    return re.sub(r"[-_.]+", "-", nome).lower()
+
+
+def proibidos_nos_requisitos(requisitos: str) -> list[str]:
+    """Os pacotes de `FORA_DO_PACOTE` numa lista no formato do `uv export` (`nome==versão`)."""
+    achados: list[str] = []
+    for linha in requisitos.splitlines():
+        texto = linha.strip()
+        if not texto or texto.startswith(("#", "-")):
+            continue
+        nome = _nome_normalizado(re.split(r"[\s\[<>=!~;@(,]", texto, maxsplit=1)[0])
+        if nome in FORA_DO_PACOTE:
+            achados.append(nome)
+    return sorted(set(achados))
+
+
+def proibidos_instalados(site_packages: Path) -> list[str]:
+    """Os pacotes de `FORA_DO_PACOTE` instalados numa árvore (pelos `.dist-info`)."""
+    achados = {
+        _nome_normalizado(info.name.removesuffix(".dist-info").rsplit("-", 1)[0])
+        for info in site_packages.rglob("*.dist-info")
+    }
+    return sorted(achados & FORA_DO_PACOTE)
+
+
+def exigir_fora_do_pacote(achados: Sequence[str], onde: str) -> None:
+    if achados:
+        raise Falhou(
+            f"{onde} tem {', '.join(achados)}: é de uso pessoal (pesos não comerciais, "
+            "ADR-0039) e nenhum artefato do Jarvis o leva"
+        )
+
+
 # --- AppDir ---------------------------------------------------------------------------------
 def montar_appdir(lugares: Lugares, *, podar: bool = True) -> Path:
     """A árvore instalável: Python relocável + rodas + dados + lançadores do app e do host."""
@@ -259,6 +300,9 @@ def montar_appdir(lugares: Lugares, *, podar: bool = True) -> Path:
         argumentos += ["--group", grupo]
     argumentos += ["-o", str(requisitos)]
     rodar(argumentos)
+    exigir_fora_do_pacote(
+        proibidos_nos_requisitos(requisitos.read_text(encoding="utf-8")), "a trava exportada"
+    )
     rodar(
         [
             "uv",
@@ -287,6 +331,7 @@ def montar_appdir(lugares: Lugares, *, podar: bool = True) -> Path:
             str(roda),
         ]
     )
+    exigir_fora_do_pacote(proibidos_instalados(lugares.python), "o Python do AppDir")
 
     print("4/6 dados, licenças e ícones", flush=True)
     dados = lugares.usr / "share" / "jarvis"

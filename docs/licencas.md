@@ -25,6 +25,8 @@ Refazer a verificação na origem: `tools/license_gate.py --online`.
 | tts | `coqui/XTTS-v2` | coqui-public-model-license | nao_comercial | barrado | <https://huggingface.co/api/models/coqui/XTTS-v2> | 2026-10-15 |
 | tts | `facebook/mms-tts-por` | CC-BY-NC-4.0 | nao_comercial | barrado | <https://huggingface.co/api/models/facebook/mms-tts-por> | 2026-10-15 |
 | tts | `hexgrad/Kokoro-82M` | Apache-2.0 | permissiva | barrado | <https://huggingface.co/api/models/hexgrad/Kokoro-82M> | 2026-10-15 |
+| tts | `k2-fsa/OmniVoice` | CC-BY-NC | nao_comercial | uso_pessoal | <https://huggingface.co/k2-fsa/OmniVoice/raw/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/README.md> | 2026-10-21 |
+| tts | `k2-fsa/OmniVoice:audio_tokenizer` | Boson Higgs Audio 2 Community License | desconhecida | uso_pessoal | <https://huggingface.co/k2-fsa/OmniVoice/raw/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/audio_tokenizer/LICENSE> | 2026-10-21 |
 | tts | `OuteAI/OuteTTS-0.3-500M` | CC-BY-SA-4.0 | atribuicao | barrado | <https://huggingface.co/api/models/OuteAI/OuteTTS-0.3-500M> | 2026-10-15 |
 | tts | `parler-tts/parler-tts-mini-multilingual-v1.1` | Apache-2.0 | permissiva | candidato | <https://huggingface.co/api/models/parler-tts/parler-tts-mini-multilingual-v1.1> | 2026-10-15 |
 | tts | `rhasspy/piper-voices` | MIT | permissiva | candidato | <https://huggingface.co/api/models/rhasspy/piper-voices> | 2026-10-15 |
@@ -32,6 +34,8 @@ Refazer a verificação na origem: `tools/license_gate.py --online`.
 | vad | `snakers4/silero-vad` | MIT | permissiva | candidato | <https://api.github.com/repos/snakers4/silero-vad/license> | 2026-10-15 |
 
 **Barrados** (verificados e recusados pela ADR-0011): `jinaai/jina-reranker-v2-base-multilingual` (CC-BY-NC-4.0), `coqui/XTTS-v2` (coqui-public-model-license), `facebook/mms-tts-por` (CC-BY-NC-4.0), `hexgrad/Kokoro-82M` (Apache-2.0), `OuteAI/OuteTTS-0.3-500M` (CC-BY-SA-4.0).
+
+**Uso pessoal** (ADR-0039 — não comerciais, **fora** do produto: nunca dependência, nunca no pacote, nunca padrão; o dono instala para si com `tools/instalar_omnivoice.py` e declara o uso pessoal na configuração): `k2-fsa/OmniVoice` (CC-BY-NC), `k2-fsa/OmniVoice:audio_tokenizer` (Boson Higgs Audio 2 Community License).
 
 ## Ferramentas externas
 
@@ -78,6 +82,7 @@ nascem desligados, e campo de termo vazio barra o motor em tempo de execução
 | decisao | `decisao-jev-openrouter` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://typesafe.ai/legal/mca> | 2026-10-17 |
 | tts | `tts-edge` | nuvem | não | LGPL-3.0 | permissiva | extra_opcional | <https://pypi.org/pypi/edge-tts/json> | 2026-10-15 |
 | tts | `tts-elevenlabs` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://elevenlabs.io/terms-of-use> | 2026-10-15 |
+| tts | `tts-omnivoice` | local | não | Apache-2.0 | permissiva | uso_pessoal | <https://pypi.org/pypi/omnivoice/json> | 2026-10-21 |
 | tts | `tts-parametrico` | local | sim | Apache-2.0 | permissiva | em_uso | <https://github.com/SodreDev/jarvis> | 2026-10-15 |
 | tts | `tts-piper-epitran` | local | sim | MIT | permissiva | em_uso | <https://pypi.org/pypi/epitran/json> | 2026-10-15 |
 | tts | `tts-piper-espeak` | local | não | GPL-3.0 | copyleft_forte | fora_do_produto | <https://api.github.com/repos/espeak-ng/espeak-ng/license> | 2026-10-15 |
