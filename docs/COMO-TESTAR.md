@@ -1504,8 +1504,12 @@ uma, `--remover-voz minha`).
 2.8.0+cpu, `omnivoice` 0.2.1, os 11 arquivos de peso com os sha256 do registro, `--verificar`,
 `--estado` "pronto" e a reexecução sem reinstalar nem rebaixar — e a síntese real pelo motor do
 Jarvis rodaram num contêiner podman só com CPU, nunca nesta máquina (os tempos estão em
-`docs/medicoes/omnivoice-cpu-conteiner.md`; a referência era um sinal sintético). Na GPU (a sua
-4060), a qualidade em pt-BR e da clonagem, a latência na sua máquina e o som no alto-falante
+`docs/medicoes/omnivoice-cpu-conteiner.md`; a referência era um sinal sintético). Depois, na
+**GPU** (a sua 4060, driver 595 → `torch 2.8.0+cu128`), o instalador rodou de verdade e o motor
+do Jarvis sintetizou em arquivo: carga de ~9 s, lotes de 10 a 18 palavras em 1,7 a 2,3 s
+(0,22–0,36 do tempo da fala), ~4,1 GB de memória de vídeo
+(`docs/medicoes/omnivoice-gpu-rtx4060.md`; de novo com referência sintética). A qualidade em
+pt-BR e da clonagem com a sua voz, a GPU disputada com um jogo aberto e o som no alto-falante
 **não** foram verificados: são com você.
 
 ## 2. Instalar o aplicativo (AppImage, `.deb`, `.rpm`)
@@ -1612,8 +1616,9 @@ sudo dnf remove jarvis
    `whisper-large-v3` ainda não foram exercitados ao vivo por este código, nem a Groq com a sua
    voz no microfone;
 8. **o OmniVoice na sua máquina** (§1.8): a instalação real e a síntese real na CPU rodaram num
-   contêiner (lenta demais para conversar: 114 a 180 s por lote), mas na GPU, com a sua voz, em
-   pt-BR e no alto-falante, nada foi verificado.
+   contêiner (lenta demais para conversar: 114 a 180 s por lote), e na sua 4060 a instalação e
+   a síntese em arquivo também (1,7 a 2,3 s por lote), mas com a sua voz, em pt-BR, com o jogo
+   aberto e no alto-falante, nada foi verificado.
 
 ## 4. Como reportar
 
