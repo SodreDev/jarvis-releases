@@ -203,7 +203,11 @@ def detectar_dispositivo(
 
 def rodar_de_verdade(argv: Sequence[str], capturar: bool) -> str:
     """`argv` explícito, sem shell. Sem `capturar`, a saída vai para o terminal do dono (o
-    `uv pip install` de GBs mostra o progresso); com, volta como texto."""
+    `uv pip install` de GBs mostra o progresso); com, volta como texto.
+
+    O nosso stdout é descarregado antes: num log (stdout que não é terminal) ele fica em buffer,
+    e o que o `uv` escreve direto apareceria antes do aviso de licença — que veio primeiro."""
+    sys.stdout.flush()
     concluido = subprocess.run(
         list(argv), capture_output=capturar, text=True, check=False, stdin=subprocess.DEVNULL
     )
