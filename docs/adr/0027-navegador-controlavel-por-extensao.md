@@ -220,11 +220,9 @@ A aceitação de 2026-10-18 (Histórico de decisão) trocou o caminho da propost
   `tabs`, `nativeMessaging` e `<all_urls>`, este só pela captura da ADR-0032): ler, clicar e digitar
   são ações no DOM pelo script de conteúdo, que a aceitação equiparou ao clique. Onde o site proíbe
   automação, o mouse e o teclado são os virtuais do sistema (emenda de 2026-10-18).
-- **O indicador (item 4) não foi feito:** não há faixa na página nem ícone em estado "no controle".
-  O que o dono vê é a janela do Jarvis (o andamento do turno e cada pedido de "sim" das ações
-  sensíveis) e, desde a ADR-0036, a janela própria do Jarvis no navegador. O parar é o do Jarvis:
-  interromper cancela o turno (e a ação dele no navegador), e o interruptor da entrada virtual solta
-  o mouse e o teclado. Se a faixa volta é decisão do dono.
+- **O indicador e o parar (item 4)** foram feitos em 2026-10-21 — ver a emenda daquela data,
+  «o indicador e o PARAR». Sem `chrome.debugger`, "anexada" virou "no controle": do primeiro pedido
+  de um objetivo numa aba até o objetivo acabar.
 
 ## Emenda de 2026-10-21 — auditoria da integração: o caso «abra um vídeo no YouTube»
 
@@ -261,3 +259,51 @@ frente, em andamento):
 de dizer que abriu» do cérebro é de outra frente, em andamento); dois perfis/navegadores com a
 extensão ao mesmo tempo (o cliente usa o host mais recente, já dito no handoff); o KWin de verdade
 negando o foco (o resultado diz `visivel: false`, provado só com fakes e com openbox).
+
+## Emenda de 2026-10-21 — o indicador e o PARAR (item 4 feito) e o reuso de abas
+
+**Pedido do dono (2026-10-21):** o item 4 desta ADR — indicador visível e botão de parar — e o
+Jarvis poder listar as abas e reaproveitar a que já tem o site. Como foi feito:
+
+1. **Concessão por objetivo.** Cada objetivo que age no navegador (o pedido do turno, ou o de uma
+   tarefa — ADR-0030 C2, ADR-0038) recebe uma concessão aleatória (`jarvis.navegador.controle`) que
+   vai em todo pedido que lê ou mexe numa aba (`controle`). É o que a extensão usa para saber quais
+   abas estão **no controle** e o que recusar depois de um PARAR.
+2. **O indicador.** Na aba no controle, uma **faixa no topo da página** desenhada pela extensão
+   (`extensao/indicador.js`): shadow DOM **fechado** (os scripts da página não leem nem mexem no que
+   tem dentro), por cima do conteúdo sem empurrá-lo, só o botão recebe clique, nada pede o foco
+   (o botão nem entra na ordem do Tab, e apertá-lo não tira o foco do campo do dono). O script nasce
+   com o documento (`document_start`) e pergunta ao fundo se a aba está no controle: numa aba que o
+   Jarvis navega, a faixa já está na página nova. No botão da extensão, o **selo** «IA» e o título
+   «Jarvis no controle de N abas — clique para parar». Vale para **qualquer** aba controlada,
+   inclusive a que o dono já tinha aberta.
+3. **Soltar.** A faixa e o selo somem quando o Jarvis solta: o objetivo acabou (a vigia vê a fase de
+   concluir e pede `controle.soltar`), ficou 45 s sem agir no navegador, ou o Jarvis sumiu (sem
+   `controle.manter`, a extensão solta sozinha em 30 s). E a faixa confere com o fundo a cada 4 s:
+   se ele não a tem mais no controle (o aviso de soltar se perdeu) ou a extensão foi recarregada ou
+   removida, ela some sozinha — nunca fica presa na página.
+4. **PARAR**, em três lugares: o botão da faixa, o botão da extensão na barra e o botão «parar o
+   navegador» da janela do Jarvis (só aparece depois que a extensão aceitou um pedido: pedido que
+   nem chegou ao navegador não põe nada no controle). O da faixa e o da barra soltam
+   na hora, **revogam** a concessão (a extensão recusa o que vier dela depois, mesmo um pedido que
+   já estava no ar: `parado_pelo_dono`) e mandam o evento `parar` ao host, que o entrega a quem
+   assinou (`eventos.assinar`, a conexão que a vigia mantém aberta). No Jarvis, o evento — ou a
+   recusa, se o evento se perdeu — vira o mecanismo de parar de sempre: as tarefas daquele objetivo
+   são canceladas e o turno, se ainda está no ar, interrompido (epoch). Clique sintético da página
+   (`isTrusted` falso) não para nada.
+5. **Abas do dono e reuso.** `browser.tabs` diz a janela e o estado de cada aba (à vista, ativa
+   noutra janela, segundo plano, janela do Jarvis), e qualquer uma se controla pelo `tab_id`, com o
+   PDP e o risco de sempre. Pedido de **ver** (`quer_ver`) sem `tab_id`: a aba que **já está** na
+   URL só é ativada (sem recarregar); a do **mesmo site** noutra página é navegada; sem nenhuma, a
+   aba atual. Banco, senha, pagamento, mensageiro e e-mail são protegidos: a aba do dono num deles
+   não tem a página trocada (do mesmo site, vem como está — uma segunda aba do WhatsApp Web derruba
+   a primeira; de outro site, o pedido abre numa aba nova). `sites.open` passa pelo mesmo caminho.
+
+A extensão **não ganhou permissão**: o manifesto só passou a declarar o botão (`action`, sem
+popup — o clique é o PARAR) e o segundo script de conteúdo.
+
+**Não feito:** o atalho global de parar. Na janela do Jarvis o PARAR do navegador é o botão
+«parar o navegador» (o Esc interrompe a fala, não a tarefa — ADR-0038). **Não provado:** o KDE de
+verdade (a faixa e o foco foram provados com openbox e com o Firefox headless); o Brave do dono (o
+roteiro usa o Chromium do Fedora); sites que montam o `<html>` de novo a cada navegação interna (a
+faixa volta até 20 vezes por documento e desiste).

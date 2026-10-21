@@ -8,6 +8,12 @@ instante; `page.readUrl` lê um endereço numa aba de fundo, que fecha no fim (a
 ADR-0033); `tabs.navigate` e `tabs.open` só voltam depois de conferir que a aba saiu do lugar e a
 página abriu, e `tabs.show` põe uma aba à vista do dono (auditoria de 2026-10-21). O host valida
 de novo o que o cliente já validou — o socket é uma fronteira, e a extensão não confia em ninguém.
+
+O **controle** (ADR-0027 regra 4): cada pedido que mexe numa aba leva a concessão do objetivo que o
+fez (`controle`); a extensão mostra o indicador "no controle" nas abas dela até o Jarvis soltar
+(`controle.soltar`), o dono apertar PARAR (na faixa da página ou na barra do navegador) ou o Jarvis
+sumir. PARAR revoga a concessão — a extensão recusa o que vier dela depois — e vira um **evento**
+que o host entrega a quem assinou (`eventos.assinar`): é por ele que o turno e a tarefa param.
 """
 
 from __future__ import annotations
@@ -37,29 +43,75 @@ TECLAS: Final = frozenset({"Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"})
 LIMITE_DO_VALOR: Final = 200
 JANELAS: Final = frozenset({"jarvis", "dono"})
 """`tabs.open`: a janela própria do Jarvis, atrás das do dono (ADR-0036), ou a do dono."""
+PADRAO_DA_CONCESSAO: Final = re.compile(r"[a-z0-9]{8,32}")
+"""A concessão de controle de um objetivo: aleatória, gerada pelo Jarvis (`navegador.controle`)."""
+EVENTOS: Final = frozenset({"parar"})
+ORIGENS_DA_PARADA: Final = frozenset({"faixa", "barra"})
+"""Onde o dono apertou PARAR: na faixa desenhada na página, ou no botão da extensão na barra."""
+MAXIMO_DE_CONCESSOES: Final = 32
+ASSINAR: Final = "eventos.assinar"
+"""Atendido pelo próprio host, que segura a conexão e escreve nela os eventos da extensão."""
+COM_CONTROLE: Final = frozenset(
+    {
+        "tabs.navigate",
+        "tabs.open",
+        "tabs.show",
+        "page.read",
+        "page.map",
+        "page.capture",
+        "page.inspect",
+        "page.click",
+        "page.type",
+        "page.act",
+        "page.scroll",
+    }
+)
+"""Pedidos que mexem numa aba (ou a leem): levam a concessão, e a aba mostra o indicador."""
 
 METODOS: Final[dict[str, dict[str, type]]] = {
     # método → parâmetro → tipo (`int` nunca aceita booleano)
     "tabs.list": {},
     "windows.focused": {},
     "tabs.current": {"tabId": int},
-    "tabs.navigate": {"tabId": int, "url": str},
-    "tabs.open": {"url": str, "janela": str},
-    "tabs.show": {"tabId": int},
-    "page.read": {"tabId": int},
-    "page.map": {"tabId": int},
-    "page.capture": {"tabId": int},
+    "tabs.navigate": {"tabId": int, "url": str, "controle": str},
+    "tabs.open": {"url": str, "janela": str, "controle": str},
+    "tabs.show": {"tabId": int, "controle": str},
+    "page.read": {"tabId": int, "controle": str},
+    "page.map": {"tabId": int, "controle": str},
+    "page.capture": {"tabId": int, "controle": str},
     "page.readUrl": {"url": str},
-    "page.inspect": {"tabId": int, "alvo": str, "ref": str},
-    "page.click": {"tabId": int, "alvo": str, "ref": str},
-    "page.type": {"tabId": int, "alvo": str, "ref": str, "texto": str, "limpar": bool},
-    "page.act": {"tabId": int, "alvo": str, "ref": str, "acao": str, "tecla": str, "valor": str},
-    "page.scroll": {"tabId": int, "pixels": int},
+    "page.inspect": {"tabId": int, "alvo": str, "ref": str, "controle": str},
+    "page.click": {"tabId": int, "alvo": str, "ref": str, "controle": str},
+    "page.type": {
+        "tabId": int,
+        "alvo": str,
+        "ref": str,
+        "texto": str,
+        "limpar": bool,
+        "controle": str,
+    },
+    "page.act": {
+        "tabId": int,
+        "alvo": str,
+        "ref": str,
+        "acao": str,
+        "tecla": str,
+        "valor": str,
+        "controle": str,
+    },
+    "page.scroll": {"tabId": int, "pixels": int, "controle": str},
+    "controle.soltar": {"controle": str},
+    "controle.manter": {"controle": str},
+    "controle.parar": {},
+    "controle.estado": {},
+    ASSINAR: {},
 }
 OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "tabs.navigate": frozenset({"url"}),
     "tabs.open": frozenset({"url"}),
     "tabs.show": frozenset({"tabId"}),
+    "controle.soltar": frozenset({"controle"}),
+    "controle.manter": frozenset({"controle"}),
     "page.readUrl": frozenset({"url"}),
     "page.type": frozenset({"texto"}),
     "page.act": frozenset({"acao"}),
@@ -139,6 +191,8 @@ def validar_pedido(bruto: object) -> PedidoDaPonte:
         _tamanho("valor", params["valor"], LIMITE_DO_VALOR)
     if "janela" in params and params["janela"] not in JANELAS:
         raise PedidoInvalido(f"janela fora da lista: {sorted(JANELAS)}")
+    if "controle" in params and not PADRAO_DA_CONCESSAO.fullmatch(params["controle"]):
+        raise PedidoInvalido("controle fora do formato da concessão")
     if "texto" in params:
         _tamanho("texto", params["texto"], LIMITE_DO_TEXTO)
     if "pixels" in params and abs(params["pixels"]) > LIMITE_DO_DESLOCAMENTO:
@@ -174,3 +228,21 @@ def validar_resposta(bruta: object) -> dict[str, Any]:
             "mensagem": str(erro.get("mensagem", ""))[:300],
         },
     }
+
+
+def validar_evento(bruto: object) -> dict[str, Any]:
+    """Um evento que a extensão manda por conta própria (não é resposta): hoje, só o PARAR do dono.
+    `{evento: "parar", concessoes: [...], origem: "faixa" | "barra"}` — nada além disso."""
+    if not isinstance(bruto, dict) or bruto.get("evento") not in EVENTOS:
+        raise PedidoInvalido("evento fora da lista")
+    concessoes = bruto.get("concessoes", [])
+    if (
+        not isinstance(concessoes, list)
+        or len(concessoes) > MAXIMO_DE_CONCESSOES
+        or not all(isinstance(c, str) and PADRAO_DA_CONCESSAO.fullmatch(c) for c in concessoes)
+    ):
+        raise PedidoInvalido("concessões do evento fora do formato")
+    origem = bruto.get("origem")
+    if origem not in ORIGENS_DA_PARADA:
+        raise PedidoInvalido("origem da parada fora da lista")
+    return {"evento": str(bruto["evento"]), "concessoes": list(concessoes), "origem": origem}

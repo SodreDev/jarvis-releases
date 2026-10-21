@@ -8,7 +8,12 @@ from typing import Any
 
 import pytest
 
-from jarvis.navegador.protocolo import PedidoInvalido, validar_pedido, validar_resposta
+from jarvis.navegador.protocolo import (
+    PedidoInvalido,
+    validar_evento,
+    validar_pedido,
+    validar_resposta,
+)
 from jarvis.navegador.quadro import QuadroInvalido, codificar, ler_quadro
 
 
@@ -128,3 +133,40 @@ def test_resposta_so_tem_o_formato_do_contrato() -> None:
     for ruim in ({"id": "a"}, {"id": "a", "ok": True}, {"id": "a", "ok": False}, "texto"):
         with pytest.raises(PedidoInvalido):
             validar_resposta(ruim)
+
+
+# --- o controle (ADR-0027 regra 4) ---------------------------------------------------------------
+def test_a_concessao_vai_nos_pedidos_que_mexem_na_aba_e_so_no_formato() -> None:
+    assert validar_pedido(_pedido("page.read", tabId=7, controle="a1b2c3d4e5f60708")).params == {
+        "tabId": 7,
+        "controle": "a1b2c3d4e5f60708",
+    }
+    assert validar_pedido(_pedido("controle.soltar", controle="a1b2c3d4")).method == (
+        "controle.soltar"
+    )
+    assert validar_pedido(_pedido("controle.parar")).method == "controle.parar"
+    assert validar_pedido(_pedido("eventos.assinar")).method == "eventos.assinar"
+    for ruim in ("curta", "COM-MAIUSCULA-E-TRACO", "a" * 33, "../../etc"):
+        with pytest.raises(PedidoInvalido, match="concessão"):
+            validar_pedido(_pedido("page.read", tabId=7, controle=ruim))
+    with pytest.raises(PedidoInvalido, match="fora do contrato"):
+        validar_pedido(_pedido("tabs.list", controle="a1b2c3d4"))  # listar não é controlar
+    with pytest.raises(PedidoInvalido, match="falta"):
+        validar_pedido(_pedido("controle.soltar"))
+
+
+def test_o_evento_da_extensao_e_so_o_parar_do_dono() -> None:
+    bom = {"evento": "parar", "concessoes": ["a1b2c3d4e5f60708"], "origem": "barra"}
+    assert validar_evento(bom) == bom
+    assert validar_evento({**bom, "extra": 1}) == bom, "o que sobra não passa adiante"
+    ruins: tuple[object, ...] = (
+        {**bom, "evento": "clicar"},
+        {**bom, "origem": "pagina"},
+        {**bom, "concessoes": "a1b2c3d4"},
+        {**bom, "concessoes": ["x"]},
+        {**bom, "concessoes": ["a1b2c3d4"] * 33},
+        [],
+    )
+    for ruim in ruins:
+        with pytest.raises(PedidoInvalido):
+            validar_evento(ruim)

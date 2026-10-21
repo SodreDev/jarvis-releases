@@ -90,6 +90,8 @@ class SessaoDeVoz:
     trabalho, como as outras."""
     """A fila de avisos do laço mudou (ADR-0025). Chamada da thread de trabalho."""
     ao_mudar_tarefas: Callable[[], None] = lambda: None
+    ao_mudar_navegador: Callable[[bool], None] = lambda _ativo: None
+    """O Jarvis passou a controlar (ou soltou) uma aba do navegador: a janela mostra o PARAR."""
     """Uma tarefa em segundo plano mudou (ADR-0022). Chamada da linha **da tarefa**."""
     escuta: Escuta | None = None
     """O modo de escuta vivo, de quem abriu a sessão (a ponte). Trocá-lo vale no próximo tique
@@ -141,6 +143,7 @@ class SessaoDeVoz:
         aplicativo.ao_mudar_estado = self.ao_estado
         aplicativo.ao_mudar_avisos = self.ao_mudar_avisos
         aplicativo.ao_mudar_tarefas = self.ao_mudar_tarefas
+        aplicativo.ao_mudar_navegador = self.ao_mudar_navegador
         aplicativo.ao_pedaco = self.ao_pedaco
         aplicativo.ao_pedir_confirmacao = self.ao_pedir_confirmacao
         aplicativo.ao_fim_da_confirmacao = self.ao_fim_da_confirmacao
@@ -172,6 +175,16 @@ class SessaoDeVoz:
 
     def interromper(self) -> None:
         self.teclado.apertar(ESPACO)
+
+    def parar_navegador(self) -> None:
+        """O PARAR do navegador na janela (ADR-0027 regra 4): solta as abas e cancela o turno e as
+        tarefas que estavam nelas. Numa linha à parte: falar com a extensão não trava a janela."""
+        aplicativo = self.aplicativo
+        if aplicativo is None:
+            return
+        threading.Thread(
+            target=aplicativo.parar_navegador, name="jarvis-parar-navegador", daemon=True
+        ).start()
 
     def digitar(self, texto: str) -> None:
         linha = texto.strip()

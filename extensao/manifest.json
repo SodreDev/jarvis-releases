@@ -6,11 +6,20 @@
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2iM3uG+TqNr/TeAMNdYYabJfBcIcmm9uqoWXaYrLYFYib9XPE0ntJQomvoL0mvKMLSo7pVIvbxwYbOKl7Dkz8rAaEc8iHNmi0TLemWdaigdf9Kuc1uyZxgQGYf9TLVNzaj+GAaW9wuwGPbindkyaslyTJZ/HuqclDHZ8DCC+ON4HtrXgOIOIAaGv4UrmP6/jLCg9xAKkIiD1vdFGunTRxhvk+sO9w3nxSvjaBMjjYeqB2luUZe5YB/rN3fKAXCwm2BzGHo19OngPCwtYyVBu3viIK9VYQpdleOJS9mwxDuPxP7Scn+u9oKmjDysk4IwuwJGan0gwui/M5a1R21gvXQIDAQAB",
   "permissions": ["activeTab", "tabs", "nativeMessaging"],
   "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Jarvis — ponte local, sem controlar nenhuma aba"
+  },
   "background": {
     "service_worker": "background.js",
     "scripts": ["background.js"]
   },
   "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["indicador.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": ["content.js"],

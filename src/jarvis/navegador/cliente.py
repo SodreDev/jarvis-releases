@@ -7,23 +7,29 @@ extensão devolve é conteúdo de terceiro — este módulo só o repassa, trunc
 
 from __future__ import annotations
 
+import itertools
+import json
 import os
+import select
 import socket
 import stat
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
 from jarvis.navegador.host import PRAZO_S, pasta_dos_sockets
 from jarvis.navegador.protocolo import (
+    ASSINAR,
+    COM_CONTROLE,
     LIMITE_DA_RESPOSTA,
     LIMITE_DO_PEDIDO,
     PedidoDaPonte,
     PedidoInvalido,
+    validar_evento,
     validar_pedido,
     validar_resposta,
 )
-from jarvis.navegador.quadro import QuadroInvalido, escrever_quadro, ler_quadro
+from jarvis.navegador.quadro import CABECALHO, QuadroInvalido, escrever_quadro, ler_quadro
 
 
 def familia_do_host(principal: str) -> str:
@@ -132,6 +138,31 @@ class TransporteUnix:
             "confira se a extensão está instalada"
         )
 
+    def assinar(self, navegador: str = "") -> AssinaturaUnix:
+        """Uma conexão que fica aberta recebendo os eventos da extensão (o PARAR do dono): no host
+        mais recente daquela família, como os pedidos."""
+        for caminho in self._soquetes(navegador):
+            conexao = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                conexao.settimeout(self._prazo_s)
+                conexao.connect(str(caminho))
+                pedido = PedidoDaPonte(f"a{os.getpid()}", ASSINAR, {})
+                with conexao.makefile("wb") as saida:
+                    escrever_quadro(saida, pedido.como_objeto(), LIMITE_DO_PEDIDO)
+                assinatura = AssinaturaUnix(conexao)
+                resposta = validar_resposta(assinatura.quadro(self._prazo_s))
+            except (ConnectionRefusedError, FileNotFoundError):
+                conexao.close()
+                continue
+            except (OSError, QuadroInvalido, PedidoInvalido, NavegadorIndisponivel) as erro:
+                conexao.close()
+                raise NavegadorIndisponivel(f"o host não aceitou a assinatura: {erro}") from None
+            if not resposta["ok"]:
+                conexao.close()
+                raise NavegadorIndisponivel(f"o host recusou a assinatura: {resposta['error']}")
+            return assinatura
+        raise NavegadorIndisponivel("nenhum navegador com a extensão do Jarvis está aberto")
+
     def _bater(self, caminho: Path, pedido: PedidoDaPonte) -> dict[str, Any]:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conexao:
             conexao.settimeout(self._prazo_s)
@@ -144,6 +175,66 @@ class TransporteUnix:
         return validar_resposta(bruta)
 
 
+class AssinaturaUnix:
+    """A conexão de eventos com o host: quadros lidos à mão do socket, com espera por `select` —
+    um tempo esgotado no meio de um quadro bufferizado embaralharia o fluxo."""
+
+    def __init__(self, conexao: socket.socket) -> None:
+        self._conexao = conexao
+        self._resto = bytearray()
+
+    def _completo(self) -> dict[str, Any] | None:
+        if len(self._resto) < CABECALHO.size:
+            return None
+        (tamanho,) = CABECALHO.unpack(self._resto[: CABECALHO.size])
+        if tamanho > LIMITE_DA_RESPOSTA:
+            raise NavegadorIndisponivel("quadro de evento grande demais")
+        if len(self._resto) < CABECALHO.size + tamanho:
+            return None
+        corpo = bytes(self._resto[CABECALHO.size : CABECALHO.size + tamanho])
+        del self._resto[: CABECALHO.size + tamanho]
+        try:
+            objeto = json.loads(corpo.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise NavegadorIndisponivel("evento que não é JSON") from None
+        if not isinstance(objeto, dict):
+            raise NavegadorIndisponivel("evento que não é objeto")
+        return objeto
+
+    def quadro(self, segundos: float) -> dict[str, Any] | None:
+        """O próximo quadro em até `segundos`, ou `None`; conexão fechada: NavegadorIndisponivel."""
+        pronto = self._completo()
+        if pronto is not None:
+            return pronto
+        legiveis, _, _ = select.select([self._conexao], [], [], max(0.0, segundos))
+        if not legiveis:
+            return None
+        pedaco = self._conexao.recv(65536)
+        if not pedaco:
+            raise NavegadorIndisponivel("o host fechou a conexão de eventos")
+        self._resto.extend(pedaco)
+        return self._completo()
+
+    def esperar(self, segundos: float) -> list[dict[str, Any]]:
+        """Os eventos válidos que chegaram em até `segundos`; inválidos são descartados."""
+        eventos: list[dict[str, Any]] = []
+        for bruto in self._quadros(segundos):
+            try:
+                eventos.append(validar_evento(bruto))
+            except PedidoInvalido:
+                continue
+        return eventos
+
+    def _quadros(self, segundos: float) -> Iterator[dict[str, Any]]:
+        primeiro = self.quadro(segundos)
+        while primeiro is not None:
+            yield primeiro
+            primeiro = self.quadro(0.0)
+
+    def fechar(self) -> None:
+        self._conexao.close()
+
+
 class ClienteDoNavegador:
     """Um método por comando da extensão, com o contrato do `protocolo`."""
 
@@ -154,16 +245,31 @@ class ClienteDoNavegador:
         novo_id: Callable[[], str] | None = None,
     ) -> None:
         self._transporte = transporte
-        self._contador = 0
+        self._contador = itertools.count(1)
         self._novo_id = novo_id or self._sequencial
         self.navegador = ""
         """Para falar com um só (`firefox` | `chromium`); vazio = o que abriu por último."""
+        self.concessao: str | None = None
+        """O controle do objetivo que pediu (`sob`): vai em todo pedido que mexe numa aba."""
 
     def _sequencial(self) -> str:
-        self._contador += 1
-        return f"j{os.getpid()}-{self._contador}"
+        return f"j{os.getpid()}-{next(self._contador)}"
+
+    @property
+    def transporte(self) -> Transporte:
+        return self._transporte
+
+    def sob(self, concessao: str | None) -> ClienteDoNavegador:
+        """O mesmo cliente (transporte, navegador e ids) falando em nome de uma concessão de
+        controle: cada linha (o turno, cada tarefa) usa a sua cópia, sem disputar um atributo."""
+        copia = ClienteDoNavegador(self._transporte, novo_id=self._novo_id)
+        copia.navegador = self.navegador
+        copia.concessao = concessao
+        return copia
 
     def chamar(self, metodo: str, **params: Any) -> dict[str, Any]:
+        if metodo in COM_CONTROLE and self.concessao is not None and "controle" not in params:
+            params["controle"] = self.concessao
         pedido = validar_pedido(
             {
                 "id": self._novo_id(),

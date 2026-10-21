@@ -4,10 +4,12 @@ title: Abrir um site
 description: >-
   Abre um endereço http ou https no navegador principal que o dono configurou (ou no padrão do desktop, se ele
   não configurou). Use quando o dono pedir para abrir uma página; só diga `navegador` se ele pedir um navegador
-  específico e for um dos que ele configurou. Por padrão troca a URL da aba atual (com a extensão do Jarvis
-  conectada); `nova_aba: true` só quando o dono pedir nova aba. Abre sem perguntar; só confirma, na tela, se neste
-  turno você leu um arquivo ou página e o endereço não é de um site que o dono liberou. Não lê a página, não abre
-  outro esquema (arquivo, javascript, dados) e não aceita URL com senha.
+  específico e for um dos que ele configurou. Com a extensão do Jarvis conectada, reaproveita a aba que já tem a
+  página (só ativa) ou o site (navega nela); senão, troca a URL da aba atual — e a página termina à vista do
+  dono, conferida (página que não abre volta como erro). `nova_aba: true` só quando o dono pedir nova aba. Abre
+  sem perguntar; só confirma, na tela, se neste turno você leu um arquivo ou página e o endereço não é de um site
+  que o dono liberou. Não lê a página, não abre outro esquema (arquivo, javascript, dados) e não aceita URL com
+  senha.
 input_schema:
   type: object
   additionalProperties: false

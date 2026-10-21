@@ -650,6 +650,9 @@ async function responder(mensagem, remetente) {
 }
 
 api.runtime.onMessage.addListener((mensagem, remetente, enviarResposta) => {
+  if (typeof mensagem?.comando !== "string") {
+    return false; // a faixa do controle é do indicador.js, que responde ela mesma
+  }
   responder(mensagem, remetente).then(enviarResposta);
   return true;
 });

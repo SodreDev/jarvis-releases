@@ -82,6 +82,9 @@ export class NavegadorFalso {
     this.portas = [];
     this.onUpdated = new EventoFalso();
     this.onRemoved = new EventoFalso();
+    this.onMessage = new EventoFalso();
+    this.onClicked = new EventoFalso();
+    this.selo = { texto: "", cor: "", titulo: "" };
     for (const janela of janelas) {
       this.janelas.set(janela.id, { id: janela.id, tipo: janela.tipo ?? "normal" });
       for (const [indice, aba] of (janela.abas ?? []).entries()) {
@@ -140,6 +143,11 @@ export class NavegadorFalso {
     aba.url = url;
     aba.erro = this.semRede.has(host);
     aba.title = aba.erro ? host : `Página de ${host}`;
+    if (!aba.erro) {
+      // O indicador.js da página nova pergunta ao nascer se a aba está no controle.
+      const resposta = await this.conteudoDiz(id, { tipo: "controle?" });
+      aba.faixa = resposta?.ligado === true;
+    }
     aba.status = "complete";
     this.onUpdated.emitir(id, { status: "complete" }, { ...aba });
   }
@@ -147,6 +155,10 @@ export class NavegadorFalso {
   responderDoConteudo(aba, mensagem) {
     if (aba.erro || !/^https?:/u.test(aba.url)) {
       throw new Error("Could not establish connection. Receiving end does not exist.");
+    }
+    if (mensagem.indicador) {
+      aba.faixa = mensagem.indicador.ligado === true; // o indicador.js da página
+      return { ligado: aba.faixa };
     }
     if (mensagem.comando === "estado") {
       return { ok: true, result: { url: aba.url, titulo: aba.title } };
@@ -157,12 +169,24 @@ export class NavegadorFalso {
   api() {
     const nav = this;
     return {
+      action: {
+        async setBadgeText({ text }) {
+          nav.selo.texto = text;
+        },
+        async setBadgeBackgroundColor({ color }) {
+          nav.selo.cor = color;
+        },
+        async setTitle({ title }) {
+          nav.selo.titulo = title;
+        },
+        onClicked: nav.onClicked,
+      },
       runtime: {
         id: "teste",
         lastError: undefined,
         onStartup: new EventoFalso(),
         onInstalled: new EventoFalso(),
-        onMessage: new EventoFalso(),
+        onMessage: nav.onMessage,
         getURL: (caminho) => `${ORIGEM}${caminho}`,
         connectNative() {
           const porta = new PortaFalsa();
@@ -291,17 +315,44 @@ export class NavegadorFalso {
         },
         async sendMessage(id, mensagem) {
           nav.mensagens.push({ tabId: id, mensagem: JSON.parse(JSON.stringify(mensagem)) });
-          return nav.responderDoConteudo(nav.aba(id), mensagem);
+          nav.aba(id); // aba que não existe: o erro do navegador
+          return nav.responderDoConteudo(nav.abas.get(id), mensagem);
         },
       },
     };
   }
 
+  /** O conteúdo de uma aba (o indicador.js) manda uma mensagem ao fundo e espera a resposta. */
+  conteudoDiz(tabId, mensagem, remetente = { id: "teste", tab: { id: tabId } }) {
+    return new Promise((resolve) => {
+      let respondida = false;
+      for (const listener of [...this.onMessage.listeners]) {
+        listener(mensagem, remetente, (resposta) => {
+          respondida = true;
+          resolve(JSON.parse(JSON.stringify(resposta ?? null)));
+        });
+      }
+      if (!respondida) {
+        setTimeout(() => resolve(undefined), 5);
+      }
+    });
+  }
+
+  /** As mensagens da faixa que o fundo mandou a uma aba, em ordem. */
+  faixas(tabId) {
+    return this.mensagens
+      .filter((m) => m.tabId === tabId && m.mensagem.indicador)
+      .map((m) => m.mensagem.indicador.ligado);
+  }
+
   /** Carrega o `background.js` numa VM nova sobre este navegador (de novo = o worker reiniciou). */
   carregarFundo({ escala = 50 } = {}) {
+    // O relógio do fundo anda na mesma escala dos prazos encolhidos.
+    const zero = Date.now();
+    const relogio = { now: () => zero + (Date.now() - zero) * escala };
     const contexto = vm.createContext({
       URL,
-      Date,
+      Date: relogio,
       Math,
       chrome: this.api(),
       console: { warn() {}, log() {} },

@@ -10,8 +10,8 @@ Política desta capacidade (decidida no repositório, nunca pelo modelo):
   tier: livre
   risco: leitura · confirmação: never · egress: none
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
-  pós-condição verificada pelo executor: a lista vem da extensão do Jarvis, só de abas http e https,
-    com no máximo 40 entradas
+  pós-condição verificada pelo executor: a lista vem da extensão do Jarvis, com a janela e o estado
+    de cada aba, no máximo 40 entradas
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ IDEMPOTENCY: Final = "not_required"
 TIMEOUT_MS: Final = 8000
 ROOTS: Final[tuple[str, ...]] = ()
 POSTCONDITION: Final = (
-    "a lista vem da extensão do Jarvis, só de abas http e https, com no máximo 40 entradas"
+    "a lista vem da extensão do Jarvis, com a janela e o estado de cada aba, no máximo 40 entradas"
 )
 
 

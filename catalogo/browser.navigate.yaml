@@ -4,8 +4,9 @@ title: Levar uma aba para um endereço
 description: >-
   Leva uma aba a uma URL http ou https, no navegador do dono, já logado, e só responde depois de conferir que a
   aba saiu do lugar e a página abriu: página que não abre (sem internet, erro do site) volta como erro, dito como
-  é. Quando o dono pediu para abrir ou mostrar, vai na aba atual dele (ou na que `tab_id` disser) e a página
-  termina à vista — `visivel` diz se ficou. Trabalho que ele não pediu para ver (pesquisar, ler, conferir) vai
+  é. Quando o dono pediu para abrir ou mostrar, reaproveita a aba dele que já tem a página (só ativa) ou o site
+  (navega nela), senão vai na aba atual (ou na que `tab_id` disser), e a página termina à vista — `visivel` diz
+  se ficou, `reutilizou` diz como. Trabalho que ele não pediu para ver (pesquisar, ler, conferir) vai
   numa aba da janela do Jarvis, atrás das dele, sem tirar o foco nem trocar a aba dele — `janela` diz onde.
   `nova_aba: true` só quando o dono pedir nova aba; `segundo_plano: true` manda para a janela do Jarvis. Sem
   `tab_id`, as outras browser.* agem na aba em que você está trabalhando neste pedido. Não aceita usuário nem

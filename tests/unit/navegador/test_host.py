@@ -65,6 +65,10 @@ class Navegador:
         self._host.join(5)
         self._extensao.join(5)
 
+    def evento(self, dados: dict[str, Any]) -> None:
+        """A extensão falando por conta própria (o PARAR do dono), sem pedido nenhum."""
+        escrever_quadro(self._para_o_host, dados, 1_000_000)
+
     def _servir(self) -> None:
         while True:
             try:
@@ -241,3 +245,81 @@ def test_host_nao_tem_porta_de_rede() -> None:
         texto = arquivo.read_text(encoding="utf-8")
         for palavra in proibidos:
             assert palavra not in texto, f"{arquivo.name} usa {palavra}"
+
+
+# --- o PARAR do dono: evento da extensão para quem assinou (ADR-0027 regra 4) ---------------------
+PARAR = {"evento": "parar", "concessoes": ["a1b2c3d4e5f60708"], "origem": "faixa"}
+
+
+def test_o_parar_da_extensao_chega_a_quem_assinou(
+    navegador: Callable[[Extensao, float], Navegador],
+) -> None:
+    nav = navegador(_ecoa, 5.0)
+    assinatura = TransporteUnix(nav.pasta).assinar()
+    try:
+        nav.evento(PARAR)
+        recebidos = assinatura.esperar(3.0)
+    finally:
+        assinatura.fechar()
+
+    assert recebidos == [PARAR]
+    assert all(p["method"] != "eventos.assinar" for p in nav.recebidos), "o host atende sozinho"
+
+
+def test_evento_fora_do_vocabulario_nao_chega_a_ninguem(
+    navegador: Callable[[Extensao, float], Navegador],
+) -> None:
+    nav = navegador(_ecoa, 5.0)
+    assinatura = TransporteUnix(nav.pasta).assinar()
+    try:
+        nav.evento({"evento": "abrir", "concessoes": [], "origem": "faixa"})
+        nav.evento({"evento": "parar", "concessoes": ["NÃO É"], "origem": "faixa"})
+        nav.evento({"evento": "parar", "concessoes": [], "origem": "página"})
+        nav.evento(PARAR)  # o único válido
+        recebidos = assinatura.esperar(3.0)
+    finally:
+        assinatura.fechar()
+
+    assert recebidos == [PARAR]
+
+
+def test_os_pedidos_continuam_com_alguem_assinado(
+    navegador: Callable[[Extensao, float], Navegador],
+) -> None:
+    nav = navegador(_ecoa, 5.0)
+    transporte = TransporteUnix(nav.pasta)
+    assinatura = transporte.assinar()
+    try:
+        resposta = ClienteDoNavegador(transporte).chamar("page.read", tabId=3)
+    finally:
+        assinatura.fechar()
+
+    assert resposta == {"metodo": "page.read", "p": {"tabId": 3}}
+
+
+def test_assinantes_demais_sao_recusados(
+    navegador: Callable[[Extensao, float], Navegador],
+) -> None:
+    nav = navegador(_ecoa, 5.0)
+    transporte = TransporteUnix(nav.pasta)
+    abertas = [transporte.assinar() for _ in range(host.MAXIMO_DE_ASSINANTES)]
+    try:
+        with pytest.raises(NavegadorIndisponivel, match="recusou"):
+            transporte.assinar()
+    finally:
+        for assinatura in abertas:
+            assinatura.fechar()
+
+
+def test_o_navegador_que_fecha_acorda_quem_espera_eventos(
+    navegador: Callable[[Extensao, float], Navegador],
+) -> None:
+    nav = navegador(_ecoa, 5.0)
+    assinatura = TransporteUnix(nav.pasta).assinar()
+    try:
+        nav.fechar()
+        with pytest.raises(NavegadorIndisponivel):
+            for _ in range(20):
+                assinatura.esperar(0.5)
+    finally:
+        assinatura.fechar()

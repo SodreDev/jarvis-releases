@@ -334,6 +334,8 @@ Rectangle {
             microfone: ponte ? ponte.microfone : ({})
             atalho: ponte ? ponte.escuta.atalho : ""
             temConversa: ponte ? ponte.transcricao.length > 0 : false
+            navegadorNoControle: ponte ? ponte.navegadorNoControle : false
+            onPararNavegador: ponte.pararNavegador()
             onRecomecou: ponte.novaConversa()
             onEnviou: function (texto) { ponte.enviarTexto(texto); tela.forceActiveFocus() }
             onDevolveuOFoco: tela.forceActiveFocus()

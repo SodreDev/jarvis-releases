@@ -1113,6 +1113,52 @@ consegui: …» em vez de "abri". **Provado** com extensão falsa e motor roteir
 **Não provado:** o `claude -p` de verdade cumprindo a tarefa e o YouTube de verdade. No terminal
 (`jarvis-voz --texto`), a resposta da tarefa sai junto da sua próxima mensagem.
 
+### 0.21 «Jarvis no controle»: a faixa na página, o PARAR e as abas reaproveitadas (2026-10-21, ADR-0027 regra 4)
+
+Enquanto o Jarvis lê ou mexe numa aba — inclusive uma que **você** já tinha aberta —, aparece no
+topo da página uma faixa **«● Jarvis no controle desta aba»** com o botão **Parar**, e o botão da
+extensão na barra do navegador ganha o selo **IA**. A faixa é desenhada pela extensão, por cima da
+página (não empurra nada, não pega o foco, e a página não consegue ler nem apagar o que tem dentro)
+e **some sozinha** quando o Jarvis termina o pedido (ou fica 45 s sem mexer no navegador); se
+você recarregar a extensão com a faixa na tela, ela some em poucos segundos.
+
+**Parar**, em três lugares — todos soltam o navegador na hora e cancelam o que o Jarvis fazia nele
+(o turno em andamento e a tarefa daquele pedido):
+
+- o botão **Parar** da faixa;
+- o botão da extensão na barra do navegador (com o selo IA, clicar nele é parar; se ele estiver
+  escondido no menu de extensões, fixe-o);
+- o botão **«parar o navegador»** na barra da conversa da janela do Jarvis, que só aparece
+  enquanto ele controla alguma aba.
+
+**Abas reaproveitadas.** «Abre o g1» com o g1 já aberto numa aba: ele só ativa essa aba (sem
+recarregar). Com o g1 aberto noutra página: navega aquela aba. Sem nenhuma: a aba atual, como antes.
+A sua aba de banco, senha, pagamento, mensageiro ou e-mail **não tem a página trocada**: do mesmo
+site ela vem como está (uma segunda aba do WhatsApp Web derrubaria a primeira); de outro site, o
+pedido abre numa aba nova. «Quais abas eu tenho abertas?» agora diz a janela e o estado de cada uma
+(à vista, em segundo plano, na janela do Jarvis), e ele pode ler ou controlar qualquer uma.
+
+**Recarregue a extensão** (código novo e um arquivo novo, `indicador.js`): no repositório,
+`uv run jarvis-native-host --instalar`, **Recarregar** em `brave://extensions`, F5 nas abas que já
+estavam abertas (a faixa só aparece em página carregada depois da extensão nova) e reinicie o
+`uv run jarvis`. **Como conferir:** «abre o YouTube e procura um vídeo de gatos» → a faixa aparece
+no YouTube enquanto ele trabalha e some quando ele termina; peça de novo e aperte **Parar** na
+faixa no meio → ele para e a faixa some.
+
+**Provado em contêiner** (`uv run --frozen python -m tools.harness_navegador`, Chromium 155 e
+Firefox 158, 34/34 cada): a **faixa medida pela própria página** em toda página da aba enquanto o
+Jarvis controla — apareceu 2 a 9 ms depois de cada página nascer, nunca sumiu no meio e saiu em até
+0,25 s depois de ele soltar (medido: 12 a 210 ms); **PARAR com clique de verdade** na faixa (`Input`
+do CDP no Chromium, ações do Marionette no Firefox): a faixa some, o turno é cancelado (epoch) e o
+pedido parado não age mais, e o seguinte volta a agir; os **3 casos de reuso** (a página já aberta
+numa aba de trás só é ativada; mesmo site noutra página navega a aba existente; site novo abre na
+aba atual, sem aba nova). **Não provado:** o Brave e o KDE de verdade; o botão da barra clicado de
+verdade (só nos testes do fundo, com navegador falso); site que monta o `<html>` de novo a cada
+navegação interna (a faixa volta até 20 vezes por página). **Não feito:** atalho global de parar.
+Testes: `tests/unit/navegador/background_controle.test.mjs`, `indicador.test.mjs`,
+`test_controle.py`, `test_host.py`, `test_ferramentas_browser.py`, `test_ligacao_ao_app.py`,
+`tests/unit/gui/test_parar_navegador_na_janela.py`.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

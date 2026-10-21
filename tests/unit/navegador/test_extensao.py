@@ -16,6 +16,8 @@ EXTENSAO = RAIZ / "extensao"
 TESTE_RECONEXAO = Path(__file__).with_name("background_reconexao.test.mjs")
 TESTE_RESPOSTAS = Path(__file__).with_name("background_respostas.test.mjs")
 TESTE_NAVEGACAO = Path(__file__).with_name("background_navegacao.test.mjs")
+TESTE_CONTROLE = Path(__file__).with_name("background_controle.test.mjs")
+TESTE_INDICADOR = Path(__file__).with_name("indicador.test.mjs")
 
 
 def _json(nome: str) -> dict[str, object]:
@@ -41,8 +43,19 @@ def test_manifesto_mv3_pina_ids_e_so_age_em_paginas_http() -> None:
     # http/https; página interna do navegador o Chromium nem deixa capturar com esta permissão.
     assert hosts == ["<all_urls>"]
     conteudos = manifesto["content_scripts"]
-    assert isinstance(conteudos, list) and len(conteudos) == 1
-    assert conteudos[0]["matches"] == ["http://*/*", "https://*/*"]
+    assert isinstance(conteudos, list)
+    # A faixa "no controle" nasce com o documento (indicador.js), antes da página; o resto do
+    # conteúdo, quando ela termina. Os dois só em http/https e só no quadro principal.
+    assert [(c["js"], c["run_at"]) for c in conteudos] == [
+        (["indicador.js"], "document_start"),
+        (["content.js"], "document_idle"),
+    ]
+    assert all(c["matches"] == ["http://*/*", "https://*/*"] for c in conteudos)
+    assert all(c["all_frames"] is False for c in conteudos)
+    # O botão da extensão é o PARAR (sem popup: o clique vai para o fundo) e mostra o selo.
+    assert manifesto["action"] == {
+        "default_title": "Jarvis — ponte local, sem controlar nenhuma aba"
+    }
     fundo = (EXTENSAO / "background.js").read_text(encoding="utf-8")
     assert '"aba_nao_http"' in fundo
     assert manifesto["browser_specific_settings"] == {
@@ -83,6 +96,10 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
         "tabs.open",
         "tabs.navigate",
         "tabs.show",
+        "controle.soltar",
+        "controle.manter",
+        "controle.parar",
+        "controle.estado",
         "page.read",
         "page.inspect",
         "page.click",
@@ -107,11 +124,14 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
 
 
 @pytest.mark.parametrize(
-    "roteiro", [TESTE_RECONEXAO, TESTE_RESPOSTAS, TESTE_NAVEGACAO], ids=lambda p: p.stem
+    "roteiro",
+    [TESTE_RECONEXAO, TESTE_RESPOSTAS, TESTE_NAVEGACAO, TESTE_CONTROLE, TESTE_INDICADOR],
+    ids=lambda p: p.stem,
 )
 def test_comportamento_do_fundo_com_porta_e_abas_falsas(roteiro: Path) -> None:
-    """Reconexão (uma porta, um timer), a forma do que vai ao host (resultado plano) e a navegação
-    conferida: a aba saiu do lugar, a página abriu, e se ela ficou à vista do dono."""
+    """Reconexão (uma porta, um timer), a forma do que vai ao host (resultado plano), a navegação
+    conferida (a aba saiu do lugar, a página abriu, ficou à vista?) e o controle: a faixa, o selo e
+    o PARAR (ADR-0027 regra 4)."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js não está disponível para o teste comportamental da extensão")

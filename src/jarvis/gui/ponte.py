@@ -197,6 +197,9 @@ class Ponte(QObject):
     avisoDoAtalho = Signal(str)
     avisosMudaram = Signal()
     tarefasMudaram = Signal()
+    navegadorMudou = Signal(bool)
+    """O Jarvis passou a controlar (ou soltou) uma aba: vem da linha que agiu; o Qt entrega aqui."""
+    controleMudou = Signal()
     respostaParcial = Signal(str)
     confirmacaoPedida = Signal(str, str)
     """(id, frase) de uma confirmação de ferramenta pedida pelo laço (ADR-0028)."""
@@ -249,6 +252,8 @@ class Ponte(QObject):
         self.avisoDoAtalho.connect(self._avisar_do_atalho)
         self.avisosMudaram.connect(self._ligar_card_de_avisos)
         self.tarefasMudaram.connect(self._ligar_card_de_tarefas)
+        self.navegadorMudou.connect(self._navegador_mudou)
+        self._navegador_no_controle = False
         self._card_de_tarefas = ""
         """O módulo `tarefas` que **este** código criou para as tarefas reais (não o de exemplo)."""
         self.respostaParcial.connect(self._guardar_parcial)
@@ -663,6 +668,23 @@ class Ponte(QObject):
         self._historico_visto = len(self._espaco.historico)
         self._publicar()
 
+    @Property(bool, notify=controleMudou)
+    def navegadorNoControle(self) -> bool:
+        """Alguma aba do navegador no controle do Jarvis (ADR-0027 regra 4): o PARAR aparece."""
+        return self._navegador_no_controle
+
+    def _navegador_mudou(self, ativo: bool) -> None:
+        if ativo != self._navegador_no_controle:
+            self._navegador_no_controle = ativo
+            self.controleMudou.emit()
+
+    @Slot()
+    def pararNavegador(self) -> None:
+        """O PARAR da janela: a extensão solta as abas e o turno e as tarefas nelas param."""
+        if self._sessao is not None:
+            self._sessao.parar_navegador()
+        self._navegador_mudou(False)
+
     @Slot()
     def iniciarConversa(self) -> None:
         if self._sessao is not None and self._sessao.viva:
@@ -676,6 +698,7 @@ class Ponte(QObject):
             ao_terminar=self._fim_da_conversa,
             ao_mudar_avisos=self.avisosMudaram.emit,
             ao_mudar_tarefas=self.tarefasMudaram.emit,
+            ao_mudar_navegador=self.navegadorMudou.emit,
             ao_pedaco=self.respostaParcial.emit,
             ao_pedir_confirmacao=self._pedir_confirmacao,
             ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,

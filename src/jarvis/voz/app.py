@@ -37,7 +37,7 @@ import re
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -81,7 +81,6 @@ from jarvis.memoryd.ferramentas import FerramentasDeMemoria
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
 from jarvis.navegador.cliente import (
     ClienteDoNavegador,
-    NavegadorFalhou,
     NavegadorIndisponivel,
     TransporteUnix,
     familia_do_host,
@@ -94,6 +93,7 @@ from jarvis.politica.canonicalizacao import Sistema, canonicalizar
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo as ModoDeAcesso
 from jarvis.politica.modos import Raiz
+from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Pdp
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
@@ -116,6 +116,7 @@ from jarvis.tarefas.gestor import (
     MotorDeTarefa,
     MotorDireto,
     Tarefa,
+    TarefaRecusada,
 )
 from jarvis.tarefas.motores import MotorDeAgente
 from jarvis.trilha import TrilhaDeDiagnostico
@@ -406,6 +407,9 @@ class Aplicativo:
     ao_mudar_tarefas: Callable[[], None] | None = None
     """Uma tarefa em segundo plano mudou (ADR-0022): a janela renova o card `tarefas`. Chamada da
     linha da **tarefa**, não da do laço: quem liga aqui emite sinal e volta."""
+    ao_mudar_navegador: Callable[[bool], None] | None = None
+    """O Jarvis passou a controlar (ou soltou) alguma aba do navegador (ADR-0027 regra 4): a janela
+    mostra o botão de parar. Chamada da linha que agiu ou da vigia do controle: emite e volta."""
 
     detector: DetectorDeEnderecamento | None = field(default=None, repr=False)
     """Diz, na escuta contínua, se a fala transcrita é para o Jarvis (ADR-0029). `None` = desligado
@@ -426,6 +430,10 @@ class Aplicativo:
     `jarvis-voz --diagnostico` mostra do último turno."""
     """O botão de parar do mouse e do teclado virtuais: a janela o aciona, e só ela o libera."""
     _entrada: tuple[tuple[bool], ControleDeEntrada] | None = field(default=None, repr=False)
+    _navegadores_de_outra_familia: dict[str, CorposDoNavegador] = field(
+        default_factory=dict, repr=False
+    )
+    """O `sites.open` num navegador que não é o principal: o controle (faixa, PARAR) daquele."""
     _auditoria: LogDeAuditoria | None = field(default=None, repr=False)
     _confirmacoes: dict[str, tuple[threading.Event, list[bool]]] = field(
         default_factory=dict, repr=False
@@ -1027,24 +1035,68 @@ class Aplicativo:
         que o navegador lançou; sem navegador aberto, a tool diz isso em vez de falhar calada."""
         if not self.configuracao.navegador_controlado:
             return None
+        return self._ligar_o_controle(familia_do_host(self.configuracao.navegador_principal))
+
+    def _ligar_o_controle(self, familia: str) -> CorposDoNavegador:
+        """As `browser.*` de um navegador, com o PARAR e o aviso de controle ligados ao app."""
         cliente = ClienteDoNavegador(self._transporte_do_navegador())
-        cliente.navegador = familia_do_host(self.configuracao.navegador_principal)
-        return CorposDoNavegador(cliente)
+        cliente.navegador = familia
+        corpos = CorposDoNavegador(cliente)
+        corpos.ao_parar = self._parar_pelo_navegador
+        corpos.ao_mudar = self._navegador_mudou
+        return corpos
+
+    def _parar_pelo_navegador(self, objetivos: Sequence[Objetivo]) -> None:
+        """O dono apertou PARAR (na faixa da página, no botão da extensão ou na janela do Jarvis):
+        as tarefas daqueles pedidos são canceladas e o turno, se ainda está no ar, é interrompido
+        (epoch) — o mecanismo de parar de sempre. A extensão já soltou as abas."""
+        executor = self.ferramentas
+        if executor is None:
+            return
+        gestor = executor.tarefas
+        if gestor is not None:
+            for tarefa in list(gestor.tarefas.values()):
+                parada = any(tarefa.contaminacao.objetivo is o for o in objetivos)
+                if parada and not tarefa.estado.final:
+                    with contextlib.suppress(TarefaRecusada):
+                        gestor.cancelar(tarefa.id)
+        no_ar = self.estado in (Estado.FALANDO, Estado.PENSANDO) or bool(self._confirmacoes)
+        if no_ar and any(executor.objetivo is o for o in objetivos):
+            self.interromper("parar no navegador")
+        else:
+            self.escrever_na_tela("  ⟂ parei o que o Jarvis fazia no navegador")
+
+    def _navegador_mudou(self, ativo: bool) -> None:
+        if self.ao_mudar_navegador is not None:
+            self.ao_mudar_navegador(ativo)
+
+    def parar_navegador(self) -> int:
+        """O botão PARAR da janela do Jarvis: solta todas as abas que ele controla e cancela o turno
+        e as tarefas que estavam nelas. Devolve quantos pedidos pararam."""
+        parados = 0
+        corpos = self.ferramentas.navegador if self.ferramentas is not None else None
+        for controle in (corpos, *self._navegadores_de_outra_familia.values()):
+            if controle is not None:
+                parados += len(controle.parar())
+        return parados
 
     def _na_aba_atual(self, url: str, familia: str) -> bool:
-        """`sites.open` troca a URL da aba atual pela extensão (dono, 2026-10-20: cada link abria
-        uma aba nova). Só com o controle ligado e a extensão daquele navegador conectada; senão
-        devolve `False` e o navegador é aberto com a URL, como antes."""
+        """`sites.open` pela extensão (dono, 2026-10-20: cada link abria uma aba nova): reaproveita
+        a aba que já tem o site e termina à vista, conferido, com a faixa "no controle" (ADR-0027,
+        emenda de 2026-10-21). Sem o controle ligado ou sem a extensão daquele navegador, devolve
+        `False` e o navegador é aberto com a URL, como antes; página que não abre é erro."""
         if not self.configuracao.navegador_controlado:
             return False
-        cliente = ClienteDoNavegador(self._transporte_do_navegador())
-        cliente.navegador = familia_do_host(familia)
+        alvo = familia_do_host(familia)
+        corpos = self.ferramentas.navegador if self.ferramentas is not None else None
+        if corpos is None or (alvo and corpos.cliente.navegador not in ("", alvo)):
+            corpos = self._navegadores_de_outra_familia.get(alvo)
+            if corpos is None:
+                corpos = self._navegadores_de_outra_familia[alvo] = self._ligar_o_controle(alvo)
+        objetivo = self.ferramentas.objetivo if self.ferramentas is not None else None
         try:
-            identificador = cliente.aba().get("id")
-            if not isinstance(identificador, int):
-                return False
-            cliente.navegar(identificador, url)
-        except (NavegadorIndisponivel, NavegadorFalhou):
+            corpos.abrir_site(url, objetivo=objetivo)
+        except NavegadorIndisponivel:
             return False
         return True
 

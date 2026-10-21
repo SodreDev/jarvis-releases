@@ -24,12 +24,35 @@ const TENTATIVAS_DO_ESTADO = 8;
 const INTERVALO_DO_ESTADO_MS = 250;
 const PAGINA_DA_JANELA = "janela.html";
 const NORMAIS = { windowTypes: ["normal"] };
+// O controle (ADR-0027, regra 4): enquanto o Jarvis age numa aba, ela mostra a faixa "no controle"
+// e o botão da extensão fica com o selo. Cada pedido traz a concessão do objetivo que o fez.
+const COM_CONTROLE = new Set([
+  "tabs.navigate",
+  "tabs.open",
+  "tabs.show",
+  "page.read",
+  "page.map",
+  "page.capture",
+  "page.inspect",
+  "page.click",
+  "page.type",
+  "page.act",
+  "page.scroll",
+]);
+const OCIOSO_DO_CONTROLE_MS = 30_000;
+const MAX_REVOGADAS = 32;
+const SELO = "IA";
+const COR_DO_SELO = "#b45309";
 
 let nativePort;
 let reconnectTimer;
 let reconnectAttempt = 0;
 let janelaDoJarvisId;
 let janelaDoDonoId;
+const controladas = new Map(); // tabId → concessão
+const usoDaConcessao = new Map(); // concessão → último pedido (ms)
+const revogadas = [];
+let timerDoControle;
 
 function erro(codigo, mensagem) {
   return { codigo, mensagem };
@@ -73,7 +96,128 @@ function resumoDaAba(tab) {
     url: tab.url ?? "",
     titulo: tab.title ?? "",
     janelaDoJarvis: typeof tab.windowId === "number" && tab.windowId === janelaDoJarvisId,
+    ultimoAcesso: typeof tab.lastAccessed === "number" ? Math.round(tab.lastAccessed) : 0,
   };
+}
+
+// --- o controle: faixa, selo e PARAR -------------------------------------------------------------
+function concessaoDe(params) {
+  const valor = params.controle;
+  return typeof valor === "string" && /^[a-z0-9]{8,32}$/u.test(valor) ? valor : undefined;
+}
+
+function conferirConcessao(params) {
+  // Depois do PARAR, nada do que vier daquela concessão age — nem um pedido que já estava no ar.
+  const concessao = concessaoDe(params);
+  if (concessao && revogadas.includes(concessao)) {
+    throw erro(
+      "parado_pelo_dono",
+      "o dono apertou parar no navegador: o Jarvis soltou as abas e não age mais neste pedido",
+    );
+  }
+  return concessao;
+}
+
+function avisarAba(tabId, ligado) {
+  // A faixa da página. Página sem o conteúdo (interna, de erro): a faixa vem quando ela carregar,
+  // porque o conteúdo pergunta ao nascer.
+  Promise.resolve()
+    .then(() => api.tabs.sendMessage(tabId, { indicador: { ligado } }))
+    .catch(() => undefined);
+}
+
+async function atualizarSelo() {
+  const acao = api.action ?? api.browserAction;
+  if (!acao) {
+    return;
+  }
+  const quantas = controladas.size;
+  try {
+    await acao.setBadgeText({ text: quantas ? SELO : "" });
+    if (quantas) {
+      await acao.setBadgeBackgroundColor({ color: COR_DO_SELO });
+    }
+    await acao.setTitle({
+      title: quantas
+        ? `Jarvis no controle de ${quantas === 1 ? "uma aba" : `${quantas} abas`} — clique para parar`
+        : "Jarvis — ponte local, sem controlar nenhuma aba",
+    });
+  } catch {
+    // o selo é aviso a mais: a faixa da página é o principal
+  }
+}
+
+function agendarOcioso() {
+  // O Jarvis renova a concessão enquanto o objetivo dura; se ele sumir (caiu, fechou), a faixa
+  // não fica para sempre.
+  clearTimeout(timerDoControle);
+  if (!usoDaConcessao.size) {
+    return;
+  }
+  timerDoControle = setTimeout(() => {
+    const agora = Date.now();
+    for (const [concessao, uso] of [...usoDaConcessao]) {
+      if (agora - uso >= OCIOSO_DO_CONTROLE_MS) {
+        soltarConcessao(concessao);
+      }
+    }
+    agendarOcioso();
+  }, OCIOSO_DO_CONTROLE_MS);
+}
+
+function assumir(tabId, concessao) {
+  if (!concessao || typeof tabId !== "number") {
+    return;
+  }
+  usoDaConcessao.set(concessao, Date.now());
+  const nova = controladas.get(tabId) !== concessao;
+  controladas.set(tabId, concessao);
+  agendarOcioso();
+  if (nova) {
+    avisarAba(tabId, true);
+    void atualizarSelo();
+  }
+}
+
+function soltarConcessao(concessao) {
+  let soltas = 0;
+  for (const [tabId, dela] of [...controladas]) {
+    if (dela === concessao) {
+      controladas.delete(tabId);
+      avisarAba(tabId, false);
+      soltas += 1;
+    }
+  }
+  usoDaConcessao.delete(concessao);
+  agendarOcioso();
+  void atualizarSelo();
+  return soltas;
+}
+
+function revogarTudo() {
+  const concessoes = [...new Set([...controladas.values(), ...usoDaConcessao.keys()])];
+  for (const concessao of concessoes) {
+    soltarConcessao(concessao);
+    if (!revogadas.includes(concessao)) {
+      revogadas.push(concessao);
+    }
+  }
+  revogadas.splice(0, Math.max(0, revogadas.length - MAX_REVOGADAS));
+  return concessoes;
+}
+
+function pararPeloDono(origem) {
+  // O dono apertou PARAR (na faixa ou no botão da extensão): solta na hora, revoga, e avisa o
+  // Jarvis pelo host — é por ali que o turno e a tarefa param.
+  const concessoes = revogarTudo();
+  if (nativePort) {
+    try {
+      nativePort.postMessage({ evento: "parar", concessoes, origem });
+    } catch (causa) {
+      console.warn("Jarvis: não deu para avisar o PARAR ao host", detalheDaFalha(causa));
+    }
+  }
+  return concessoes;
 }
 
 function pausa(ms) {
@@ -338,7 +482,7 @@ async function navegarEConferir(tabId, url) {
   return conferido(tabId, vigia);
 }
 
-async function criarEConferir(opcoes) {
+async function criarEConferir(opcoes, concessao) {
   const vigia = vigiarNavegacao(undefined);
   let criada;
   try {
@@ -348,13 +492,14 @@ async function criarEConferir(opcoes) {
     throw causa;
   }
   vigia.definir(criada.id);
+  assumir(criada.id, concessao); // a faixa já na página que nasce
   return conferido(criada.id, vigia);
 }
 
-async function abrirNaJanelaDoJarvis(url) {
+async function abrirNaJanelaDoJarvis(url, concessao) {
   const doDono = await janelaEmFoco();
   const janelaId = await janelaDoJarvis();
-  const resultado = await criarEConferir({ windowId: janelaId, url, active: true });
+  const resultado = await criarEConferir({ windowId: janelaId, url, active: true }, concessao);
   await devolverOFoco(doDono);
   return { reutilizada: false, ...resultado, janela: "jarvis", visivel: false };
 }
@@ -499,24 +644,69 @@ async function lerEmSegundoPlano(params) {
   }
 }
 
-async function abrirAba(params) {
+async function abrirAba(params, concessao) {
   const url = urlHttp(params.url);
   if (params.janela === "jarvis") {
-    return abrirNaJanelaDoJarvis(url);
+    return abrirNaJanelaDoJarvis(url, concessao);
   }
   // Na janela do dono, dita pelo id: sem ele a aba nova nascia na "janela atual" do navegador,
   // que pode ser a do Jarvis.
   const dono = await janelaDoDono();
-  const resultado = await criarEConferir({
-    url,
-    active: true,
-    ...(typeof dono === "number" ? { windowId: dono } : {}),
-  });
+  const resultado = await criarEConferir(
+    {
+      url,
+      active: true,
+      ...(typeof dono === "number" ? { windowId: dono } : {}),
+    },
+    concessao,
+  );
   return { reutilizada: false, ...resultado };
 }
 
+function estadoDoControle() {
+  return {
+    abas: [...controladas].map(([tabId, concessao]) => ({ tabId, concessao })),
+    concessoes: [...usoDaConcessao.keys()],
+    revogadas: revogadas.length,
+  };
+}
+
 async function executar(method, params) {
+  if (!COM_CONTROLE.has(method)) {
+    return executarSemControle(method, params);
+  }
+  // A aba pedida mostra a faixa ANTES da ação (o dono vê enquanto acontece); a aba nova, ao
+  // nascer; e a que voltar no resultado (movida, reaproveitada) também.
+  const concessao = conferirConcessao(params);
+  if (typeof params.tabId === "number") {
+    assumir(params.tabId, concessao);
+  }
+  const resultado = await executarSemControle(method, params, concessao);
+  const aba = comoObjeto(comoObjeto(resultado).aba);
+  if (typeof aba.id === "number") {
+    assumir(aba.id, concessao);
+  }
+  return resultado;
+}
+
+async function executarSemControle(method, params, concessao) {
   switch (method) {
+    case "controle.soltar": {
+      const solta = concessaoDe(params);
+      return { soltas: solta ? soltarConcessao(solta) : 0 };
+    }
+    case "controle.manter": {
+      const mantida = conferirConcessao(params);
+      if (mantida && usoDaConcessao.has(mantida)) {
+        usoDaConcessao.set(mantida, Date.now());
+      }
+      return { mantida: Boolean(mantida && usoDaConcessao.has(mantida)) };
+    }
+    case "controle.parar":
+      // O PARAR da janela do Jarvis: quem pediu já sabe, não há evento a mandar.
+      return { paradas: revogarTudo() };
+    case "controle.estado":
+      return estadoDoControle();
     case "windows.focused":
       return focoAtual();
     case "tabs.list": {
@@ -531,7 +721,7 @@ async function executar(method, params) {
       return { aba: resumoDaAba(tab), pagina: await mensagemDaPagina({ tabId: tab.id }, "ler") };
     }
     case "tabs.open":
-      return abrirAba(params);
+      return abrirAba(params, concessao);
     case "tabs.show":
       return mostrarAba(params);
     case "tabs.navigate": {
@@ -671,6 +861,31 @@ function ligarAoHost() {
     agendarReconexao(motivo);
   });
 }
+
+// O conteúdo de cada página pergunta ao nascer se a aba está no controle (a faixa já na página
+// nova, sem esperar a página terminar) e manda o PARAR da faixa. Só o nosso conteúdo fala aqui.
+api.runtime.onMessage?.addListener((mensagem, remetente, responderAoConteudo) => {
+  if (remetente?.id !== api.runtime.id || typeof remetente?.tab?.id !== "number") {
+    return false;
+  }
+  const corpo = comoObjeto(mensagem);
+  if (corpo.tipo === "controle?") {
+    responderAoConteudo({ ligado: controladas.has(remetente.tab.id) });
+  } else if (corpo.tipo === "parar") {
+    responderAoConteudo({ paradas: pararPeloDono("faixa").length });
+  }
+  return false;
+});
+(api.action ?? api.browserAction)?.onClicked?.addListener(() => {
+  if (controladas.size) {
+    pararPeloDono("barra");
+  }
+});
+api.tabs.onRemoved?.addListener((tabId) => {
+  if (controladas.delete(tabId)) {
+    void atualizarSelo();
+  }
+});
 
 api.runtime.onStartup.addListener(ligarAoHost);
 api.runtime.onInstalled.addListener(ligarAoHost);

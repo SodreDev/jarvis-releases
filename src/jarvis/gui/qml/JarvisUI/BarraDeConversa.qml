@@ -9,6 +9,9 @@ Item {
     property var microfone: ({})
     property string atalho: ""
     property bool temConversa: false
+    // O Jarvis está controlando uma aba do navegador (ADR-0027 regra 4): o PARAR fica à vista.
+    property bool navegadorNoControle: false
+    signal pararNavegador()
     signal enviou(string texto)
     signal segurou()
     signal soltou()
@@ -117,6 +120,13 @@ Item {
             ativo: barra.microfone.aberta === true && barra.estado === "ouvindo"
             onApertado: { if (!barra.conversaViva) barra.comecou(); barra.segurou() }
             onSolto: barra.soltou()
+        }
+        Botao {
+            objectName: "botaoPararNavegador"
+            texto: "parar o navegador"
+            ativo: true
+            visible: barra.navegadorNoControle
+            onApertado: barra.pararNavegador()
         }
         Botao {
             objectName: "botaoNovaConversa"

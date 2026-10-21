@@ -325,6 +325,7 @@ test("tabs.list continua respondendo com as abas resumidas, sem falar com a pág
           url: "https://exemplo.org/",
           titulo: "Exemplo",
           janelaDoJarvis: false,
+          ultimoAcesso: 0,
         },
       ],
     },

@@ -31,9 +31,25 @@ frente). `tabs.show` põe a aba à vista do dono (a da janela do Jarvis vai para
 "aba atual" é a ativa da última janela **normal** do dono — nunca popup, app, DevTools ou a janela
 do Jarvis, que se segura com `janela.html` e é reconhecida por ela depois que o fundo reinicia.
 
-`tabs.active` continua na extensão, mas o host não o repassa. O alvo de
-`page.inspect`, `page.click` e `page.type` é `alvo`: o **texto ou rótulo visível** do elemento
-(não existe seletor CSS). `page.type` leva `texto` (o que digitar) e `limpar`.
+`tabs.active` continua na extensão, mas o host não o repassa.
+
+### O controle: a faixa, o selo e o PARAR (ADR-0027, regra 4)
+
+Todo pedido que lê ou mexe numa aba leva a **concessão** do objetivo do Jarvis que o fez
+(`controle`, 8 a 32 letras e dígitos). Enquanto ela vale, a aba mostra a faixa «Jarvis no controle
+desta aba» (`indicador.js`, que nasce com o documento e pergunta ao fundo se a aba está no
+controle; shadow DOM fechado, só o botão recebe clique) e o botão da extensão fica com o selo «IA».
+O Jarvis solta com `controle.soltar` quando o objetivo acaba e renova com `controle.manter`; sem
+renovação, a extensão solta sozinha em 30 s. `controle.estado` diz o que está no controle (para o
+diagnóstico e a prova); `controle.parar` é o PARAR da janela do Jarvis.
+
+O PARAR do dono — o botão da faixa ou o botão da extensão na barra — solta tudo na hora, **revoga**
+as concessões (o que vier delas depois é recusado com `parado_pelo_dono`) e manda ao host, sem
+pedido nenhum, o evento `{ "evento": "parar", "concessoes": [...], "origem": "faixa" | "barra" }`. O
+host o entrega a quem assinou `eventos.assinar` (a conexão que o Jarvis deixa aberta enquanto
+controla alguma aba): é por ele que o turno e a tarefa param. Clique sintético da página não conta.
+O alvo de `page.inspect`, `page.click` e `page.type` é `alvo`: o **texto ou rótulo visível** do
+elemento (não existe seletor CSS). `page.type` leva `texto` (o que digitar) e `limpar`.
 
 `page.read` devolve URL, título, texto visível, links (`texto`, `href`, `data` de `<time datetime>`)
 e as datas visíveis. O DOM é sempre conteúdo de terceiro; o host do Jarvis o encaminha como

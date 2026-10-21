@@ -13,7 +13,7 @@ navegador carrega a cópia da extensão que ele gravou → `connectNative` → o
 host deste código → socket Unix → `Aplicativo._montar_ferramentas` (catálogo C0, PDP e risco
 reais) → as `browser.*`, numa página servida no 127.0.0.1 do contêiner.
 
-O que se confere, por navegador (29 pontos): instalar no modo repositório; o host nasce pelo
+O que se confere, por navegador (34 pontos): instalar no modo repositório; o host nasce pelo
 manifesto e é o deste código; o modelo enxerga as `browser.*`; `browser.tabs` acha a página e
 `browser.navigate` a recarrega; `browser.read` lê o texto; um botão comum é clicado sem pergunta; um
 botão de **envio de formulário** com rótulo neutro pede o "sim" (e o "não" impede o clique);
@@ -27,8 +27,11 @@ a tela na janela própria com o foco do dono igual (ADR-0036); `browser.navigate
 uma só; sem rede, «abra um vídeo no YouTube» volta erro dito e não `ok`; pedido de ver traz para a
 frente a aba que estava atrás; pesquisa sem pedido de ver vai à janela do Jarvis e a leitura sem
 `tab_id` lê a aba de trabalho, com o foco do dono igual; `tabs.show` leva a aba da janela do Jarvis
-para a do dono (auditoria de 2026-10-21); o host derrubado (PID conferido em `/proc`) volta
-pela reconexão da extensão; e, 40 s sem pedido, o mesmo host continua respondendo.
+para a do dono (auditoria de 2026-10-21); a faixa «no controle» em toda página da aba controlada,
+medida pela própria página, e fora dela ao soltar; o PARAR da faixa com clique de verdade (`Input`
+do CDP no Chromium, ações do Marionette no Firefox) cancela o turno e recusa o pedido parado; os 3
+casos de reuso de aba (ADR-0027 regra 4); o host derrubado (PID conferido em `/proc`) volta pela
+reconexão da extensão; e, 40 s sem pedido, o mesmo host continua respondendo.
 
 Fatos que este roteiro descobriu (2026-10-19, Chromium 155 e Firefox 158 do Fedora 44):
 - o Chromium ≥ 137 ignora `--load-extension` sem
@@ -43,6 +46,7 @@ Fatos que este roteiro descobriu (2026-10-19, Chromium 155 e Firefox 158 do Fedo
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import http.server
 import json
@@ -50,11 +54,14 @@ import os
 import shutil
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import urllib.parse
+import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -82,6 +89,8 @@ MARCA: Final = "RELATORIO "
 CASA: Final = Path("/tmp/casa")  # noqa: S108 — dentro do contêiner descartável
 RUN: Final = Path("/tmp/run")  # noqa: S108
 PORTA_DO_MARIONETTE: Final = 2828
+PORTA_DO_CDP: Final = 9229
+"""Só para o clique de verdade do dono no PARAR da faixa (Input do CDP): o Jarvis não usa CDP."""
 CHROMIUM: Final = "/usr/bin/chromium-browser"  # o da imagem (fedora:44)
 FIREFOX: Final = "/usr/bin/firefox"
 
@@ -111,6 +120,30 @@ BUSCA: Final = """<!doctype html><meta charset=utf-8><title>Resultados de teste<
 <a href="https://pt.wikipedia.org/wiki/Thiago_Nigro">Thiago Nigro – Wikipédia</a>
 """
 """Uma página de resultados sem rede (ADR-0033): o link para o próprio buscador não é resultado."""
+VIGIA: Final = """<!doctype html><meta charset=utf-8><title>{titulo}</title><p id=e>vigia</p>
+<script>
+const doc = Math.random().toString(36).slice(2, 8);
+function avisa(ev) {{
+  const t = (performance.timeOrigin + performance.now()).toFixed(1);
+  fetch(`/registro?doc=${{doc}}&ev=${{ev}}&t=${{t}}&p=${{location.pathname}}`,
+        {{method: "POST", keepalive: true}}).catch(() => {{}});
+}}
+avisa("inicio");
+let tinha = false;
+function olhar() {{
+  const tem = Boolean(document.querySelector("jarvis-no-controle"));
+  if (tem !== tinha) {{ tinha = tem; avisa(tem ? "faixa" : "sem_faixa"); }}
+}}
+olhar();
+new MutationObserver(olhar).observe(document.documentElement, {{childList: true}});
+</script>"""
+"""A própria página vê a faixa do Jarvis entrar e sair (o elemento dela, não o que tem dentro, que é
+de sombra fechada) e conta ao servidor de teste, com o relógio dela: é a medida do "100% do tempo"
+(ADR-0027 regra 4)."""
+REGISTRO: Final[list[dict[str, Any]]] = []
+"""O que as páginas-vigia contaram: `{doc, ev, t, p}`."""
+DRIVER: Final[dict[str, Any]] = {}
+"""Quem faz o clique de verdade do dono: o Marionette (Firefox) ou a porta do CDP (Chromium)."""
 
 
 # --- dentro do contêiner ------------------------------------------------------------------------
@@ -122,7 +155,7 @@ class Relatorio:
 
     def conferir(self, nome: str, ok: object, detalhe: object = "") -> bool:
         passou = bool(ok)
-        self.conferencias.append({"nome": nome, "ok": passou, "detalhe": str(detalhe)[:400]})
+        self.conferencias.append({"nome": nome, "ok": passou, "detalhe": str(detalhe)[:1500]})
         print(f"{'ok ' if passou else 'FALHOU'} {nome}  {str(detalhe)[:160]}", flush=True)
         return passou
 
@@ -176,26 +209,213 @@ class Marionette:
                 return resposta[3]
 
 
+class Cdp:
+    """O mínimo do CDP por WebSocket, sem biblioteca — só para o **clique de verdade do dono** no
+    PARAR da faixa (`Input.dispatchMouseEvent` é entrada do navegador: `isTrusted`). O Jarvis não
+    usa CDP; a extensão também não."""
+
+    def __init__(self, porta: int, trecho_da_url: str, prazo_s: float = 10.0) -> None:
+        with urllib.request.urlopen(f"http://127.0.0.1:{porta}/json/list", timeout=prazo_s) as r:
+            alvos = json.loads(r.read())
+        alvo = next(
+            a for a in alvos if a.get("type") == "page" and trecho_da_url in a.get("url", "")
+        )
+        caminho = urllib.parse.urlsplit(alvo["webSocketDebuggerUrl"]).path
+        self._s = socket.create_connection(("127.0.0.1", porta), timeout=prazo_s)
+        chave = base64.b64encode(os.urandom(16)).decode()
+        self._s.sendall(
+            (
+                f"GET {caminho} HTTP/1.1\r\nHost: 127.0.0.1:{porta}\r\nUpgrade: websocket\r\n"
+                f"Connection: Upgrade\r\nSec-WebSocket-Key: {chave}\r\n"
+                "Sec-WebSocket-Version: 13\r\n\r\n"
+            ).encode()
+        )
+        cabecalho = b""
+        while b"\r\n\r\n" not in cabecalho:
+            cabecalho += self._s.recv(1)  # byte a byte: nada do quadro seguinte se perde
+        if b" 101 " not in cabecalho.split(b"\r\n", 1)[0]:
+            raise ConnectionError(f"o CDP recusou o WebSocket: {cabecalho[:80]!r}")
+        self._id = 0
+
+    def _exato(self, quantos: int) -> bytes:
+        dados = b""
+        while len(dados) < quantos:
+            pedaco = self._s.recv(quantos - len(dados))
+            if not pedaco:
+                raise ConnectionError("o CDP fechou")
+            dados += pedaco
+        return dados
+
+    def _enviar(self, objeto: dict[str, Any]) -> None:
+        dados = json.dumps(objeto).encode()
+        cabecalho = bytearray([0x81])
+        if len(dados) < 126:
+            cabecalho.append(0x80 | len(dados))
+        elif len(dados) < 65536:
+            cabecalho += bytes([0x80 | 126]) + struct.pack(">H", len(dados))
+        else:
+            cabecalho += bytes([0x80 | 127]) + struct.pack(">Q", len(dados))
+        mascara = os.urandom(4)
+        corpo = bytes(b ^ mascara[i % 4] for i, b in enumerate(dados))
+        self._s.sendall(bytes(cabecalho) + mascara + corpo)
+
+    def _receber(self) -> dict[str, Any]:
+        partes = b""
+        while True:
+            primeiro, segundo = self._exato(2)
+            tamanho = segundo & 0x7F
+            if tamanho == 126:
+                (tamanho,) = struct.unpack(">H", self._exato(2))
+            elif tamanho == 127:
+                (tamanho,) = struct.unpack(">Q", self._exato(8))
+            partes += self._exato(tamanho)
+            if primeiro & 0x80:
+                objeto: dict[str, Any] = json.loads(partes)
+                return objeto
+
+    def comando(self, metodo: str, parametros: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._id += 1
+        self._enviar({"id": self._id, "method": metodo, "params": parametros or {}})
+        while True:
+            mensagem = self._receber()
+            if mensagem.get("id") == self._id:
+                if "error" in mensagem:
+                    raise RuntimeError(f"{metodo}: {mensagem['error']}")
+                resultado: dict[str, Any] = mensagem.get("result", {})
+                return resultado
+
+    def fechar(self) -> None:
+        self._s.close()
+
+
+def _clicar_no_parar(nome: str, trecho_da_url: str) -> str:
+    """O clique de verdade do dono no PARAR da faixa: o botão fica na ponta direita da faixa de
+    26 px do topo (o roteiro não enxerga dentro da sombra fechada; mira pelo desenho)."""
+    if nome == "chromium":
+        cdp = Cdp(PORTA_DO_CDP, trecho_da_url)
+        try:
+            avaliado = cdp.comando(
+                "Runtime.evaluate", {"expression": "innerWidth", "returnByValue": True}
+            )
+            x, y = int(avaliado["result"]["value"]) - 40, 13
+            cdp.comando("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+            for tipo in ("mousePressed", "mouseReleased"):
+                cdp.comando(
+                    "Input.dispatchMouseEvent",
+                    {"type": tipo, "x": x, "y": y, "button": "left", "clickCount": 1},
+                )
+        finally:
+            cdp.fechar()
+        return f"CDP Input em {x},{y}"
+    marionette = DRIVER["marionette"]
+    largura = marionette.comando(
+        "WebDriver:ExecuteScript", {"script": "return innerWidth;", "args": []}
+    )["value"]
+    x, y = int(largura) - 40, 13
+    passos = [
+        {"type": "pointerMove", "x": x, "y": y, "origin": "viewport"},
+        {"type": "pointerDown", "button": 0},
+        {"type": "pointerUp", "button": 0},
+    ]
+    marionette.comando(
+        "WebDriver:PerformActions",
+        {
+            "actions": [
+                {
+                    "type": "pointer",
+                    "id": "dono",
+                    "parameters": {"pointerType": "mouse"},
+                    "actions": passos,
+                }
+            ]
+        },
+    )
+    marionette.comando("WebDriver:ReleaseActions", {})
+    return f"Marionette em {x},{y}"
+
+
+def _cobertura(
+    registro: list[dict[str, Any]], comeco_ms: float, soltou_ms: float
+) -> dict[str, Any]:
+    """A faixa em cada documento da aba controlada, pelo relógio da própria página: quanto tempo
+    depois de o documento nascer ela apareceu, se sumiu antes de soltar, e quanto levou para sumir
+    depois de soltar."""
+    documentos: dict[str, list[dict[str, Any]]] = {}
+    for evento in sorted(registro, key=lambda e: e["t"]):
+        documentos.setdefault(evento["doc"], []).append(evento)
+    controlados = [
+        eventos
+        for eventos in documentos.values()
+        if eventos[0]["ev"] == "inicio" and comeco_ms <= eventos[0]["t"] <= soltou_ms
+    ]
+    atrasos, buracos, sumiu_ms = [], 0, None
+    for indice, eventos in enumerate(controlados):
+        inicio = eventos[0]["t"]
+        faixa = next((e["t"] for e in eventos if e["ev"] == "faixa"), None)
+        atrasos.append(round(faixa - inicio, 1) if faixa is not None else None)
+        ultimo = indice == len(controlados) - 1
+        for evento in eventos:
+            if evento["ev"] == "sem_faixa":
+                if evento["t"] < soltou_ms:
+                    buracos += 1
+                elif ultimo:
+                    sumiu_ms = round(evento["t"] - soltou_ms, 1)
+    ok = (
+        len(controlados) >= 2
+        and all(a is not None and a <= 500 for a in atrasos)
+        and buracos == 0
+        and sumiu_ms is not None
+        and sumiu_ms <= 1500
+    )
+    return {
+        "ok": ok,
+        "documentos": len(controlados),
+        "faixa_depois_de_nascer_ms": atrasos,
+        "buracos": buracos,
+        "sumiu_depois_de_soltar_ms": sumiu_ms,
+    }
+
+
 @contextlib.contextmanager
 def _site() -> Iterator[str]:
     pasta = Path(tempfile.mkdtemp(prefix="site-"))
     (pasta / "pagina.html").write_text(PAGINA, encoding="utf-8")
     (pasta / "pagina2.html").write_text(SEGUNDA, encoding="utf-8")
     (pasta / "busca.html").write_text(BUSCA, encoding="utf-8")
+    (pasta / "vigia.html").write_text(VIGIA.format(titulo="Vigia do Jarvis"), encoding="utf-8")
+    (pasta / "vigia2.html").write_text(VIGIA.format(titulo="Vigia dois"), encoding="utf-8")
 
     class Quieto(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *_args: object) -> None:
             pass
 
+        def do_POST(self) -> None:
+            consulta = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            REGISTRO.append(
+                {
+                    "doc": consulta.get("doc", [""])[0],
+                    "ev": consulta.get("ev", [""])[0],
+                    "t": float(consulta.get("t", ["0"])[0]),
+                    "p": consulta.get("p", [""])[0],
+                }
+            )
+            self.send_response(204)
+            self.end_headers()
+
     def criar(*args: Any) -> Quieto:
         return Quieto(*args, directory=str(pasta))
 
     servidor = http.server.ThreadingHTTPServer(("127.0.0.1", 0), criar)
-    threading.Thread(target=servidor.serve_forever, daemon=True).start()
+    outro = http.server.ThreadingHTTPServer(("127.0.0.1", 0), criar)
+    """Outro "site" (outra porta) para o caso do reuso em que nenhuma aba tem o site."""
+    for qual in (servidor, outro):
+        threading.Thread(target=qual.serve_forever, daemon=True).start()
+    DRIVER["outra_porta"] = outro.server_address[1]
     try:
         yield f"http://127.0.0.1:{servidor.server_address[1]}/pagina.html"
     finally:
         servidor.shutdown()
+        outro.shutdown()
 
 
 @contextlib.contextmanager
@@ -230,6 +450,7 @@ def _navegador(nome: str, extensao: Path, url: str, log: Path) -> Iterator[str]:
                 "--no-default-browser-check",
                 "--disable-features=DisableLoadExtensionCommandLineSwitch",
                 f"--user-data-dir={CASA / '.config' / 'chromium'}",
+                f"--remote-debugging-port={PORTA_DO_CDP}",  # o clique do dono no PARAR, só isso
                 f"--load-extension={extensao}",
                 url,
             ],
@@ -257,6 +478,7 @@ def _navegador(nome: str, extensao: Path, url: str, log: Path) -> Iterator[str]:
         marionette.comando("WebDriver:NewSession", {})
         marionette.comando("Addon:Install", {"path": str(extensao), "temporary": True})
         marionette.comando("WebDriver:Navigate", {"url": url})
+        DRIVER["marionette"] = marionette
     try:
         yield versao
     finally:
@@ -329,9 +551,11 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
     from jarvis.navegador import instalar
     from jarvis.navegador.busca import Buscador, BuscaNoNavegador
     from jarvis.navegador.cliente import NavegadorFalhou, NavegadorIndisponivel
+    from jarvis.politica.objetivo import EstadoDoObjetivo
     from jarvis.s2.motor_claude_cli import sistema_com_ferramentas
     from jarvis.voz.app import Aplicativo
     from jarvis.voz.config import Configuracao
+    from jarvis.voz.estado import Estado
 
     os.environ.update(HOME=str(CASA), XDG_RUNTIME_DIR=str(RUN))
     os.environ.pop("XDG_CONFIG_HOME", None)
@@ -709,7 +933,10 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
         # Auditoria da integração (2026-10-21): o dono pediu "abra um vídeo no YouTube", a extensão
         # disse ok em 25 ms com a URL de antes, e o navegador dele "continuou igual".
         def turno(fala: str) -> Callable[..., ResultadoDeFerramenta]:
-            """Um turno com a fala do dono (o objetivo e o método nascem dela), vários passos."""
+            """Um turno com a fala do dono (o objetivo e o método nascem dela), vários passos. O
+            turno anterior respondeu: o objetivo dele acaba, como o cérebro faz."""
+            if ferramentas.objetivo is not None:
+                ferramentas.objetivo.concluir(EstadoDoObjetivo.CONCLUIDO)
             ferramentas.novo_turno(fala)
 
             def passo(tool: str, args: dict[str, Any], sim: bool = False) -> ResultadoDeFerramenta:
@@ -789,6 +1016,127 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             and foco_mostrado.get("janelaId") != foco_mostrado.get("janelaDoJarvisId"),
             {"mostrada": mostrada, "foco": foco_mostrado},
         )
+
+        # O indicador e o PARAR (ADR-0027 regra 4) -------------------------------------------------
+        app.ferramentas = ferramentas  # o PARAR cancela o turno do app (epoch) e as tarefas dele
+        vigia = url.replace("pagina.html", "vigia.html")
+        vigia2 = url.replace("pagina.html", "vigia2.html")
+        REGISTRO.clear()
+        pedido = turno("abre a página de vigia pra eu ver")
+        comeco_ms = time.time() * 1000
+        passos = [
+            pedido("browser.navigate", {**alvo, "url": vigia}),
+            pedido("browser.read", {}),
+            # Depois de ler, o turno está contaminado, e um IP (o site de teste) não tem domínio
+            # registrável para entrar no objetivo: a política pergunta (ADR-0030) e o dono diz sim.
+            pedido("browser.navigate", {"url": vigia2}, sim=True),
+            pedido("browser.read", {}),
+        ]
+        time.sleep(1.5)  # o Jarvis pensando: a aba continua no controle
+        durante = corpos.cliente.chamar("controle.estado")
+        soltou_ms = time.time() * 1000
+        assert ferramentas.objetivo is not None
+        ferramentas.objetivo.concluir(EstadoDoObjetivo.CONCLUIDO)  # o turno respondeu
+        _esperar(lambda: any(e["ev"] == "sem_faixa" and e["t"] >= soltou_ms for e in REGISTRO), 5)
+        solto = corpos.cliente.chamar("controle.estado")
+        cobertura = _cobertura(REGISTRO, comeco_ms, soltou_ms)
+        na_aba = [a["tabId"] for a in durante.get("abas", []) if a["tabId"] == alvo.get("tab_id")]
+        relatorio.conferir(
+            "a faixa «no controle» está em toda página da aba enquanto o Jarvis controla, e some "
+            "sozinha quando ele solta",
+            all(p.status == "ok" for p in passos)
+            and cobertura["ok"]
+            and bool(na_aba)
+            and not any(a["tabId"] == alvo.get("tab_id") for a in solto.get("abas", [])),
+            {
+                **cobertura,
+                "passos": [f"{p.status} {p.dados.get('tab_id', '')} {p.motivo}" for p in passos],
+                "eventos": [
+                    (e["doc"], e["ev"], e["p"], round(e["t"] - comeco_ms)) for e in REGISTRO
+                ],
+                "solto": solto,
+            },
+        )
+
+        REGISTRO.clear()
+        parado = turno("abre a página de vigia pra eu ver")
+        ida = parado("browser.navigate", {**alvo, "url": vigia})
+        _esperar(lambda: any(e["ev"] == "faixa" for e in REGISTRO), 5)
+        epoca = app.epoch
+        app.estado = Estado.PENSANDO  # o turno ainda no ar
+        try:
+            clique_do_dono = _clicar_no_parar(nome, "vigia.html")
+        except Exception as erro:  # o clique faz parte da prova: vai para o relatório
+            clique_do_dono = f"{type(erro).__name__}: {erro}"
+        saiu = _esperar(lambda: any(e["ev"] == "sem_faixa" for e in REGISTRO), 5)
+        cancelou = _esperar(lambda: app.epoch > epoca, 5)
+        recusado = parado("browser.read", {})
+        app.estado = Estado.PARADO
+        de_novo = turno("lê a página de vigia")("browser.read", alvo)
+        relatorio.conferir(
+            "PARAR na faixa (clique de verdade do dono): a faixa some, o turno é cancelado "
+            "(epoch) e o pedido parado não age mais; o pedido seguinte volta a agir",
+            ida.status == "ok"
+            and bool(saiu)
+            and bool(cancelou)
+            and recusado.status == "negado"
+            and de_novo.status == "ok",
+            {
+                "clique_do_dono": clique_do_dono,
+                "epoch": [epoca, app.epoch],
+                "recusado": f"{recusado.status}: {recusado.motivo}",
+                "de_novo": de_novo.status,
+            },
+        )
+
+        # Reaproveitar a aba (pedido do dono, 2026-10-21): 3 casos --------------------------------
+        local = url.replace("127.0.0.1", "localhost")  # outro "site" no mesmo servidor
+        segunda_local = local.replace("pagina.html", "pagina2.html")
+        rodar("browser.navigate", {**alvo, "url": url})
+        criada = rodar("browser.navigate", {"url": segunda_local, "nova_aba": True})
+        atras = criada.dados.get("tab_id")
+        corpos.cliente.mostrar(alvo["tab_id"])  # a aba de teste do dono à frente; a nova, atrás
+        total = len(abas_agora())
+
+        mesma = turno("abre a segunda página pra eu ver")("sites.open", {"url": segunda_local})
+        foco = corpos.cliente.janela_em_foco()
+        url_do_dono = corpos.cliente.aba(alvo["tab_id"]).get("url")
+        relatorio.conferir(
+            "reuso 1/3 — a página já aberta numa aba de trás: só ativa, sem recarregar nem abrir",
+            mesma.status == "ok"
+            and foco.get("abaAtivaId") == atras
+            and len(abas_agora()) == total
+            and url_do_dono == url,
+            {"sites.open": mesma.dados or mesma.motivo, "foco": foco, "aba_do_dono": url_do_dono},
+        )
+
+        corpos.cliente.mostrar(alvo["tab_id"])
+        mesmo_site = turno("abre a página de teste do localhost pra eu ver")(
+            "browser.navigate", {"url": local}
+        )
+        url_do_dono = corpos.cliente.aba(alvo["tab_id"]).get("url")
+        relatorio.conferir(
+            "reuso 2/3 — mesmo site noutra página: navega a aba que já tem o site, não a atual",
+            mesmo_site.status == "ok"
+            and mesmo_site.dados.get("reutilizou") == "mesmo_site"
+            and mesmo_site.dados.get("tab_id") == atras
+            and len(abas_agora()) == total
+            and url_do_dono == url,
+            {"navegou": mesmo_site.dados or mesmo_site.motivo, "aba_do_dono": url_do_dono},
+        )
+
+        corpos.cliente.mostrar(alvo["tab_id"])
+        terceiro = f"http://127.0.0.1:{DRIVER['outra_porta']}/pagina2.html"
+        nenhuma = turno("abre a outra página pra eu ver")("browser.navigate", {"url": terceiro})
+        relatorio.conferir(
+            "reuso 3/3 — nenhuma aba tem o site: abre na aba atual, sem aba nova",
+            nenhuma.status == "ok"
+            and nenhuma.dados.get("tab_id") == alvo["tab_id"]
+            and "reutilizou" not in nenhuma.dados
+            and len(abas_agora()) == total,
+            nenhuma.dados or nenhuma.motivo,
+        )
+        rodar("browser.navigate", {**alvo, "url": url})
 
         os.kill(pid, signal.SIGTERM)  # PID conferido acima em /proc: é o host, e só ele
         novo = _esperar(lambda: [p for p in _sockets(familia) if p != pid and _e_o_host(p)], 30)

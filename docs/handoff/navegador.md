@@ -301,6 +301,59 @@ Testes: `background_navegacao.test.mjs` (navegador falso com janelas, abas e eve
 novos falham no `background.js` do HEAD), `test_ferramentas_browser.py` (6 novos, todos falham no
 HEAD), `test_metodo.py` e o roteiro em contêiner (4 conferências novas).
 
+## Indicador «no controle», PARAR e reuso de abas (2026-10-21, ADR-0027 regra 4)
+
+Pedido do dono: o item 4 da ADR-0027 (que estava registrado como "não foi feito") e o reuso de
+abas. Onde mora cada peça:
+
+- **Concessão por objetivo** — `src/jarvis/navegador/controle.py` (`ControleDoNavegador`): cada
+  objetivo (turno ou tarefa, o mesmo `Objetivo` da ADR-0030 C2/ADR-0038) ganha um id aleatório que
+  vai em todo pedido que lê ou mexe numa aba (`ClienteDoNavegador.sob(concessao)`, por linha — nada
+  de atributo disputado entre o turno e as tarefas). Uma **vigia** (linha que só vive enquanto há
+  concessão) solta quando o objetivo chega à fase de concluir, solta o que ficou 45 s parado, renova
+  com `controle.manter` a cada 10 s, assina os eventos do host e, no fim de um pedido de ver que
+  terminou fora da vista (janela do Jarvis, aba de trás), põe a página à vista (`tabs.show`).
+- **Extensão** — `extensao/background.js` (registro das abas no controle, selo, `controle.*`,
+  revogação, evento `parar` ao host, botão da barra), `extensao/indicador.js` (a faixa, shadow DOM
+  fechado, `document_start`, re-anexa até 20 vezes se a página a arrancar, clique só com
+  `isTrusted`; confere com o fundo a cada 4 s e some se a extensão foi recarregada),
+  `extensao/content.js` (só responde mensagem com `comando`). Sem permissão nova; o manifesto ganhou
+  `action` (sem popup) e o segundo script de conteúdo.
+- **Host** — `src/jarvis/navegador/host.py`: quadro da extensão com `evento` é validado
+  (`protocolo.validar_evento`: só `parar`, concessões no formato, origem `faixa`|`barra`) e escrito
+  em quem assinou (`eventos.assinar`, atendido pelo próprio host, até 4 assinantes); o navegador
+  que fecha acorda quem espera. `cliente.AssinaturaUnix` lê os quadros à mão com `select` (tempo
+  esgotado no meio de um quadro bufferizado embaralharia o fluxo).
+- **App e janela** — `voz/app.py`: `_ligar_o_controle` (o navegador do executor e o de outra
+  família, para `sites.open`), `_parar_pelo_navegador` (cancela as tarefas daquele objetivo; turno
+  no ar → `interromper`, o epoch de sempre), `parar_navegador` (o botão da janela),
+  `ao_mudar_navegador` (só depois que a extensão aceitou um pedido da concessão:
+  `ControleDoNavegador.confirmar`); `gui/nucleo.py` (`parar_navegador` numa linha à parte),
+  `gui/ponte.py` (`navegadorNoControle`, `pararNavegador`), `BarraDeConversa.qml` (botão «parar o
+  navegador», só com aba no controle).
+- **Reuso** — `navegador/ferramentas.py` (`_aba_para_ver`, `_ja_aberta`, `abrir_site`): pedido de
+  ver sem `tab_id` → a aba já na URL só é ativada; a do mesmo site (host sem `www.`, com a porta) é
+  navegada; senão a atual. Banco/senha/pagamento/mensageiro/e-mail: a aba do dono não tem a página
+  trocada. `browser.tabs` diz janela (1, 2…) e estado. `sites.open` vai por `abrir_site` (o app
+  delega em `_na_aba_atual`): conferido, à vista, e `NavegadorIndisponivel` ainda cai para abrir o
+  navegador com a URL.
+
+**Armadilha medida no roteiro:** IP e `localhost` não têm domínio registrável, então nunca entram
+no objetivo; num turno que já leu a página, navegar para outro endereço do site de teste pede o sim
+(ADR-0030, conservador para endereço local). O roteiro diz sim nesse passo; em site público isso
+não acontece (o domínio entra em "alcançados").
+
+**Provas:** `tests/unit/navegador/background_controle.test.mjs` (11), `indicador.test.mjs` (6, DOM
+falso), `test_controle.py` (9), `test_host.py` (+5), `test_quadro_e_protocolo.py` (+2),
+`test_ferramentas_browser.py` (+10), `test_ligacao_ao_app.py` (+3),
+`tests/unit/gui/test_parar_navegador_na_janela.py` e o roteiro em contêiner (5 conferências
+novas: a faixa em toda página da aba controlada, medida pela própria página; PARAR com clique de
+verdade — `Input` do CDP no Chromium, ações do Marionette no Firefox —; 3 casos de reuso).
+
+O que o dono faz: `uv run jarvis-native-host --instalar` no repositório (copia `indicador.js`),
+**Recarregar** a extensão em `brave://extensions`, F5 nas abas que já estavam abertas (a faixa só
+aparece em página carregada depois da extensão nova) e reiniciar o `uv run jarvis`.
+
 ## Verificações já verdes
 
 Os comandos abaixo passaram para a fatia 2, sem navegador ou dispositivo real:

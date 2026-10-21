@@ -7,6 +7,10 @@ Lado do navegador, só `stdin`/`stdout` (quadros do Native Messaging). Lado do J
 O host não decide nada: valida o vocabulário (`protocolo`), espera a resposta da extensão com
 prazo e devolve. Política, risco e confirmação do dono moram no Jarvis. O estado também: o service
 worker da extensão dorme, e o host vive e morre com o navegador.
+
+A extensão também fala por conta própria: quando o dono aperta PARAR (na faixa da página ou no
+botão da barra), ela manda um **evento**. O host o valida e o escreve em quem assinou
+(`eventos.assinar`): uma conexão que o Jarvis deixa aberta enquanto controla alguma aba.
 """
 
 from __future__ import annotations
@@ -23,12 +27,14 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.navegador.protocolo import (
+    ASSINAR,
     ID_FIREFOX,
     LIMITE_DA_RESPOSTA,
     LIMITE_DO_PEDIDO,
     ORIGEM_CHROMIUM,
     PedidoDaPonte,
     PedidoInvalido,
+    validar_evento,
     validar_pedido,
     validar_resposta,
 )
@@ -36,6 +42,8 @@ from jarvis.navegador.quadro import Escritor, Leitor, QuadroInvalido, escrever_q
 
 PRAZO_S: Final = 25.0
 MAXIMO_EM_VOO: Final = 8
+MAXIMO_DE_ASSINANTES: Final = 4
+"""Conexões que esperam eventos (o Jarvis controlando abas): cada uma ocupa uma vaga de conexão."""
 SUBPASTA: Final = Path("jarvis") / "navegador"
 
 
@@ -70,6 +78,8 @@ class Ponte:
         self._escrita = threading.Lock()
         self._esperas: dict[str, _Espera] = {}
         self._fechada = False
+        self._assinantes: list[Escritor] = []
+        self._escrita_dos_eventos = threading.Lock()
 
     def pedir(self, pedido: PedidoDaPonte) -> dict[str, Any]:
         espera = _Espera()
@@ -106,11 +116,40 @@ class Ponte:
         with self._trava:
             self._fechada = True
             esperas = list(self._esperas.items())
+            self._assinantes.clear()
         for identificador, espera in esperas:
             espera.resposta = erro_da_ponte(
                 identificador, "navegador_fechado", "o navegador foi fechado"
             )
             espera.evento.set()
+
+    def assinar(self, fluxo: Escritor) -> bool:
+        """Quem quer os eventos da extensão (o PARAR do dono). Falso se já há assinantes demais."""
+        with self._trava:
+            if self._fechada or len(self._assinantes) >= MAXIMO_DE_ASSINANTES:
+                return False
+            self._assinantes.append(fluxo)
+            return True
+
+    def desassinar(self, fluxo: Escritor) -> None:
+        with self._trava:
+            if fluxo in self._assinantes:
+                self._assinantes.remove(fluxo)
+
+    def publicar(self, evento: dict[str, Any]) -> int:
+        """Escreve o evento em cada assinante; quem não recebe sai da lista. Devolve quantos
+        receberam."""
+        with self._trava:
+            assinantes = list(self._assinantes)
+        entregues = 0
+        for fluxo in assinantes:
+            try:
+                with self._escrita_dos_eventos:
+                    escrever_quadro(fluxo, evento, LIMITE_DA_RESPOSTA)
+                entregues += 1
+            except (OSError, ValueError):
+                self.desassinar(fluxo)
+        return entregues
 
     def _esquecer(self, identificador: str) -> None:
         with self._trava:
@@ -127,7 +166,8 @@ def _par_e_nosso(conexao: socket.socket, uid: int) -> bool:
 
 
 def atender(conexao: socket.socket, ponte: Ponte, uid: int, prazo_s: float = PRAZO_S) -> None:
-    """Um pedido por conexão: ler, validar, levar ao navegador, devolver."""
+    """Um pedido por conexão: ler, validar, levar ao navegador, devolver. A assinatura de eventos
+    é a exceção: a conexão fica aberta, recebendo eventos, até o Jarvis fechá-la."""
     conexao.settimeout(prazo_s + 5)
     try:
         if not _par_e_nosso(conexao, uid):
@@ -137,7 +177,11 @@ def atender(conexao: socket.socket, ponte: Ponte, uid: int, prazo_s: float = PRA
                 bruto = ler_quadro(fluxo, LIMITE_DO_PEDIDO)
                 if bruto is None:
                     return
-                resposta = ponte.pedir(validar_pedido(bruto))
+                pedido = validar_pedido(bruto)
+                if pedido.method == ASSINAR:
+                    _assinar(conexao, fluxo, pedido, ponte)
+                    return
+                resposta = ponte.pedir(pedido)
             except (QuadroInvalido, PedidoInvalido) as erro:
                 resposta = erro_da_ponte(None, "pedido_invalido", str(erro))
             escrever_quadro(fluxo, resposta, LIMITE_DA_RESPOSTA)
@@ -146,6 +190,24 @@ def atender(conexao: socket.socket, ponte: Ponte, uid: int, prazo_s: float = PRA
     finally:
         with contextlib.suppress(OSError):
             conexao.close()
+
+
+def _assinar(conexao: socket.socket, fluxo: Any, pedido: PedidoDaPonte, ponte: Ponte) -> None:
+    if not ponte.assinar(fluxo):
+        escrever_quadro(
+            fluxo, erro_da_ponte(pedido.id, "ocupado", "assinantes demais"), LIMITE_DA_RESPOSTA
+        )
+        return
+    try:
+        escrever_quadro(
+            fluxo, {"id": pedido.id, "ok": True, "result": {"assinado": True}}, LIMITE_DA_RESPOSTA
+        )
+        # Fica até o Jarvis fechar a conexão (ou o navegador sair e fechar o socket).
+        conexao.settimeout(None)
+        while conexao.recv(64):
+            pass
+    finally:
+        ponte.desassinar(fluxo)
 
 
 def _preparar_pasta(pasta: Path, uid: int) -> None:
@@ -165,6 +227,8 @@ class Servidor:
         self._ponte = ponte
         self._uid = uid
         self._vagas = threading.BoundedSemaphore(MAXIMO_EM_VOO)
+        self._trava_das_conexoes = threading.Lock()
+        self._conexoes: set[socket.socket] = set()
         self._soquete = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         antes = os.umask(0o177)
         try:
@@ -189,9 +253,13 @@ class Servidor:
             threading.Thread(target=self._atender, args=(conexao,), daemon=True).start()
 
     def _atender(self, conexao: socket.socket) -> None:
+        with self._trava_das_conexoes:
+            self._conexoes.add(conexao)
         try:
             atender(conexao, self._ponte, self._uid)
         finally:
+            with self._trava_das_conexoes:
+                self._conexoes.discard(conexao)
             self._vagas.release()
 
     def fechar(self) -> None:
@@ -199,6 +267,11 @@ class Servidor:
             self._soquete.close()
         with contextlib.suppress(OSError):
             self.caminho.unlink()
+        with self._trava_das_conexoes:
+            abertas = list(self._conexoes)
+        for conexao in abertas:  # acorda quem espera eventos: o navegador saiu
+            with contextlib.suppress(OSError):
+                conexao.shutdown(socket.SHUT_RDWR)
 
 
 def familia_do_navegador(argumentos: Sequence[str]) -> str | None:
@@ -243,7 +316,10 @@ def principal(
             if quadro is None:
                 break
             try:
-                ponte.entregar(validar_resposta(quadro))
+                if "evento" in quadro:
+                    ponte.publicar(validar_evento(quadro))
+                else:
+                    ponte.entregar(validar_resposta(quadro))
             except PedidoInvalido:
                 continue
     finally:

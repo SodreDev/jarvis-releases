@@ -70,6 +70,10 @@ class PaginaFalsa:
         """A janela do dono está na frente (o dono não está noutro programa)."""
         self.foco_negado = False
         """O sistema não deixa o navegador vir para a frente."""
+        self.paradas: set[str] = set()
+        """Concessões que o dono parou (PARAR na faixa): a extensão recusa o que vier delas."""
+        self.concessoes: list[tuple[str, str | None]] = []
+        """A concessão de cada pedido, na ordem: `(método, controle)`."""
 
     def elemento(self, alvo: str, **dados: Any) -> None:
         base = {"tag": "button", "texto": alvo, "campo": False, "sensivel": False}
@@ -110,10 +114,31 @@ class PaginaFalsa:
     def chamar(self, pedido: PedidoDaPonte, navegador: str = "") -> dict[str, Any]:
         if self.fora_do_ar:
             raise NavegadorIndisponivel("nenhum navegador com a extensão do Jarvis está aberto")
-        self.chamadas.append((pedido.method, dict(pedido.params)))
+        # A concessão do controle (ADR-0027 regra 4) fica à parte: as conferências de antes olham
+        # o pedido em si.
+        sem_concessao = {k: v for k, v in pedido.params.items() if k != "controle"}
+        self.chamadas.append((pedido.method, sem_concessao))
+        self.concessoes.append((pedido.method, pedido.params.get("controle")))
         ok = {"id": pedido.id, "ok": True}
         p = pedido.params
+        if p.get("controle") in self.paradas:
+            erro = {"codigo": "parado_pelo_dono", "mensagem": "o dono apertou parar"}
+            return {"id": pedido.id, "ok": False, "error": erro}
         match pedido.method:
+            case "controle.soltar" | "controle.manter" | "controle.parar" | "controle.estado":
+                return ok | {"result": {}}
+            case "windows.focused":
+                da_frente = next(
+                    (a["id"] for a in self.abas if a["ativa"] and a["janelaId"] == 1), None
+                )
+                return ok | {
+                    "result": {
+                        "janelaId": 1 if self.navegador_na_frente else None,
+                        "abaAtivaId": da_frente,
+                        "janelaDoJarvisId": 50,
+                        "janelaDoDonoId": 1,
+                    }
+                }
             case "tabs.list":
                 return ok | {"result": {"abas": self.abas}}
             case "tabs.current":
@@ -225,6 +250,8 @@ def executor(tmp_path: Path, pagina: PaginaFalsa) -> Iterator[ExecutorDeFerramen
         )
         ex.preparar()
         yield ex
+        assert ex.navegador is not None
+        ex.navegador.controle.fechar()  # a vigia do controle não sobra para o próximo teste
 
 
 def _rodar(
@@ -288,6 +315,8 @@ def test_listar_abas_e_livre_mostra_so_dominio_e_contamina_o_turno(
     assert perguntas == []
     assert resultado.dados["abas"][0] == {
         "tab_id": 7,
+        "janela": 1,
+        "estado": "à vista",
         "ativa": True,
         "dominio": "loja.example",
         "titulo": "Loja",
@@ -633,7 +662,8 @@ def test_navegar_troca_a_url_da_aba_atual_e_aba_nova_so_se_pedida(
     """Dono, 2026-10-20: abrir um link criava aba nova a cada passo."""
     atual, _ = _rodar(executor, "browser.navigate", {"url": "https://exemplo.org/a"})
     assert atual.status == "ok" and atual.dados["tab_id"] == 7 and not atual.dados["nova_aba"]
-    assert pagina.metodos() == ["tabs.current", "tabs.navigate"]
+    # Antes de trocar a página da aba atual, a lista: há aba que já tem o site? (2026-10-21)
+    assert pagina.metodos() == ["tabs.current", "tabs.list", "tabs.navigate"]
 
     nova, _ = _rodar(
         executor, "browser.navigate", {"url": "https://exemplo.org/b", "nova_aba": True}
@@ -1106,3 +1136,191 @@ def test_sem_fala_do_dono_navegar_continua_na_aba_atual(
 
     assert ok.status == "ok" and ok.dados["tab_id"] == 7 and ok.dados["janela"] == "dono"
     assert "tabs.show" not in pagina.metodos()
+
+
+# --- o controle e o PARAR (ADR-0027 regra 4) ------------------------------------------------------
+def test_cada_pedido_que_mexe_na_aba_leva_a_concessao_do_objetivo(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """É pela concessão que a extensão mostra a faixa "no controle" e sabe o que recusar."""
+    executor.novo_turno("abre o youtube")
+    _rodar(executor, "browser.read", {})
+    _rodar(executor, "browser.scroll", {})
+    executor.novo_turno("lê a página")
+    _rodar(executor, "browser.read", {})
+
+    lidas = [c for m, c in pagina.concessoes if m == "page.read"]
+    assert lidas[0] and lidas[0] == next(c for m, c in pagina.concessoes if m == "page.scroll")
+    assert lidas[1] and lidas[1] != lidas[0], "outro pedido do dono, outra concessão"
+    assert all(c is None for m, c in pagina.concessoes if m == "tabs.list")
+
+
+def test_o_parar_do_dono_vira_recusa_cancela_quem_estava_e_nada_mais_dele_age(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    assert executor.navegador is not None
+    parados: list[Any] = []
+    executor.navegador.ao_parar = parados.append
+    executor.novo_turno("abre o youtube e clica no primeiro vídeo")
+    pagina.elemento("Primeiro vídeo")
+    _rodar(executor, "browser.read", {})
+    concessao = next(c for m, c in pagina.concessoes if m == "page.read")
+    assert concessao is not None
+    pagina.paradas.add(concessao)  # o dono apertou PARAR na faixa
+
+    clique, _ = _rodar(executor, "browser.click", {"alvo": "Primeiro vídeo"})
+    de_novo, _ = _rodar(executor, "browser.read", {})
+
+    assert clique.status == "negado" and "parar" in clique.motivo
+    assert "page.click" not in pagina.metodos(), "nada foi clicado"
+    assert len(parados) == 1 and parados[0][0] is executor.objetivo
+    assert de_novo.status == "negado", "o pedido parado não volta a agir"
+    assert pagina.metodos().count("page.read") == 1
+
+
+def test_o_parar_da_janela_do_jarvis_solta_tudo_e_avisa(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    assert executor.navegador is not None
+    mudou: list[bool] = []
+    executor.navegador.ao_mudar = mudou.append
+    executor.novo_turno("abre o youtube")
+    _rodar(executor, "browser.read", {})
+
+    parados = executor.navegador.parar()
+
+    assert parados == [executor.objetivo]
+    assert "controle.parar" in pagina.metodos()
+    assert mudou == [True, False]
+
+
+# --- reaproveitar a aba (pedido do dono, 2026-10-21) ----------------------------------------------
+def _com_abas(pagina: PaginaFalsa, *abas: tuple[int, str, bool]) -> None:
+    """A aba 7 do dono e outras: `(id, url, ativa)`, todas na janela 1."""
+    for identificador, url, ativa in abas:
+        if ativa:
+            for outra in pagina.abas:
+                outra["ativa"] = False
+        pagina.abas.append(
+            {"id": identificador, "janelaId": 1, "ativa": ativa, "url": url, "titulo": "Aba"}
+        )
+
+
+def test_reuso_ja_na_url_certa_so_ativa_e_mostra_sem_recarregar(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("abre o vídeo do primo rico no youtube")
+    _com_abas(pagina, (9, "https://www.youtube.com/watch?v=1", False))
+    pagina.navegador_na_frente = False
+
+    ok, perguntas = _rodar(executor, "browser.navigate", {"url": "https://youtube.com/watch?v=1"})
+
+    assert ok.status == "ok" and perguntas == []
+    assert ok.dados["reutilizou"] == "mesma_url" and ok.dados["tab_id"] == 9
+    assert ok.dados["visivel"] is True
+    assert "tabs.navigate" not in pagina.metodos() and "tabs.open" not in pagina.metodos()
+    assert ("tabs.show", {"tabId": 9}) in pagina.chamadas
+
+
+def test_reuso_mesmo_site_noutra_pagina_navega_a_aba_existente(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("abre um vídeo de gatos no youtube")
+    _com_abas(pagina, (9, "https://www.youtube.com/feed/subscriptions", False))
+
+    ok, _ = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/watch?v=2"})
+
+    assert ok.status == "ok" and ok.dados["reutilizou"] == "mesmo_site"
+    assert ("tabs.navigate", {"tabId": 9, "url": "https://www.youtube.com/watch?v=2"}) in (
+        pagina.chamadas
+    )
+    assert not any(m == "tabs.navigate" and p.get("tabId") == 7 for m, p in pagina.chamadas)
+    assert len(pagina.abas) == 2, "nenhuma aba nova"
+
+
+def test_reuso_nenhuma_aba_do_site_abre_na_aba_atual(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("abre o exemplo.org")
+    _com_abas(pagina, (9, "https://www.youtube.com/", False))
+
+    ok, _ = _rodar(executor, "browser.navigate", {"url": "https://exemplo.org/"})
+
+    assert ok.status == "ok" and ok.dados["tab_id"] == 7 and "reutilizou" not in ok.dados
+    assert ("tabs.navigate", {"tabId": 7, "url": "https://exemplo.org/"}) in pagina.chamadas
+
+
+def test_a_aba_do_dono_em_email_ou_banco_nao_tem_a_pagina_trocada(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """O e-mail aberto (ou a conversa, o extrato) fica; o que ele pediu abre numa aba nova."""
+    executor.novo_turno("abre o youtube")
+    pagina.abas[0]["url"] = "https://mail.google.com/mail/u/0/#inbox"
+
+    ok, _ = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/"})
+
+    assert ok.status == "ok" and ok.dados["nova_aba"] is True and ok.dados["tab_id"] != 7
+    assert not any(m == "tabs.navigate" for m, _ in pagina.chamadas)
+
+
+def test_mensageiro_do_mesmo_site_vem_como_esta_sem_trocar_a_pagina(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """Uma segunda aba do WhatsApp Web derruba a primeira: a que existe vem à frente como está."""
+    executor.novo_turno("abre o whatsapp")
+    _com_abas(pagina, (9, "https://web.whatsapp.com/", False))
+
+    ok, _ = _rodar(executor, "browser.navigate", {"url": "https://web.whatsapp.com/send?phone=1"})
+
+    assert ok.status == "ok" and ok.dados["reutilizou"] == "mesmo_site_sensivel"
+    assert ok.dados["tab_id"] == 9 and "não é trocada" in ok.dados["situacao"]
+    assert "tabs.navigate" not in pagina.metodos() and "tabs.open" not in pagina.metodos()
+
+
+def test_a_lista_de_abas_diz_janela_e_estado_e_as_outras_abas_se_controlam_pelo_id(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    pagina.abas += [
+        {"id": 9, "janelaId": 1, "ativa": False, "url": "https://g1.globo.com/", "titulo": "g1"},
+        {"id": 20, "janelaId": 3, "ativa": True, "url": "https://exemplo.org/", "titulo": "Ex"},
+        {
+            "id": 30,
+            "janelaId": 50,
+            "ativa": True,
+            "url": "https://busca.example/",
+            "titulo": "B",
+            "janelaDoJarvis": True,
+        },
+    ]
+
+    lista, _ = _rodar(executor, "browser.tabs", {})
+    lido, _ = _rodar(executor, "browser.read", {"tab_id": 9})
+
+    estados = {a["tab_id"]: (a["janela"], a["estado"]) for a in lista.dados["abas"]}
+    assert estados == {
+        7: (1, "à vista"),
+        9: (1, "segundo plano"),
+        20: (2, "ativa noutra janela"),
+        30: (3, "janela do Jarvis"),
+    }
+    assert lista.dados["janelas"] == 3
+    assert lido.status == "ok" and ("page.read", {"tabId": 9}) in pagina.chamadas
+
+
+def test_sites_open_pela_extensao_reaproveita_e_termina_a_vista(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    assert executor.navegador is not None
+    executor.novo_turno("abre o g1")
+    _com_abas(pagina, (9, "https://g1.globo.com/", False))
+    pagina.navegador_na_frente = False
+
+    feito = executor.navegador.abrir_site("https://g1.globo.com/", objetivo=executor.objetivo)
+
+    assert feito["reutilizou"] == "mesma_url" and feito["visivel"] is True
+    pagina.sem_rede = {"exemplo.org"}
+    with pytest.raises(ValueError, match="pagina_nao_abriu"):
+        executor.navegador.abrir_site("https://exemplo.org/", objetivo=executor.objetivo)
+    pagina.fora_do_ar = True
+    with pytest.raises(NavegadorIndisponivel):  # sem extensão: o navegador abre com a URL
+        executor.navegador.abrir_site("https://exemplo.org/", objetivo=executor.objetivo)
