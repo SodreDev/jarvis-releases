@@ -32,7 +32,7 @@ from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO, Quadro
 from jarvis.barramento.contrato import validar
 from jarvis.barramento.envelope import Envelope, Prioridade, Tipo, Trust
 from jarvis.corpus.metricas import acordo_de_prefixo, palavras
-from jarvis.voz.interface import IDIOMA_PADRAO, Hipotese, MotorDeAsr, Onde
+from jarvis.voz.interface import IDIOMA_PADRAO, Hipotese, MotorDeAsr, Onde, Sinais, Transcricao
 from jarvis.voz.registro import exigir_motor
 
 PASSO_PADRAO_MS: Final = 200.0
@@ -134,6 +134,11 @@ class MotorWhisper:
         )
 
     def transcrever(self, amostras: bytes) -> Hipotese:
+        return self.transcrever_com_sinais(amostras).hipotese
+
+    def transcrever_com_sinais(self, amostras: bytes) -> Transcricao:
+        """O texto e os sinais dos segmentos (`no_speech_prob`, `avg_logprob`, compressão): é com
+        eles que o filtro de ruído separa a fala do texto inventado num trecho sem fala."""
         import numpy as np
 
         if self._modelo is None:
@@ -150,10 +155,15 @@ class MotorWhisper:
         partes = list(trechos)
         texto = " ".join(t.text for t in partes).strip()
         if not partes:
-            return Hipotese("", 0.0)
+            return Transcricao(Hipotese("", 0.0))
         # avg_logprob é logaritmo de probabilidade média por token; exp traz para [0, 1].
         media = sum(float(t.avg_logprob) for t in partes) / len(partes)
-        return Hipotese(texto, float(min(1.0, max(0.0, 2.718281828**media))))
+        sinais = Sinais(
+            sem_fala=max(float(t.no_speech_prob) for t in partes),
+            logprob=media,
+            compressao=max(float(t.compression_ratio) for t in partes),
+        )
+        return Transcricao(Hipotese(texto, float(min(1.0, max(0.0, 2.718281828**media)))), sinais)
 
     def _dicas_para_modelo(self) -> str:
         """Capitaliza só palavras inteiramente minúsculas e preserva nomes como TeamSpeak."""

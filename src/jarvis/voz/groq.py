@@ -30,7 +30,7 @@ from typing import Any, Final
 
 from jarvis.rede import AdaptadorRemoto, Sonda, SondaInjetada
 from jarvis.voz.chaves import Chave
-from jarvis.voz.interface import Cancelado, Hipotese, Onde, nunca_cancelado
+from jarvis.voz.interface import Cancelado, Hipotese, Onde, Sinais, Transcricao, nunca_cancelado
 from jarvis.voz.nuvem import (
     ClienteHttp,
     campos_sem_segredo,
@@ -127,6 +127,11 @@ class MotorAsrGroq:
         fazer com isso é o `agentd` — e com a rede fora ele já tem a degradação declarada em
         arquivo, que é o caminho do F1-14 (cai para PTT e diz isso).
         """
+        return self.transcrever_com_sinais(amostras).hipotese
+
+    def transcrever_com_sinais(self, amostras: bytes) -> Transcricao:
+        """O mesmo, com os sinais dos segmentos do `verbose_json` (`no_speech_prob`,
+        `avg_logprob`, `compression_ratio`) — os que o filtro de ruído usa (ADR-0043)."""
         if self._cliente is None or self._chave is None or self._adaptador is None:
             self.abrir()
         cliente, chave, adaptador = self._cliente, self._chave, self._adaptador
@@ -134,7 +139,7 @@ class MotorAsrGroq:
 
         if self.cancelado():
             self.descartadas_por_cancelamento += 1
-            return Hipotese("", 0.0)
+            return Transcricao(Hipotese("", 0.0))
 
         segundos = len(amostras) / 2 / 16000
         if 0 < segundos < SEGUNDOS_MINIMOS_COBRADOS:
@@ -157,7 +162,7 @@ class MotorAsrGroq:
         # reaproveitado pelo CPython — dois turnos diferentes acabariam com o mesmo id.
         call_id = f"asr-groq-{self.transcricoes}"
 
-        def fazer(prazo: float) -> Hipotese | None:
+        def fazer(prazo: float) -> Transcricao | None:
             resposta = cliente.postar(
                 CAMINHO_TRANSCRICAO,
                 corpo=corpo,
@@ -169,35 +174,55 @@ class MotorAsrGroq:
             if resposta.cancelada:
                 self.descartadas_por_cancelamento += 1
                 return None
-            return _hipotese_de(resposta.json())
+            return _transcricao_de(resposta.json())
 
         # `ErroDoServico` (5xx, 429, transporte) é capturado **dentro** do adaptador e vira
         # degradação declarada; `ServicoRecusou` (chave inválida, plano, pedido errado) não é
         # `ErroDeRede` e atravessa de propósito: o dono precisa ler o motivo certo.
         resultado = adaptador.chamar(fazer, call_id=call_id)
-        return resultado if resultado is not None else Hipotese("", 0.0)
+        return resultado if resultado is not None else Transcricao(Hipotese("", 0.0))
 
 
 def _hipotese_de(dados: dict[str, Any]) -> Hipotese:
-    """Texto e confiança do `verbose_json`.
+    """Texto e confiança do `verbose_json` (sem os sinais: ver `_transcricao_de`)."""
+    return _transcricao_de(dados).hipotese
+
+
+def _numeros(segmentos: list[Any], campo: str) -> list[float]:
+    """O campo numérico de cada segmento que o tem; o que veio torto fica de fora."""
+    return [
+        float(s[campo])
+        for s in segmentos
+        if isinstance(s, dict)
+        and isinstance(s.get(campo), (int, float))
+        and not isinstance(s.get(campo), bool)
+    ]
+
+
+def _transcricao_de(dados: dict[str, Any]) -> Transcricao:
+    """Texto, confiança e sinais do `verbose_json`.
 
     A confiança vem da média de `avg_logprob` dos segmentos — a mesma conta do motor local,
     para os dois números serem comparáveis no relatório. Resposta sem segmento devolve
     confiança **0,0**, e isso quer dizer "não medida", não "ruim": quem publica tem de dizer
-    qual dos dois casos é.
+    qual dos dois casos é. Os sinais seguem a mesma regra: o que a resposta não trouxe fica
+    `None` ("não sei"), nunca zero.
     """
     texto = str(dados.get("text", "")).strip()
     segmentos = dados.get("segments")
     if not texto:
-        return Hipotese("", 0.0)
+        return Transcricao(Hipotese("", 0.0))
     if not isinstance(segmentos, list) or not segmentos:
-        return Hipotese(texto, 0.0)
-    logs = [
-        float(s["avg_logprob"])
-        for s in segmentos
-        if isinstance(s, dict) and isinstance(s.get("avg_logprob"), (int, float))
-    ]
-    if not logs:
-        return Hipotese(texto, 0.0)
-    media = sum(logs) / len(logs)
-    return Hipotese(texto, float(min(1.0, max(0.0, 2.718281828**media))))
+        return Transcricao(Hipotese(texto, 0.0))
+    logs = _numeros(segmentos, "avg_logprob")
+    sem_fala = _numeros(segmentos, "no_speech_prob")
+    compressao = _numeros(segmentos, "compression_ratio")
+    media = sum(logs) / len(logs) if logs else None
+    sinais = Sinais(
+        sem_fala=max(sem_fala) if sem_fala else None,
+        logprob=media,
+        compressao=max(compressao) if compressao else None,
+    )
+    if media is None:
+        return Transcricao(Hipotese(texto, 0.0), sinais)
+    return Transcricao(Hipotese(texto, float(min(1.0, max(0.0, 2.718281828**media)))), sinais)

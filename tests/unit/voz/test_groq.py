@@ -15,7 +15,7 @@ from jarvis.audio_io.quadro import TAXA_PADRAO, de_int16
 from jarvis.rede import SondaInjetada, ler_degradacao
 from jarvis.voz.chaves import VARIAVEL_GROQ, SegredoAusente
 from jarvis.voz.groq import SEGUNDOS_MINIMOS_COBRADOS, MotorAsrGroq
-from jarvis.voz.interface import Hipotese, MotorDeAsr, Onde, cancelado_por_epoch
+from jarvis.voz.interface import Hipotese, MotorDeAsr, Onde, Sinais, cancelado_por_epoch
 from jarvis.voz.nuvem import NuvemRealProibidaEmCI, ServicoRecusou
 from jarvis.voz.registro import MotorRecusado
 from tests.unit.voz.servidor_falso import Roteiro, ServicoFalso
@@ -162,6 +162,46 @@ def test_resposta_sem_segmento_devolve_confianca_nao_medida(tmp_path: Path) -> N
         hipotese = motor_em(servico, tmp_path).transcrever(audio_de(1200))
         assert hipotese.texto == TEXTO
         assert hipotese.confianca == 0.0
+
+
+def test_os_sinais_do_verbose_json_voltam_com_o_texto(tmp_path: Path) -> None:
+    """ADR-0043: `no_speech_prob`, `avg_logprob` e `compression_ratio` de cada segmento são o que
+    o filtro de ruído usa — o maior `no_speech_prob`, a média do logprob, a maior compressão."""
+    corpo = json.dumps(
+        {
+            "text": "Obrigado.",
+            "segments": [
+                {"avg_logprob": -0.9, "no_speech_prob": 0.61, "compression_ratio": 0.5},
+                {"avg_logprob": -1.3, "no_speech_prob": 0.2, "compression_ratio": 2.6},
+            ],
+        }
+    ).encode()
+    with ServicoFalso(roteiro=Roteiro(corpo=corpo)) as servico:
+        transcricao = motor_em(servico, tmp_path).transcrever_com_sinais(audio_de(1200))
+
+    assert transcricao.hipotese.texto == "Obrigado."
+    assert transcricao.sinais.sem_fala == pytest.approx(0.61)
+    assert transcricao.sinais.logprob == pytest.approx(-1.1)
+    assert transcricao.sinais.compressao == pytest.approx(2.6)
+
+
+def test_sinal_que_a_resposta_nao_trouxe_fica_desconhecido_e_nao_zero(tmp_path: Path) -> None:
+    """Zero seria "certeza de fala" para o `no_speech_prob`: o que não veio é `None`."""
+    with ServicoFalso(roteiro=Roteiro(corpo=resposta_boa())) as servico:
+        transcricao = motor_em(servico, tmp_path).transcrever_com_sinais(audio_de(1200))
+
+    assert transcricao.sinais.logprob == pytest.approx(-0.2)
+    assert transcricao.sinais.sem_fala is None
+    assert transcricao.sinais.compressao is None
+
+
+def test_resposta_sem_segmento_nao_tem_sinal_nenhum(tmp_path: Path) -> None:
+    corpo = json.dumps({"text": TEXTO}).encode()
+    with ServicoFalso(roteiro=Roteiro(corpo=corpo)) as servico:
+        transcricao = motor_em(servico, tmp_path).transcrever_com_sinais(audio_de(1200))
+
+    assert transcricao.hipotese == Hipotese(TEXTO, 0.0)
+    assert transcricao.sinais == Sinais()
 
 
 def test_conta_as_requisicoes_abaixo_do_minimo_cobrado(tmp_path: Path) -> None:

@@ -62,6 +62,30 @@ class Hipotese(NamedTuple):
     """Em [0, 1]. Quem não tem como estimar devolve 0.0 e **diz** isso no relatório."""
 
 
+class Sinais(NamedTuple):
+    """O que o motor sabe, além do texto, sobre o quanto aquilo era fala (ADR-0043).
+
+    São os três números que o Whisper calcula por segmento — e a Groq devolve os mesmos no
+    `verbose_json`. É com eles que o filtro de ruído (`jarvis.voz.ruido`) separa a fala do dono do
+    texto que o modelo inventa num trecho de respiração, tosse ou ventilador. `None` = o motor não
+    mede (o oráculo, um motor de teste): quem filtra trata como "não sei", nunca como certeza.
+    """
+
+    sem_fala: float | None = None
+    """`no_speech_prob`, o maior dos segmentos: perto de 1, o modelo acha que não houve fala."""
+    logprob: float | None = None
+    """`avg_logprob`, a média dos segmentos: perto de 0 é confiança; −1 ou menos é chute."""
+    compressao: float | None = None
+    """`compression_ratio`, o maior dos segmentos: acima de 2,4 é texto repetido em laço."""
+
+
+class Transcricao(NamedTuple):
+    """O texto do bloco e os sinais de quanto ele era fala."""
+
+    hipotese: Hipotese
+    sinais: Sinais = Sinais()
+
+
 @runtime_checkable
 class MotorDeAsr(Protocol):
     """Transcreve um bloco de áudio PCM16 16 kHz mono. Quem é incremental é o transcritor."""
@@ -87,6 +111,17 @@ class MotorDeTts(Protocol):
     onde: Onde
 
     def sintetizar(self, texto: str) -> bytes: ...
+
+
+def transcrever_com_sinais(motor: MotorDeAsr, amostras: bytes) -> Transcricao:
+    """O texto e os sinais do bloco. O motor que mede tem `transcrever_com_sinais`; o que não
+    mede (o oráculo, um falso de teste) devolve só o texto, com os sinais vazios."""
+    detalhado = getattr(motor, "transcrever_com_sinais", None)
+    if callable(detalhado):
+        resultado = detalhado(amostras)
+        if isinstance(resultado, Transcricao):
+            return resultado
+    return Transcricao(motor.transcrever(amostras))
 
 
 def nunca_cancelado() -> bool:
