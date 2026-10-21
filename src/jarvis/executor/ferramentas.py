@@ -61,6 +61,7 @@ from jarvis.politica.objetivo import Objetivo, enderecos_do_resultado
 from jarvis.politica.pdp import Decisao, Grant, Pdp, Pedido, Veredito
 from jarvis.trilha import SEM_CAUSA, TrilhaDeDiagnostico, chaves, codigo_do_motivo
 from jarvis.voz.interface import Onde
+from jarvis.voz.vocabulario import RepositorioDoVocabulario
 
 if TYPE_CHECKING:
     from jarvis.tarefas.gestor import GestorDeTarefas
@@ -129,6 +130,9 @@ FERRAMENTAS_DE_FECHAR: Final = frozenset({"window.close", "apps.quit"})
 """Fechar a janela × encerrar o app (ADR-0042): o alvo é resolvido pelo código (`jarvis.executor.
 fechar`), antes do PDP — o que não está aberto, o ambíguo e o protegido voltam negados com o
 porquê — e de novo no corpo, na hora de agir."""
+FERRAMENTA_DE_VOCABULARIO: Final = "vocabulario.aprender"
+"""Aprender um nome do dono (ADR-0044): o corpo é do repositório do vocabulário, e a tool só existe
+para o modelo quando o laço tem um — a suíte e o modo sem pasta de configuração não têm."""
 FERRAMENTA_DE_ENCERRAR: Final = "jarvis.encerrar"
 """Encerrar o próprio Jarvis (ADR-0041): o corpo é do aplicativo (`Encerramento`), e a tool só
 existe para o modelo quando há um laço que possa ser encerrado."""
@@ -330,6 +334,11 @@ class ExecutorDeFerramentas:
     """Mouse e teclado virtuais (ADR-0027, fatia 4). Sem ele, as `input.*` não existem."""
     encerramento: Encerramento | None = None
     """Quem encerra o Jarvis (ADR-0041). Sem ele, a `jarvis.encerrar` não existe."""
+    vocabulario: RepositorioDoVocabulario | None = None
+    """O vocabulário do dono (ADR-0044). Sem ele, a `vocabulario.aprender` não existe."""
+    ao_mudar_vocabulario: Callable[[], None] = field(default=lambda: None)
+    """O laço relê o vocabulário (a dica do ASR, a correção, a pronúncia) — depois de aprender e
+    depois de desfazer, para a correção valer já."""
     motor_ve_imagem: Callable[[], bool] = field(default=lambda: False)
     """Se o motor do chat de agora recebe imagem (`jarvis.s2.motor.aceita_imagem`): é o que liga a
     `browser.tela`. Perguntado na hora, porque o motor muda com o chat e o provedor."""
@@ -449,6 +458,8 @@ class ExecutorDeFerramentas:
             return self.estado_do_navegador is not None
         if tool_id == FERRAMENTA_DE_ENCERRAR:
             return self.encerramento is not None
+        if tool_id == FERRAMENTA_DE_VOCABULARIO:
+            return self.vocabulario is not None
         if tool_id in FERRAMENTAS_DE_FECHAR:
             return True
         if tool_id == FERRAMENTA_DA_TELA:
@@ -902,6 +913,10 @@ class ExecutorDeFerramentas:
             return registro.registrar(
                 tool_id, "o lembrete", "cancelar_alarme", str(dados["alarme_id"])
             ).acao_id
+        if tool_id == FERRAMENTA_DE_VOCABULARIO:
+            return registro.registrar(
+                tool_id, f"a correção de {dados['escrita']}", "vocabulario", str(dados["termo_id"])
+            ).acao_id
         livro = {
             "memoria.lembrar": ("assertion_id", "a anotação"),
             "memoria.criar_no": ("entity_id", "o registro novo na memória"),
@@ -1136,6 +1151,10 @@ class ExecutorDeFerramentas:
             agenda.cancelar(desfazer.alvo)
         elif desfazer.tipo == "cancelar_tarefa" and self.tarefas is not None:
             self.tarefas.cancelar(desfazer.alvo)
+        elif desfazer.tipo == "vocabulario":
+            if self.vocabulario is None or self.vocabulario.esquecer(desfazer.alvo) is None:
+                raise ValueError("essa correção de nome já não está no vocabulário")
+            self.ao_mudar_vocabulario()
         elif self.memoria is not None:
             self.memoria.livro.retratar(desfazer.alvo)
         else:
@@ -1201,6 +1220,23 @@ class ExecutorDeFerramentas:
             assert self.encerramento is not None  # _ligada filtra antes
             # Só o pedido: o laço termina o turno (a despedida toca) e então encerra, limpo.
             return {"encerrando": True, "tarefas_canceladas": self.encerramento.pedir()}
+        if tool_id == FERRAMENTA_DE_VOCABULARIO:
+            assert self.vocabulario is not None  # _ligada filtra antes
+            # O que não serve (palavra comum demais, grafia com marcação) volta como erro, com o
+            # porquê (`VocabularioInvalido` é ValueError); o que serve vale já no laço.
+            termo = self.vocabulario.aprender(
+                str(args["escrita"]),
+                ouvido=[str(o) for o in args.get("ouvido", [])],
+                fala=str(args.get("fala", "")),
+                tipo=str(args.get("tipo", "termo")),
+            )
+            self.ao_mudar_vocabulario()
+            return {
+                "escrita": termo.escrita,
+                "termo_id": termo.id,
+                "ouvido": list(termo.ouvido),
+                "fala": termo.fala,
+            }
         if tool_id == "window.close":
             # De novo, na hora de agir: entre a pergunta e o sim a janela pode ter mudado.
             fechador = self._fechador()

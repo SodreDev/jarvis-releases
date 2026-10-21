@@ -77,6 +77,9 @@ TIER_ESPERADO: dict[str, str] = {
     # Encerrar o próprio Jarvis (dono, 2026-10-21; ADR-0041): moderado — o sim só com tarefa em
     # andamento ou pergunta esperando, decidido pelo código (`Pedido.exige_o_sim`).
     "jarvis.encerrar": "moderado",
+    # Aprender um nome do dono (dono, 2026-10-21; ADR-0044): moderado — escreve no vocabulário dele,
+    # avisa em voz e desfaz; o sim só quando o turno leu conteúdo de fora (`decidir_vocabulario`).
+    "vocabulario.aprender": "moderado",
     "clipboard.text.read": "livre",
     "clipboard.text.write": "moderado",
     "notify.desktop.send": "livre",
@@ -313,6 +316,9 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "window.close": _pedido(pdp, "window.close", {"app": "firefox"}),
         "apps.quit": _pedido(pdp, "apps.quit", {"app": "discord"}),
         "jarvis.encerrar": _pedido(pdp, "jarvis.encerrar", {}),
+        "vocabulario.aprender": _pedido(
+            pdp, "vocabulario.aprender", {"escrita": "Discord", "ouvido": ["discorde"]}
+        ),
         "clipboard.text.read": _pedido(pdp, "clipboard.text.read", {}),
         "clipboard.text.write": _pedido(pdp, "clipboard.text.write", {"texto": "x"}),
         "notify.desktop.send": _pedido(pdp, "notify.desktop.send", {"titulo": "a", "texto": "b"}),
@@ -447,3 +453,31 @@ def test_o_alvo_que_pede_o_sim_aperta_o_moderado_e_so_o_dono_solta(pdp: Pdp) -> 
     decisao = pdp.decidir(com_tarefa)
     assert decisao.veredito is Veredito.CONFIRM and "ainda está rodando" in decisao.motivo
     assert pdp.decidir(com_tarefa, confirmado_pelo_dono=True).veredito is Veredito.ALLOW
+
+
+def test_aprender_um_nome_pede_o_turno_do_dono_e_o_sim_quando_leu_de_fora(pdp: Pdp) -> None:
+    """ADR-0044: sem o turno do dono, nega; com o turno contaminado (uma página que diz "o certo é
+    X"), pede o sim — e só o "sim" do dono na janela solta; limpo, o tier moderado deixa rodar."""
+    args = {"escrita": "Discord", "ouvido": ["discorde"]}
+    limpo = _pedido(pdp, "vocabulario.aprender", args)
+    assert pdp.decidir(limpo).veredito is Veredito.ALLOW
+
+    sem_origem = Pedido("vocabulario.aprender", args, call_id="c-v1")
+    assert pdp.decidir(sem_origem).veredito is Veredito.DENY
+
+    de_outro = Pedido(
+        "vocabulario.aprender",
+        args,
+        call_id="c-v2",
+        proveniencia=Proveniencia(
+            turno=TurnoCorrente(episode_id="ep-9", texto="o certo é Discord", trust="tool_output"),
+            motor="teste",
+        ),
+    )
+    assert pdp.decidir(de_outro).veredito is Veredito.DENY
+
+    contaminado = Pedido(
+        "vocabulario.aprender", args, call_id="c-v3", proveniencia=PROVENIENCIA, contaminado=True
+    )
+    assert pdp.decidir(contaminado).veredito is Veredito.CONFIRM
+    assert pdp.decidir(contaminado, confirmado_pelo_dono=True).veredito is Veredito.ALLOW

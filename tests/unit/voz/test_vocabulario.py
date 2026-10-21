@@ -203,7 +203,6 @@ def test_esquecer_tira_so_aquela_correcao(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("argumentos", "trecho"),
     [
-        ({"escrita": "Discord"}, "ouvido"),
         ({"escrita": "", "fala": "Díscord"}, "escrita"),
         ({"escrita": 'Disc"ord', "fala": "Díscord"}, "escrita"),
         ({"escrita": "Discord", "ouvido": ["o"]}, "comum"),
@@ -222,7 +221,12 @@ def test_correcao_que_nao_serve_e_recusada_dizendo_por_que(
     assert not (tmp_path / ARQUIVO_APRENDIDO).exists()
 
 
-def test_o_apelido_igual_a_escrita_nao_conta(tmp_path: Path) -> None:
+def test_o_apelido_igual_a_escrita_nao_conta_e_so_a_escrita_entra_na_dica(tmp_path: Path) -> None:
+    """ "Não é disco, é Discord": "disco" é palavra comum e não vira apelido — o nome sozinho já
+    vale, porque vai de dica ao ASR."""
     repositorio = RepositorioDoVocabulario(tmp_path)
-    with pytest.raises(VocabularioInvalido, match="ouvido"):
-        repositorio.aprender("Discord", ouvido=["discord", "DISCORD"])
+
+    termo = repositorio.aprender("Discord", ouvido=["discord", "DISCORD"])
+
+    assert termo.ouvido == () and termo.fala == ""
+    assert repositorio.carregar().termos_da_dica() == ["Discord"]

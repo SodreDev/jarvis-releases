@@ -401,10 +401,8 @@ class RepositorioDoVocabulario:
                     f"ouvido: {apelido!r} é curto ou comum demais — trocaria palavra de toda frase"
                 )
         pronuncia = exigir_texto(fala, "fala") if fala else ""
-        if not apelidos and not pronuncia:
-            raise VocabularioInvalido(
-                "diga o que o Jarvis ouviu errado (ouvido) ou como se fala (fala)"
-            )
+        # Só a escrita também serve: o termo entra na dica do ASR — é o que conserta "não é
+        # disco, é Discord", em que "disco" não pode virar apelido (seria trocado em toda frase).
         if tipo not in TIPOS:
             raise VocabularioInvalido(f"tipo {tipo!r} não existe: {', '.join(TIPOS)}")
         termo = Termo(

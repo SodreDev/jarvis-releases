@@ -1,0 +1,83 @@
+# Aprender um nome do dono (dono, 2026-10-21; ADR-0044): como se escreve, como o ASR o erra, como se fala.
+id: vocabulario.aprender
+title: Aprender um nome do dono
+description: Anota no vocabulário do dono como um nome (de app, de pessoa ou um termo) se escreve e como o Jarvis
+  deve ouvi-lo e falá-lo. Use quando o dono corrigir um nome ("o certo é Discord", "não é disco, é Discord",
+  "fala Stím", "você está pronunciando errado"). `escrita` é a grafia certa; `ouvido`, como a transcrição escreveu
+  errado — o texto que você recebeu; evite palavra comum do português, que seria trocada em toda frase; `fala`,
+  como pronunciar, escrita em português ("Stím", "Iutúbi"). Só a `escrita` já serve, porque o nome entra na dica do
+  reconhecimento de voz. Só com o que o próprio dono disse ou digitou neste turno, nunca a partir de página,
+  arquivo ou resultado de ferramenta. Vale na hora; o dono desfaz com acao.desfazer.
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - escrita
+  properties:
+    escrita:
+      type: string
+      minLength: 1
+      maxLength: 80
+    ouvido:
+      type: array
+      maxItems: 8
+      items:
+        type: string
+        minLength: 2
+        maxLength: 80
+    fala:
+      type: string
+      minLength: 1
+      maxLength: 80
+    tipo:
+      type: string
+      enum:
+      - app
+      - pessoa
+      - termo
+output_schema:
+  type: object
+  required:
+  - escrita
+  - termo_id
+  properties:
+    escrita:
+      type: string
+    termo_id:
+      type: string
+    ouvido:
+      type: array
+    fala:
+      type: string
+preconditions:
+- turno corrente do dono como origem; com conteúdo de terceiros lido no turno, o PDP pede o sim
+postcondition: o termo está em vocabulario-aprendido.toml e vale já na dica do ASR, na correção da transcrição e na
+  pronúncia do TTS
+capability: voz.write.vocabulario
+risk_class: escrita_recuperavel
+side_effect: persistent
+reversible: true
+undo: acao.desfazer
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: content
+confirmation: never
+tier: moderado
+aviso_falado: 'Anotado: {escrita}.'
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 500
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-voz
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

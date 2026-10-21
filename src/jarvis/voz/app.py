@@ -1167,6 +1167,9 @@ class Aplicativo:
             motor_ve_imagem=lambda: aceita_imagem(self._motor),
             entrada=self._controle_de_entrada(),
             trilha=self.trilha,
+            # Aprender um nome do dono (ADR-0044): só com o repositório, e vale já no laço.
+            vocabulario=self.vocabulario,
+            ao_mudar_vocabulario=self.recarregar_vocabulario,
         )
         executor.preparar()
         return executor
