@@ -165,9 +165,15 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 # que o CI não instala. numpy virou dependência do produto na F1-04 e traz os próprios tipos,
 # por isso saiu desta lista. `epitran` e `edge_tts` entram pelo mesmo motivo: extra opcional
 # sem `py.typed`, importado dentro do método que precisa dele. `jeepney` (portal de atalhos,
-# ADR-0021) também não publica tipos.
+# ADR-0021) também não publica tipos. `omnivoice` e `torch` nem existem no ambiente do projeto:
+# moram no venv isolado do motor de uso pessoal (ADR-0039), e só o trabalhador de `tools/` os
+# importa, dentro da função — a porta de licença falha se entrarem como dependência.
 [[tool.mypy.overrides]]
 module = [
+  "omnivoice",
+  "omnivoice.*",
+  "torch",
+  "torch.*",
   "onnxruntime",
   "onnxruntime.*",
   "faster_whisper",
