@@ -83,7 +83,37 @@ captura→evento, D1 reabre e esses dois processos voltam a ser candidatos a Rus
 
 Apache-2.0 (uso comercial permitido, concessão de patente explícita) — ver [`LICENSE`](LICENSE) e
 [ADR-0011](docs/adr/0011-reranker-licenca-comercial.md). Nenhuma dependência ou modelo com
-cláusula não comercial entra no repositório; o CI verifica isso em todo commit.
+cláusula não comercial entra no produto — dependências, pacote, download do produto e padrões; o
+CI verifica isso em todo commit. A única exceção registrada é o motor de **uso pessoal** abaixo,
+que fica fora de tudo isso e que a porta de licença confere que continua fora.
+
+## Voz: o padrão e o OmniVoice (só uso pessoal)
+
+**O uso padrão do Jarvis é o motor local `tts-piper-epitran`** (voz `pt_BR-faber-medium` do
+`rhasspy/piper-voices`, repositório MIT e *dataset* CC0, lida pelo onnxruntime; fonemização pelo
+`epitran`, MIT): roda na sua máquina e permite uso comercial.
+
+**Se você usar o OmniVoice, é uso pessoal e não comercial.** O
+[OmniVoice](https://github.com/k2-fsa/OmniVoice) (k2-fsa) clona uma voz a partir de 3–10 s de
+referência; o código é Apache-2.0, mas os [pesos](https://huggingface.co/k2-fsa/OmniVoice) são
+**CC-BY-NC** e o tokenizador de áudio que vem com eles segue a Boson Higgs Audio 2 Community
+License (atribuições no [`NOTICE`](NOTICE)). Ele não é dependência, não vai no AppImage, no
+`.deb` nem no `.rpm` e nunca é o padrão: você o instala para si, a partir do repositório, num
+Python isolado, e liga declarando o uso pessoal na configuração —
+[ADR-0039](docs/adr/0039-omnivoice-motor-opcional-de-uso-pessoal.md) e
+[COMO-TESTAR §1.8](docs/COMO-TESTAR.md).
+
+```bash
+uv run --frozen python -m tools.instalar_omnivoice                 # mostra o aviso e pede o aceite
+uv run --frozen python -m tools.instalar_omnivoice --cadastrar-voz minha \
+    --audio ~/Gravações/eu.wav --texto "o que eu falei no áudio" --declaro minha
+```
+
+**Clonagem de voz, com ética:** só a sua voz, ou a de quem lhe deu permissão — o model card
+proíbe clonagem sem autorização, imitação de pessoa, fraude e golpe. O Jarvis só usa voz que você
+cadastrou com essa declaração; não há ferramenta do assistente que clone voz por pedido falado.
+O [VoiceStudio](https://github.com/debpalash/VoiceStudio) (AGPL-3.0) é outro programa que usa o
+OmniVoice: citado aqui como referência, nenhum código dele está no Jarvis.
 
 ## Atribuições
 
@@ -92,6 +122,11 @@ Componentes de terceiros com **atribuição obrigatória** (CC-BY), que aparecem
 
 - **nvidia/parakeet-tdt-0.6b-v2** — © NVIDIA Corporation, CC-BY-4.0.
 - **nvidia/parakeet-tdt-0.6b-v3** — © NVIDIA Corporation, CC-BY-4.0.
+
+Do motor opcional de **uso pessoal** (não distribuído; ver acima e o `NOTICE`):
+**k2-fsa/OmniVoice** (Han Zhu et al., k2-fsa, 2026 — pesos CC-BY-NC) e
+**k2-fsa/OmniVoice:audio_tokenizer** ("Built with Higgs Materials licensed from Boson AI USA,
+Inc. … and Meta Llama 3 licensed under the Meta Llama 3 Community License").
 
 A lista completa de licenças (modelos, dependências e ferramentas externas) está em
 `docs/licencas.md`, gerada por `tools/license_gate.py`. A verificação é parte do CI:

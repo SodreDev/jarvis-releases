@@ -95,9 +95,11 @@ MEMORIA_SUGERIDA_MIB: Final = 4096
 FRASE_DE_ACEITE: Final = "aceito uso pessoal"
 TRABALHADOR_DO_REPOSITORIO: Final = Path(__file__).with_name("omnivoice_trabalhador.py")
 AVISO_DE_CPU: Final = (
-    "sem GPU, o OmniVoice roda na CPU, e isso é LENTO: cada frase pode levar segundos (não "
-    "medido nesta máquina). Se ficar lento demais, desligue "
-    f"`{CHAVE_DO_ACEITE}` e o Jarvis volta ao motor padrão."
+    "sem GPU, o OmniVoice roda na CPU, e isso é LENTO DEMAIS para conversar: num contêiner com 8 "
+    "CPUs de um Ryzen 5 5600G, um lote de 16 a 17 palavras levou de 114 a 180 s (n = 2, "
+    "docs/medicoes/omnivoice-cpu-conteiner.md), perto ou acima do prazo de 120 s do motor — e aí "
+    "o Jarvis fala com o motor padrão. Na CPU, serve para conferir a instalação; para voltar ao "
+    f"padrão de vez, `{CHAVE_DO_ACEITE} = false`."
 )
 CODIGO_DAS_VERSOES: Final = (
     "import json, platform\n"

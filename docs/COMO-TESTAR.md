@@ -1249,7 +1249,8 @@ uv run jarvis-voz config
 ```
 
 Você escolhe: quem ouve (ASR local ou Groq — e, na Groq, o modelo: `whisper-large-v3-turbo`
-ou `whisper-large-v3`, com o preço ao lado), quem fala (piper+epitran, ElevenLabs ou Edge), a
+ou `whisper-large-v3`, com o preço ao lado), quem fala (piper+epitran, ElevenLabs, Edge — ou o
+OmniVoice, de uso pessoal, §1.8), a
 voz local, a voz e o modelo da ElevenLabs (`10` e `11`; em `10`, `l` lista as vozes da sua
 conta), o modelo do ASR local, quem responde (eco ou a CLI do Claude), microfone, alto-falante
 e PTT × VAD. Grava em `~/.config/jarvis/jarvis-voz.toml`. Na janela é o mesmo: em
@@ -1279,6 +1280,70 @@ digitado por extenso. Enquanto você não confirmar, o motor fica escolhido e **
   oferece o `--texto`;
 - **chave errada:** você lê "o serviço recusou o pedido (401) … confira a chave", não "estou
   sem internet".
+
+### 1.8 OmniVoice: a sua voz clonada, só para uso pessoal (opcional, ADR-0039)
+
+**O uso padrão do Jarvis é o `tts-piper-epitran`** (local, uso comercial permitido). **Se você usar
+o OmniVoice, é uso pessoal e não comercial**: os pesos são CC-BY-NC e o tokenizador de áudio
+segue a Boson Higgs Audio 2 Community License. Ele não vai no pacote, não é dependência e nunca é
+o padrão — fica numa pasta sua, `~/.local/share/jarvis/omnivoice`, com um Python só dele.
+
+**Instalar** (no repositório; mostra o aviso de licença antes de tudo e só segue com o seu aceite):
+
+```bash
+uv run --frozen python -m tools.instalar_omnivoice            # pergunta: digite "aceito uso pessoal"
+uv run --frozen python -m tools.instalar_omnivoice --estado   # o que está instalado e se está pronto
+```
+
+Ele acha a sua GPU pelo `nvidia-smi` (driver 570 ou mais → PyTorch com CUDA 12.8; 560 → 12.6),
+instala `torch 2.8.0` + `omnivoice 0.2.1` no Python isolado e baixa 3,3 GB de pesos, conferidos por
+sha256. Sem GPU, instala para a CPU e avisa (`--dispositivo cpu` força) — mas **na CPU ele não
+serve para conversar**: medido num contêiner, um lote de 16 a 17 palavras levou de 114 a 180 s
+(`docs/medicoes/omnivoice-cpu-conteiner.md`), e o Jarvis cai no motor padrão. Rodar de novo não
+reinstala nem rebaixa nada.
+
+**Cadastrar a sua voz** — 3 a 10 s de você falando (WAV; até 20 s), e o texto exato do que disse:
+
+```bash
+uv run --frozen python -m tools.instalar_omnivoice --cadastrar-voz minha \
+    --audio ~/Gravações/eu.wav --texto "o que eu falei no áudio" --declaro minha
+# a voz de outra pessoa, só com a permissão dela:
+#   ... --declaro permissao --titular "Nome da pessoa"
+uv run --frozen python -m tools.instalar_omnivoice --vozes    # as vozes e as declarações
+```
+
+**Ética da clonagem:** só a sua voz, ou a de quem lhe deu permissão. Clonar a voz de alguém sem
+autorização, imitar uma pessoa ou usar a voz para enganar é proibido pelo model card do OmniVoice
+— e pode ser crime. A declaração fica gravada junto da voz com o sha256 do áudio (trocar o arquivo
+invalida). O cadastro recusa URL e qualquer áudio das pastas onde o Jarvis grava ou baixa
+sozinho; nenhuma ferramenta do Jarvis cadastra ou clona voz, e as ferramentas de arquivo não
+alcançam as pastas das vozes e do motor.
+
+**Ligar**, em `~/.config/jarvis/jarvis-voz.toml` (as três linhas; escolher sem declarar não liga):
+
+```toml
+tts = "tts-omnivoice"
+omnivoice_uso_pessoal = true
+voz_omnivoice = "minha"
+```
+
+Na abertura aparece `falando com: omnivoice@cuda+minha` e, embaixo, "(uso pessoal, não
+comercial …)". **Se faltar alguma coisa** — a declaração, a instalação, a voz, a GPU — ou der erro
+no meio, o Jarvis fala com o motor padrão sem parar a conversa, e diz por quê na abertura e no
+`uv run jarvis-voz --diagnostico` (seção "OmniVoice"). A primeira fala espera a carga do modelo
+(o aplicativo já aquece ao abrir).
+
+**Desfazer:** `omnivoice_uso_pessoal = false` (ou outro `tts`) e, para apagar tudo,
+`uv run --frozen python -m tools.instalar_omnivoice --remover` (as suas vozes ficam; para apagar
+uma, `--remover-voz minha`).
+
+**O que foi e o que não foi provado (2026-10-21):** a instalação **real** — `uv venv`, PyTorch
+2.8.0+cpu, `omnivoice` 0.2.1, os 11 arquivos de peso com os sha256 do registro, `--verificar`,
+`--estado` "pronto" e a reexecução sem reinstalar nem rebaixar — e a síntese real pelo motor do
+Jarvis rodaram num contêiner podman só com CPU, nunca nesta máquina (os tempos estão em
+`docs/medicoes/omnivoice-cpu-conteiner.md`; a referência era um sinal sintético). Na GPU (a sua
+4060), a qualidade em pt-BR e da clonagem, a latência na sua máquina e o som no alto-falante
+**não** foram verificados: são com você.
 
 ## 2. Instalar o aplicativo (AppImage, `.deb`, `.rpm`)
 
@@ -1382,7 +1447,10 @@ sudo dnf remove jarvis
    `CI=1` o código **recusa** falar com serviço de verdade. Uma chamada real à Groq (ASR, turbo)
    foi feita em 2026-10-17 com áudio sintético e funcionou; **ElevenLabs e Edge** e o
    `whisper-large-v3` ainda não foram exercitados ao vivo por este código, nem a Groq com a sua
-   voz no microfone.
+   voz no microfone;
+8. **o OmniVoice na sua máquina** (§1.8): a instalação real e a síntese real na CPU rodaram num
+   contêiner (lenta demais para conversar: 114 a 180 s por lote), mas na GPU, com a sua voz, em
+   pt-BR e no alto-falante, nada foi verificado.
 
 ## 4. Como reportar
 
