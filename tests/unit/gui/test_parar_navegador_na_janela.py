@@ -33,6 +33,10 @@ from tests.unit.gui.test_janela import (  # noqa: F401 — fixtures
     sem_chaveiro,
 )
 
+PRAZO_S = 30.0
+"""Teto das esperas pela janela. Generoso: sob carga o QML leva segundos para desenhar, e a espera
+sai assim que a condição vale."""
+
 
 class SessaoFalsa:
     viva = True
@@ -80,7 +84,7 @@ def test_o_parar_do_navegador_aparece_so_com_aba_no_controle_e_o_clique_para(
     def no_controle() -> bool:
         return bool(ponte.property("navegadorNoControle"))
 
-    assert _esperar(aplicativo, 3.0, lambda: no_controle() and botao.isVisible())
+    assert _esperar(aplicativo, PRAZO_S, lambda: no_controle() and botao.isVisible())
 
     ponto = botao.mapToScene(botao.boundingRect().center())
     QTest.mouseClick(
@@ -90,5 +94,5 @@ def test_o_parar_do_navegador_aparece_so_com_aba_no_controle_e_o_clique_para(
         QPoint(round(ponto.x()), round(ponto.y())),
     )
 
-    assert _esperar(aplicativo, 3.0, lambda: sessao.paradas == 1 and not botao.isVisible())
+    assert _esperar(aplicativo, PRAZO_S, lambda: sessao.paradas == 1 and not botao.isVisible())
     assert not no_controle()

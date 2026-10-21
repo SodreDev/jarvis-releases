@@ -6,9 +6,10 @@ from __future__ import annotations
 import io
 import os
 import threading
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
@@ -24,6 +25,11 @@ from jarvis.navegador.quadro import codificar, escrever_quadro, ler_quadro
 
 Extensao = Callable[[dict[str, Any]], dict[str, Any] | None]
 
+PRAZO_DO_TESTE_S: Final = 30.0
+"""Teto das esperas por condição. Generoso de propósito: com o `verificar.py` em `nice -n 19` e a
+máquina ocupada, o host e a "extensão" podem levar segundos para rodar — e uma espera por
+condição sai assim que ela vale, então o teto não atrasa o teste que passa."""
+
 
 class Navegador:
     """O outro lado do `stdio`: a "extensão" lê pedidos do host e responde como o roteiro manda."""
@@ -34,6 +40,8 @@ class Navegador:
         self._do_host = os.fdopen(pedidos_r, "rb")
         self._para_o_host = os.fdopen(respostas_w, "wb")
         self.recebidos: list[dict[str, Any]] = []
+        self.chegou = threading.Event()
+        """Um pedido chegou à extensão — e, portanto, já está em voo no host."""
         self._roteiro = roteiro
         ambiente = {"XDG_RUNTIME_DIR": str(tmp)}
         self.codigo: list[int] = []
@@ -54,16 +62,20 @@ class Navegador:
     def abrir(self) -> None:
         self._host.start()
         self._extensao.start()
-        for _ in range(500):  # espera o socket nascer
+        fim = time.monotonic() + PRAZO_DO_TESTE_S
+        while time.monotonic() < fim:  # espera o socket nascer
             if list(self.pasta.glob("*.sock")):
                 return
             threading.Event().wait(0.01)
-        raise AssertionError("o host não abriu o socket")
+        raise AssertionError(f"o host não abriu o socket em {PRAZO_DO_TESTE_S:.0f} s")
 
     def fechar(self) -> None:
+        if self._para_o_host.closed:
+            return
         self._para_o_host.close()  # o navegador fechou o stdin do host
-        self._host.join(5)
-        self._extensao.join(5)
+        self._host.join(PRAZO_DO_TESTE_S)
+        self._extensao.join(PRAZO_DO_TESTE_S)
+        assert not self._host.is_alive(), "o host não saiu depois de o navegador fechar o stdin"
 
     def evento(self, dados: dict[str, Any]) -> None:
         """A extensão falando por conta própria (o PARAR do dono), sem pedido nenhum."""
@@ -78,6 +90,7 @@ class Navegador:
             if pedido is None:
                 return
             self.recebidos.append(pedido)
+            self.chegou.set()
             resposta = self._roteiro(pedido)
             if resposta is not None:
                 escrever_quadro(self._para_o_host, resposta, 1_000_000)
@@ -167,16 +180,52 @@ def test_navegador_que_fecha_no_meio_avisa_quem_espera(
 
     fio = threading.Thread(target=chamar)
     fio.start()
-    for _ in range(300):
-        if nav.recebidos:
-            break
-        threading.Event().wait(0.01)
+    # O pedido tem de estar em voo antes de o navegador fechar: é isso que o teste exercita. Antes
+    # a espera era de 3 s contados em voltas, e sob carga o navegador fechava antes de o pedido
+    # chegar.
+    assert nav.chegou.wait(PRAZO_DO_TESTE_S), (
+        f"o pedido do cliente não chegou à extensão em {PRAZO_DO_TESTE_S:.0f} s"
+    )
     nav.fechar()
-    fio.join(5)
+    fio.join(PRAZO_DO_TESTE_S)
+    assert not fio.is_alive(), "o cliente ficou esperando depois de o navegador fechar"
     assert isinstance(resultado[0], NavegadorFalhou)
     assert resultado[0].codigo == "navegador_fechado"
     assert nav.codigo == [0]
     assert not list(nav.pasta.glob("*.sock"))  # o host apaga o socket ao sair
+
+
+def test_quem_espera_resposta_recebe_o_motivo_mesmo_com_o_fio_atrasado(
+    navegador: Callable[[Extensao, float], Navegador], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A corrida por trás da intermitência: o fio que atende é acordado pelo `encerrar` da ponte,
+    mas o host fechava as conexões antes de ele escrever o "navegador_fechado" — e o Jarvis lia
+    "o host fechou sem responder". Aqui o atraso do escalonador é forçado (200 ms)."""
+    original = host.Ponte.pedir
+
+    def pedir_atrasado(ponte: host.Ponte, pedido: PedidoDaPonte) -> dict[str, Any]:
+        resposta = original(ponte, pedido)
+        time.sleep(0.2)
+        return resposta
+
+    monkeypatch.setattr(host.Ponte, "pedir", pedir_atrasado)
+    nav = navegador(lambda _p: None, 20.0)
+    resultado: list[BaseException] = []
+
+    def chamar() -> None:
+        try:
+            ClienteDoNavegador(TransporteUnix(nav.pasta)).abas()
+        except BaseException as erro:
+            resultado.append(erro)
+
+    fio = threading.Thread(target=chamar)
+    fio.start()
+    assert nav.chegou.wait(PRAZO_DO_TESTE_S), "o pedido do cliente não chegou à extensão"
+    nav.fechar()
+    fio.join(PRAZO_DO_TESTE_S)
+    assert not fio.is_alive(), "o cliente ficou esperando depois de o navegador fechar"
+    assert isinstance(resultado[0], NavegadorFalhou), resultado
+    assert resultado[0].codigo == "navegador_fechado"
 
 
 def test_o_host_revalida_o_vocabulario_mesmo_que_o_cliente_tenha_sido_burlado(

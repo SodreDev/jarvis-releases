@@ -22,7 +22,8 @@ import stat
 import struct
 import sys
 import threading
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -44,6 +45,10 @@ PRAZO_S: Final = 25.0
 MAXIMO_EM_VOO: Final = 8
 MAXIMO_DE_ASSINANTES: Final = 4
 """Conexões que esperam eventos (o Jarvis controlando abas): cada uma ocupa uma vaga de conexão."""
+PRAZO_PARA_RESPONDER_S: Final = 2.0
+"""Ao fechar, quanto o host espera quem já foi acordado com o "navegador_fechado" escrever a
+resposta antes de derrubar a conexão. Normalmente leva milissegundos; o teto só cobre um Jarvis
+que parou de ler."""
 SUBPASTA: Final = Path("jarvis") / "navegador"
 
 
@@ -165,9 +170,17 @@ def _par_e_nosso(conexao: socket.socket, uid: int) -> bool:
     return bool(uid_do_par == uid)
 
 
-def atender(conexao: socket.socket, ponte: Ponte, uid: int, prazo_s: float = PRAZO_S) -> None:
+def atender(
+    conexao: socket.socket,
+    ponte: Ponte,
+    uid: int,
+    prazo_s: float = PRAZO_S,
+    ao_assinar: Callable[[socket.socket], None] | None = None,
+) -> None:
     """Um pedido por conexão: ler, validar, levar ao navegador, devolver. A assinatura de eventos
-    é a exceção: a conexão fica aberta, recebendo eventos, até o Jarvis fechá-la."""
+    é a exceção: a conexão fica aberta, recebendo eventos, até o Jarvis fechá-la — e
+    `ao_assinar` fica sabendo qual conexão virou assinatura (é a que precisa ser acordada quando
+    o navegador sai)."""
     conexao.settimeout(prazo_s + 5)
     try:
         if not _par_e_nosso(conexao, uid):
@@ -179,6 +192,8 @@ def atender(conexao: socket.socket, ponte: Ponte, uid: int, prazo_s: float = PRA
                     return
                 pedido = validar_pedido(bruto)
                 if pedido.method == ASSINAR:
+                    if ao_assinar is not None:
+                        ao_assinar(conexao)
                     _assinar(conexao, fluxo, pedido, ponte)
                     return
                 resposta = ponte.pedir(pedido)
@@ -228,7 +243,11 @@ class Servidor:
         self._uid = uid
         self._vagas = threading.BoundedSemaphore(MAXIMO_EM_VOO)
         self._trava_das_conexoes = threading.Lock()
+        self._mudou = threading.Condition(self._trava_das_conexoes)
         self._conexoes: set[socket.socket] = set()
+        self._assinaturas: set[socket.socket] = set()
+        """As conexões que esperam eventos: só elas ficam presas no `recv` quando o navegador
+        sai."""
         self._soquete = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         antes = os.umask(0o177)
         try:
@@ -256,22 +275,46 @@ class Servidor:
         with self._trava_das_conexoes:
             self._conexoes.add(conexao)
         try:
-            atender(conexao, self._ponte, self._uid)
+            atender(conexao, self._ponte, self._uid, ao_assinar=self._assinou)
         finally:
-            with self._trava_das_conexoes:
+            with self._mudou:
                 self._conexoes.discard(conexao)
+                self._assinaturas.discard(conexao)
+                self._mudou.notify_all()
             self._vagas.release()
 
-    def fechar(self) -> None:
+    def _assinou(self, conexao: socket.socket) -> None:
+        with self._trava_das_conexoes:
+            self._assinaturas.add(conexao)
+
+    def fechar(self, prazo_s: float = PRAZO_PARA_RESPONDER_S) -> None:
+        """Para de aceitar, acorda quem espera eventos e deixa quem espera resposta terminar.
+
+        Quem esperava a resposta de um pedido já foi acordado pela ponte (`Ponte.encerrar`) e está
+        escrevendo o "navegador_fechado". Derrubar essa conexão junto com as assinaturas fazia o
+        Jarvis ler "o host fechou sem responder" no lugar do motivo, sempre que o fio que atende
+        demorava a rodar (achado com o `verificar.py` sob carga, 2026-10-21). Por isso só as
+        assinaturas caem já; o resto tem `prazo_s` para responder e fechar sozinho.
+        """
         with contextlib.suppress(OSError):
             self._soquete.close()
         with contextlib.suppress(OSError):
             self.caminho.unlink()
         with self._trava_das_conexoes:
+            assinaturas = list(self._assinaturas)
+        _derrubar(assinaturas)  # acorda quem espera eventos: o navegador saiu
+        fim = time.monotonic() + prazo_s
+        with self._mudou:
+            while (resta := fim - time.monotonic()) > 0 and self._conexoes - self._assinaturas:
+                self._mudou.wait(resta)
             abertas = list(self._conexoes)
-        for conexao in abertas:  # acorda quem espera eventos: o navegador saiu
-            with contextlib.suppress(OSError):
-                conexao.shutdown(socket.SHUT_RDWR)
+        _derrubar(abertas)  # quem não respondeu no prazo (o Jarvis parou de ler)
+
+
+def _derrubar(conexoes: Sequence[socket.socket]) -> None:
+    for conexao in conexoes:
+        with contextlib.suppress(OSError):
+            conexao.shutdown(socket.SHUT_RDWR)
 
 
 def familia_do_navegador(argumentos: Sequence[str]) -> str | None:

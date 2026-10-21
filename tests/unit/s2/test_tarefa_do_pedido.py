@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -400,9 +401,8 @@ def test_a_pergunta_da_tarefa_espera_o_sim_falado_depois_de_tocar(
         "lê as notas e abre o site que estiver nelas", epoch=0, publicar=lambda _p: None
     )
     tarefa_id = resposta.tarefa_id
-    for _ in range(200):
-        if cerebro.pendencias.valida() is not None:
-            break
+    fim = time.monotonic() + 30.0  # generoso: sob carga a tarefa demora a chegar à pergunta
+    while cerebro.pendencias.valida() is None and time.monotonic() < fim:
         threading.Event().wait(0.01)
     pendencia = cerebro.pendencias.valida()
     assert pendencia is not None and pendencia.espera is not None

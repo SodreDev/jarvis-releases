@@ -55,7 +55,9 @@ def _no_controle(controle: ControleDoNavegador) -> bool:
     return controle.no_controle
 
 
-def _esperar(condicao: Callable[[], object], prazo_s: float = 3.0) -> bool:
+def _esperar(condicao: Callable[[], object], prazo_s: float = 30.0) -> bool:
+    """Espera a condição valer. O prazo é generoso: sob carga (o `verificar.py` em `nice -n 19`)
+    a vigia do controle pode levar segundos para rodar, e a espera sai assim que a condição vale."""
     fim = time.monotonic() + prazo_s
     while time.monotonic() < fim:
         if condicao():
