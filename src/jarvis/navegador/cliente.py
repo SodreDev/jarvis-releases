@@ -245,12 +245,21 @@ class ClienteDoNavegador:
         return self.chamar("page.scroll", tabId=tab_id, pixels=pixels)
 
     def navegar(self, tab_id: int, url: str) -> dict[str, Any]:
+        """Leva a aba ao endereço e volta **depois** de conferir: `comecou` (a aba saiu do lugar),
+        `carregou`, `pagina` (o conteúdo da extensão respondeu na página nova: `{url, titulo}`, ou
+        nulo na página de erro do navegador), `janela` (`dono` | `jarvis`) e `visivel`."""
         return self.chamar("tabs.navigate", tabId=tab_id, url=url)
 
     def abrir(self, url: str, *, segundo_plano: bool = False) -> dict[str, Any]:
         """Uma aba **nova**: na janela do dono, à vista (ele pediu), ou — `segundo_plano` — na
-        janela própria do Jarvis, atrás das dele, sem tirar o foco (ADR-0036)."""
+        janela própria do Jarvis, atrás das dele, sem tirar o foco (ADR-0036). Conferida como em
+        `navegar`."""
         return self.chamar("tabs.open", url=url, janela="jarvis" if segundo_plano else None)
+
+    def mostrar(self, tab_id: int) -> dict[str, Any]:
+        """Põe a aba à vista do dono (ativa, com a janela dela na frente; a da janela do Jarvis vai
+        para a do dono). `visivel` diz se ficou — o sistema pode negar o foco ao navegador."""
+        return self.chamar("tabs.show", tabId=tab_id)
 
     def janela_em_foco(self) -> dict[str, Any]:
         """A janela em foco e a aba ativa dela (`janelaId`, `abaAtivaId`), e a do Jarvis."""

@@ -12,7 +12,7 @@ from jarvis.executor.ferramentas import Avaliacao, ExecutorDeFerramentas
 from jarvis.executor.lancador import App, RegistroDeApps
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
-from jarvis.politica.metodo import ENTRADA, ContextoDoMetodo, Metodo, escolher_metodo
+from jarvis.politica.metodo import ENTRADA, ContextoDoMetodo, Metodo, escolher_metodo, quer_ver
 from jarvis.politica.modos import Modo
 from jarvis.politica.pdp import Pdp
 from jarvis.s2.cerebro import Cerebro
@@ -36,6 +36,10 @@ SEM_ENTRADA: ContextoDoMetodo = ContextoDoMetodo(navegador=True, entrada=False)
         ("entra no exemplo.com.br", TUDO, Metodo.NAVEGADOR, "cita_site"),
         ("pesquisa na web sobre o eclipse", TUDO, Metodo.NAVEGADOR, "cita_site"),
         ("abre o youtube", SEM_EXTENSAO, Metodo.WEB, "cita_site_sem_extensao"),
+        # o caso do dono (2026-10-21): vídeo no site é do site, mesmo com "toca" ou "música"
+        ("abra um vídeo no YouTube", TUDO, Metodo.NAVEGADOR, "cita_site"),
+        ("toca um vídeo do primo rico no youtube", TUDO, Metodo.NAVEGADOR, "cita_site"),
+        ("põe uma música no youtube", TUDO, Metodo.NAVEGADOR, "cita_site"),
         # site que proíbe automação → mouse e teclado virtuais (ADR-0027)
         ("manda um oi pra Ana no whatsapp", TUDO, Metodo.ENTRADA_VIRTUAL, "site_sem_automacao"),
         ("manda um oi pra Ana no whatsapp", SEM_ENTRADA, Metodo.NAVEGADOR, "cita_site"),
@@ -48,6 +52,8 @@ SEM_ENTRADA: ContextoDoMetodo = ContextoDoMetodo(navegador=True, entrada=False)
         ("vê o que tem nos arquivos do sistema", TUDO, Metodo.SUBAGENTE, "pede_terminal"),
         # o que tem ferramenta própria
         ("aumenta o volume", TUDO, Metodo.SISTEMA, "pede_sistema"),
+        ("toca uma música", TUDO, Metodo.SISTEMA, "pede_sistema"),
+        ("aumenta o volume do youtube", TUDO, Metodo.CONVERSA, "pedido_misto"),
         ("me lembra de ligar pro João às três", TUDO, Metodo.SISTEMA, "pede_sistema"),
         ("anota que a reunião é terça", TUDO, Metodo.MEMORIA, "pede_memoria"),
         # o dono pediu o teclado ou o mouse pelo nome: tem
@@ -64,6 +70,27 @@ def test_a_tabela_de_casos(
     escolha = escolher_metodo(fala, contexto)
     assert (escolha.metodo, escolha.motivo) == (metodo, motivo)
     assert motivo in CAUSAS  # o código vai à trilha, que só grava o que está na allowlist
+
+
+@pytest.mark.parametrize(
+    ("fala", "ver"),
+    [
+        ("abra um vídeo no YouTube", True),
+        ("abre o canal do Primo Rico no youtube", True),
+        ("coloca um vídeo de gatos pra eu ver", True),
+        ("toca um vídeo do primo rico no youtube", True),
+        ("quero assistir o último vídeo do canal", True),
+        ("põe o g1 na tela", True),
+        ("pesquisa no youtube quantos inscritos tem o primo rico", False),
+        ("lê pra mim a notícia do g1", False),
+        ("procura o preço do iphone na amazon", False),
+        ("o que tem de novo no youtube?", False),
+        ("sabre de luz no mercado livre", False),  # "abre" dentro de outra palavra não conta
+    ],
+)
+def test_quer_ver_e_do_pedido_do_dono(fala: str, ver: bool) -> None:
+    """Abrir e mostrar terminam à vista do dono; pesquisar e ler, não (auditoria, 2026-10-21)."""
+    assert quer_ver(fala) is ver
 
 
 def test_o_que_cada_metodo_deixa_de_fora() -> None:

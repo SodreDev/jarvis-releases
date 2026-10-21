@@ -28,3 +28,23 @@ Toda ação da extensão já mira uma aba pelo id (`tab_id`, resolvido pelo cód
 - **Achado da prova:** o Chromium **headless** trata a janela mais nova como a em foco e ignora a devolução do foco — por isso a prova do Chromium roda com janela de verdade, num X virtual (Xvfb) com gerenciador de janelas (openbox), na imagem `localhost/jarvis-nav-teste:x11`, e confere o foco também pelo X (`xprop -root _NET_ACTIVE_WINDOW`). O Firefox continua headless, onde o foco já se observa.
 - **Não provado:** o KDE de verdade (o KWin pode tratar `focused: false` de outro jeito que o openbox); o código devolve o foco quando o navegador sabe que o perdeu.
 - Testes: `tests/unit/navegador/background_respostas.test.mjs` (a janela sem foco, reaproveitada, o foco devolvido quando o navegador o toma, `tabs.navigate` sem trazer para a frente, a busca na janela do Jarvis, `windows.focused`), `tests/unit/navegador/test_ferramentas_browser.py`, `tests/unit/navegador/test_quadro_e_protocolo.py` e o roteiro em contêiner `tools/harness_navegador.py` (Chromium com janela e Firefox: ler, clicar e ver a tela na janela do Jarvis com a janela em foco, a aba ativa do dono e a janela ativa do X iguais antes e depois; a busca numa aba da janela do Jarvis, fechada no fim).
+
+## Emenda de 2026-10-21 — ver ou não ver (auditoria da integração)
+
+O dono pediu «abra um vídeo no YouTube» e o navegador dele «continuou igual»: a aba mudou atrás do
+app do Jarvis e nada a trouxe para a frente — esta ADR tinha tirado o `active: true` e nada mais
+punha o resultado à vista. Agora o código decide pela fala do dono (`quer_ver`, ADR-0035):
+
+- **Pedido de ver** (abrir, mostrar, pôr, tocar, assistir): navega a aba atual do dono (ou a que o
+  modelo escolheu) e, no fim, a traz para a frente (`tabs.show`: ativa e com a janela em foco; a aba
+  da janela do Jarvis vai para a janela do dono). O resultado diz `visivel` — o sistema pode negar o
+  foco ao navegador, e aí a ferramenta diz que não ficou à vista.
+- **Trabalho que o dono não pediu para ver** (pesquisar, ler, conferir): vai para esta janela mesmo
+  sem `segundo_plano`, e a aba de trabalho do pedido é o alvo das `browser.*` sem `tab_id`.
+- **A janela do Jarvis** agora se segura com uma página própria (`extensao/janela.html`, que diz ao
+  dono o que ela é) e é reconhecida por ela depois que o service worker reinicia; a "aba atual" do
+  dono é a da última janela **normal** dele (nunca popup, app, DevTools ou esta janela).
+
+Testes: `tests/unit/navegador/background_navegacao.test.mjs` (navegador falso com janelas, abas e
+eventos), `tests/unit/navegador/test_ferramentas_browser.py` (o caso do dono) e o roteiro em
+contêiner.

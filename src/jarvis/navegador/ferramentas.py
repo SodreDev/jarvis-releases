@@ -9,14 +9,17 @@ escrevam chega a esse "sim". Tudo o que volta da página é dado de terceiro, tr
 
 from __future__ import annotations
 
+import threading
 import unicodedata
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any, Final
 
 from jarvis.imagem import CHAVE_DOS_ANEXOS, ImagemInvalida, da_url_de_dados
 from jarvis.navegador import risco
 from jarvis.navegador.cliente import ClienteDoNavegador, NavegadorFalhou, NavegadorIndisponivel
 from jarvis.politica.abertura import UrlRecusada, dominio, validar_url
+from jarvis.politica.metodo import quer_ver
 from jarvis.politica.objetivo import Objetivo
 
 FERRAMENTAS_DO_NAVEGADOR: Final = frozenset(
@@ -60,6 +63,22 @@ FRASE_DA_ACAO: Final[dict[str, str]] = {
     "enviar": "enviar o formulário de",
     "selecionar": "escolher uma opção em",
 }
+TRABALHOS_LEMBRADOS: Final = 16
+"""Objetivos (o pedido do turno, os das tarefas) cujo trabalho no navegador fica lembrado."""
+
+
+@dataclass(slots=True)
+class Trabalho:
+    """O que o Jarvis está fazendo no navegador por um objetivo (o pedido do turno ou o de uma
+    tarefa, ADR-0030 emenda C2) — do código, nunca do modelo nem da página."""
+
+    objetivo: Objetivo
+    """Guardado por referência: o id do objeto não volta a valer para outro objetivo."""
+    ver: bool
+    """O dono quer ver o resultado (`quer_ver` da fala): a página termina à vista dele."""
+    aba: int | None = None
+    """A aba em que ele está trabalhando: a última que ele abriu, navegou ou em que agiu. A
+    próxima `browser.*` sem `tab_id` age nela — e não na aba do dono que estiver à frente."""
 
 
 class AcaoRecusada(Exception):
@@ -142,6 +161,22 @@ def _do_tipo(elemento: Mapping[str, Any], tipo: str) -> bool:
 class CorposDoNavegador:
     def __init__(self, cliente: ClienteDoNavegador) -> None:
         self.cliente = cliente
+        self._trava = threading.Lock()
+        self._trabalhos: dict[int, Trabalho] = {}
+
+    def trabalho(self, objetivo: Objetivo | None) -> Trabalho | None:
+        """O trabalho no navegador deste objetivo (o turno e cada tarefa têm o seu). Sem objetivo
+        (sem fala do dono), nada é lembrado — o comportamento de antes."""
+        if objetivo is None:
+            return None
+        with self._trava:
+            achado = self._trabalhos.get(id(objetivo))
+            if achado is None or achado.objetivo is not objetivo:
+                achado = Trabalho(objetivo, ver=quer_ver(objetivo.pedido))
+                self._trabalhos[id(objetivo)] = achado
+                while len(self._trabalhos) > TRABALHOS_LEMBRADOS:
+                    del self._trabalhos[next(iter(self._trabalhos))]
+            return achado
 
     def executar(
         self,
@@ -154,25 +189,32 @@ class CorposDoNavegador:
         cancelado: Callable[[], bool],
         objetivo: Objetivo | None = None,
     ) -> dict[str, Any]:
+        trabalho = self.trabalho(objetivo)
         try:
             if tool_id == "browser.tabs":
                 return self._abas()
-            if tool_id == "browser.read":
-                return self._ler(args, exigir)
             if tool_id == "browser.navigate":
-                return self._navegar(args, contaminado, liberados, exigir, objetivo)
-            if tool_id == "browser.scroll":
-                return self._rolar(args)
-            if tool_id == "browser.click":
-                return self._clicar(args, contaminado, liberados, exigir, cancelado, objetivo)
-            if tool_id == "browser.type":
-                return self._digitar(args, contaminado, exigir, cancelado, objetivo)
-            if tool_id == "browser.inspecionar":
-                return self._inspecionar(args, exigir)
-            if tool_id == "browser.tela":
-                return self._tela(args, exigir)
-            if tool_id == "browser.acionar":
-                return self._acionar(args, contaminado, liberados, exigir, cancelado, objetivo)
+                return self._navegar(args, contaminado, liberados, exigir, objetivo, trabalho)
+            args = self._na_aba_de_trabalho(args, trabalho)
+            resultado: dict[str, Any] | None = None
+            if tool_id == "browser.read":
+                resultado = self._ler(args, exigir)
+            elif tool_id == "browser.scroll":
+                resultado = self._rolar(args)
+            elif tool_id == "browser.click":
+                resultado = self._clicar(args, contaminado, liberados, exigir, cancelado, objetivo)
+            elif tool_id == "browser.type":
+                resultado = self._digitar(args, contaminado, exigir, cancelado, objetivo)
+            elif tool_id == "browser.inspecionar":
+                resultado = self._inspecionar(args, exigir)
+            elif tool_id == "browser.tela":
+                resultado = self._tela(args, exigir)
+            elif tool_id == "browser.acionar":
+                resultado = self._acionar(args, contaminado, liberados, exigir, cancelado, objetivo)
+            if resultado is not None:
+                if trabalho is not None and isinstance(resultado.get("tab_id"), int):
+                    trabalho.aba = resultado["tab_id"]
+                return resultado
         except NavegadorFalhou as erro:
             # O código entre parênteses é o da extensão (alvo_ausente, campo_sensivel…): ajuda o
             # modelo a escolher outro caminho e é o que a trilha de diagnóstico guarda.
@@ -191,6 +233,22 @@ class CorposDoNavegador:
         if not isinstance(identificador, int):
             raise ValueError("não há aba para agir")
         return identificador, str(aba.get("url", "")), str(aba.get("titulo", ""))
+
+    def _na_aba_de_trabalho(
+        self, args: Mapping[str, Any], trabalho: Trabalho | None
+    ) -> Mapping[str, Any]:
+        """Sem `tab_id`, a `browser.*` age na aba em que o Jarvis está trabalhando neste objetivo
+        (a que ele abriu ou navegou, inclusive a de fundo), e não na aba do dono que estiver à
+        frente — antes, ler depois de abrir algo em segundo plano lia a página errada. Se ela
+        fechou, volta a valer a aba do dono."""
+        if args.get("tab_id") is not None or trabalho is None or trabalho.aba is None:
+            return args
+        try:
+            self.cliente.aba(trabalho.aba)
+        except NavegadorFalhou:
+            trabalho.aba = None
+            return args
+        return {**args, "tab_id": trabalho.aba}
 
     def _abas(self) -> dict[str, Any]:
         abas = self.cliente.abas()
@@ -354,36 +412,116 @@ class CorposDoNavegador:
         liberados: frozenset[str],
         exigir: Exigir,
         objetivo: Objetivo | None = None,
+        trabalho: Trabalho | None = None,
     ) -> dict[str, Any]:
         try:
             url = validar_url(str(args["url"]))
         except UrlRecusada as erro:
             raise ValueError(str(erro)) from None
         nova_aba = bool(args.get("nova_aba", False))
-        # Segundo plano (ADR-0036): uma aba na janela própria do Jarvis, atrás das do dono — o
-        # trabalho que ele não precisa ver, sem tirar o foco nem trocar a aba dele. As outras
-        # browser.* agem nela pelo tab_id. Com tab_id, navega aquela aba, onde ela estiver.
-        segundo_plano = bool(args.get("segundo_plano", False)) and args.get("tab_id") is None
-        # A aba atual é o padrão (dono, 2026-10-20): link aberto em aba nova a cada passo enchia o
-        # navegador. Aba nova só quando o dono pede.
-        tab_id = None if (nova_aba or segundo_plano) else self._aba(args)[0]
+        explicita = args.get("tab_id") is not None
+        ver = trabalho is not None and trabalho.ver
+        # Segundo plano (ADR-0036): a janela própria do Jarvis, atrás das do dono. É também o
+        # caminho de todo trabalho que o dono não pediu para ver (pesquisar, ler, conferir: C3) —
+        # antes ele trocava a página da aba que o dono estava usando. Com tab_id, navega aquela aba,
+        # onde ela estiver.
+        fundo = (
+            not explicita
+            and not nova_aba
+            and (bool(args.get("segundo_plano", False)) or (trabalho is not None and not ver))
+        )
+        alvo: int | None = None
+        if explicita:
+            alvo = self._aba(args)[0]
+        elif fundo:
+            alvo = self._aba_de_fundo(trabalho)
+        elif not nova_aba:
+            # A aba atual é o padrão do que o dono quer ver (dono, 2026-10-20: link aberto em aba
+            # nova a cada passo enchia o navegador) — a de trabalho, se este pedido já tem uma.
+            alvo = self._aba(self._na_aba_de_trabalho(args, trabalho))[0]
         avaliacao = risco.avaliar_navegacao(
             url, contaminado=contaminado, liberados=liberados, objetivo=objetivo
         )
         if avaliacao.confirmar:
             exigir(f"navegar para {dominio(url)}", avaliacao.confirmar, avaliacao.causa)
-        if tab_id is None:
-            aba = dict(self.cliente.abrir(url, segundo_plano=segundo_plano).get("aba", {}))
-            tab_id = aba.get("id") if isinstance(aba.get("id"), int) else None
+        if alvo is None:
+            feito = self.cliente.abrir(url, segundo_plano=fundo)
         else:
-            aba = dict(self.cliente.navegar(tab_id, url).get("aba", {}))
-        return {
+            feito = self.cliente.navegar(alvo, url)
+        return self._conferido(url, feito, trabalho, ver=ver, nova=alvo is None)
+
+    def _aba_de_fundo(self, trabalho: Trabalho | None) -> int | None:
+        """A aba de trabalho deste pedido, se ela está na janela do Jarvis: navegar nela não enche a
+        janela de abas. Sem ela, uma aba nova lá."""
+        if trabalho is None or trabalho.aba is None:
+            return None
+        try:
+            aba = self.cliente.aba(trabalho.aba)
+        except NavegadorFalhou:
+            trabalho.aba = None
+            return None
+        identificador = aba.get("id")
+        if aba.get("janelaDoJarvis") and isinstance(identificador, int):
+            return identificador
+        return None
+
+    def _conferido(
+        self,
+        url: str,
+        feito: Mapping[str, Any],
+        trabalho: Trabalho | None,
+        *,
+        ver: bool,
+        nova: bool,
+    ) -> dict[str, Any]:
+        """O que a extensão conferiu depois de navegar (auditoria de 2026-10-21): o dono pediu "abra
+        um vídeo no YouTube", a ferramenta disse ok em 25 ms com a URL de antes, e o navegador dele
+        "continuou igual". Agora: a aba que não saiu do lugar e a página que não abriu são erro,
+        dito como é; a URL é a da página nova; e, se o dono pediu para ver, a aba vem para a frente
+        — o resultado diz se ficou à vista."""
+        aba = dict(feito.get("aba") or {})
+        tab_id = aba.get("id") if isinstance(aba.get("id"), int) else None
+        if trabalho is not None and tab_id is not None:
+            trabalho.aba = tab_id
+        pedido = dominio(url)
+        if not feito.get("comecou") and not feito.get("carregou"):
+            onde = dominio(str(aba.get("url", ""))) or "onde estava"
+            raise NavegadorFalhou(
+                "aba_nao_mudou",
+                f"a aba não saiu de {onde}: a página dela segurou a saída (pode estar pedindo ao "
+                f"dono para confirmar) ou o navegador recusou {pedido}; nada mudou na tela",
+            )
+        pagina = feito.get("pagina")
+        if feito.get("carregou") and not isinstance(pagina, dict):
+            raise NavegadorFalhou(
+                "pagina_nao_abriu",
+                f"o navegador foi para {pedido}, mas a página não abriu (sem internet, erro do "
+                "site ou página onde a extensão não entra)",
+            )
+        final = str((pagina or {}).get("url") or aba.get("url") or url)
+        janela = "jarvis" if feito.get("janela") == "jarvis" else "dono"
+        visivel = bool(feito.get("visivel"))
+        if ver and tab_id is not None and not visivel:
+            mostrado = self.cliente.mostrar(tab_id)
+            visivel = bool(mostrado.get("visivel"))
+            janela = "jarvis" if mostrado.get("janela") == "jarvis" else "dono"
+        resultado: dict[str, Any] = {
             "tab_id": tab_id,
-            "url": _curto(aba.get("url", url), 300),
-            "dominio": dominio(url),
-            "nova_aba": nova_aba or segundo_plano,
-            **({"janela": "jarvis"} if segundo_plano else {}),
+            "url": _curto(final, 300),
+            "dominio": dominio(final),
+            "nova_aba": nova,
+            "janela": janela,
+            "carregou": bool(feito.get("carregou")),
+            "visivel": visivel,
         }
+        if not resultado["carregou"]:
+            resultado["situacao"] = "a página ainda está carregando: leia antes de dizer que abriu"
+        elif ver and not visivel:
+            resultado["situacao"] = (
+                "a página abriu, mas o navegador não veio para a frente (o sistema segurou o "
+                "foco): diga ao dono que ela está aberta na aba do navegador"
+            )
+        return resultado
 
     def _rolar(self, args: Mapping[str, Any]) -> dict[str, Any]:
         tab_id, _, _ = self._aba(args)

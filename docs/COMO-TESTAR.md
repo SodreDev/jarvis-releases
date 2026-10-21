@@ -1001,8 +1001,8 @@ Testes: `tests/unit/s2/test_objetivo_e_fase.py`.
 Trabalho que você não precisa ver — pesquisar, conferir, ler outro site — vai numa **janela do
 Jarvis**, atrás das suas: ele lê, clica e vê a tela lá, e a sua janela e a aba que você está vendo
 **não mudam**. A busca na web sem chave (§0.13) também usa essa janela. Se o navegador der o foco à
-janela nova (o Firefox às vezes dá), o Jarvis o devolve para onde você estava. Navegar a sua aba
-(«vai para tal site») continua sendo na sua aba, e ela não é trazida para a frente se estiver atrás.
+janela nova (o Firefox às vezes dá), o Jarvis o devolve para onde você estava. Quando você pede
+para **ver** («abre», «mostra», «põe», «toca»), é o contrário: a página termina à vista (§0.19).
 
 **Recarregue a extensão** (código novo). **Como conferir:** com o Brave aberto no Google, peça
 «pesquisa o canal do Primo Rico e me diz quantos vídeos novos tem» → uma janela do Jarvis aparece
@@ -1048,6 +1048,40 @@ falha cita a janela com o nome, sem ligação. **Não provado:** o KWin de verda
 Steam de verdade e o formato da saída encadeada do `kdotool` (lido no código-fonte dele; se não
 bater, vale uma chamada por janela). Testes: `tests/unit/executor/test_janelas.py`,
 `tests/unit/tarefas/test_foco.py`, `tests/unit/executor/test_foco_do_app.py`.
+
+### 0.19 «Abra um vídeo no YouTube»: a página abre de verdade e fica à vista (2026-10-21)
+
+Auditoria da extensão depois do seu teste («abra um vídeo no YouTube»: o Jarvis usou a extensão, o
+navegador continuou igual e a resposta parou). Três coisas mudaram:
+
+- **Abrir é conferido.** A extensão só diz que abriu depois de ver a aba sair do lugar, a página
+  terminar de carregar e responder. Sem internet, erro do site ou página que segura a saída («quer
+  mesmo sair?»), o Jarvis ouve um erro dito como é (`pagina_nao_abriu`, `aba_nao_mudou`) — nunca
+  mais um «abri» com a URL de antes.
+- **Pedido de ver termina à vista.** «Abre», «mostra», «põe», «coloca», «toca», «assistir», «pra eu
+  ver»: a aba vem para a frente no fim (ativa, com a janela do navegador em foco), mesmo que você
+  esteja falando com a janela do Jarvis. Se o sistema não deixar o navegador vir para a frente, ele
+  diz que a página está aberta na aba — sem fingir.
+- **Pesquisa que você não pediu para ver** («pesquisa…», «lê pra mim…», «confere…») vai para a
+  janela do Jarvis (§0.17), e não troca mais a página da aba que você está usando; o que ele lê
+  depois é a aba em que ele está trabalhando, não a sua.
+
+**Recarregue a extensão** (código novo, e um arquivo novo: `janela.html`): no repositório,
+`uv run jarvis-native-host --instalar`, depois **Recarregar** em `brave://extensions`, F5 nas abas
+que já estavam abertas e reinicie o `uv run jarvis`. **Como conferir:** com o Jarvis na frente,
+diga «abra um vídeo de gatos no YouTube» → o Brave vem para a frente com o YouTube. Diga «pesquisa
+quantos inscritos tem o canal do Primo Rico» → a sua aba não muda (o trabalho vai para a janela do
+Jarvis, atrás). A janela do Jarvis agora mostra uma página dizendo o que ela é; pode fechar.
+
+**Provado em contêiner** (`uv run --frozen python -m tools.harness_navegador`, Chromium 155 e
+Firefox 158, 29/29 cada): sem rede, «abra um vídeo no YouTube» volta erro dito (`pagina_nao_abriu`),
+não `ok`; pedido de ver numa aba que estava atrás de outra a traz para a frente e diz «visível»;
+pesquisa sem pedido de ver vai à janela do Jarvis, a leitura sem `tab_id` lê ela, e a janela em
+foco, a aba ativa do dono e a janela ativa do X ficam iguais; `tabs.show` leva a aba da janela do
+Jarvis para a do dono, à vista. **Não provado:** o YouTube de verdade (o contêiner não tem rede) e o
+KWin de verdade negando o foco ao navegador (provado com fakes: o resultado diz `visivel: false`).
+Testes: `tests/unit/navegador/background_navegacao.test.mjs`,
+`tests/unit/navegador/test_ferramentas_browser.py`, `tests/unit/politica/test_metodo.py`.
 
 ---
 

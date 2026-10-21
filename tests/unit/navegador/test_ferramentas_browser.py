@@ -60,6 +60,16 @@ class PaginaFalsa:
         """O que `page.capture` devolve: a tela da aba como a extensão a entrega (ADR-0032)."""
         self.chamadas: list[tuple[str, dict[str, Any]]] = []
         self.fora_do_ar = False
+        # Navegar é conferido pela extensão (auditoria de 2026-10-21): a aba saiu do lugar, a
+        # página abriu (o conteúdo respondeu na página nova) e se ela ficou à vista.
+        self.sem_rede: set[str] = set()
+        """Hosts que viram a página de erro do navegador: carregou, mas o conteúdo não responde."""
+        self.segura_saida = False
+        """A página da aba segura a saída (beforeunload): a aba nem começa a navegar."""
+        self.navegador_na_frente = True
+        """A janela do dono está na frente (o dono não está noutro programa)."""
+        self.foco_negado = False
+        """O sistema não deixa o navegador vir para a frente."""
 
     def elemento(self, alvo: str, **dados: Any) -> None:
         base = {"tag": "button", "texto": alvo, "campo": False, "sensivel": False}
@@ -141,15 +151,49 @@ class PaginaFalsa:
             case "page.scroll":
                 return ok | {"result": {"deslocamento": p.get("pixels", 600), "y": 600}}
             case "tabs.navigate":
-                aba = self.abas[0] | {"url": p["url"]}
-                return ok | {"result": {"aba": aba}}
+                aba = next(a for a in self.abas if a["id"] == p.get("tabId", 7))
+                return ok | {"result": self._navegou(aba, p["url"])}
             case "tabs.open":
                 # Na janela do Jarvis (ADR-0036) a aba é ativa lá, e a janela do dono não muda.
                 janela = 50 if p.get("janela") == "jarvis" else 1
-                nova = {"id": 8, "janelaId": janela, "ativa": True, "url": p["url"], "titulo": ""}
+                nova = {
+                    "id": 8 + len(self.abas) - 1,
+                    "janelaId": janela,
+                    "ativa": True,
+                    "url": "about:blank",
+                    "titulo": "",
+                    "janelaDoJarvis": janela == 50,
+                }
                 self.abas.append(nova)
-                return ok | {"result": {"reutilizada": False, "aba": nova}}
+                return ok | {"result": {"reutilizada": False, **self._navegou(nova, p["url"])}}
+            case "tabs.show":
+                aba = next(a for a in self.abas if a["id"] == p["tabId"])
+                aba.update(janelaId=1, janelaDoJarvis=False, ativa=True)
+                if not self.foco_negado:
+                    self.navegador_na_frente = True
+                return ok | {"result": {"aba": aba, **self._vista(aba)}}
         raise AssertionError(pedido.method)
+
+    def _vista(self, aba: dict[str, Any]) -> dict[str, Any]:
+        jarvis = aba["janelaId"] == 50
+        return {
+            "janela": "jarvis" if jarvis else "dono",
+            "visivel": bool(aba["ativa"]) and self.navegador_na_frente and not jarvis,
+        }
+
+    def _navegou(self, aba: dict[str, Any], url: str) -> dict[str, Any]:
+        if self.segura_saida:
+            return {
+                "aba": aba,
+                "comecou": False,
+                "carregou": False,
+                "pagina": None,
+                **self._vista(aba),
+            }
+        host = url.split("/")[2]
+        aba.update(url=url, titulo=host if host in self.sem_rede else "Página")
+        pagina = None if host in self.sem_rede else {"url": url, "titulo": "Página"}
+        return {"aba": aba, "comecou": True, "carregou": True, "pagina": pagina, **self._vista(aba)}
 
     def metodos(self) -> list[str]:
         return [m for m, _ in self.chamadas]
@@ -969,5 +1013,96 @@ def test_com_tab_id_o_segundo_plano_navega_aquela_aba_onde_ela_estiver(
         "browser.navigate",
         {"url": "https://exemplo.org/b", "segundo_plano": True, "tab_id": 7},
     )
-    assert ok.status == "ok" and "janela" not in ok.dados
+    # A janela é dita sempre (auditoria de 2026-10-21): a aba 7 é do dono, e é nela que navegou.
+    assert ok.status == "ok" and ok.dados["janela"] == "dono" and ok.dados["nova_aba"] is False
     assert ("tabs.navigate", {"tabId": 7, "url": "https://exemplo.org/b"}) in pagina.chamadas
+
+
+# --- auditoria da integração (2026-10-21): o caso "abra um vídeo no YouTube" ----------------------
+def test_o_caso_do_dono_abrir_um_video_termina_a_vista_mesmo_com_ele_noutro_programa(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """O dono falava com o Jarvis (outro programa na frente): a aba mudava atrás e ele via o
+    navegador "igual". Pedido de abrir é pedido de ver: a aba vem para a frente no fim."""
+    executor.novo_turno("abra um vídeo no YouTube")
+    pagina.navegador_na_frente = False
+
+    ok, perguntas = _rodar(
+        executor, "browser.navigate", {"url": "https://www.youtube.com/results?search_query=gatos"}
+    )
+
+    assert ok.status == "ok" and perguntas == []
+    assert ok.dados["url"] == "https://www.youtube.com/results?search_query=gatos"
+    assert ok.dados["janela"] == "dono" and ok.dados["visivel"] is True
+    assert pagina.metodos()[-2:] == ["tabs.navigate", "tabs.show"]
+
+
+def test_abrir_com_o_foco_negado_diz_que_nao_ficou_a_vista_sem_fingir(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("abre o youtube")
+    pagina.navegador_na_frente = False
+    pagina.foco_negado = True  # o gerenciador de janelas segurou o foco
+
+    ok, _ = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/"})
+
+    assert ok.status == "ok" and ok.dados["visivel"] is False
+    assert "não veio para a frente" in ok.dados["situacao"]
+
+
+def test_pagina_que_nao_abre_e_erro_dito_e_nao_sucesso(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """Sem internet o navegador mostra a página de erro dele: antes o Jarvis dizia ok, com a URL de
+    antes. Agora é erro, com o código para a trilha e a frase para o dono."""
+    executor.novo_turno("abra um vídeo no YouTube")
+    pagina.sem_rede = {"www.youtube.com"}
+
+    erro, _ = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/"})
+
+    assert erro.status == "erro"
+    assert "(pagina_nao_abriu)" in erro.motivo and "sem internet" in erro.motivo
+    assert "tabs.show" not in pagina.metodos(), "não mostra uma página que não abriu"
+
+
+def test_aba_que_nao_sai_do_lugar_e_erro_dito(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("abre o youtube")
+    pagina.segura_saida = True  # a página pede ao dono para confirmar a saída
+
+    erro, _ = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/"})
+
+    assert erro.status == "erro"
+    assert "(aba_nao_mudou)" in erro.motivo and "nada mudou" in erro.motivo
+
+
+def test_pesquisa_que_o_dono_nao_pediu_para_ver_vai_para_a_janela_do_jarvis(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """Trabalho de leitura não troca a página da aba do dono nem tira o foco dele (C3); e o que vem
+    depois, sem tab_id, age na aba de trabalho — não na do dono que está à frente."""
+    executor.novo_turno("pesquisa no youtube quantos inscritos tem o primo rico")
+
+    ida, _ = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/@primorico"})
+    lido, _ = _rodar(executor, "browser.read", {})
+    de_novo, _ = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/about"})
+
+    assert ida.status == lido.status == de_novo.status == "ok"
+    assert ida.dados["janela"] == "jarvis" and ida.dados["visivel"] is False
+    fundo = ida.dados["tab_id"]
+    assert fundo != 7
+    assert ("page.read", {"tabId": fundo}) in pagina.chamadas, "leu a aba de trabalho"
+    assert [m for m in pagina.metodos() if m == "tabs.open"] == ["tabs.open"], "uma aba só"
+    assert de_novo.dados["tab_id"] == fundo
+    assert not any(m == "tabs.navigate" and p.get("tabId") == 7 for m, p in pagina.chamadas)
+    assert "tabs.show" not in pagina.metodos()
+
+
+def test_sem_fala_do_dono_navegar_continua_na_aba_atual(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    ok, _ = _rodar(executor, "browser.navigate", {"url": "https://exemplo.org/a"})
+
+    assert ok.status == "ok" and ok.dados["tab_id"] == 7 and ok.dados["janela"] == "dono"
+    assert "tabs.show" not in pagina.metodos()

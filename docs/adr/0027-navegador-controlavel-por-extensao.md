@@ -225,3 +225,39 @@ A aceitação de 2026-10-18 (Histórico de decisão) trocou o caminho da propost
   sensíveis) e, desde a ADR-0036, a janela própria do Jarvis no navegador. O parar é o do Jarvis:
   interromper cancela o turno (e a ação dele no navegador), e o interruptor da entrada virtual solta
   o mouse e o teclado. Se a faixa volta é decisão do dono.
+
+## Emenda de 2026-10-21 — auditoria da integração: o caso «abra um vídeo no YouTube»
+
+**Sintoma do dono:** pediu «abra um vídeo no YouTube»; o Jarvis usou a extensão, o navegador dele
+«continuou igual» e a resposta parou depois do primeiro comando. A trilha de diagnóstico dele (só
+metadados) mostra o turno: método `navegador`/`cita_site`, **uma** `browser.navigate` com só `url`,
+`ok` em 25,7 ms, e o turno fechado (`concluido`) com a fala interrompida. Reproduzido em contêiner
+(Chromium 155 e Firefox 158): o `tabs.update` responde na hora com a URL e o título **de antes**;
+sem rede a aba vira a página de erro do navegador e a ferramenta dizia `ok` do mesmo jeito.
+
+O que a ponte passa a garantir (código da extensão e das `browser.*`; o laço do cérebro é de outra
+frente, em andamento):
+
+1. **Navegar é conferido.** `tabs.navigate` e `tabs.open` só voltam depois de ver a aba **sair do
+   lugar** (loading ou URL nova), **terminar** e o conteúdo da extensão **responder na página nova**
+   (`estado`). A aba que não sai do lugar (a página segura a saída) é erro `aba_nao_mudou`; a página
+   que não abre (sem internet, erro do site, página onde a extensão não entra) é erro
+   `pagina_nao_abriu` — dito ao dono como é, nunca `ok`. A URL do resultado é a da página nova.
+2. **Pedido de ver termina à vista.** O código lê a fala do dono (`quer_ver`, junto do roteador da
+   ADR-0035): abrir, mostrar, pôr, tocar, assistir → a aba vem para a frente no fim (`tabs.show`:
+   ativa, janela em foco; a aba da janela do Jarvis vai para a janela do dono). O resultado diz
+   `visivel` — e, se o sistema negar o foco ao navegador, diz que não ficou, sem fingir.
+3. **Trabalho que o dono não pediu para ver** (pesquisar, ler, conferir) vai para a janela do Jarvis
+   (ADR-0036) mesmo sem `segundo_plano` — antes trocava a página da aba que o dono usava. E a
+   **aba de trabalho** do pedido (a última em que o Jarvis abriu, navegou ou agiu) é o alvo das
+   `browser.*` sem `tab_id`: antes, ler depois de abrir algo em segundo plano lia a aba do dono.
+4. **A aba atual do dono** é a ativa da última janela **normal** em que ele esteve: nunca um popup,
+   um app, o DevTools nem a janela do Jarvis — que agora se segura com uma página dela
+   (`janela.html`) e é **reconhecida depois que o service worker reinicia** (antes, a memória dela
+   se perdia: a "aba atual" podia cair lá e uma segunda janela era criada). Aba nova do dono nasce
+   na janela dele, pelo id.
+
+**Não consertado aqui:** o laço que encerra o turno depois de uma ferramenta só (o «conferir antes
+de dizer que abriu» do cérebro é de outra frente, em andamento); dois perfis/navegadores com a
+extensão ao mesmo tempo (o cliente usa o host mais recente, já dito no handoff); o KWin de verdade
+negando o foco (o resultado diz `visivel: false`, provado só com fakes e com openbox).

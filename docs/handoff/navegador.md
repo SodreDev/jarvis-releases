@@ -247,6 +247,60 @@ explícito; o Firefox instala extensão temporária pelo Marionette (`Addon:Inst
 linha de comando do Chromium às vezes carrega antes do conteúdo da extensão (o roteiro navega de
 novo com `browser.navigate` antes de ler — é o mesmo caso da aba aberta antes da extensão).
 
+## Auditoria da integração — o caso «abra um vídeo no YouTube» (2026-10-21)
+
+Sintoma do dono: pediu «abra um vídeo no YouTube»; o Jarvis usou a extensão, o navegador dele
+«continuou igual» e a resposta parou depois do primeiro comando. Evidência: a trilha dele (só
+metadados, `~/.local/state/jarvis/voz/diagnostico/turnos.jsonl`, turno das 01:33 de 21/10) tem
+método `navegador`/`cita_site`, uma `browser.navigate` só com `url`, `ok` em 25,7 ms, e o turno
+`concluido` com a fala cortada; a sonda em contêiner mostrou o resto. Achados, causa → onde (HEAD
+9a4198a) → conserto:
+
+1. **Navegar dizia ok sem conferir nada.** `tabs.navigate` devolvia o `tabs.update`, que responde na
+   hora com a URL e o título **de antes** (Chromium 155 e Firefox 158); sem rede, a aba virava a
+   página de erro e a ferramenta seguia `ok` — `extensao/background.js:327-335` e
+   `src/jarvis/navegador/ferramentas.py:379-386`. Conserto: `navegarEConferir`/`criarEConferir` no
+   fundo (a aba sai do lugar, termina, e o conteúdo responde `estado` na página nova) e `_conferido`
+   nas `browser.*`: erro `aba_nao_mudou` / `pagina_nao_abriu` com frase de gente, URL da página
+   nova.
+2. **Nada punha o resultado à vista.** Desde a ADR-0036 navegar não traz a aba para a frente, e com
+   o dono falando com o app do Jarvis o navegador fica atrás: a aba mudava e ele não via. Conserto:
+   `quer_ver` (fala do dono, `politica/metodo.py`) + `tabs.show`: pedido de ver termina com a aba
+   ativa e a janela em foco; o resultado diz `visivel` (e não finge se o sistema negar o foco).
+3. **Trabalho de leitura trocava a página da aba do dono, e ler depois de abrir no fundo lia a aba
+   errada.** `ferramentas.py:369` navegava a aba atual do dono; `_aba(args)` sem `tab_id` era sempre
+   a aba do dono à frente. Conserto: sem pedido de ver, a navegação vai à janela do Jarvis; a **aba
+   de trabalho** do objetivo (`Trabalho`, por objetivo do turno ou da tarefa) é o alvo das
+   `browser.*` sem `tab_id`.
+4. **A "aba atual" podia ser de popup, app, DevTools ou da janela do Jarvis.** `abaAtiva()`
+   (`background.js:70-85`) usava `currentWindow` (no service worker, a última janela em foco, de
+   qualquer tipo) e só sabia qual era a janela do Jarvis pela memória do worker — que dorme e
+   reinicia; a janela `about:blank` não se reconhecia e uma segunda era criada. Conserto:
+   `janelaDoDono()` só com janelas `normal`; a janela do Jarvis segura `janela.html` e
+   `idDaJanelaDoJarvis()` a reconhece depois de reiniciar.
+5. **Aba nova do dono nascia na "janela atual" do navegador** (podia ser a do Jarvis), e o ramo
+   `reutilizar` de `tabs.open` era código morto (o protocolo nunca o manda) —
+   `background.js:294-309`. Conserto: `abrirAba` cria na janela do dono pelo id; o reuso de abas é a
+   parte 2.
+6. **Roteador:** «toca um vídeo no YouTube» / «põe uma música no youtube» caíam em `pedido_misto`
+   pelas palavras de mídia (`metodo.py:58-62`), sem método nem critério. Conserto: com site citado,
+   a mídia sozinha não faz pedido misto. «abra um vídeo no YouTube» já ia certo (`navegador`).
+7. **«Parou depois do primeiro comando»:** é o laço do cérebro (o modelo chamou uma ferramenta e
+   respondeu); está com outra frente (conferir antes de dizer «abri»). Daqui: a ferramenta não
+   devolve mais um `ok` falso, e o resultado diz onde a página ficou e se está à vista.
+8. **Commits recentes (eed7e35, f6fd1b1, 53d4abb, 9a4198a, Lotes B e C):** o roteiro em contêiner
+   deu 25/25 no Chromium 155 e no Firefox 158 no HEAD 9a4198a (instalar no modo repositório,
+   manifesto, host lançado pelo navegador, reconexão depois de SIGTERM, 40 s ocioso, chave
+   `navegador_controlado` → as `browser.*` no prompt). Nada quebrado na ponte.
+
+O que o dono faz (não rodamos nada na máquina dele): `uv run jarvis-native-host --instalar` no
+repositório (copia a extensão nova, com `janela.html`), **Recarregar** a extensão em
+`brave://extensions`, F5 nas abas que já estavam abertas e reiniciar o `uv run jarvis`.
+
+Testes: `background_navegacao.test.mjs` (navegador falso com janelas, abas e eventos; 11 dos testes
+novos falham no `background.js` do HEAD), `test_ferramentas_browser.py` (6 novos, todos falham no
+HEAD), `test_metodo.py` e o roteiro em contêiner (4 conferências novas).
+
 ## Verificações já verdes
 
 Os comandos abaixo passaram para a fatia 2, sem navegador ou dispositivo real:

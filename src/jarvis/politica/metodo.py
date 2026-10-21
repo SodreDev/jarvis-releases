@@ -63,6 +63,17 @@ _SISTEMA: Final = (
     "que horas", "hora", "bateria", "internet está", "wi-fi", "wifi", "lembrete", "me lembra",
     "timer", "alarme", "área de transferência", "copia o texto",
 )  # fmt: skip
+_MIDIA: Final = ("música", "musica", "toca ", "tocar", "pausa", "pausar", "próxima música")
+"""Tocar e pausar com um site citado ("toca um vídeo no YouTube") é pedido do site, não do sistema:
+sozinhas, estas palavras não fazem do pedido um pedido misto (auditoria da extensão, 2026-10-21)."""
+_SISTEMA_COM_SITE: Final = tuple(p for p in _SISTEMA if p not in _MIDIA)
+_QUER_VER: Final = (
+    "abre", "abra", "abrir", "abram", "mostra", "mostre", "mostrar", "coloca", "coloque",
+    "colocar", "bota", "bote", "botar", "põe", "ponha", "toca", "toque", "tocar", "assistir",
+    "assiste", "assista", "quero ver", "pra eu ver", "para eu ver", "deixa aberto", "na tela",
+)  # fmt: skip
+"""O dono quer **ver** o resultado ("abre um vídeo no YouTube"), e não que o Jarvis leia por ele
+("pesquisa quantos inscritos tem o canal"): aí a página termina à vista dele."""
 _MEMORIA: Final = (
     "anota",
     "guarda que",
@@ -120,6 +131,14 @@ def _dobrar(texto: str) -> str:
 
 def _algum(texto: str, palavras: tuple[str, ...]) -> bool:
     return any(_dobrar(p).strip() in texto for p in palavras)
+
+
+def quer_ver(fala: str) -> bool:
+    """O pedido é para o dono **ver** o que o Jarvis abrir (abrir, mostrar, pôr, tocar, assistir):
+    a página tem de terminar à vista dele — não numa janela de trabalho nem atrás de outra. Do
+    código, pela fala do dono, como o método; nunca do modelo nem da página."""
+    texto = _dobrar(fala)
+    return any(f" {_dobrar(p).strip()} " in texto for p in _QUER_VER)
 
 
 def escolher_metodo(fala: str, contexto: ContextoDoMetodo) -> Escolha:
@@ -185,7 +204,7 @@ def escolher_metodo(fala: str, contexto: ContextoDoMetodo) -> Escolha:
                 "window.focus_app para um app já aberto",
             )
         )
-    if _algum(texto, _SISTEMA):
+    if _algum(texto, _SISTEMA_COM_SITE if cita_site else _SISTEMA):
         candidatos.append(
             Escolha(
                 Metodo.SISTEMA,

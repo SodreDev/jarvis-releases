@@ -40,3 +40,18 @@ O modelo escolhia o caminho sozinho e às vezes o mais longo: abrir o navegador 
 - O caso do dono: "abre o canal do Primo Rico no YouTube" não abre o navegador como app nem digita a URL; vai pela extensão.
 - **Risco aceito:** a tabela é por palavras; um pedido descrito de um jeito que ela não reconhece cai em `conversa` e não restringe nada (o comportamento de antes).
 - Testes: `tests/unit/politica/test_metodo.py` (a tabela, o que cada método deixa de fora, a recusa só no turno, a nota no prompt, a trilha só com metadados).
+
+## Emenda de 2026-10-21 — vídeo no site é do site; e o dono quer ver?
+
+Auditoria da extensão (o caso «abra um vídeo no YouTube»). Dois acertos na tabela, os dois do
+código e testados em `tests/unit/politica/test_metodo.py`:
+
+- **Tocar e pausar com um site citado** («toca um vídeo do Primo Rico no YouTube», «põe uma música
+  no youtube») caíam em `pedido_misto` pelas palavras de mídia do sistema, e o turno ficava sem
+  método nem critério de pronto. Com site citado, as palavras de mídia sozinhas não fazem do pedido
+  um pedido misto: o método é `navegador` (`cita_site`). «Toca uma música», sem site, continua
+  `sistema`; «aumenta o volume do youtube» continua misto.
+- **`quer_ver(fala)`**: o pedido é para o dono **ver** o resultado (abrir, mostrar, pôr, colocar,
+  tocar, assistir, «pra eu ver»), e não para o Jarvis ler por ele (pesquisar, ler, conferir). As
+  `browser.*` usam isso para terminar a página à vista dele ou trabalhar na janela do Jarvis
+  (ADR-0036, emenda de 2026-10-21). É do código, pela fala, como o método — nunca do modelo.

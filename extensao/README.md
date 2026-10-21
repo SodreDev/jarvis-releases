@@ -18,10 +18,20 @@ trocam quadros do Native Messaging (tamanho de 32 bits na ordem nativa + JSON UT
 **socket Unix** (`$XDG_RUNTIME_DIR/jarvis/navegador/<navegador>-<pid>.sock`, pasta 0700, socket
 0600, par conferido por `SO_PEERCRED`) — não há porta de rede. Os métodos que o Jarvis usa são:
 
-- `tabs.list`, `tabs.current` (`tabId` opcional), `tabs.navigate` (`url`, `tabId`);
-- `page.read`, `page.inspect`, `page.click`, `page.type`, `page.scroll`.
+- `tabs.list`, `tabs.current` (`tabId` opcional), `tabs.navigate` (`url`, `tabId`), `tabs.open`
+  (`url`, `janela`: a do dono ou a do Jarvis), `tabs.show` (`tabId`), `windows.focused`;
+- `page.read`, `page.inspect`, `page.click`, `page.type`, `page.scroll`, `page.map`, `page.act`,
+  `page.capture`, `page.readUrl`.
 
-`tabs.active` e `tabs.open` continuam na extensão, mas o host não os repassa. O alvo de
+`tabs.navigate` e `tabs.open` só respondem depois de **conferir** (2026-10-21): a aba saiu do lugar
+(`comecou`), terminou de carregar (`carregou`) e o conteúdo da extensão respondeu na página nova
+(`pagina`: `{url, titulo}`, ou nulo na página de erro do navegador); dizem também em que janela ela
+está (`janela`: `dono` | `jarvis`) e se ficou à vista (`visivel`: a aba ativa da janela que está na
+frente). `tabs.show` põe a aba à vista do dono (a da janela do Jarvis vai para a janela dele). A
+"aba atual" é a ativa da última janela **normal** do dono — nunca popup, app, DevTools ou a janela
+do Jarvis, que se segura com `janela.html` e é reconhecida por ela depois que o fundo reinicia.
+
+`tabs.active` continua na extensão, mas o host não o repassa. O alvo de
 `page.inspect`, `page.click` e `page.type` é `alvo`: o **texto ou rótulo visível** do elemento
 (não existe seletor CSS). `page.type` leva `texto` (o que digitar) e `limpar`.
 

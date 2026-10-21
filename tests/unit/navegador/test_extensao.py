@@ -15,6 +15,7 @@ RAIZ = Path(__file__).resolve().parents[3]
 EXTENSAO = RAIZ / "extensao"
 TESTE_RECONEXAO = Path(__file__).with_name("background_reconexao.test.mjs")
 TESTE_RESPOSTAS = Path(__file__).with_name("background_respostas.test.mjs")
+TESTE_NAVEGACAO = Path(__file__).with_name("background_navegacao.test.mjs")
 
 
 def _json(nome: str) -> dict[str, object]:
@@ -81,6 +82,7 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
         "tabs.current",
         "tabs.open",
         "tabs.navigate",
+        "tabs.show",
         "page.read",
         "page.inspect",
         "page.click",
@@ -104,9 +106,12 @@ def test_extensao_expoe_so_comandos_tipados_e_sem_servidor_de_rede() -> None:
     assert "time[datetime]" in conteudo
 
 
-@pytest.mark.parametrize("roteiro", [TESTE_RECONEXAO, TESTE_RESPOSTAS], ids=lambda p: p.stem)
+@pytest.mark.parametrize(
+    "roteiro", [TESTE_RECONEXAO, TESTE_RESPOSTAS, TESTE_NAVEGACAO], ids=lambda p: p.stem
+)
 def test_comportamento_do_fundo_com_porta_e_abas_falsas(roteiro: Path) -> None:
-    """Reconexão (uma porta, um timer) e a forma do que vai ao host (resultado plano)."""
+    """Reconexão (uma porta, um timer), a forma do que vai ao host (resultado plano) e a navegação
+    conferida: a aba saiu do lugar, a página abriu, e se ela ficou à vista do dono."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js não está disponível para o teste comportamental da extensão")

@@ -5,8 +5,9 @@ seletor CSS: o alvo de uma ação é o **texto ou rótulo visível** do elemento
 (`ref`) que o mapa da própria página devolveu (`page.map`, ADR-0032), e o que se faz com ele é
 uma ação de uma lista fechada (`page.act`); `page.capture` traz a tela da aba com o mapa do mesmo
 instante; `page.readUrl` lê um endereço numa aba de fundo, que fecha no fim (a busca na web,
-ADR-0033). O host valida de novo o que o cliente já validou — o socket é uma fronteira, e a
-extensão não confia em ninguém.
+ADR-0033); `tabs.navigate` e `tabs.open` só voltam depois de conferir que a aba saiu do lugar e a
+página abriu, e `tabs.show` põe uma aba à vista do dono (auditoria de 2026-10-21). O host valida
+de novo o que o cliente já validou — o socket é uma fronteira, e a extensão não confia em ninguém.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     "tabs.current": {"tabId": int},
     "tabs.navigate": {"tabId": int, "url": str},
     "tabs.open": {"url": str, "janela": str},
+    "tabs.show": {"tabId": int},
     "page.read": {"tabId": int},
     "page.map": {"tabId": int},
     "page.capture": {"tabId": int},
@@ -57,6 +59,7 @@ METODOS: Final[dict[str, dict[str, type]]] = {
 OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "tabs.navigate": frozenset({"url"}),
     "tabs.open": frozenset({"url"}),
+    "tabs.show": frozenset({"tabId"}),
     "page.readUrl": frozenset({"url"}),
     "page.type": frozenset({"texto"}),
     "page.act": frozenset({"acao"}),

@@ -13,7 +13,7 @@ navegador carrega a cópia da extensão que ele gravou → `connectNative` → o
 host deste código → socket Unix → `Aplicativo._montar_ferramentas` (catálogo C0, PDP e risco
 reais) → as `browser.*`, numa página servida no 127.0.0.1 do contêiner.
 
-O que se confere, por navegador (25 pontos): instalar no modo repositório; o host nasce pelo
+O que se confere, por navegador (29 pontos): instalar no modo repositório; o host nasce pelo
 manifesto e é o deste código; o modelo enxerga as `browser.*`; `browser.tabs` acha a página e
 `browser.navigate` a recarrega; `browser.read` lê o texto; um botão comum é clicado sem pergunta; um
 botão de **envio de formulário** com rótulo neutro pede o "sim" (e o "não" impede o clique);
@@ -24,8 +24,11 @@ função e pede o "sim" no «enviar» (ADR-0032); `browser.tela` captura a aba c
 instante; `browser.estado` diz conectado; `sites.open` troca a URL da aba atual; a busca pela
 extensão lê numa aba de fundo e a fecha sem trocar a aba do dono (ADR-0033); o Jarvis lê, clica e vê
 a tela na janela própria com o foco do dono igual (ADR-0036); `browser.navigate` com `nova_aba` abre
-uma só; o host derrubado (PID conferido em `/proc`) volta pela reconexão da extensão; e, 40 s sem
-pedido, o mesmo host continua respondendo.
+uma só; sem rede, «abra um vídeo no YouTube» volta erro dito e não `ok`; pedido de ver traz para a
+frente a aba que estava atrás; pesquisa sem pedido de ver vai à janela do Jarvis e a leitura sem
+`tab_id` lê a aba de trabalho, com o foco do dono igual; `tabs.show` leva a aba da janela do Jarvis
+para a do dono (auditoria de 2026-10-21); o host derrubado (PID conferido em `/proc`) volta
+pela reconexão da extensão; e, 40 s sem pedido, o mesmo host continua respondendo.
 
 Fatos que este roteiro descobriu (2026-10-19, Chromium 155 e Firefox 158 do Fedora 44):
 - o Chromium ≥ 137 ignora `--load-extension` sem
@@ -72,7 +75,7 @@ XVFB: Final = "/usr/bin/Xvfb"  # os da imagem (fedora:44)
 OPENBOX: Final = "/usr/bin/openbox"
 XPROP: Final = "/usr/bin/xprop"
 NAVEGADORES: Final = ("chromium", "firefox")
-SEGUNDOS_POR_NAVEGADOR: Final = 300
+SEGUNDOS_POR_NAVEGADOR: Final = 420
 OCIOSO_S: Final = 40.0
 """Mais que os 30 s em que o Chromium encerra service worker ocioso (e o Firefox, event page)."""
 MARCA: Final = "RELATORIO "
@@ -701,6 +704,90 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             "browser.navigate com nova_aba abre uma aba e só uma",
             nova.status == "ok" and nova.dados.get("nova_aba") is True and com_nova,
             nova.dados or nova.motivo,
+        )
+
+        # Auditoria da integração (2026-10-21): o dono pediu "abra um vídeo no YouTube", a extensão
+        # disse ok em 25 ms com a URL de antes, e o navegador dele "continuou igual".
+        def turno(fala: str) -> Callable[..., ResultadoDeFerramenta]:
+            """Um turno com a fala do dono (o objetivo e o método nascem dela), vários passos."""
+            ferramentas.novo_turno(fala)
+
+            def passo(tool: str, args: dict[str, Any], sim: bool = False) -> ResultadoDeFerramenta:
+                def confirmar(pergunta: Confirmacao) -> bool:
+                    perguntas.append(pergunta)
+                    return sim
+
+                return ferramentas.executar(
+                    tool, args, cancelado=lambda: False, confirmar=confirmar
+                )
+
+            return passo
+
+        video = turno("abra um vídeo no YouTube")(
+            "browser.navigate",
+            {**alvo, "url": "https://www.youtube.com/results?search_query=gatos"},
+        )
+        relatorio.conferir(
+            "sem rede, «abra um vídeo no YouTube» volta erro dito (a página não abriu), não ok",
+            video.status == "erro" and "(pagina_nao_abriu)" in video.motivo,
+            f"{video.status}: {video.motivo or video.dados}",
+        )
+        rodar("browser.navigate", {**alvo, "url": url})
+
+        # A aba do dono que estava ATRÁS de outra: pedido de ver traz a aba para a frente.
+        frente = nova.dados.get("tab_id")
+        foco_antes = corpos.cliente.janela_em_foco()
+        visto = turno("abre a página de teste pra eu ver")("browser.navigate", {**alvo, "url": url})
+        foco_depois = corpos.cliente.janela_em_foco()
+        relatorio.conferir(
+            "pedido de ver: a aba que estava atrás vem para a frente, e o resultado diz «visível»",
+            visto.status == "ok"
+            and visto.dados.get("visivel") is True
+            and foco_antes.get("abaAtivaId") == frente
+            and foco_depois.get("abaAtivaId") == (aba or {}).get("tab_id")
+            and foco_depois.get("janelaId") == foco_antes.get("janelaId"),
+            {"foco": [foco_antes, foco_depois], "navegou": visto.dados or visto.motivo},
+        )
+
+        # Trabalho que o dono não pediu para ver: na janela do Jarvis, e o foco dele fica.
+        x_antes = _janela_ativa_do_x()
+        foco_antes = corpos.cliente.janela_em_foco()
+        pesquisa = turno("pesquisa o que diz a página de teste")
+        ida = pesquisa("browser.navigate", {"url": url})
+        lida_de_fundo = pesquisa("browser.read", {})
+        foco_depois = corpos.cliente.janela_em_foco()
+        x_depois = _janela_ativa_do_x()
+        relatorio.conferir(
+            "pesquisa sem pedido de ver vai à janela do Jarvis, a leitura sem tab_id lê ela, e o "
+            "foco do dono não muda",
+            ida.status == "ok"
+            and ida.dados.get("janela") == "jarvis"
+            and ida.dados.get("visivel") is False
+            and lida_de_fundo.status == "ok"
+            and lida_de_fundo.dados.get("tab_id") == ida.dados.get("tab_id")
+            and "Olá" in str(lida_de_fundo.dados.get("texto"))
+            and foco_antes.get("janelaId") == foco_depois.get("janelaId")
+            and foco_antes.get("abaAtivaId") == foco_depois.get("abaAtivaId")
+            and x_antes == x_depois,
+            {
+                "foco": [foco_antes, foco_depois],
+                "x11": [x_antes, x_depois],
+                "ida": ida.dados or ida.motivo,
+                "lida": lida_de_fundo.status + " " + lida_de_fundo.motivo,
+            },
+        )
+        try:
+            mostrada = corpos.cliente.mostrar(int(ida.dados["tab_id"]))
+        except (NavegadorFalhou, NavegadorIndisponivel, KeyError, TypeError, ValueError) as erro:
+            mostrada = {"erro": str(erro)}
+        foco_mostrado = corpos.cliente.janela_em_foco()
+        relatorio.conferir(
+            "tabs.show leva a aba da janela do Jarvis para a janela do dono, à vista",
+            mostrada.get("janela") == "dono"
+            and mostrada.get("visivel") is True
+            and foco_mostrado.get("abaAtivaId") == ida.dados.get("tab_id")
+            and foco_mostrado.get("janelaId") != foco_mostrado.get("janelaDoJarvisId"),
+            {"mostrada": mostrada, "foco": foco_mostrado},
         )
 
         os.kill(pid, signal.SIGTERM)  # PID conferido acima em /proc: é o host, e só ele

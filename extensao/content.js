@@ -617,6 +617,9 @@ async function responder(mensagem, remetente) {
   }
   try {
     switch (mensagem.comando) {
+      case "estado":
+        // A página abriu e é esta: o fundo pergunta depois de navegar, antes de dizer "abri".
+        return { ok: true, result: { url: location.href, titulo: document.title } };
       case "ler":
         return { ok: true, result: leitura() };
       case "inspecionar":
