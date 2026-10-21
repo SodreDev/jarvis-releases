@@ -386,6 +386,13 @@ def _memoria(sessao: str, epoch: int) -> Envelope:
 
 
 def _tool(sessao: str, epoch: int) -> Envelope:
+    """O pedido de leitura do turno, com `call_id` de uuid7 **inteiro**.
+
+    Era `c-{uuid7()[:8]}`, e os oito primeiros dígitos de um uuid7 são o relógio (32 bits altos
+    do milissegundo, 65,5 s por janela): dois turnos da mesma janela dividiam o `call_id`, que
+    é a chave de `DonoDoEpoch.em_voo` e da idempotência do executor. Mesmo defeito do `s2`
+    (ver `jarvis.s2.__main__.call_id_do_turno`).
+    """
     return Envelope(
         session_id=sessao,
         epoch=epoch,
@@ -394,7 +401,7 @@ def _tool(sessao: str, epoch: int) -> Envelope:
         priority=Prioridade.P2,
         type=Tipo.TOOL_CALL_REQUESTED,
         payload={
-            "call_id": f"c-{uuid7()[:8]}",
+            "call_id": f"c-{uuid7()}",
             "tool_id": "system.read.status",
             "args": {},
             "dry_run": True,
