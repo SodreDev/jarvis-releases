@@ -1322,6 +1322,69 @@ aberto: «fecha o Discord» → vai para a bandeja; «mata o Discord» → sai d
 (`tests/unit/executor/test_fechar_e_encerrar.py`, 35 testes). **Não provado:** o KWin, o Steam, o
 Discord e o Flatpak de verdade; se o `kdotool windowclose` é sempre o fechamento educado.
 
+### 0.27 Ruído do microfone não vira pedido (2026-10-21, ADR-0043)
+
+Estalo, tecla, clique do mouse, respiração e ventilador viravam palavras ("Obrigado.", "Legendas
+pela comunidade Amara.org", nomes de apps) e o Jarvis agia. Agora há três camadas, ligadas por
+padrão, e o descarte é **em silêncio** (nada na tela, nada no histórico):
+
+- **antes do ASR**, o trecho precisa de fala que dure (100 ms **seguidos** acima do fundo): estalo
+  e tecla nem são transcritos — e a Groq nem cobra os 10 s;
+- **depois do ASR**, cai o que ele inventa no silêncio (legenda, "obrigado por assistir", só
+  símbolos, a mesma palavra quatro vezes, o próprio ASR dizendo que não era fala); a cortesia solta
+  ("Obrigado.", "Tchau.") e o eco da dica ("Jarvis." no meio da respiração) caem só quando o ASR não
+  teve certeza;
+- **no laço:** um "sim" a uma pergunta pendente só confirma se o ASR teve certeza de ter ouvido
+  fala (senão aparece "não tive certeza de ter ouvido o seu «sim»: repita, ou responda na tela");
+  "Jarvis. Obrigado." é só a chamada; a vigia do barge-in usa o mesmo filtro.
+
+A dica do ASR ficou **curta**: a palavra de ativação e os seus termos do vocabulário (§0.28) — a
+lista de todos os apps instalados saiu, porque era ela que fazia o ruído virar nome de app
+(`docs/medicoes/ruido-e-dica.md`).
+
+**Como conferir:** com a escuta contínua, digite no teclado, clique, respire perto do microfone e
+deixe o ventilador ligado por um minuto, sem falar — nada vira pedido. Depois `jarvis-voz
+--diagnostico` mostra o filtro e quantos trechos ele segurou, por motivo (`impulso`, `fundo`,
+`sem_fala`, `alucinacao`…) — só a contagem. Diga "sim", "não" e "para", curtos, em respostas e
+por cima do Jarvis: têm de passar. Se uma fala curta sua cair, aumente a tolerância em
+`~/.config/jarvis/jarvis-voz.toml`: `fala_minima_ms` (menor), `margem_de_fala_db` (menor) ou
+`sem_fala_maximo` (maior); `filtro_de_ruido = false` desliga tudo. **Provado** com áudio sintético
+(ruídos gerados com semente e a voz piper) e ASR falso (`tests/unit/voz/test_ruido.py`,
+`test_ruido_no_laco.py`), e com o whisper small na medição. **Não provado:** o seu microfone, a sua
+voz, ruído de verdade e os limiares na Groq turbo (o `no_speech_prob` dela não foi medido) — a
+trilha `ruido` e o `--diagnostico` são o que calibra.
+
+### 0.28 Os seus nomes: o Jarvis ouve e fala certo (2026-10-21, ADR-0044)
+
+Nomes de apps pouco famosos, de pessoas e os termos que você usa vão num arquivo **seu**, fora do
+repositório: `~/.config/jarvis/vocabulario.toml`. Copie o exemplo e troque pelos seus nomes:
+
+```bash
+cp docs/exemplos/vocabulario.toml ~/.config/jarvis/vocabulario.toml
+```
+
+Cada `[[termo]]` tem a `escrita` (como se escreve), `ouvido` (como o ASR costuma errar),
+`fala` (como o Jarvis deve pronunciar, escrito em português: "Stím") e, se quiser, `motores` (em
+que vozes a pronúncia vale: a ElevenLabs já fala "Spotify" certo, a voz local não). O que isso faz:
+os primeiros termos vão de dica ao ASR; depois dele, "stim" vira "Steam" e "Tiago Negro" vira
+"Thiago Nigro" (nome composto, pela fonética); e antes de falar, "Steam" vira "Stím" só no que vai
+para a voz — a tela e a conversa ficam com a grafia certa. Vale para a voz local, para a nuvem e
+para o OmniVoice.
+
+**O Jarvis aprende quando você corrige:** "não é disco, é Discord", "o certo é Kdenlive", "fala
+Stím" → ele anota com a ferramenta `vocabulario.aprender` e diz "Anotado: Discord."; vale na hora.
+Vai para `~/.config/jarvis/vocabulario-aprendido.toml` (o seu arquivo ele nunca reescreve); "desfaz"
+tira a última. Se o turno leu uma página ou arquivo antes, ele pede o seu sim primeiro (a
+"correção" poderia ter vindo de lá). Palavra comum ("disco") não vira apelido: seria trocada em toda
+frase.
+
+**Como conferir:** `jarvis-voz --diagnostico` mostra onde o vocabulário mora, quantos termos e o
+que ficou de fora por erro de digitação (pela posição, sem os nomes). Ponha um nome que o Jarvis
+erra, fale-o, e veja na tela; peça para ele dizer o nome e ouça. **Provado** com pastas do teste e
+nomes fictícios (`tests/unit/voz/test_vocabulario.py`, `test_vocabulario_no_laco.py`,
+`tests/unit/executor/test_vocabulario_aprender.py`). **Não provado:** o `claude -p` de verdade
+chamando a ferramenta, a pronúncia soando bem em cada voz, e a fonética com os seus nomes.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)
@@ -1619,6 +1682,9 @@ sudo dnf remove jarvis
    contêiner (lenta demais para conversar: 114 a 180 s por lote), e na sua 4060 a instalação e
    a síntese em arquivo também (1,7 a 2,3 s por lote), mas com a sua voz, em pt-BR, com o jogo
    aberto e no alto-falante, nada foi verificado.
+9. **o filtro de ruído e o vocabulário no seu microfone** (§0.27, §0.28): os limiares foram
+   escolhidos com áudio sintético e o whisper small; com a sua voz, os seus ruídos e a Groq turbo,
+   nada foi medido — a trilha `ruido` e o `--diagnostico` contam o que ele segurou.
 
 ## 4. Como reportar
 

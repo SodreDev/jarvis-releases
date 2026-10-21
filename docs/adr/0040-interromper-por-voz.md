@@ -57,3 +57,11 @@ Tudo com áudio sintético e ASR falso: **nenhum microfone e nenhum alto-falante
 
 - O teste do dono mostrar o Jarvis se interrompendo sozinho (a trilha com `cortar` sem ninguém falando) ou não cortando com o nome dito por cima: a margem, a perda inicial ou o caminho mudam — ou entra a AEC.
 - A AEC (a nossa ou a do PipeWire) medida no hardware do dono: o corte passa a poder sair pelo VAD, em vez de esperar o ASR.
+
+## Emenda de 2026-10-21 — a vigia ouve com o filtro de ruído (ADR-0043)
+
+A transcrição de cada trecho por cima passa pelo mesmo filtro do turno (`jarvis.voz.ruido.julgar_texto`,
+com os sinais do ASR e as palavras da dica): o "Jarvis." que o ASR inventa numa respiração ou no
+próprio eco não corta a fala — a vigia recebe vazio, que é `sem_fala`. O trecho que cortou o Jarvis
+e vira turno (`por_cima`) não passa pelo portão do trecho (a vigia já o julgou com 240 ms de VAD e
+portão de eco), mas passa pelo filtro da transcrição.

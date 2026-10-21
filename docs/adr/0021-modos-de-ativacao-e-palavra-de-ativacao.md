@@ -215,3 +215,13 @@ configuração própria, **sem diretório de serviço**, e o daemon roda sem `DI
 - O portal do Plasma não entregar `Deactivated` de forma confiável: segurar para falar global
   vira "apertar para alternar", e a tela diz isso.
 - O dono responder às perguntas pendentes de forma diferente do que está implementado.
+
+## Emenda de 2026-10-21 — "silêncio não vira transcrição" agora é cumprido (ADR-0043)
+
+A ADR dizia que quem garante que silêncio não vira transcrição é o laço — e o laço mandava ao ASR
+qualquer trecho que o VAD abrisse, inclusive na escuta armada (8 s depois de "Jarvis" sozinho, em
+que todo trecho é pedido). Agora: o trecho sem fala que dure (100 ms seguidos acima do fundo) nem
+chega ao ASR; o texto que o ASR inventa no silêncio é descartado em silêncio e contado; "Jarvis.
+Obrigado." é só a chamada (a cortesia depois do nome é o que o ASR põe no silêncio do fim); e a
+dica do ASR, que levava a lista de apps instalados (e com ela fazia o ruído virar nome de app), é a
+palavra de ativação e o vocabulário do dono (ADR-0044) — curta, só como `initial_prompt`.

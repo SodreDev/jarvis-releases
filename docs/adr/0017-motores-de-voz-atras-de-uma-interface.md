@@ -355,3 +355,18 @@ arquivo. Captura offscreen em `/tmp/jarvis-telas/teste/jarvis-configuracao-model
 que `eleven_v3` aceite `output_format=pcm_16000` neste endpoint, que a conta do dono devolva
 `verified_languages`/`labels.language` como a documentação descreve, e qualquer diferença de
 qualidade entre os modelos.
+
+## Emenda de 2026-10-21 — o motor de ASR declara os sinais do que ouviu; a pronúncia é da camada compartilhada (ADR-0043, ADR-0044)
+
+1. **Sinais do ASR.** A interface ganha `Sinais` (o maior `no_speech_prob`, a média do
+   `avg_logprob` e a maior `compression_ratio` dos segmentos) e `Transcricao`; o motor que mede
+   oferece `transcrever_com_sinais`, e `jarvis.voz.interface.transcrever_com_sinais(motor, …)`
+   devolve sinais vazios para o que não mede (o oráculo, os falsos). O whisper local tira dos
+   segmentos do `faster-whisper`; a Groq, do `verbose_json` que já pedia. O que não veio é `None`,
+   nunca zero. `transcrever` não muda: o F1-06 segue desempacotando `texto, confianca`.
+2. **A dica.** Os dois motores recebem a mesma dica curta (`jarvis.voz.dica`): `initial_prompt` no
+   local (sem `hotwords`), `prompt` na Groq. Saiu a lista dos apps instalados (medido: ela fazia o
+   ruído virar nome de app).
+3. **A pronúncia do dono** (`SintetizadorEmStreaming.pronunciar`) troca a grafia só no texto que o
+   motor de TTS recebe, para todos os motores, sem tocar em nenhum — como o cancelamento, é da
+   camada compartilhada, não do motor.
