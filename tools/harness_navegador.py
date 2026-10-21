@@ -13,25 +13,33 @@ navegador carrega a cópia da extensão que ele gravou → `connectNative` → o
 host deste código → socket Unix → `Aplicativo._montar_ferramentas` (catálogo C0, PDP e risco
 reais) → as `browser.*`, numa página servida no 127.0.0.1 do contêiner.
 
-O que se confere, por navegador (34 pontos): instalar no modo repositório; o host nasce pelo
-manifesto e é o deste código; o modelo enxerga as `browser.*`; `browser.tabs` acha a página e
-`browser.navigate` a recarrega; `browser.read` lê o texto; um botão comum é clicado sem pergunta; um
-botão de **envio de formulário** com rótulo neutro pede o "sim" (e o "não" impede o clique);
-`browser.type` digita na busca e recusa a senha; a busca sem rótulo, que não se acha pelo texto, se
-acha pelo mapa (`browser.inspecionar`: ref, caixa, painel ligado ao script), digitar pela ref e
-Enter buscam por GET sem pedir o sim, e `browser.acionar` passa o mouse, clica no link que chama a
-função e pede o "sim" no «enviar» (ADR-0032); `browser.tela` captura a aba com o mapa do mesmo
-instante; `browser.estado` diz conectado; `sites.open` troca a URL da aba atual; a busca pela
-extensão lê numa aba de fundo e a fecha sem trocar a aba do dono (ADR-0033); o Jarvis lê, clica e vê
-a tela na janela própria com o foco do dono igual (ADR-0036); `browser.navigate` com `nova_aba` abre
-uma só; sem rede, «abra um vídeo no YouTube» volta erro dito e não `ok`; pedido de ver traz para a
-frente a aba que estava atrás; pesquisa sem pedido de ver vai à janela do Jarvis e a leitura sem
-`tab_id` lê a aba de trabalho, com o foco do dono igual; `tabs.show` leva a aba da janela do Jarvis
-para a do dono (auditoria de 2026-10-21); a faixa «no controle» em toda página da aba controlada,
-medida pela própria página, e fora dela ao soltar; o PARAR da faixa com clique de verdade (`Input`
-do CDP no Chromium, ações do Marionette no Firefox) cancela o turno e recusa o pedido parado; os 3
-casos de reuso de aba (ADR-0027 regra 4); o host derrubado (PID conferido em `/proc`) volta pela
-reconexão da extensão; e, 40 s sem pedido, o mesmo host continua respondendo.
+O que se confere, por navegador (41 pontos): instalar no modo repositório; **sem navegador ativo**
+(nem extensão nem processo dele) o Jarvis abre um pelo `sites.open` — o único caso —, e com ele
+aberto nem o `browser.launch` nem a aba nova lançam outro, e o roteiro o fecha pelo PID conferido
+(dono, 2026-10-21); o host nasce pelo manifesto e é o deste código; o modelo enxerga as `browser.*`;
+`browser.tabs` acha a página e `browser.navigate` a recarrega; `browser.read` lê o texto; um botão
+comum é clicado sem pergunta; um botão de **envio de formulário** com rótulo neutro pede o "sim" (e
+o "não" impede o clique); `browser.type` digita na busca e recusa a senha; a busca sem rótulo, que
+não se acha pelo texto, se acha pelo mapa (`browser.inspecionar`: ref, caixa, painel ligado ao
+script), digitar pela ref e Enter buscam por GET sem pedir o sim, e `browser.acionar` passa o mouse,
+clica no link que chama a função e pede o "sim" no «enviar» (ADR-0032); `browser.tela` captura a aba
+com o mapa do mesmo instante; `browser.estado` diz conectado; `sites.open` troca a URL da aba do
+mesmo site; a busca pela extensão lê numa aba de fundo e a fecha sem trocar a aba do dono
+(ADR-0033) e **sem abrir janela nem instância** (era a «outra instância do Brave» do dono); o Jarvis
+lê e clica numa aba de fundo da janela do dono, sem `active` e com o foco dele igual (a tela dela,
+só no Firefox); `browser.navigate` com `nova_aba` abre uma só; sem rede, «abra um vídeo no YouTube»
+volta erro dito e não `ok`; pedido de ver traz para a frente a aba que estava atrás; pesquisa sem
+pedido de ver vai numa aba de fundo da janela do dono e a leitura sem `tab_id` lê a aba de
+trabalho; `tabs.show` a traz para a frente; o `sites.open` com `nova_aba` abre a guia pela extensão,
+sem executar o navegador (a outra metade do caso do dono); a faixa «no controle» em toda página da
+aba controlada, medida pela própria página, e fora dela ao soltar; o PARAR da faixa com clique de
+verdade (`Input` do CDP no Chromium, ações do Marionette no Firefox) cancela o turno e recusa o
+pedido parado; os 3 casos de reuso de aba (ADR-0027 regra 4: a mesma página só ativa, o mesmo site
+navega, e site novo com a aba atual de outro abre **guia nova** na janela do dono); nada executou
+o navegador com ele aberto; só o modo `automacao_social` (o gancho) abre a janela própria do
+Jarvis; o host derrubado (PID conferido em `/proc`) volta pela reconexão da extensão; e, 40 s sem
+pedido, o mesmo host continua respondendo. "Uma instância só" é medido pelo navegador (`janelas`
+de `windows.focused`, a janela do Jarvis, a página dela) e pelos processos principais em `/proc`.
 
 Fatos que este roteiro descobriu (2026-10-19, Chromium 155 e Firefox 158 do Fedora 44):
 - o Chromium ≥ 137 ignora `--load-extension` sem
@@ -51,6 +59,7 @@ import contextlib
 import http.server
 import json
 import os
+import shlex
 import shutil
 import signal
 import socket
@@ -65,7 +74,10 @@ import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from jarvis.voz.app import Aplicativo
 
 RAIZ: Final = Path(__file__).resolve().parent.parent
 IMAGEM: Final = "localhost/jarvis-nav-teste:x11"
@@ -82,7 +94,7 @@ XVFB: Final = "/usr/bin/Xvfb"  # os da imagem (fedora:44)
 OPENBOX: Final = "/usr/bin/openbox"
 XPROP: Final = "/usr/bin/xprop"
 NAVEGADORES: Final = ("chromium", "firefox")
-SEGUNDOS_POR_NAVEGADOR: Final = 420
+SEGUNDOS_POR_NAVEGADOR: Final = 600
 OCIOSO_S: Final = 40.0
 """Mais que os 30 s em que o Chromium encerra service worker ocioso (e o Firefox, event page)."""
 MARCA: Final = "RELATORIO "
@@ -207,6 +219,9 @@ class Marionette:
                 if resposta[2]:
                     raise RuntimeError(f"{nome}: {resposta[2]}")
                 return resposta[3]
+
+    def fechar(self) -> None:
+        self._s.close()
 
 
 class Cdp:
@@ -418,77 +433,134 @@ def _site() -> Iterator[str]:
         outro.shutdown()
 
 
-@contextlib.contextmanager
-def _navegador(nome: str, extensao: Path, url: str, log: Path) -> Iterator[str]:
-    """Abre o navegador headless com a extensão e devolve a versão dele."""
-    saida = log.open("wb")
-    extras: list[subprocess.Popen[bytes]] = []
+def _argv(nome: str, extensao: Path) -> list[str]:
+    """O navegador como este roteiro o abre, sem a URL: é o mesmo quando quem o abre é o Jarvis
+    (o caso «sem navegador ativo», em que o `sites.open` lança o binário da configuração)."""
     if nome == "chromium":
-        versao = subprocess.run(
-            [CHROMIUM, "--version"], capture_output=True, text=True, check=False
-        ).stdout.strip()
-        com_janela = Path(XVFB).exists() and Path(OPENBOX).exists()
-        if com_janela:
-            # Janela de verdade num X virtual, com gerenciador de janelas: o foco é observável.
-            extras.append(
-                subprocess.Popen(
-                    [XVFB, TELA_VIRTUAL, "-screen", "0", "1280x800x24", "-nolisten", "tcp"],
-                    stdout=saida,
-                    stderr=subprocess.STDOUT,
-                )
+        return [
+            CHROMIUM,
+            *([] if os.environ.get("DISPLAY") else ["--headless=new"]),
+            "--no-sandbox",  # o contêiner não tem o namespace que a caixa de areia pede
+            "--disable-gpu",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-features=DisableLoadExtensionCommandLineSwitch",
+            f"--user-data-dir={CASA / '.config' / 'chromium'}",
+            f"--remote-debugging-port={PORTA_DO_CDP}",  # o clique do dono no PARAR, só isso
+            f"--load-extension={extensao}",
+        ]
+    perfil = CASA / "perfil-firefox"
+    perfil.mkdir(parents=True, exist_ok=True)
+    (perfil / "user.js").write_text(
+        f'user_pref("marionette.port", {PORTA_DO_MARIONETTE});\n'
+        'user_pref("browser.shell.checkDefaultBrowser", false);\n'
+        'user_pref("datareporting.policy.dataSubmissionEnabled", false);\n',
+        encoding="utf-8",
+    )
+    return [FIREFOX, "-headless", "-no-remote", "-profile", str(perfil), "-marionette"]
+
+
+def _instalar_no_firefox(extensao: Path) -> Marionette:
+    """O Firefox instala extensão temporária pelo Marionette (`Addon:Install`)."""
+    marionette = Marionette()
+    marionette.comando("WebDriver:NewSession", {})
+    marionette.comando("Addon:Install", {"path": str(extensao), "temporary": True})
+    return marionette
+
+
+@contextlib.contextmanager
+def _tela(nome: str, log: Path) -> Iterator[None]:
+    """Janela de verdade num X virtual, com gerenciador de janelas, para o Chromium: o foco é
+    observável (ADR-0036). O Firefox continua headless."""
+    extras: list[subprocess.Popen[bytes]] = []
+    saida = log.open("ab")
+    if nome == "chromium" and Path(XVFB).exists() and Path(OPENBOX).exists():
+        extras.append(
+            subprocess.Popen(
+                [XVFB, TELA_VIRTUAL, "-screen", "0", "1280x800x24", "-nolisten", "tcp"],
+                stdout=saida,
+                stderr=subprocess.STDOUT,
             )
-            _esperar(lambda: Path(f"/tmp/.X11-unix/X{TELA_VIRTUAL[1:]}").exists(), 10)  # noqa: S108
-            os.environ["DISPLAY"] = TELA_VIRTUAL
-            extras.append(subprocess.Popen([OPENBOX], stdout=saida, stderr=subprocess.STDOUT))
-        processo = subprocess.Popen(
-            [
-                CHROMIUM,
-                *([] if com_janela else ["--headless=new"]),
-                "--no-sandbox",  # o contêiner não tem o namespace que a caixa de areia pede
-                "--disable-gpu",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-features=DisableLoadExtensionCommandLineSwitch",
-                f"--user-data-dir={CASA / '.config' / 'chromium'}",
-                f"--remote-debugging-port={PORTA_DO_CDP}",  # o clique do dono no PARAR, só isso
-                f"--load-extension={extensao}",
-                url,
-            ],
-            stdout=saida,
-            stderr=subprocess.STDOUT,
         )
-    else:
-        versao = subprocess.run(
-            [FIREFOX, "--version"], capture_output=True, text=True, check=False
-        ).stdout.strip()
-        perfil = CASA / "perfil-firefox"
-        perfil.mkdir(parents=True, exist_ok=True)
-        (perfil / "user.js").write_text(
-            f'user_pref("marionette.port", {PORTA_DO_MARIONETTE});\n'
-            'user_pref("browser.shell.checkDefaultBrowser", false);\n'
-            'user_pref("datareporting.policy.dataSubmissionEnabled", false);\n',
-            encoding="utf-8",
-        )
-        processo = subprocess.Popen(
-            [FIREFOX, "-headless", "-no-remote", "-profile", str(perfil), "-marionette"],
-            stdout=saida,
-            stderr=subprocess.STDOUT,
-        )
-        marionette = Marionette()
-        marionette.comando("WebDriver:NewSession", {})
-        marionette.comando("Addon:Install", {"path": str(extensao), "temporary": True})
-        marionette.comando("WebDriver:Navigate", {"url": url})
-        DRIVER["marionette"] = marionette
+        _esperar(lambda: Path(f"/tmp/.X11-unix/X{TELA_VIRTUAL[1:]}").exists(), 10)  # noqa: S108
+        os.environ["DISPLAY"] = TELA_VIRTUAL
+        extras.append(subprocess.Popen([OPENBOX], stdout=saida, stderr=subprocess.STDOUT))
     try:
-        yield versao
+        yield
     finally:
-        for filho in (processo, *reversed(extras)):
+        for filho in reversed(extras):
             filho.terminate()  # o PID é o deste Popen: nada de matar por nome
             try:
                 filho.wait(15)
             except subprocess.TimeoutExpired:
                 filho.kill()
         saida.close()
+
+
+@contextlib.contextmanager
+def _navegador(nome: str, extensao: Path, url: str, log: Path) -> Iterator[str]:
+    """Abre o navegador com a extensão e devolve a versão dele."""
+    saida = log.open("ab")
+    binario = CHROMIUM if nome == "chromium" else FIREFOX
+    versao = subprocess.run(
+        [binario, "--version"], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    if nome == "chromium":
+        processo = subprocess.Popen(
+            [*_argv(nome, extensao), url], stdout=saida, stderr=subprocess.STDOUT
+        )
+    else:
+        processo = subprocess.Popen(_argv(nome, extensao), stdout=saida, stderr=subprocess.STDOUT)
+        marionette = _instalar_no_firefox(extensao)
+        marionette.comando("WebDriver:Navigate", {"url": url})
+        DRIVER["marionette"] = marionette
+    try:
+        yield versao
+    finally:
+        processo.terminate()  # o PID é o deste Popen: nada de matar por nome
+        try:
+            processo.wait(15)
+        except subprocess.TimeoutExpired:
+            processo.kill()
+        saida.close()
+
+
+def _principais(nome: str) -> list[int]:
+    """Os processos PRINCIPAIS do navegador no contêiner — uma instância é um: o processo do
+    navegador cujo pai não é do navegador (renderizador, GPU, conteúdo… são filhos dele). Lido em
+    `/proc` (o executável e o pai), só dentro do contêiner descartável. A linha de comando não
+    serve: o Chromium e o Firefox reescrevem a dos filhos, sem os separadores (medido aqui)."""
+    nomes = (
+        {"chromium-browser", "chromium", "chrome"}
+        if nome == "chromium"
+        else {"firefox", "firefox-bin"}
+    )
+
+    def executavel(pid: str) -> str:
+        try:
+            return (Path("/proc") / pid / "exe").readlink().name
+        except OSError:
+            return ""
+
+    def pai(pid: str) -> str:
+        try:
+            for linha in (Path("/proc") / pid / "status").read_text("utf-8").splitlines():
+                if linha.startswith("PPid:"):
+                    return linha.split()[1]
+        except (OSError, IndexError):
+            return ""
+        return ""
+
+    pids = [e.name for e in Path("/proc").iterdir() if e.name.isdigit()]
+    return sorted(
+        int(p) for p in pids if executavel(p) in nomes and executavel(pai(p)) not in nomes
+    )
+
+
+def _janelas(abas: list[dict[str, Any]]) -> int:
+    """Quantas janelas o navegador tem, pelas abas (toda janela tem aba): conta igual no código de
+    antes, que não tinha o `janelas` do `windows.focused`."""
+    return len({a.get("janelaId") for a in abas})
 
 
 def _janela_ativa_do_x() -> str:
@@ -533,6 +605,120 @@ def _log_util(log: Path) -> str:
     return " | ".join(linha[:200] for linha in linhas if "dbus" not in linha.lower())[-1500:]
 
 
+def _aplicativo(nome: str, binario: str, raiz: Path) -> Aplicativo:
+    """O app de verdade (catálogo C0, PDP e risco reais) com este navegador como o principal do
+    dono: `binario` é o que o `sites.open` executa quando não há navegador ativo."""
+    from jarvis.voz.app import Aplicativo
+    from jarvis.voz.config import Configuracao
+
+    raiz.mkdir(parents=True, exist_ok=True)
+    return Aplicativo(
+        configuracao=Configuracao(
+            asr="asr-whisper-local",
+            tts="tts-parametrico",
+            s2="eco",
+            acesso="jarvis",
+            navegador_controlado=True,
+            navegadores=(f"{nome}={binario}",),
+            navegador_principal=nome,
+        ),
+        raiz=raiz,
+        ambiente={**os.environ, "JARVIS_AUDIO_BACKEND": "arquivo"},
+        lar=CASA,
+    )
+
+
+def _o_unico_caso_de_abrir(nome: str, extensao: Path, url: str, relatorio: Relatorio) -> None:
+    """Sem navegador ativo — nem extensão conectada nem processo dele —, o Jarvis abre um, e é o
+    único caso em que ele abre navegador (dono, 2026-10-21). O de verdade: o `sites.open` executa o
+    binário da configuração do dono, que aqui é um roteirinho com as opções deste contêiner. Com ele
+    aberto, nem o `browser.launch` nem a aba nova lançam outro. No fim o roteiro o fecha pelo PID
+    que o lançamento devolveu, conferido em `/proc` como o principal dele."""
+    from jarvis.executor.ferramentas import ResultadoDeFerramenta
+    from jarvis.executor.lancador import lancar_argv
+
+    familia = "chromium" if nome == "chromium" else "firefox"
+    abrir = CASA / "bin" / f"abrir-{nome}"
+    abrir.parent.mkdir(parents=True, exist_ok=True)
+    abrir.write_text(f'#!/bin/sh\nexec {shlex.join(_argv(nome, extensao))} "$@"\n', "utf-8")
+    abrir.chmod(0o755)
+    app = _aplicativo(nome, str(abrir), CASA / "sessao-previa")
+    ferramentas = app._montar_ferramentas()
+    assert ferramentas.navegadores is not None
+    lancados: list[int] = []
+
+    def lancar(argv: Any, **opcoes: Any) -> int:
+        pid = lancar_argv(argv, **opcoes)
+        lancados.append(pid)
+        return pid
+
+    ferramentas.navegadores.lancar = lancar
+
+    def pedir(fala: str, tool: str, args: dict[str, Any]) -> ResultadoDeFerramenta:
+        ferramentas.novo_turno(fala)
+        return ferramentas.executar(tool, args, cancelado=lambda: False, confirmar=lambda _: True)
+
+    antes = (_principais(nome), sorted(_sockets(familia)))
+    aberto = pedir("abre a página de teste pra eu ver", "sites.open", {"url": url})
+    rodando = _esperar(lambda: _principais(nome), 20)
+    marionette = _instalar_no_firefox(extensao) if nome == "firefox" and rodando else None
+    vivos = _esperar(lambda: _sockets(familia), 40)
+    relatorio.conferir(
+        "sem navegador ativo (nem extensão nem processo dele), o Jarvis abre um — o único caso: o "
+        "sites.open lança o navegador da configuração",
+        antes == ([], [])
+        and aberto.status == "ok"
+        and len(lancados) == 1
+        and bool(rodando)
+        and bool(vivos),
+        {
+            "antes": antes,
+            "sites.open": aberto.dados or aberto.motivo,
+            "lancados": lancados,
+            "rodando": rodando,
+            "sockets": sorted(vivos or {}),
+        },
+    )
+    principais = _principais(nome)
+    trazido = pedir("abre o navegador", "browser.launch", {})
+    segunda = url.replace("pagina.html", "pagina2.html")
+    nova = pedir(
+        "abre a segunda página numa aba nova pra eu ver",
+        "sites.open",
+        {"url": segunda, "nova_aba": True},
+    )
+    relatorio.conferir(
+        "com ele aberto, abrir de novo não lança nada: o browser.launch traz a janela do dono e a "
+        "aba nova vai pela extensão — uma instância só",
+        trazido.status == "ok"
+        and trazido.dados.get("ja_aberto") is True
+        and nova.status == "ok"
+        and len(lancados) == 1
+        and len(principais) == 1
+        and _principais(nome) == principais,
+        {
+            "browser.launch": trazido.dados or trazido.motivo,
+            "sites.open": nova.dados or nova.motivo,
+            "lancados": lancados,
+            "principais": [principais, _principais(nome)],
+        },
+    )
+    for corpos in (ferramentas.navegador, *app._navegadores_de_outra_familia.values()):
+        if corpos is not None:
+            corpos.controle.fechar()
+    if marionette is not None:
+        marionette.fechar()
+    for pid in lancados:
+        if pid in _principais(nome):  # o PID do lançamento, conferido: nada de matar por nome
+            os.kill(pid, signal.SIGTERM)
+    fechou = _esperar(lambda: not _principais(nome) and not _sockets(familia), 30)
+    relatorio.conferir(
+        "o navegador que o Jarvis abriu fecha pelo PID conferido, e o host vai junto",
+        bool(fechou),
+        {"principais": _principais(nome), "sockets": sorted(_sockets(familia))},
+    )
+
+
 def dentro(nome: str) -> int:
     """Roda o roteiro e imprime o relatório — também quando ele quebra no meio."""
     relatorio = Relatorio(nome)
@@ -553,8 +739,6 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
     from jarvis.navegador.cliente import NavegadorFalhou, NavegadorIndisponivel
     from jarvis.politica.objetivo import EstadoDoObjetivo
     from jarvis.s2.motor_claude_cli import sistema_com_ferramentas
-    from jarvis.voz.app import Aplicativo
-    from jarvis.voz.config import Configuracao
     from jarvis.voz.estado import Estado
 
     os.environ.update(HOME=str(CASA), XDG_RUNTIME_DIR=str(RUN))
@@ -577,8 +761,13 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
     extensao = CASA / instalar.EXTENSAO_NO_USUARIO
     log = CASA / "navegador.log"
 
-    with _site() as url, _navegador(nome, extensao, url, log) as versao:
-        relatorio.versao = versao
+    with contextlib.ExitStack() as pilha:
+        url = pilha.enter_context(_site())
+        pilha.enter_context(_tela(nome, log))
+        # Uma instância só (dono, 2026-10-21): sem navegador ativo, o Jarvis abre um; com ele
+        # aberto, não abre outro. O roteiro de antes começa depois, com um navegador aberto por ele.
+        _o_unico_caso_de_abrir(nome, extensao, url, relatorio)
+        relatorio.versao = pilha.enter_context(_navegador(nome, extensao, url, log))
         vivos = _esperar(lambda: _sockets(familia), 40)
         if not relatorio.conferir("o navegador lançou o host pelo manifesto", vivos, list(vivos)):
             relatorio.conferir("log do navegador", False, _log_util(log))
@@ -586,22 +775,7 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
         pid = next(iter(vivos))
         relatorio.conferir("o processo do socket é o host deste código", _e_o_host(pid), pid)
 
-        raiz = CASA / "sessao"
-        raiz.mkdir(exist_ok=True)
-        app = Aplicativo(
-            configuracao=Configuracao(
-                asr="asr-whisper-local",
-                tts="tts-parametrico",
-                s2="eco",
-                acesso="jarvis",
-                navegador_controlado=True,
-                navegadores=(f"{nome}={CHROMIUM if nome == 'chromium' else FIREFOX}",),
-                navegador_principal=nome,
-            ),
-            raiz=raiz,
-            ambiente={**os.environ, "JARVIS_AUDIO_BACKEND": "arquivo"},
-            lar=CASA,
-        )
+        app = _aplicativo(nome, CHROMIUM if nome == "chromium" else FIREFOX, CASA / "sessao")
         ferramentas = app._montar_ferramentas()
         # O roteiro prova a extensão; o motor que enxerga a imagem tem prova à parte
         # (`tools/harness_tela_no_motor.py`), então aqui a tela fica ligada.
@@ -861,13 +1035,34 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             f"{aberto.status} {aberto.dados or aberto.motivo}; "
             f"abas {len(abas_antes)} → {len(abas_depois)}",
         )
-        # A busca sem chave (ADR-0033): numa aba de fundo, lida e fechada; a do dono não muda.
+
+        # Uma instância só (dono, 2026-10-21): o trabalho de fundo abria a janela própria do
+        # Jarvis — a busca sem chave a criava —, o dono a viu como outra instância do Brave, e o
+        # vídeo foi parar nela. Agora o fundo é uma aba em segundo plano NA JANELA DO DONO.
+        def instancia() -> dict[str, Any]:
+            """O que contaria como outra janela ou instância: as janelas do navegador, a janela do
+            Jarvis, a página que a segura e os processos principais do navegador."""
+            foco = corpos.cliente.janela_em_foco()
+            return {
+                "janelas": _janelas(corpos.cliente.abas()),
+                "janela_do_jarvis": foco.get("janelaDoJarvisId"),
+                "janela_html": sum(
+                    str(a.get("url", "")).endswith("/janela.html") for a in corpos.cliente.abas()
+                ),
+                "principais": len(_principais(nome)),
+            }
+
+        uma_so = {"janelas": 1, "janela_do_jarvis": None, "janela_html": 0, "principais": 1}
+
+        # A busca sem chave (ADR-0033): numa aba de fundo da janela do dono, lida e fechada.
         buscador = Buscador(
             "Página de busca de teste",
             url.replace("pagina.html", "busca.html") + "?q={consulta}",
             frozenset({""}),  # os links do próprio servidor (IP) são do buscador
         )
         ativa_antes = corpos.cliente.aba()
+        x_antes = _janela_ativa_do_x()
+        foco_antes = corpos.cliente.janela_em_foco()
         try:
             achado = BuscaNoNavegador(corpos.cliente, (buscador,))("o primo rico")
         except BuscaIndisponivel as erro:
@@ -876,48 +1071,77 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             lambda: not any("Resultados de teste" in a.get("titulo", "") for a in abas_agora()), 10
         )
         ativa_depois = corpos.cliente.aba()
+        foco_depois = corpos.cliente.janela_em_foco()
         relatorio.conferir(
             "a busca pela extensão lê numa aba de fundo, fecha a aba e não troca a aba do dono",
             [r.get("url") for r in achado.get("resultados", [])]
             == ["https://www.youtube.com/@primorico", "https://pt.wikipedia.org/wiki/Thiago_Nigro"]
             and bool(fechou)
-            and ativa_depois.get("id") == ativa_antes.get("id"),
-            {"achado": achado, "ativa": [ativa_antes.get("id"), ativa_depois.get("id")]},
+            and ativa_depois.get("id") == ativa_antes.get("id")
+            and foco_depois.get("janelaId") == foco_antes.get("janelaId")
+            and _janela_ativa_do_x() == x_antes,
+            {
+                "achado": achado,
+                "ativa": [ativa_antes.get("id"), ativa_depois.get("id")],
+                "foco": [foco_antes, foco_depois],
+            },
+        )
+        depois_da_busca = instancia()
+        relatorio.conferir(
+            "uma instância só: a busca sem chave não abre janela nem instância (era a «outra "
+            "instância do Brave» do dono)",
+            depois_da_busca == uma_so,
+            depois_da_busca,
         )
 
-        # C3 (ADR-0036): o Jarvis trabalha na janela própria, sem tirar o foco do dono.
+        # C3 (ADR-0036, emendada): o Jarvis lê e clica numa aba de fundo da janela do dono, sem
+        # tirar o foco dele. A tela da aba de fundo só sai no Firefox (`captureTab`); o Chromium só
+        # captura a aba à vista, e o Jarvis não a traz para a frente para isso.
         x_antes = _janela_ativa_do_x()
         foco_antes = corpos.cliente.janela_em_foco()
         fundo = rodar("browser.navigate", {"url": url, "segundo_plano": True})
-        tab_jarvis = fundo.dados.get("tab_id")
+        tab_fundo = fundo.dados.get("tab_id")
 
-        def jarvis_pronta() -> bool:
-            lida = rodar("browser.read", {"tab_id": tab_jarvis})
+        def fundo_pronta() -> bool:
+            lida = rodar("browser.read", {"tab_id": tab_fundo})
             return lida.status == "ok" and "Olá" in str(lida.dados.get("texto"))
 
-        pronta = _esperar(jarvis_pronta, 15)
-        clique_no_fundo = rodar("browser.click", {"tab_id": tab_jarvis, "alvo": "Mostrar detalhe"})
-        lida_no_fundo = rodar("browser.read", {"tab_id": tab_jarvis})
-        tela_no_fundo = rodar("browser.tela", {"tab_id": tab_jarvis})
+        pronta = _esperar(fundo_pronta, 15)
+        clique_no_fundo = rodar("browser.click", {"tab_id": tab_fundo, "alvo": "Mostrar detalhe"})
+        lida_no_fundo = rodar("browser.read", {"tab_id": tab_fundo})
+        tela_no_fundo = rodar("browser.tela", {"tab_id": tab_fundo})
         foco_depois = corpos.cliente.janela_em_foco()
         x_depois = _janela_ativa_do_x()
+        aba_de_fundo = corpos.cliente.aba(tab_fundo) if isinstance(tab_fundo, int) else {}
+        tela_certa = (
+            tela_no_fundo.status == "ok"
+            if nome == "firefox"
+            else tela_no_fundo.status == "erro" and "aba_escondida" in tela_no_fundo.motivo
+        )
+        no_fundo = instancia()
         relatorio.conferir(
-            "o Jarvis lê, clica e vê a tela na janela própria, e o foco do dono não muda",
+            "o Jarvis lê e clica numa aba de fundo da janela do dono (sem active), sem janela "
+            "nova, e o foco do dono não muda; a tela dela só no Firefox",
             fundo.status == "ok"
-            and fundo.dados.get("janela") == "jarvis"
+            and fundo.dados.get("janela") == "dono"
+            and fundo.dados.get("segundo_plano") is True
+            and aba_de_fundo.get("janelaId") == foco_antes.get("janelaId")
+            and aba_de_fundo.get("ativa") is False
             and bool(pronta)
             and clique_no_fundo.status == "ok"
             and "detalhe aberto" in str(lida_no_fundo.dados.get("texto"))
-            and tela_no_fundo.status == "ok"
+            and tela_certa
             and foco_antes.get("janelaId") == foco_depois.get("janelaId")
             and foco_antes.get("abaAtivaId") == foco_depois.get("abaAtivaId")
-            and foco_depois.get("janelaDoJarvisId") not in (None, foco_antes.get("janelaId"))
+            and no_fundo == uma_so
             and x_antes == x_depois,
             {
                 "foco": [foco_antes, foco_depois],
                 "x11": [x_antes, x_depois],
                 "fundo": fundo.dados or fundo.motivo,
+                "aba": aba_de_fundo,
                 "tela": tela_no_fundo.status + " " + tela_no_fundo.motivo,
+                "instancia": no_fundo,
             },
         )
 
@@ -976,7 +1200,7 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             {"foco": [foco_antes, foco_depois], "navegou": visto.dados or visto.motivo},
         )
 
-        # Trabalho que o dono não pediu para ver: na janela do Jarvis, e o foco dele fica.
+        # Trabalho que o dono não pediu para ver: numa aba de fundo da janela dele, e o foco fica.
         x_antes = _janela_ativa_do_x()
         foco_antes = corpos.cliente.janela_em_foco()
         pesquisa = turno("pesquisa o que diz a página de teste")
@@ -984,23 +1208,34 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
         lida_de_fundo = pesquisa("browser.read", {})
         foco_depois = corpos.cliente.janela_em_foco()
         x_depois = _janela_ativa_do_x()
+        tab_da_pesquisa = ida.dados.get("tab_id")
+        da_pesquisa = (
+            corpos.cliente.aba(tab_da_pesquisa) if isinstance(tab_da_pesquisa, int) else {}
+        )
+        na_pesquisa = instancia()
         relatorio.conferir(
-            "pesquisa sem pedido de ver vai à janela do Jarvis, a leitura sem tab_id lê ela, e o "
-            "foco do dono não muda",
+            "pesquisa sem pedido de ver vai numa aba de fundo da janela do dono, a leitura sem "
+            "tab_id lê ela, e o foco do dono não muda",
             ida.status == "ok"
-            and ida.dados.get("janela") == "jarvis"
+            and ida.dados.get("janela") == "dono"
+            and ida.dados.get("segundo_plano") is True
             and ida.dados.get("visivel") is False
+            and da_pesquisa.get("janelaId") == foco_antes.get("janelaId")
+            and da_pesquisa.get("ativa") is False
             and lida_de_fundo.status == "ok"
-            and lida_de_fundo.dados.get("tab_id") == ida.dados.get("tab_id")
+            and lida_de_fundo.dados.get("tab_id") == tab_da_pesquisa
             and "Olá" in str(lida_de_fundo.dados.get("texto"))
             and foco_antes.get("janelaId") == foco_depois.get("janelaId")
             and foco_antes.get("abaAtivaId") == foco_depois.get("abaAtivaId")
+            and na_pesquisa == uma_so
             and x_antes == x_depois,
             {
                 "foco": [foco_antes, foco_depois],
                 "x11": [x_antes, x_depois],
                 "ida": ida.dados or ida.motivo,
+                "aba": da_pesquisa,
                 "lida": lida_de_fundo.status + " " + lida_de_fundo.motivo,
+                "instancia": na_pesquisa,
             },
         )
         try:
@@ -1009,12 +1244,47 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             mostrada = {"erro": str(erro)}
         foco_mostrado = corpos.cliente.janela_em_foco()
         relatorio.conferir(
-            "tabs.show leva a aba da janela do Jarvis para a janela do dono, à vista",
+            "tabs.show traz a aba de fundo para a frente, na janela do dono",
             mostrada.get("janela") == "dono"
             and mostrada.get("visivel") is True
-            and foco_mostrado.get("abaAtivaId") == ida.dados.get("tab_id")
-            and foco_mostrado.get("janelaId") != foco_mostrado.get("janelaDoJarvisId"),
+            and foco_mostrado.get("abaAtivaId") == tab_da_pesquisa
+            and foco_mostrado.get("janelaId") == foco_antes.get("janelaId"),
             {"mostrada": mostrada, "foco": foco_mostrado},
+        )
+
+        # A outra metade do caso do dono: o sites.open com nova_aba executava o binário do
+        # navegador com a URL, e o Brave já aberto a punha na última janela ativa dele.
+        executados: list[tuple[str, ...]] = []
+
+        def nao_lancar(argv: Any, **_: Any) -> int:
+            executados.append(tuple(argv))
+            return 0
+
+        assert ferramentas.navegadores is not None
+        ferramentas.navegadores.lancar = nao_lancar  # se algo tentar abrir o navegador, fica aqui
+        antes_da_guia = len(abas_agora())
+        foco_antes = corpos.cliente.janela_em_foco()
+        guia = turno("abre a segunda página numa aba nova pra eu ver")(
+            "sites.open", {"url": segunda, "nova_aba": True}
+        )
+        com_a_guia = _esperar(lambda: len(abas_agora()) == antes_da_guia + 1, 10)
+        foco_depois = corpos.cliente.janela_em_foco()
+        com_guia = instancia()
+        relatorio.conferir(
+            "sites.open com nova_aba e o navegador aberto: guia nova na janela do dono, pela "
+            "extensão, sem executar o navegador nem abrir janela",
+            guia.status == "ok"
+            and executados == []
+            and bool(com_a_guia)
+            and foco_depois.get("janelaId") == foco_antes.get("janelaId")
+            and foco_depois.get("abaAtivaId") not in (None, foco_antes.get("abaAtivaId"))
+            and com_guia == uma_so,
+            {
+                "sites.open": guia.dados or guia.motivo,
+                "executados": executados,
+                "foco": [foco_antes, foco_depois],
+                "instancia": com_guia,
+            },
         )
 
         # O indicador e o PARAR (ADR-0027 regra 4) -------------------------------------------------
@@ -1128,13 +1398,58 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
         corpos.cliente.mostrar(alvo["tab_id"])
         terceiro = f"http://127.0.0.1:{DRIVER['outra_porta']}/pagina2.html"
         nenhuma = turno("abre a outra página pra eu ver")("browser.navigate", {"url": terceiro})
+        url_do_dono = corpos.cliente.aba(alvo["tab_id"]).get("url")
+        foco = corpos.cliente.janela_em_foco()
+        com_terceiro = instancia()
         relatorio.conferir(
-            "reuso 3/3 — nenhuma aba tem o site: abre na aba atual, sem aba nova",
+            "reuso 3/3 — nenhuma aba tem o site e a atual é de outro: guia nova na janela do dono, "
+            "à vista, e a página da aba dele fica (dono, 2026-10-21)",
             nenhuma.status == "ok"
-            and nenhuma.dados.get("tab_id") == alvo["tab_id"]
+            and nenhuma.dados.get("tab_id") != alvo["tab_id"]
+            and nenhuma.dados.get("nova_aba") is True
+            and nenhuma.dados.get("visivel") is True
             and "reutilizou" not in nenhuma.dados
-            and len(abas_agora()) == total,
-            nenhuma.dados or nenhuma.motivo,
+            and len(abas_agora()) == total + 1
+            and url_do_dono == url
+            and foco.get("abaAtivaId") == nenhuma.dados.get("tab_id")
+            and com_terceiro == uma_so,
+            {
+                "navegou": nenhuma.dados or nenhuma.motivo,
+                "aba_do_dono": url_do_dono,
+                "foco": foco,
+                "instancia": com_terceiro,
+            },
+        )
+        relatorio.conferir(
+            "nada executou o navegador com ele aberto (o lançador ficou vazio no roteiro inteiro)",
+            executados == [],
+            executados,
+        )
+
+        # O gancho da automação social (desligado no Jarvis): o ÚNICO caminho para a janela
+        # própria. Ligado só aqui, para provar que ele ainda funciona no navegador de verdade.
+        foco_antes = corpos.cliente.janela_em_foco()
+        x_antes = _janela_ativa_do_x()
+        janelas_antes_social = _janelas(corpos.cliente.abas())
+        corpos.cliente.automacao_social = True
+        try:
+            social = turno("pesquisa o que diz a segunda página")(
+                "browser.navigate", {"url": segunda}
+            )
+        finally:
+            corpos.cliente.automacao_social = False
+        foco_social = corpos.cliente.janela_em_foco()
+        janelas_com_social = _janelas(corpos.cliente.abas())
+        relatorio.conferir(
+            "só o modo automacao_social (o gancho) abre a janela própria do Jarvis, sem tirar o "
+            "foco do dono",
+            social.status == "ok"
+            and social.dados.get("janela") == "jarvis"
+            and janelas_com_social == janelas_antes_social + 1
+            and foco_social.get("janelaDoJarvisId") is not None
+            and foco_social.get("janelaId") == foco_antes.get("janelaId")
+            and _janela_ativa_do_x() == x_antes,
+            {"social": social.dados or social.motivo, "foco": [foco_antes, foco_social]},
         )
         rodar("browser.navigate", {**alvo, "url": url})
 
