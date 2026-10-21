@@ -83,8 +83,14 @@ class TurnoEmStream:
         resultado: dict[str, Resposta] = {}
 
         def s2() -> None:
+            # O pedido pede detalhe: sem isso o orçamento da fala (emenda de 2026-10-21 à ADR-0031)
+            # diria três frases e o fecho, e a suíte deixaria de exercitar o stream longo que ela
+            # existe para cortar em vinte pontos.
             resultado["r"] = cerebro.responder(
-                "e depois de quinta?", epoch=0, publicar=publicar, cancelado=cancelado
+                "me explica em detalhes o que vem depois de quinta",
+                epoch=0,
+                publicar=publicar,
+                cancelado=cancelado,
             )
             pedacos.put(None)
 
