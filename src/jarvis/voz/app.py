@@ -33,6 +33,7 @@ from __future__ import annotations
 import contextlib
 import os
 import queue
+import re
 import threading
 import time
 from collections import deque
@@ -43,7 +44,7 @@ from typing import Any, Final
 
 from jarvis.agentd.asr import MotorWhisper, TranscritorIncremental
 from jarvis.agentd.fala_em_stream import trechos_do_stream
-from jarvis.agentd.fila_de_avisos import Entrega, FilaDeAvisos, notificacao
+from jarvis.agentd.fila_de_avisos import ORIGEM_DO_PEDIDO, Entrega, FilaDeAvisos, notificacao
 from jarvis.agentd.tts import (
     Fala,
     MotorParametrico,
@@ -96,6 +97,7 @@ from jarvis.politica.modos import Raiz
 from jarvis.politica.pdp import Pdp
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
+from jarvis.s2.avisos import FALAR, AvisoLiberado, decidir_entrega, frase_do_aviso
 from jarvis.s2.cerebro import Cerebro, Resposta
 from jarvis.s2.motor import (
     INTERVALO_DE_CONSULTA_S,
@@ -107,6 +109,7 @@ from jarvis.s2.motor import (
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.s2.portao import PortaoDeAcao
+from jarvis.s2.protocolo import sem_protocolo
 from jarvis.tarefas.gestor import (
     EstadoDaTarefa,
     GestorDeTarefas,
@@ -139,6 +142,10 @@ ESPERA_DO_CEREBRO_S: Final = 2.0
 o motor já parou de gerar (regra 9 da ADR-0025, ≤ 50 ms); isto é só o fim da linha."""
 PASTA_DA_TRILHA: Final = "diagnostico"
 """Dentro da pasta da sessão: `turnos.jsonl` da trilha de diagnóstico (`jarvis.trilha`)."""
+PREFIXO_DA_PERGUNTA: Final = "pergunta-"
+"""O `notif_id` do aviso que leva à voz a pergunta de uma tarefa: o resto é o id da pendência."""
+ERRO_CRU: Final = r"^[A-Z]\w*(?:Error|Exception)\b"
+"""O motivo que é nome de exceção (a tarefa caiu num erro inesperado): não vai cru para a voz."""
 
 
 class AplicativoIndisponivel(RuntimeError):
@@ -429,6 +436,12 @@ class Aplicativo:
     _motor: MotorDeConversa | None = field(default=None, repr=False)
     """O motor do cérebro. Trocável entre turnos: a conversa mora no `Cerebro`, não nele."""
     _cerebro: Cerebro | None = field(default=None, repr=False)
+    relogio_dos_avisos: Callable[[], float] = field(default=time.monotonic, repr=False)
+    """O relógio da fila de avisos (piso livre, teto): injetável para o teste não dormir."""
+    _trava_dos_avisos: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    """A fila é mexida pela linha do laço, pelas das tarefas e pela da janela."""
+    _falas_dos_avisos: dict[str, str] = field(default_factory=dict, repr=False)
+    """O texto inteiro de cada aviso de um pedido (o `resumo` do evento corta em 280)."""
 
     def __post_init__(self) -> None:
         self.avisos = FilaDeAvisos(session_id=self.session_id)
@@ -438,18 +451,22 @@ class Aplicativo:
     # --- avisos (ADR-0025) ---------------------------------------------------------------
     def receber_aviso(self, envelope: Envelope) -> None:
         """Um `Notification` entra na fila; a janela é avisada para renovar o card."""
-        self.avisos.receber(envelope, time.monotonic())
+        with self._trava_dos_avisos:
+            self.avisos.receber(envelope, self.relogio_dos_avisos())
         self._avisos_mudaram()
 
     def registrar_aviso(self, tipo: str, origem: str, resumo: str) -> None:
         """Aviso que nasce no próprio laço (a conversa caiu, o motor falhou). Vai **só para o
         card**: a frase já foi escrita na tela, e falar de novo seria repetir."""
         identificador = f"local-{uuid7()}"
-        self.avisos.receber(
-            notificacao(self.session_id, identificador, tipo=tipo, origem=origem, resumo=resumo),
-            time.monotonic(),
-        )
-        self.avisos.decidido(identificador, Entrega.SO_CARD)
+        with self._trava_dos_avisos:
+            self.avisos.receber(
+                notificacao(
+                    self.session_id, identificador, tipo=tipo, origem=origem, resumo=resumo
+                ),
+                self.relogio_dos_avisos(),
+            )
+            self.avisos.decidido(identificador, Entrega.SO_CARD)
         self._avisos_mudaram()
 
     def _status_do_laco(self, resumo: str) -> None:
@@ -466,7 +483,8 @@ class Aplicativo:
 
     def dados_dos_avisos(self) -> dict[str, list[dict[str, str]]]:
         """O que o card `notificacoes` mostra, no contrato `avisos` do componente."""
-        return self.avisos.dados_do_card(time.monotonic())
+        with self._trava_dos_avisos:
+            return self.avisos.dados_do_card(self.relogio_dos_avisos())
 
     def _avisos_mudaram(self) -> None:
         if self.ao_mudar_avisos is not None:
@@ -502,7 +520,8 @@ class Aplicativo:
             return
         self.estado = estado
         # O piso da fila de avisos: enquanto o Jarvis fala, nenhum aviso sai por cima.
-        self.avisos.tts_tocando(estado is Estado.FALANDO, time.monotonic())
+        with self._trava_dos_avisos:
+            self.avisos.tts_tocando(estado is Estado.FALANDO, self.relogio_dos_avisos())
         if self.ao_mudar_estado is not None:
             self.ao_mudar_estado(estado)
 
@@ -549,6 +568,9 @@ class Aplicativo:
         if self.ferramentas is None:
             self.ferramentas = self._montar_ferramentas()
         self._cerebro.ferramentas = self.ferramentas
+        # O pedido que precisa de ferramenta vira tarefa (ADR-0038): o laço fica livre para a
+        # próxima fala enquanto ela trabalha.
+        self._cerebro.delegar_em_tarefa = True
         self._cerebro.confirmar = self._confirmar
         self._cerebro.ao_status = self._status_do_laco
         self._cerebro.maximo_de_passos = self.configuracao.laco_max_passos
@@ -607,6 +629,8 @@ class Aplicativo:
             session_id=self.session_id,
             ao_mudar=self._tarefas_mudaram,
             ao_concluir=self._tarefa_concluida,
+            ao_avisar=self._aviso_da_tarefa,
+            ao_retirar_aviso=self._retirar_aviso,
         )
 
     def _tarefas_mudaram(self) -> None:
@@ -631,6 +655,9 @@ class Aplicativo:
         se fala e quando, sem cortar fala em andamento. O texto é **nosso** (a descrição e o
         estado, ou o aviso que o código do motor escreveu — ADR-0037), exceto o resumo de um motor
         `agente`, que é de terceiros e vem marcado."""
+        if tarefa.de_objetivo:
+            self._resposta_da_tarefa(tarefa)
+            return
         if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
             if tarefa.aviso == "":
                 return  # o código do motor pediu silêncio (ADR-0037): o card mostra o fim
@@ -651,6 +678,129 @@ class Aplicativo:
                 trust=Trust.THIRD_PARTY if tarefa.de_terceiros else Trust.SYSTEM,
             )
         )
+
+    def _resposta_da_tarefa(self, tarefa: Tarefa) -> None:
+        """O fim da tarefa de um pedido é a **resposta** a ele (ADR-0038): o resultado conferido
+        ou o erro em frase de gente, dito como fala do Jarvis — nunca o nome da ferramenta."""
+        if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
+            tipo, frase = "concluida", tarefa.resposta or "Terminei o que você pediu."
+        elif tarefa.estado is EstadoDaTarefa.FALHOU:
+            motivo = tarefa.motivo
+            if not motivo or re.match(ERRO_CRU, motivo):
+                motivo = "deu um erro aqui dentro"
+            tipo = "falhou"
+            frase = tarefa.resposta or f"Não consegui terminar o que você pediu: {motivo}."
+        else:
+            tipo, frase = "evento", "Parei o que você tinha pedido."
+        self._aviso_da_tarefa(tarefa, f"tarefa-{tarefa.id}", tipo, frase)
+
+    def _aviso_da_tarefa(self, tarefa: Tarefa, identificador: str, tipo: str, frase: str) -> None:
+        """Algo da tarefa de um pedido para o dono (a pergunta que ela espera, o aviso de uma
+        moderada, a resposta): entra na fila com a origem do pedido — que fala o texto como ele é
+        e não espera o teto dos avisos espontâneos —, e nunca por cima da fala em andamento."""
+        texto = sem_protocolo(frase)
+        if not texto:
+            return
+        with self._trava_dos_avisos:
+            self._falas_dos_avisos[identificador] = texto
+            self.avisos.receber(
+                notificacao(
+                    self.session_id,
+                    identificador,
+                    tipo=tipo,
+                    origem=f"{ORIGEM_DO_PEDIDO}{tarefa.descricao}"[:80],
+                    resumo=texto,
+                ),
+                self.relogio_dos_avisos(),
+            )
+        self._avisos_mudaram()
+
+    def _retirar_aviso(self, _tarefa: Tarefa, identificador: str) -> None:
+        """A pergunta foi respondida (ou venceu) antes de tocar: fica só no card."""
+        with self._trava_dos_avisos:
+            aviso = self.avisos.avisos.get(identificador)
+            if aviso is not None and aviso.pendente:
+                self.avisos.decidido(identificador, Entrega.SO_CARD)
+        self._avisos_mudaram()
+
+    # --- avisos em voz (ADR-0025, ADR-0038) ----------------------------------------------
+    def _liberados(self, liberacao: Envelope | None) -> list[AvisoLiberado]:
+        """Os avisos de uma liberação que vão à voz; os outros ficam só no card."""
+        if liberacao is None:
+            return []
+        liberados: list[AvisoLiberado] = []
+        for identificador in liberacao.payload["notif_ids"]:
+            na_fila = self.avisos.avisos[str(identificador)]
+            liberados.append(
+                AvisoLiberado(
+                    notif_id=na_fila.notif_id,
+                    tipo=na_fila.tipo,
+                    origem=na_fila.origem,
+                    resumo=self._falas_dos_avisos.get(na_fila.notif_id, na_fila.resumo),
+                    de_terceiros=na_fila.trust == str(Trust.THIRD_PARTY),
+                )
+            )
+        decisoes = decidir_entrega(liberados)
+        for liberado in liberados:
+            if decisoes[liberado.notif_id] != FALAR:
+                self.avisos.decidido(liberado.notif_id, Entrega(decisoes[liberado.notif_id]))
+        return [a for a in liberados if decisoes[a.notif_id] == FALAR]
+
+    def entregar_avisos(self, fila: FilaDePlayback | None = None) -> bool:
+        """Piso livre (o dono calado, o TTS parado, 1,5 s): **um** aviso liberado vai à voz — a
+        resposta de uma tarefa, a pergunta que ela espera. Devolve se falou."""
+        if self._cerebro is None or self._tts is None:
+            return False
+        with self._trava_dos_avisos:
+            avisos = self._liberados(self.avisos.liberar(self.relogio_dos_avisos()))
+        if not avisos:
+            return False
+        self._falar_os_avisos(avisos, fila)
+        return True
+
+    def _falar_os_avisos(self, avisos: list[AvisoLiberado], fila: FilaDePlayback | None) -> None:
+        """Os avisos como um turno sem motor: o que tocou entra na conversa (e no livro)."""
+        assert self._cerebro is not None
+        cerebro = self._cerebro
+        epoch = self.epoch
+        self._turno_cancelado = False
+        pedacos: list[dict[str, Any]] = []
+        resposta = cerebro.avisar(avisos, epoch=epoch, publicar=pedacos.append)
+        texto = " ".join(frase_do_aviso(a) for a in avisos)
+        if self.ao_pedaco is not None:
+            self.ao_pedaco(texto)
+        fala, turno = self._tocar(
+            trechos_do_stream(iter(pedacos), epoch=epoch), epoch=epoch, fila=fila
+        )
+        tocadas = turno.amostras_tocadas
+        cerebro.ouvido(
+            resposta.response_id,
+            fala.texto_ate(tocadas),
+            interrompida=turno.cancelado,
+            played_ms=int(1000 * tocadas / TAXA_PADRAO),
+        )
+        self._avisos_tocados([a.notif_id for a in avisos], cortados=turno.cancelado)
+        self.escrever_na_tela(f"Jarvis: {texto}")
+        self.turnos.append(Turno(falou="", respondeu=texto, amostras_tocadas=tocadas, epoch=epoch))
+        self._mudar(self._repouso)
+
+    def _avisos_tocados(self, identificadores: list[str], *, cortados: bool) -> None:
+        """Entregue é o que tocou (regra 15): cortado volta para a fila. A pergunta de uma tarefa
+        que tocou inteira passa a aceitar o "sim" falado."""
+        if not identificadores:
+            return
+        with self._trava_dos_avisos:
+            if cortados:
+                self.avisos.cortado(identificadores)
+            else:
+                self.avisos.tocou(identificadores, self.relogio_dos_avisos())
+        if not cortados and self._cerebro is not None:
+            for identificador in identificadores:
+                if identificador.startswith(PREFIXO_DA_PERGUNTA):
+                    self._cerebro.pendencias.marcar_ouvida(
+                        identificador.removeprefix(PREFIXO_DA_PERGUNTA)
+                    )
+        self._avisos_mudaram()
 
     def _confirmar_da_tarefa(self, pergunta: Confirmacao, cancelada: Callable[[], bool]) -> bool:
         """O "sim" do dono para um passo perigoso de uma tarefa: a mesma faixa da conversa, mas a
@@ -1086,6 +1236,11 @@ class Aplicativo:
         def geracao_cancelada() -> bool:
             return parar_geracao.is_set() or cancelado()
 
+        # Mensagem do dono: os avisos pendentes vão junto com ela, antes da resposta (ADR-0025).
+        with self._trava_dos_avisos:
+            com_a_mensagem = self._liberados(
+                self.avisos.mensagem_do_dono(turn_id, self.relogio_dos_avisos())
+            )
         self._mudar(Estado.PENSANDO)
         comeco = time.monotonic()
         # Sem teto: texto é pequeno, e quem limita o trabalho é a janela de síntese do
@@ -1126,6 +1281,7 @@ class Aplicativo:
                     publicar=publicar,
                     turn_id=turn_id,
                     cancelado=geracao_cancelada,
+                    avisos=com_a_mensagem,
                     mostrar=mostrar,
                 )
             except Exception as erro:  # o turno degrada e diz; a linha não leva o laço junto
@@ -1176,6 +1332,9 @@ class Aplicativo:
                 interrompida=turno.cancelado,
                 played_ms=int(1000 * tocadas / TAXA_PADRAO),
             )
+        self._avisos_tocados(
+            [a.notif_id for a in com_a_mensagem], cortados=turno.cancelado or resposta is None
+        )
         if self.conversa is not None:
             self.conversa.indexar_depois()
         self._mudar(self._repouso)
@@ -1317,6 +1476,9 @@ class Aplicativo:
         """O dono falou por cima (ou apertou a barra): o epoch morre e tudo cai junto."""
         self.epoch += 1
         self._turno_cancelado = True
+        if self._cerebro is not None:
+            # A pergunta de uma tarefa que o dono ainda não ouviu inteira cai (é não, ADR-0038).
+            self._cerebro.pendencias.interrompida()
         self._mudar(self._repouso)
         self.escrever_na_tela(f"  ⟂ interrompido ({motivo})")
         return self.epoch
@@ -1339,11 +1501,13 @@ class Aplicativo:
         return tecla
 
     # --- modo texto ----------------------------------------------------------------------
-    def rodar_texto(self, linhas: Iterable[str]) -> int:
+    def rodar_texto(self, linhas: Iterable[str | None]) -> int:
         """Sem microfone: o dono digita, o Jarvis responde e **fala** pelo sumidouro.
 
         É o caminho que funciona sem placa de som — e é o que prova o resto do laço quando o
-        dispositivo não abre (aceite do pedido do dono).
+        dispositivo não abre (aceite do pedido do dono). Uma "linha" `None` é o tique de quem não
+        digitou nada (a janela manda um a cada fração de segundo): é quando o aviso que espera o
+        piso livre — a resposta de uma tarefa — vai à voz.
         """
         self.abrir(com_asr=False)
         self._dizer_o_que_esta_ligado()
@@ -1355,6 +1519,9 @@ class Aplicativo:
         )
         try:
             for linha in linhas:
+                if linha is None:
+                    self.entregar_avisos(fila)
+                    continue
                 texto = linha.strip()
                 if not texto:
                     continue
@@ -1475,6 +1642,8 @@ class Aplicativo:
                     break
                 if self._quer_falar(captura):
                     if not falando:
+                        with self._trava_dos_avisos:
+                            self.avisos.dono_falando(True, self.relogio_dos_avisos())
                         falando = True
                         audio = bytearray(b"".join(antes_da_fala))
                         antes_da_fala.clear()
@@ -1492,12 +1661,17 @@ class Aplicativo:
                     # o modo troca com a sessão aberta, e a porta fica.
                     fechou = self._pelo_dedo or silencio_ms >= SILENCIO_PARA_FECHAR_O_TURNO_MS
                     if fechou:
+                        with self._trava_dos_avisos:
+                            self.avisos.dono_falando(False, self.relogio_dos_avisos())
                         falando = False
                         turnos += 1
                         self._turno_de_audio(bytes(audio), transcritor, fila)
                         audio = bytearray()
                 if not falando and not self._pelo_dedo:
                     antes_da_fala.append(quadro.amostras)
+                if not falando and not audio and not fila.pedacos_na_fila:
+                    # Piso livre: a resposta de uma tarefa (ou a pergunta dela) sai agora.
+                    self.entregar_avisos(fila)
                 _ = eventos
                 if len(audio) > MAXIMO_DE_AUDIO_POR_TURNO_S * TAXA_PADRAO * BYTES_POR_AMOSTRA:
                     falando = False

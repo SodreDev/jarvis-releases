@@ -114,3 +114,51 @@ def test_json_que_nunca_fecha_nao_segura_a_proposta_para_sempre() -> None:
     list(leitor.alimentar('<<ferramenta>> {"a": "'))
     saiu = list(leitor.alimentar("x" * 5000))
     assert [p.tool_id for p in _pedidos(saiu)] == ["(malformado)"]
+
+
+# --- formas que vazavam para a voz (dono, 2026-10-21; ADR-0038) ------------------------------
+@pytest.mark.parametrize(
+    "texto",
+    [
+        JSON,  # o modelo esqueceu a marca
+        f"```json\n{JSON}\n```",
+        f"<<tool>> {JSON}",
+        f"<<tool_call>> {JSON}",
+        '{"tool": "apps.launch", "arguments": {"nome": "Discord"}}',
+        '<function_calls><invoke name="apps.launch"><parameter name="nome">Discord</parameter>'
+        "</invoke></function_calls>",
+        f"<tool_call>{JSON}</tool_call>",
+    ],
+)
+def test_proposta_sem_a_marca_ou_no_jeito_nativo_vira_pedido_e_nao_fala(texto: str) -> None:
+    deltas = _ler(texto)
+    assert _pedidos(deltas) == [ABRIR]
+    assert _fala(deltas).strip() == "", f"sobrou fala: {_fala(deltas)!r}"
+
+
+def test_json_solto_partido_em_qualquer_ponto_nao_vaza() -> None:
+    texto = f"Vou abrir. {JSON}"
+    for corte in range(1, len(texto)):
+        deltas = _ler(texto[:corte], texto[corte:])
+        assert _pedidos(deltas) == [ABRIR], corte
+        assert _fala(deltas).strip() == "Vou abrir.", corte
+
+
+def test_bloco_em_xml_que_nao_fecha_nao_e_fala_nem_chamada() -> None:
+    deltas = _ler('Certo. <function_calls><invoke name="apps.launch"><parameter name="nome">D')
+    assert _fala(deltas).strip() == "Certo."
+    assert _pedidos(deltas) == []
+
+
+def test_chave_comum_entre_chaves_e_fala_e_nao_trava() -> None:
+    deltas = _ler("O conjunto {a, b} tem dois ", "elementos.")
+    assert _fala(deltas) == "O conjunto {a, b} tem dois elementos."
+
+
+def test_sem_protocolo_limpa_o_texto_pronto() -> None:
+    from jarvis.s2.protocolo import sem_protocolo
+
+    assert (
+        sem_protocolo(f"Abri o Discord. <<ferramenta>> {JSON} Pronto.") == "Abri o Discord. Pronto."
+    )
+    assert sem_protocolo("<<pensar>>plano<</pensar>>Feito.") == "Feito."

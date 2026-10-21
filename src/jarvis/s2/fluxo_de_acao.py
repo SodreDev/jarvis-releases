@@ -20,10 +20,11 @@ A ordem, com quem manda em cada passo:
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+from jarvis.executor.desfazer import Contaminacao
 from jarvis.executor.ferramentas import (
     Cancelado,
     Confirmacao,
@@ -39,6 +40,19 @@ from jarvis.s2.motor import Mensagem, PedidoDeTool
 from jarvis.s2.pendencias import Pendencia, PendenciaOcupada, RegistroDePendencias
 from jarvis.s2.portao import AutorizacoesExplicitas, Classe, PortaoDeAcao, RespostaDoDono
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, MotorDireto, TarefaRecusada
+
+Anunciar = Callable[[Confirmacao], None]
+"""Leva a pergunta de uma tarefa à voz (a fila de avisos): ela não acaba um turno."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Perguntar:
+    """A chamada é do dono decidir: o PDP pediu confirmação, ou o Jev, permissão."""
+
+    pergunta: Confirmacao
+    contaminado: bool
+    origem: str
+    """`pdp` ou `portao`, para a trilha."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,15 +85,154 @@ class FluxoDeAcao:
         session_id: str = "",
         proveniencia: Proveniencia | None = None,
     ) -> ResultadoDeFerramenta:
+        """A chamada do **turno**: o que precisa do dono vira pendência, e o turno acaba nela."""
+        decidido = self._decidir(
+            executor,
+            pedido,
+            pedido_do_dono=pedido_do_dono,
+            mensagens=mensagens,
+            cancelado=cancelado,
+            confirmar=confirmar,
+            session_id=session_id,
+            proveniencia=proveniencia,
+            contaminacao=None,
+            autorizacoes=self.autorizacoes,
+        )
+        if isinstance(decidido, ResultadoDeFerramenta):
+            return decidido
+        pergunta = decidido.pergunta
+        tool_id, chamada = pergunta.tool_id, pergunta.id
+        try:
+            self.pendencias.abrir(pergunta, contaminado=decidido.contaminado)
+        except PendenciaOcupada:
+            return ResultadoDeFerramenta(
+                tool_id,
+                "negado",
+                motivo="já há uma pergunta pendente com o dono: espere a resposta dele",
+                call_id=chamada,
+                causa="pergunta_ocupada",
+            )
+        return ResultadoDeFerramenta(
+            tool_id,
+            "pendente",
+            motivo=(
+                "nada foi feito ainda: a ação espera o sim do dono, e a pergunta já foi dita a "
+                "ele. Não repita a pergunta nem diga que fez; espere a resposta."
+            ),
+            call_id=chamada,
+            aviso=f"Preciso do seu sim para {pergunta.para_ouvir}. Posso?",
+        )
+
+    def chamar_na_tarefa(
+        self,
+        executor: ExecutorDeFerramentas,
+        pedido: PedidoDeTool,
+        *,
+        contaminacao: Contaminacao,
+        autorizacoes: AutorizacoesExplicitas,
+        pedido_do_dono: str,
+        mensagens: Sequence[Mensagem],
+        cancelado: Cancelado,
+        confirmar: Confirmar,
+        anunciar: Anunciar,
+        session_id: str = "",
+        proveniencia: Proveniencia | None = None,
+    ) -> ResultadoDeFerramenta:
+        """Um passo da tarefa de um pedido do dono (ADR-0038): o mesmo PDP, o mesmo Jev, o mesmo
+        objetivo — o **da tarefa** — e a mesma autorização explícita, com a fala daquele pedido.
+
+        O que precisa do dono vira uma pendência como a do turno (uma por vez, por id, prazo; o
+        "sim" falado ou o clique), mas quem espera é a **tarefa**, parada: a conversa segue. A
+        pergunta chega à voz por `anunciar` (a fila de avisos). Com o "sim", a chamada exata roda
+        pelo executor, com o "sim" valendo só para ela; uma pergunta por ação que surja no corpo
+        (o que está sob o clique) vai a `confirmar`, como antes."""
+        decidido = self._decidir(
+            executor,
+            pedido,
+            pedido_do_dono=pedido_do_dono,
+            mensagens=mensagens,
+            cancelado=cancelado,
+            confirmar=confirmar,
+            session_id=session_id,
+            proveniencia=proveniencia,
+            contaminacao=contaminacao,
+            autorizacoes=autorizacoes,
+        )
+        if isinstance(decidido, ResultadoDeFerramenta):
+            return decidido
+        pergunta = decidido.pergunta
+        resposta = self.pendencias.esperar(
+            pergunta, contaminado=decidido.contaminado, cancelado=cancelado, anunciar=anunciar
+        )
+        if executor.trilha is not None:
+            executor.trilha.evento(
+                "permissao",
+                tool_id=pergunta.tool_id,
+                origem=decidido.origem,
+                motivo=pergunta.causa,
+                resposta="sim" if resposta else "não",
+            )
+        if resposta is None:
+            return ResultadoDeFerramenta(
+                pergunta.tool_id,
+                "negado",
+                motivo="nada foi feito: já havia outra pergunta esperando o dono",
+                call_id=pergunta.id,
+                causa="pergunta_ocupada",
+            )
+        if not resposta:
+            return ResultadoDeFerramenta(
+                pergunta.tool_id,
+                "negado",
+                motivo=(
+                    "nada foi feito: o dono não confirmou (disse não, falou de outra coisa ou o "
+                    "prazo acabou)"
+                ),
+                call_id=pergunta.id,
+                causa="dono_nao_confirmou",
+            )
+        ja_confirmado = _sim_de_uso_unico(pergunta)
+        return executor.executar(
+            pergunta.tool_id,
+            pergunta.argumentos,
+            cancelado=cancelado,
+            confirmar=lambda outra: ja_confirmado(outra) or confirmar(outra),
+            session_id=session_id,
+            proveniencia=proveniencia,
+            contaminacao=contaminacao,
+        )
+
+    def _decidir(
+        self,
+        executor: ExecutorDeFerramentas,
+        pedido: PedidoDeTool,
+        *,
+        pedido_do_dono: str,
+        mensagens: Sequence[Mensagem],
+        cancelado: Cancelado,
+        confirmar: Confirmar,
+        session_id: str,
+        proveniencia: Proveniencia | None,
+        contaminacao: Contaminacao | None,
+        autorizacoes: AutorizacoesExplicitas,
+    ) -> ResultadoDeFerramenta | _Perguntar:
+        """PDP → Jev → objetivo → autorização explícita: o resultado (rodou, negou) ou a pergunta
+        que é do dono. A avaliação nunca sai daqui com o grant aberto."""
         avaliacao = executor.avaliar(
-            pedido.tool_id, pedido.args, session_id=session_id, proveniencia=proveniencia
+            pedido.tool_id,
+            pedido.args,
+            session_id=session_id,
+            proveniencia=proveniencia,
+            contaminacao=contaminacao,
         )
         if isinstance(avaliacao, ResultadoDeFerramenta):
             return avaliacao
         veredito = avaliacao.decisao.veredito
         if veredito is Veredito.DENY:
-            return executor.concluir(avaliacao, cancelado=cancelado)  # nega, com a sugestão
+            # nega, com a sugestão
+            return executor.concluir(avaliacao, cancelado=cancelado, contaminacao=contaminacao)
         tool_id, chamada = avaliacao.tool_id, avaliacao.pedido.call_id
+        objetivo = executor.objetivo_de(contaminacao)
         entregue = False
         """A avaliação já foi concluída ou descartada: o grant deixou de ser desta função."""
         try:
@@ -92,7 +245,7 @@ class FluxoDeAcao:
                 mensagens=mensagens,
                 situacao=_situacao(manifesto, executor, avaliacao.pedido.contaminado),
                 cancelado=cancelado,
-                objetivo=executor.objetivo,
+                objetivo=objetivo,
             )
             classe, motivo = classificacao.classe, classificacao.motivo
 
@@ -123,12 +276,12 @@ class FluxoDeAcao:
                     call_id=chamada,
                 )
             if classe is Classe.PEDIR_PERMISSAO and veredito is Veredito.ALLOW:
-                if cabe_no_objetivo(executor.objetivo, tool_id, avaliacao.argumentos):
+                if cabe_no_objetivo(objetivo, tool_id, avaliacao.argumentos):
                     # Dentro do objetivo do dono, navegar/ler/clicar/digitar/buscar não pergunta:
                     # o Jev só veta (dono, 2026-10-20). O PDP e o risco dinâmico seguem valendo.
                     classe = Classe.FAZER
                     trilhar("objetivo")
-                elif self.autorizacoes.consumir(
+                elif autorizacoes.consumir(
                     tool_id,
                     pedido.args,
                     p_explicito=classificacao.p_explicito,
@@ -141,7 +294,11 @@ class FluxoDeAcao:
             if veredito is Veredito.ALLOW and classe is Classe.FAZER:
                 entregue = True  # daqui em diante o grant é do `concluir`
                 return executor.concluir(
-                    avaliacao, cancelado=cancelado, confirmar=confirmar, proveniencia=proveniencia
+                    avaliacao,
+                    cancelado=cancelado,
+                    confirmar=confirmar,
+                    proveniencia=proveniencia,
+                    contaminacao=contaminacao,
                 )
             por_que = (
                 avaliacao.decisao.motivo
@@ -151,42 +308,27 @@ class FluxoDeAcao:
             causa = (
                 "confirmacao_do_pdp" if veredito is Veredito.CONFIRM else "portao_pediu_permissao"
             )
+            origem = "pdp" if veredito is Veredito.CONFIRM else "portao"
             pergunta = executor.pergunta_de(avaliacao, por_que, causa)
             trilhar("pendente")
             if executor.trilha is not None:
                 executor.trilha.evento(
                     "permissao",
                     tool_id=tool_id,
-                    origem="pdp" if veredito is Veredito.CONFIRM else "portao",
+                    origem=origem,
                     motivo=causa,
                     resposta="pendente",
                 )
             entregue = True
+            # O grant não fica aberto esperando o dono: com o "sim", a chamada passa de novo pelo
+            # PDP, agora confirmada.
             executor.descartar(
                 avaliacao,
                 "pendente",
                 f"esperando o sim do dono: {por_que}",
                 causa="esperando_o_dono",
             )
-            try:
-                self.pendencias.abrir(pergunta, contaminado=avaliacao.pedido.contaminado)
-            except PendenciaOcupada:
-                return ResultadoDeFerramenta(
-                    tool_id,
-                    "negado",
-                    motivo="já há uma pergunta pendente com o dono: espere a resposta dele",
-                    call_id=chamada,
-                )
-            return ResultadoDeFerramenta(
-                tool_id,
-                "pendente",
-                motivo=(
-                    "nada foi feito ainda: a ação espera o sim do dono, e a pergunta já foi dita a "
-                    "ele. Não repita a pergunta nem diga que fez; espere a resposta."
-                ),
-                call_id=chamada,
-                aviso=f"Preciso do seu sim para {pergunta.detalhe}. Posso?",
-            )
+            return _Perguntar(pergunta, avaliacao.pedido.contaminado, origem)
         finally:
             if not entregue:
                 # Uma exceção entre o PDP e a entrega (revisão de bf9102c): nada rodou, e o grant
@@ -207,7 +349,14 @@ class FluxoDeAcao:
         pendencia = self.pendencias.valida()
         if pendencia is None:
             return LeituraDaResposta()
+        if pendencia.espera is not None and (
+            pendencia.espera.so_clique or not pendencia.espera.ouvida
+        ):
+            # A pergunta de uma tarefa que ainda não tocou inteira, ou que só o clique responde
+            # (ADR-0038): o que o dono disse não é resposta a ela, nem a cancela. A faixa segue.
+            return LeituraDaResposta()
         detalhe = pendencia.pergunta.detalhe
+        falado = pendencia.pergunta.para_ouvir
         resposta = self.portao.interpretar_resposta(
             fala, acao_pendente=detalhe, mensagens=mensagens, cancelado=cancelado
         )
@@ -215,18 +364,18 @@ class FluxoDeAcao:
             resultado = self.resolver(executor, pendencia.id, sim=True)
             if resultado is None:  # venceu entre a leitura e o tomar: o "sim" não vale mais
                 return LeituraDaResposta(
-                    frase=f"A pergunta sobre {detalhe} já tinha vencido; não fiz nada.",
+                    frase=f"A pergunta sobre {falado} já tinha vencido; não fiz nada.",
                 )
             if resultado.status == "despachado":
-                frase = f"Certo, estou fazendo: {detalhe}. Aviso quando terminar."
+                frase = f"Certo, estou fazendo: {falado}. Aviso quando terminar."
             elif resultado.status == "ok":
-                frase = f"Feito: {detalhe}."
+                frase = f"Feito: {falado}."
             else:
-                frase = f"Não deu para fazer {detalhe}: {resultado.motivo}."
+                frase = f"Não deu para fazer {falado}: {resultado.motivo}."
             return LeituraDaResposta(frase=frase, resultado=resultado)
         self.pendencias.cancelar()
         if resposta is RespostaDoDono.NAO:
-            return LeituraDaResposta(frase=f"Tudo bem, não vou fazer isso ({detalhe}).")
+            return LeituraDaResposta(frase=f"Tudo bem, não vou fazer isso ({falado}).")
         return LeituraDaResposta(
             nota=(
                 f"A pergunta que estava pendente («{detalhe}») foi cancelada porque o dono falou "
@@ -239,9 +388,18 @@ class FluxoDeAcao:
         self, executor: ExecutorDeFerramentas, pendencia_id: str, *, sim: bool
     ) -> ResultadoDeFerramenta | None:
         """Resposta do dono a **esta** pendência. `None` = não havia (vencida, outra, já usada)."""
-        pendencia = self.pendencias.tomar(pendencia_id)
+        pendencia = self.pendencias.tomar(pendencia_id, sim=sim)
         if pendencia is None:
             return None
+        if pendencia.espera is not None:
+            # A tarefa que esperava foi acordada pelo `tomar` e segue com a resposta (ADR-0038):
+            # nada roda aqui, e nenhuma tarefa nova nasce.
+            return ResultadoDeFerramenta(
+                pendencia.pergunta.tool_id,
+                "despachado" if sim else "negado",
+                motivo="" if sim else "o dono disse não",
+                call_id=pendencia.id,
+            )
         if not sim:
             return ResultadoDeFerramenta(
                 pendencia.pergunta.tool_id,
@@ -275,7 +433,7 @@ def _despachar(executor: ExecutorDeFerramentas, pendencia: Pendencia) -> Resulta
         )
     try:
         tarefa = gestor.iniciar(
-            pergunta.detalhe,
+            pergunta.para_ouvir,
             pergunta.tool_id,
             pergunta.argumentos,
             contaminado=pendencia.contaminado,

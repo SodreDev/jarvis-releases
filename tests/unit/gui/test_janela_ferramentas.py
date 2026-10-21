@@ -145,6 +145,14 @@ def _memoria_viva(conversa: ConversaPersistente, alvo: str) -> bool:
     )
 
 
+def _respostas(tela: Any) -> list[str]:
+    return [linha["texto"] for linha in tela.transcricao if linha["texto"].startswith("Jarvis: ")]
+
+
+ANUNCIO = "Jarvis: Preciso que você confirme na tela: apagar de vez."
+"""A voz avisa que a pergunta da tarefa está na faixa (ADR-0038) — se tocar antes do clique."""
+
+
 def _capturar(janela: QQuickView, nome: str) -> None:
     TELAS.mkdir(parents=True, exist_ok=True)
     assert janela.grabWindow().save(str(TELAS / nome))
@@ -174,7 +182,9 @@ def test_o_dono_aprova_na_janela_e_so_entao_a_memoria_e_apagada(
     _capturar(janela, "confirmar-apagar.png")
 
     tela.responderPendencia(pedido["id"], True)
-    _esperar(aplicativo, 5.0, ate=lambda: bool(laco.turnos))
+    # O pedido virou tarefa (ADR-0038): o turno acabou em "Vou apagar."; a resposta chega depois,
+    # em voz, pela fila de avisos.
+    _esperar(aplicativo, 8.0, ate=lambda: "Jarvis: Apaguei." in _respostas(tela))
     _esperar(aplicativo, 0.5)
     _capturar(janela, "memoria-apagada.png")
     tela.pararConversa()
@@ -182,10 +192,9 @@ def test_o_dono_aprova_na_janela_e_so_entao_a_memoria_e_apagada(
 
     assert not _memoria_viva(conversa, alvo), "com o sim do dono, apagou"
     assert _pendente(tela) is None
-    respostas = [
-        linha["texto"] for linha in tela.transcricao if linha["texto"].startswith("Jarvis: ")
-    ]
-    assert respostas == ["Jarvis: Vou apagar. Apaguei."]
+    respostas = _respostas(tela)
+    assert respostas[0] == "Jarvis: Vou apagar." and respostas[-1] == "Jarvis: Apaguei."
+    assert set(respostas[1:-1]) <= {ANUNCIO}, "nada além da frase curta, do aviso e do resultado"
 
 
 def test_sem_resposta_no_prazo_e_nao_e_a_faixa_some(
@@ -206,14 +215,16 @@ def test_sem_resposta_no_prazo_e_nao_e_a_faixa_some(
     tela.enviarTexto("apaga aquela anotação do café")
     _esperar(aplicativo, 5.0, ate=lambda: _pendente(tela) is not None)
     assert _pendente(tela) is not None
-    _esperar(aplicativo, 5.0, ate=lambda: bool(laco.turnos))
+    nao_fiz = "Jarvis: Não fiz, porque você não confirmou."
+    _esperar(aplicativo, 8.0, ate=lambda: nao_fiz in _respostas(tela))
     _esperar(aplicativo, 0.3)
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
 
     assert _memoria_viva(conversa, alvo), "sem resposta no prazo, não apaga"
     assert _pendente(tela) is None, "pedido vencido continuou na tela"
-    assert any(linha["texto"] == "Jarvis: Vou apagar. Não apaguei." for linha in tela.transcricao)
+    # Sem nenhum passo feito, quem diz é o código (ADR-0038), não o "Não apaguei." do modelo.
+    assert _respostas(tela)[0] == "Jarvis: Vou apagar." and _respostas(tela)[-1] == nao_fiz
 
 
 def test_interromper_com_a_confirmacao_aberta_e_nao(
@@ -256,16 +267,13 @@ def test_listar_a_pasta_e_responder_em_voz(
     tela.iniciarConversa()
     _esperar(aplicativo, 1.0, ate=lambda: laco.estado.value != "parado")
     tela.enviarTexto("o que tem na minha pasta Documentos?")
-    _esperar(aplicativo, 6.0, ate=lambda: bool(laco.turnos))
+    resultado = "Jarvis: Na sua pasta Documentos tem notas.txt e orcamento.ods."
+    _esperar(aplicativo, 8.0, ate=lambda: resultado in _respostas(tela))
     _esperar(aplicativo, 0.5)
     _capturar(janela, "pasta-listada.png")
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
 
-    respostas = [
-        linha["texto"] for linha in tela.transcricao if linha["texto"].startswith("Jarvis: ")
-    ]
-    assert respostas == [
-        "Jarvis: Deixa eu ver. Na sua pasta Documentos tem notas.txt e orcamento.ods."
-    ]
+    # A frase curta no turno; o resultado, quando a tarefa acaba, em voz (ADR-0038).
+    assert _respostas(tela) == ["Jarvis: Deixa eu ver.", resultado]
     assert _pendente(tela) is None, "leitura não pede confirmação"

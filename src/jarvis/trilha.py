@@ -187,6 +187,7 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "erro_da_ferramenta",
         "portao_negou",
         "esperando_o_dono",
+        "pergunta_ocupada",
         "portao_falhou",
         # o método do pedido (`jarvis.politica.metodo`)
         "pede_teclado_ou_mouse",

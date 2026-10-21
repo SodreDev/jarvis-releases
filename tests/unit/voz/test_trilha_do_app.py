@@ -15,6 +15,13 @@ from jarvis.voz.app import PASTA_DA_TRILHA, Aplicativo
 from jarvis.voz.config import Configuracao
 
 
+def _esperar_as_tarefas(app: Aplicativo) -> None:
+    """O pedido com ferramenta vira tarefa (ADR-0038): a ferramenta roda nela, fora do turno."""
+    assert app.ferramentas is not None and app.ferramentas.tarefas is not None
+    for tarefa_id in list(app.ferramentas.tarefas.tarefas):
+        assert app.ferramentas.tarefas.esperar(tarefa_id, 5.0)
+
+
 def _roteiro(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
     if any(m.papel == "ferramenta" for m in contexto.mensagens):
         return ["Tem um arquivo na pasta."]
@@ -37,16 +44,21 @@ def test_o_turno_deixa_so_metadados_na_trilha(tmp_path: Path) -> None:
     fila = FilaDePlayback(sumidouro=SumidouroEmMemoria(), session_id=app.session_id)
 
     app.responder("o que tem em Documentos? minha senha é hunter2hunter2", fila=fila)
+    _esperar_as_tarefas(app)
 
     pasta = app.raiz / PASTA_DA_TRILHA
+    eventos = {e["evento"]: e for e in eventos_do_ultimo_turno(pasta)}
     tipos = [e["evento"] for e in eventos_do_ultimo_turno(pasta)]
-    # método: ADR-0035; a ferramenta deixa início e fim (dono, 2026-10-20).
-    assert tipos == ["turno.inicio", "metodo", "ferramenta.inicio", "ferramenta", "turno.fim"]
-    metodo = eventos_do_ultimo_turno(pasta)[1]
+    # método: ADR-0035; a ferramenta deixa início e fim (dono, 2026-10-20) — na tarefa do pedido
+    # (ADR-0038), que corre ao lado do fim do turno: a ordem entre os dois não é fixa.
+    assert tipos[:2] == ["turno.inicio", "metodo"]
+    assert sorted(tipos[2:]) == ["ferramenta", "ferramenta.inicio", "turno.fim"]
+    assert tipos.index("ferramenta.inicio") < tipos.index("ferramenta")
+    metodo = eventos["metodo"]
     assert set(metodo) == {"t", "turno", "evento", "metodo", "motivo", "de_fora"}
-    comeco = eventos_do_ultimo_turno(pasta)[2]
+    comeco = eventos["ferramenta.inicio"]
     assert comeco["tool_id"] == "files.list_dir" and comeco["argumentos"] == ["path"]
-    ferramenta = eventos_do_ultimo_turno(pasta)[3]
+    ferramenta = eventos["ferramenta"]
     assert ferramenta["tool_id"] == "files.list_dir" and ferramenta["status"] == "ok"
     assert ferramenta["argumentos"] == ["path"] and ferramenta["pdp"] == "allow"
     bruto = (pasta / ARQUIVO).read_text("utf-8")
@@ -84,10 +96,10 @@ def test_do_raciocinio_a_trilha_guarda_so_o_tamanho(tmp_path: Path) -> None:
     fila = FilaDePlayback(sumidouro=SumidouroEmMemoria(), session_id=app.session_id)
 
     turno = app.responder("o que tem em Documentos?", fila=fila)
+    _esperar_as_tarefas(app)
 
     pasta = app.raiz / PASTA_DA_TRILHA
-    fim = eventos_do_ultimo_turno(pasta)[-1]
-    assert fim["evento"] == "turno.fim"
+    fim = next(e for e in eventos_do_ultimo_turno(pasta) if e["evento"] == "turno.fim")
     assert fim["caracteres_de_raciocinio"] == len("o extrato-do-banco deve estar em Documentos")
     assert fim["narracao_retida"] == 0
     assert "extrato-do-banco" not in (pasta / ARQUIVO).read_text("utf-8")

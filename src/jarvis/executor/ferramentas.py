@@ -172,6 +172,13 @@ class Confirmacao:
     causa: str = ""
     """O código do motivo (`jarvis.trilha.CAUSAS`): é ele que a trilha grava, nunca o `motivo`, que
     pode citar o rótulo que a página dá ao elemento."""
+    falado: str = ""
+    """O que a **voz** diz da ação (ADR-0038): sem id de ferramenta nem argumento em JSON, que ficam
+    no `detalhe`, para a janela. Vazio = o `detalhe` já é frase de gente."""
+
+    @property
+    def para_ouvir(self) -> str:
+        return self.falado or self.detalhe
 
 
 Confirmar = Callable[[Confirmacao], bool]
@@ -376,7 +383,7 @@ class ExecutorDeFerramentas:
             if self._ligada(tool_id)
         )
 
-    def _objetivo_de(self, marca: Contaminacao | None) -> Objetivo | None:
+    def objetivo_de(self, marca: Contaminacao | None) -> Objetivo | None:
         """O objetivo de quem chama (C2): o da tarefa, quando ela traz o dela; senão, o do turno."""
         if marca is not None and marca is not self.turno and marca.objetivo is not None:
             return marca.objetivo
@@ -512,13 +519,15 @@ class ExecutorDeFerramentas:
         marca = contaminacao if contaminacao is not None else self.turno
         chamada = call_id or f"c-{uuid7()}"
         do_turno = contaminacao is None or contaminacao is self.turno
-        if do_turno and self.metodo is not None and tool_id in self.metodo.evitar:
-            # Só a chamada do próprio turno: a tarefa em segundo plano (que traz a contaminação
-            # dela) não segue o método do pedido de agora.
+        # A chamada do turno segue o método do pedido de agora; a tarefa em segundo plano (que traz
+        # a contaminação dela) segue o do pedido que ela cumpre, se ele veio junto (ADR-0038) —
+        # nunca o do pedido de agora, que pode ser outro.
+        metodo = self.metodo if do_turno else marca.metodo
+        if metodo is not None and tool_id in metodo.evitar:
             return ResultadoDeFerramenta(
                 tool_id,
                 "negado",
-                motivo=self.metodo.recusa(tool_id),
+                motivo=metodo.recusa(tool_id),
                 call_id=chamada,
                 causa="metodo_de_fora",
             )
@@ -581,7 +590,7 @@ class ExecutorDeFerramentas:
             call_id=chamada,
             proveniencia=proveniencia,
             contaminado=marca.valor,
-            objetivo=self._objetivo_de(marca),
+            objetivo=self.objetivo_de(marca),
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
 
@@ -598,6 +607,7 @@ class ExecutorDeFerramentas:
             prazo_s=self.prazo_de_confirmacao_s,
             argumentos=dict(avaliacao.argumentos),
             causa=causa,
+            falado=self._falado(avaliacao.tool_id, avaliacao.argumentos),
         )
 
     def descartar(self, avaliacao: Avaliacao, status: str, motivo: str, *, causa: str) -> None:
@@ -679,7 +689,7 @@ class ExecutorDeFerramentas:
             proveniencia=proveniencia,
             contaminacao=contaminacao,
         )
-        objetivo = self._objetivo_de(contaminacao if contaminacao is not None else self.turno)
+        objetivo = self.objetivo_de(contaminacao if contaminacao is not None else self.turno)
         if objetivo is not None:
             # O passo feito muda a fase (ler depois de um efeito é verificar) — só ferramenta e
             # status, nunca o resultado (C2).
@@ -759,7 +769,7 @@ class ExecutorDeFerramentas:
         e, na **moderada**, montar o aviso falado e guardar como desfazer."""
         if tool_id in FONTES_DE_TERCEIROS:
             marca.valor = True
-        objetivo = self._objetivo_de(marca)
+        objetivo = self.objetivo_de(marca)
         if objetivo is not None:
             # O caminho do objetivo: o que ele abriu, os links e resultados que trouxe. É daqui
             # que sai o "domínio novo alcançado" que não pergunta (dono, 2026-10-20).
@@ -945,7 +955,7 @@ class ExecutorDeFerramentas:
                 CONFIRMACAO_DO_NAVEGADOR, tool_id, chamada, cancelado, confirmar, contaminado
             ),
             cancelado=cancelado,
-            objetivo=self._objetivo_de(marca),
+            objetivo=self.objetivo_de(marca),
         )
 
     def _entrada_virtual(
@@ -1241,6 +1251,21 @@ class ExecutorDeFerramentas:
             return f"abrir o navegador «{args.get('navegador') or 'principal'}»"
         return f"{tool_id} com {json.dumps(dict(args), ensure_ascii=False)[:160]}"
 
+    def _falado(self, tool_id: str, args: Mapping[str, Any]) -> str:
+        """A ação dita em voz (ADR-0038): o título da ferramenta e, se houver, o site ou o alvo —
+        nunca o id nem os argumentos em JSON, que a janela mostra no `detalhe`."""
+        if tool_id in FALADO_IGUAL_AO_DETALHE:
+            return self._detalhe(tool_id, args)
+        titulo = str(self.manifestos[tool_id]["title"]).strip()
+        texto = titulo[:1].lower() + titulo[1:]
+        url = args.get("url")
+        if isinstance(url, str) and dominio(url):
+            texto += f" em {dominio(url)}"
+        alvo = args.get("alvo") or args.get("nome")
+        if isinstance(alvo, str) and alvo.strip():
+            texto += f" «{' '.join(alvo.split())[:60]}»"
+        return texto
+
     def _acompanhar_o_foco(
         self, app: App, pid: int, antes: frozenset[str], do_turno: bool
     ) -> dict[str, Any]:
@@ -1278,6 +1303,18 @@ class ExecutorDeFerramentas:
         except AppRecusado as erro:
             return str(erro)
         return motivo
+
+
+FALADO_IGUAL_AO_DETALHE: Final = frozenset(
+    {
+        "files.write_draft",
+        "calendar.create_draft_event",
+        "sites.open",
+        "apps.launch",
+        "browser.launch",
+    }
+)
+"""As ferramentas cujo `detalhe` já é frase de gente, sem JSON: a voz diz o mesmo que a janela."""
 
 
 def _resumo(args: Mapping[str, Any]) -> str:

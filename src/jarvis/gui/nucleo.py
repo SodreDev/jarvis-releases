@@ -37,6 +37,8 @@ from jarvis.voz.teclado import ESPACO
 
 PARAR: Final = "\x00parar"
 """Sentinela da fila de texto: o modo texto termina quando ela chega, sem `q` nenhum."""
+TIQUE_SEM_TEXTO_S: Final = 0.25
+"""Sem nada digitado, de quanto em quanto o modo texto olha a fila de avisos."""
 
 
 def _nada(_: object) -> None:
@@ -235,10 +237,16 @@ class SessaoDeVoz:
             return None
         return linha
 
-    def _linhas_digitadas(self) -> Iterator[str]:
-        """O modo texto lendo da fila em vez de `stdin`. Bloqueia na fila, não na tela."""
+    def _linhas_digitadas(self) -> Iterator[str | None]:
+        """O modo texto lendo da fila em vez de `stdin`. Bloqueia na fila, não na tela; sem nada
+        digitado, um `None` a cada `TIQUE_SEM_TEXTO_S` deixa o laço dar voz ao aviso que espera
+        o piso livre (a resposta de uma tarefa, ADR-0038)."""
         while True:
-            linha = self._textos.get()
+            try:
+                linha = self._textos.get(timeout=TIQUE_SEM_TEXTO_S)
+            except queue.Empty:
+                yield None
+                continue
             if linha == PARAR:
                 return
             yield linha

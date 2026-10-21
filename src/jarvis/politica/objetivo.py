@@ -70,6 +70,9 @@ CRITERIOS: Final[dict[str, str]] = {
     "memoria": "anotado ou achado, e dito ao dono",
 }
 """O critério de pronto pelo método do pedido (ADR-0035): o que conta como "ficou pronto"."""
+METODOS_QUE_CONFEREM: Final = frozenset({"navegador", "entrada_virtual"})
+"""Os métodos em que o efeito pode não acontecer sem erro nenhum (a aba não mudou, o clique caiu
+fora): o objetivo só fica pronto depois de uma leitura que o confira (ADR-0038)."""
 SEGREDOS_QUE_NAO_CONTAM_EM_URL: Final = frozenset({"hex_longo", "conteudo_de_env"})
 """Em URL, hexadecimal longo é quase sempre identificador de página (cache, assinatura de CDN) e
 não segredo do dono: contaria como dado do dono e perguntaria à toa."""
@@ -153,7 +156,13 @@ class Objetivo:
     passos: list[tuple[str, str]] = field(default_factory=list)
     """`(ferramenta, status)` dos últimos passos — nunca argumento nem resultado."""
     total_de_passos: int = 0
+    pede_conferencia: bool = False
+    """O método do pedido é um dos `METODOS_QUE_CONFEREM`."""
+    efeitos_tentados: int = 0
+    """Passos com efeito (navegar, clicar, abrir, mudar) que foram tentados, deram certo ou não."""
     _efeito_feito: bool = False
+    _conferido: bool = False
+    """Uma leitura que deu certo veio depois do último efeito que deu certo."""
 
     @classmethod
     def do_pedido(cls, fala: str, metodo: str = "") -> Objetivo:
@@ -163,6 +172,7 @@ class Objetivo:
             pedido=curto,
             _termos=frozenset(termos(fala)),
             criterio=CRITERIOS.get(metodo, CRITERIO_PADRAO),
+            pede_conferencia=metodo in METODOS_QUE_CONFEREM,
         )
 
     def registrar(self, tool_id: str, status: str, *, leitura: bool) -> None:
@@ -173,12 +183,29 @@ class Objetivo:
             self.estado = EstadoDoObjetivo.AGUARDANDO_O_DONO
             return
         self.estado = EstadoDoObjetivo.EM_ANDAMENTO
+        if not leitura:
+            self.efeitos_tentados += 1
         if leitura and self._efeito_feito:
             self.fase = Fase.VERIFICANDO
         else:
             self.fase = Fase.EXECUTANDO
         if not leitura and status == "ok":
             self._efeito_feito = True
+            self._conferido = False  # efeito novo pede leitura nova
+        elif leitura and status == "ok" and self._efeito_feito:
+            self._conferido = True
+
+    @property
+    def efeito_feito(self) -> bool:
+        """Algum passo com efeito deu certo."""
+        return self._efeito_feito
+
+    @property
+    def falta_conferir(self) -> bool:
+        """O método pede conferência, houve efeito (navegar, clicar, digitar) e a última coisa
+        feita não foi uma leitura que o conferisse: dizer "abri" agora seria dizer sem ter visto
+        (ADR-0038)."""
+        return self.pede_conferencia and self._efeito_feito and not self._conferido
 
     def concluir(self, estado: EstadoDoObjetivo) -> None:
         """O fim do turno ou da tarefa: a resposta final (concluindo) ou o motivo de parar."""

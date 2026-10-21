@@ -30,7 +30,9 @@ from typing import Any, Final
 
 from jarvis.barramento.contrato import prioridade_canonica, validar
 from jarvis.barramento.envelope import Envelope, Tipo, Trust, uuid7
+from jarvis.executor.desfazer import Contaminacao
 from jarvis.executor.ferramentas import (
+    Confirmacao,
     Confirmar,
     ExecutorDeFerramentas,
     ResultadoDeFerramenta,
@@ -46,6 +48,7 @@ from jarvis.s2.fluxo_de_acao import FluxoDeAcao
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
 from jarvis.s2.motor import (
     Contexto,
+    Delta,
     Fim,
     Mensagem,
     Modo,
@@ -54,12 +57,16 @@ from jarvis.s2.motor import (
     PedidoDeTool,
     Pensar,
     Raciocinio,
+    Texto,
     aceita_imagem,
 )
-from jarvis.s2.pendencias import RegistroDePendencias
+from jarvis.s2.pendencias import Espera, RegistroDePendencias
 from jarvis.s2.persona import prompt_de_sistema
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
+from jarvis.s2.protocolo import LeitorDoProtocolo
 from jarvis.s2.rascunho import textos_no_contexto
+from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
+from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ChamarNaTarefa, Tarefa, TarefaRecusada
 from jarvis.voz.interface import Cancelado, nunca_cancelado
 
 MAXIMO_DE_PASSOS: Final = 12
@@ -77,6 +84,9 @@ LIMITE_DO_RACIOCINIO: Final = 2000
 e descartado: o canal interno não pode crescer o prompt de cada rodada sem fim."""
 LIMITE_DO_JA_DITO: Final = 300
 """Caracteres do que o dono já ouviu no turno que voltam ao motor (o fim, que é o mais novo)."""
+FRASE_AO_DELEGAR: Final = "Certo, já cuido disso."
+"""O que o dono ouve quando o pedido vira tarefa e o motor não disse nada antes da ferramenta
+(ADR-0038): curto, e a resposta de verdade vem quando a tarefa acabar."""
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
@@ -139,6 +149,9 @@ class Resposta:
     """Do turno aceito ao primeiro texto que o motor entregou (antes do fatiador)."""
     ms_ate_primeiro_pedaco: float | None = None
     ms_cancelamento_ate_motor_parado: float | None = None
+    tarefa_id: str = ""
+    """O pedido virou a tarefa deste id (ADR-0038): o turno acabou na frase curta, e o resultado
+    chega pela fila de avisos quando ela terminar."""
 
     @property
     def cancelada(self) -> bool:
@@ -183,6 +196,12 @@ class Cerebro:
     confirmada vai para uma tarefa. `None` = o caminho de antes: só o PDP, e a janela bloqueia."""
     pendencias: RegistroDePendencias = field(default_factory=RegistroDePendencias)
     autorizacoes: AutorizacoesExplicitas = field(default_factory=AutorizacoesExplicitas)
+    delegar_em_tarefa: bool = False
+    """O pedido que precisa de ferramenta vira uma **tarefa** do objetivo (ADR-0038; dono,
+    2026-10-21): o turno diz a frase curta e acaba — o Jarvis segue ouvindo —, e a tarefa itera as
+    ferramentas pelo mesmo PDP, Jev e objetivo até cumprir, precisar do dono, falhar ou ser
+    cancelada. Precisa do gestor de tarefas no executor; o aplicativo liga. Desligado = o laço no
+    turno, como antes (o que os testes do laço e o harness usam)."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
 
     @property
@@ -193,6 +212,11 @@ class Cerebro:
 
     def resolver_pendencia(self, pendencia_id: str, sim: bool) -> bool:
         """O clique do dono numa pendência (não bloqueante). Devolve se ela ainda valia."""
+        aberta = self.pendencias.valida()
+        if aberta is not None and aberta.id == pendencia_id and aberta.espera is not None:
+            # A tarefa de um pedido parada nesta pergunta (ADR-0038): o clique a acorda, com ou
+            # sem portão, e ela segue sozinha.
+            return self.pendencias.tomar(pendencia_id, sim=sim) is not None
         fluxo = self.fluxo
         if fluxo is None or self.ferramentas is None:
             return False
@@ -385,6 +409,12 @@ class Cerebro:
             # Uma por vez: o próximo pedido só pode nascer depois que o modelo viu este
             # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
             pedido = pedidos[0]
+            if self._delegavel(pedido) and not cancelado():
+                # O pedido vira tarefa (ADR-0038): o turno acaba na frase curta.
+                self._delegar(
+                    pedido, contexto, texto_do_dono, resposta, fatiador, publicar, comeco, crescer
+                )
+                break
             if cancelado_no_laco():
                 if cancelado():
                     visto_cancelamento = time.monotonic()
@@ -435,7 +465,10 @@ class Cerebro:
             for pedaco in fatiador.fechar():
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
         objetivo = self.ferramentas.objetivo if self.ferramentas is not None else None
-        if objetivo is not None:
+        if resposta.tarefa_id:
+            # O objetivo foi com a tarefa: é ela que o conclui.
+            resposta.estado_do_objetivo = str(EstadoDoObjetivo.EM_ANDAMENTO)
+        elif objetivo is not None:
             # O pedido como objetivo (Lote C, C2): a resposta final é a fase de concluir; o estado
             # diz se acabou, se espera o dono, se falhou ou se ele interrompeu.
             objetivo.concluir(_estado_final(resposta))
@@ -443,6 +476,164 @@ class Cerebro:
         self.autorizacoes.encerrar()
         self._pendentes[resposta.response_id] = resposta
         return resposta
+
+    def _delegavel(self, pedido: PedidoDeTool) -> bool:
+        """A proposta vai para a tarefa do pedido? `tarefa.*` e `acao.desfazer` não rodam em
+        tarefa (profundidade 1) e são rápidas; a ferramenta que não existe aqui, a malformada e a
+        que o método do pedido tirou são recusadas na hora, no turno, para o motor se corrigir."""
+        executor = self.ferramentas
+        if not self.delegar_em_tarefa or executor is None or executor.tarefas is None:
+            return False
+        if pedido.tool_id.startswith(FORA_DA_ALLOWLIST) or not executor.disponivel(pedido.tool_id):
+            return False
+        return executor.metodo is None or pedido.tool_id not in executor.metodo.evitar
+
+    def _delegar(
+        self,
+        pedido: PedidoDeTool,
+        contexto: Contexto,
+        texto_do_dono: str,
+        resposta: Resposta,
+        fatiador: FatiadorDeFala,
+        publicar: Publicar,
+        comeco: float,
+        crescer: Callable[[], None],
+    ) -> None:
+        """Cria a tarefa do pedido e diz a frase curta. O que a tarefa leva é do **turno em que o
+        pedido chegou**: o objetivo, o método, a contaminação, a autorização explícita (a fala
+        dele, com o mesmo prazo), a conversa e a proveniência — o turno seguinte não mexe nela."""
+        executor = self.ferramentas
+        assert executor is not None and executor.tarefas is not None
+        marca = Contaminacao(executor.turno.valor, executor.objetivo, executor.metodo)
+        autorizacoes = AutorizacoesExplicitas(
+            prazo_s=self.autorizacoes.prazo_s, relogio=self.autorizacoes.relogio
+        )
+        autorizacoes.novo_turno(texto_do_dono)
+        # A frase curta é a do motor, se ele disse uma antes da ferramenta (os avisos que foram
+        # junto com a mensagem do dono não contam: são de outra coisa).
+        motor_falou = any(p["text"] and not p.get("notif_ids") for p in resposta.publicados)
+        frase = "" if motor_falou else FRASE_AO_DELEGAR
+        motor = MotorDoObjetivo(
+            motor=self.motor,
+            contexto=contexto,
+            catalogo=executor.catalogo_para_o_modelo,
+            primeiro=pedido,
+            feitos_antes=tuple(resposta.ferramentas),
+            raciocinio=resposta.raciocinio,
+            ja_dito=f"{resposta.gerado} {frase}".strip()[-LIMITE_DO_JA_DITO:],
+            ids=frozenset(executor.manifestos),
+            limite_do_raciocinio=LIMITE_DO_RACIOCINIO,
+        )
+        try:
+            tarefa = executor.tarefas.iniciar_objetivo(
+                marca.objetivo.pedido if marca.objetivo is not None else texto_do_dono,
+                motor,
+                contaminacao=marca,
+                chamar=self._chamada_da_tarefa(
+                    marca, autorizacoes, texto_do_dono, tuple(self.conversa.turnos)
+                ),
+                prazo_s=self.prazo_do_laco_de_ferramentas_s,
+                maximo_de_passos=max(1, self.maximo_de_passos - len(resposta.ferramentas)),
+            )
+        except TarefaRecusada as erro:
+            frase = f"Agora não dá para começar isso: {erro}."
+        else:
+            resposta.tarefa_id = tarefa.id
+        if frase:
+            resposta.gerado += frase + " "
+            crescer()
+            for pedaco in fatiador.alimentar(frase + " ") + fatiador.descarregar():
+                self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+
+    def _chamada_da_tarefa(
+        self,
+        marca: Contaminacao,
+        autorizacoes: AutorizacoesExplicitas,
+        texto_do_dono: str,
+        mensagens: Sequence[Mensagem],
+    ) -> ChamarNaTarefa:
+        """Como cada passo da tarefa do pedido chega ao executor: pelo portão do turno quando ele
+        existe (PDP → Jev → objetivo → autorização → pergunta ao dono), senão só pelo PDP — com a
+        pergunta e o aviso de uma moderada indo à voz pela fila de avisos."""
+        executor = self.ferramentas
+        assert executor is not None and executor.tarefas is not None
+        gestor = executor.tarefas
+        fluxo = self.fluxo
+        proveniencia = self.proveniencia
+        session_id = self.session_id
+
+        pendencias = self.pendencias
+
+        def chamar(
+            tarefa: Tarefa,
+            pedido: PedidoDeTool,
+            call_id: str,
+            confirmar: Callable[[Confirmacao], bool],
+        ) -> ResultadoDeFerramenta:
+            del (
+                confirmar
+            )  # a pergunta da tarefa do pedido não prende a linha na janela: é pendência
+            anunciadas: list[str] = []
+
+            def anunciar(pergunta: Confirmacao, frase: str) -> None:
+                gestor.esperando_o_dono(tarefa, True)
+                anunciadas.append(f"pergunta-{pergunta.id}")
+                gestor.avisar(tarefa, anunciadas[-1], "precisa_decisao", frase)
+
+            def na_voz(pergunta: Confirmacao) -> None:
+                anunciar(pergunta, f"Preciso do seu sim para {pergunta.para_ouvir}. Posso?")
+
+            def confirmar_na_janela(pergunta: Confirmacao) -> bool:
+                # A pergunta por ação (o que está sob o clique) e a que nasce sem o portão: a faixa
+                # da janela, só o clique responde (como antes), e a voz avisa que ela está lá.
+                resposta = pendencias.esperar(
+                    pergunta,
+                    contaminado=marca.valor,
+                    cancelado=tarefa.cancelada.is_set,
+                    anunciar=lambda p: anunciar(
+                        p, f"Preciso que você confirme na tela: {p.para_ouvir}."
+                    ),
+                    espera=Espera(so_clique=True),
+                )
+                return bool(resposta) and not tarefa.cancelada.is_set()
+
+            try:
+                if fluxo is not None:
+                    resultado = fluxo.chamar_na_tarefa(
+                        executor,
+                        pedido,
+                        contaminacao=marca,
+                        autorizacoes=autorizacoes,
+                        pedido_do_dono=texto_do_dono,
+                        mensagens=mensagens,
+                        cancelado=tarefa.cancelada.is_set,
+                        confirmar=confirmar_na_janela,
+                        anunciar=na_voz,
+                        session_id=session_id,
+                        proveniencia=proveniencia,
+                    )
+                else:
+                    resultado = executor.executar(
+                        pedido.tool_id,
+                        pedido.args,
+                        cancelado=tarefa.cancelada.is_set,
+                        confirmar=confirmar_na_janela,
+                        session_id=session_id,
+                        call_id=call_id,
+                        proveniencia=proveniencia,
+                        contaminacao=marca,
+                    )
+            finally:
+                gestor.esperando_o_dono(tarefa, False)
+                for identificador in anunciadas:
+                    # Respondida (ou vencida): a pergunta que ainda não tocou não vai mais à voz.
+                    gestor.retirar_aviso(tarefa, identificador)
+            if resultado.aviso:
+                # Tool moderada: o aviso é do código e vai à voz já (dono, 2026-10-18), pela fila.
+                gestor.avisar(tarefa, f"aviso-{call_id}", "evento", resultado.aviso)
+            return resultado
+
+        return chamar
 
     def _so_dizer(
         self,
@@ -505,6 +696,9 @@ class Cerebro:
         retido = ""
         palpite = False
         pensando = False  # o delta anterior era raciocínio: o próximo continua o mesmo trecho
+        # Todo texto de **qualquer** motor passa por um leitor do protocolo (ADR-0038): o motor
+        # que esqueceu de separar a proposta (ou um JSON solto) não a faz chegar à voz.
+        leitor = LeitorDoProtocolo()
         deltas = self.motor.gerar(contexto, modo, cancelado)
 
         def falar(texto: str) -> bool:
@@ -517,6 +711,44 @@ class Cerebro:
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             return cancelado()
 
+        def tratar(delta: Delta) -> bool:
+            """Um delta já separado do protocolo; devolve se o cancelamento chegou."""
+            nonlocal retido, palpite, pensando, segurar
+            if isinstance(delta, Pensar):
+                # Regra 4: quem refaz no modo `pensar` (com a ponte) é o chamador.
+                resposta.pediu_pensar = True
+                return False
+            if isinstance(delta, Raciocinio):
+                _guardar_raciocinio(resposta, delta.texto, separado=not pensando)
+                pensando = True
+                return False
+            pensando = False
+            if isinstance(delta, PedidoDeTool):
+                pedidos.append(delta)  # o modelo propõe; quem dispõe é o código (P1)
+                if retido.strip():
+                    resposta.narracao_retida += 1
+                    _guardar_raciocinio(resposta, retido, separado=True)
+                retido = ""
+                return False
+            if not isinstance(delta, Texto):
+                return False
+            if resposta.ms_ate_primeiro_token is None and delta.texto.strip():
+                resposta.ms_ate_primeiro_token = _ms_desde(comeco)
+            if pedidos:
+                novo = not palpite and bool(delta.texto.strip())
+                if novo:
+                    palpite = True
+                    resposta.narracao_retida += 1
+                _guardar_raciocinio(resposta, delta.texto, separado=novo)
+                return False
+            texto = delta.texto
+            if segurar:
+                retido += texto
+                if len(retido.split()) < PALAVRAS_MINIMAS_POR_PEDACO:
+                    return False
+                texto, retido, segurar = retido, "", False
+            return falar(texto)
+
         try:
             for delta in deltas:
                 if isinstance(delta, Fim):
@@ -524,43 +756,20 @@ class Cerebro:
                     if delta.motivo is MotivoDoFim.CANCELADO:
                         visto_cancelamento = time.monotonic()
                     break
-                if isinstance(delta, Pensar):
-                    # Regra 4: quem refaz no modo `pensar` (com a ponte) é o chamador.
-                    resposta.pediu_pensar = True
-                    continue
-                if isinstance(delta, Raciocinio):
-                    _guardar_raciocinio(resposta, delta.texto, separado=not pensando)
-                    pensando = True
-                    continue
-                pensando = False
-                if isinstance(delta, PedidoDeTool):
-                    pedidos.append(delta)  # o modelo propõe; quem dispõe é o código (P1)
-                    if retido.strip():
-                        resposta.narracao_retida += 1
-                        _guardar_raciocinio(resposta, retido, separado=True)
-                    retido = ""
-                    continue
-                if resposta.ms_ate_primeiro_token is None and delta.texto.strip():
-                    resposta.ms_ate_primeiro_token = _ms_desde(comeco)
-                if pedidos:
-                    novo = not palpite and bool(delta.texto.strip())
-                    if novo:
-                        palpite = True
-                        resposta.narracao_retida += 1
-                    _guardar_raciocinio(resposta, delta.texto, separado=novo)
-                    continue
-                texto = delta.texto
-                if segurar:
-                    retido += texto
-                    if len(retido.split()) < PALAVRAS_MINIMAS_POR_PEDACO:
-                        continue
-                    texto, retido, segurar = retido, "", False
-                if falar(texto):
+                partes = leitor.alimentar(delta.texto) if isinstance(delta, Texto) else [delta]
+                if any(tratar(parte) for parte in partes):
                     visto_cancelamento = time.monotonic()
                     break
         finally:
             # Fechar o iterador é o que faz o motor parar de gerar (o `finally` dele).
             deltas.close()
+        # O que o leitor ainda segurava (um `<` ou `{` no fim que não era protocolo).
+        if (
+            visto_cancelamento is None
+            and not cancelado()
+            and any(tratar(parte) for parte in leitor.fechar())
+        ):
+            visto_cancelamento = time.monotonic()
         # A rodada acabou sem proposta: o que estava seguro era a resposta.
         if retido.strip() and visto_cancelamento is None and not cancelado() and falar(retido):
             visto_cancelamento = time.monotonic()

@@ -35,6 +35,11 @@ TETO_DE_FALA_S: Final = 120.0
 """D22: no máximo um aviso falado espontaneamente a cada 2 minutos."""
 LIMITE_DO_CARD: Final = 24
 """O mesmo `LIMITE_DE_ITENS` do componente: o card mostra os mais recentes."""
+ORIGEM_DO_PEDIDO: Final = "pedido · "
+"""A origem dos avisos da tarefa de um pedido do dono (ADR-0038): a resposta a ele e a pergunta
+que ela espera. Não são espontâneos — quem abriu a conversa foi o dono, ao pedir —, então não
+esperam o teto de fala (como o aviso que vai junto com a mensagem dele); o piso livre vale igual:
+nunca por cima da fala, e um por vez."""
 
 
 class Entrega(StrEnum):
@@ -139,11 +144,11 @@ class FilaDeAvisos:
         """Liberação espontânea: **um** aviso, com o piso livre e o teto de fala respeitado."""
         if self.privacidade or self.nao_perturbe or not self.piso_livre(agora):
             return None
-        if self._ultimo_falado is not None and agora - self._ultimo_falado < self.teto_de_fala_s:
-            return None
         if any(a.liberado for a in self.avisos.values()):
             return None  # um por vez: o liberado ainda não tocou, não foi cortado nem decidido
         pendentes = self._pendentes()
+        if self._ultimo_falado is not None and agora - self._ultimo_falado < self.teto_de_fala_s:
+            pendentes = [a for a in pendentes if a.origem.startswith(ORIGEM_DO_PEDIDO)]
         if not pendentes:
             return None
         # Pedido de decisão primeiro: é o que trava alguma coisa até o dono responder.

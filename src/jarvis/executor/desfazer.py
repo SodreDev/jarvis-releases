@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Final
 from jarvis.barramento.envelope import uuid7
 
 if TYPE_CHECKING:
+    from jarvis.politica.metodo import Escolha
     from jarvis.politica.objetivo import Objetivo
 
 LIMITE_DO_REGISTRO: Final = 20
@@ -44,6 +45,10 @@ class Contaminacao:
     objetivo: Objetivo | None = None
     """O objetivo **deste** fluxo (Lote C, C2): a tarefa em segundo plano tem o dela, que ela segue
     até cumprir; o turno usa o do executor (`ExecutorDeFerramentas.objetivo`)."""
+    metodo: Escolha | None = None
+    """O método do pedido que a tarefa cumpre (ADR-0035, ADR-0038): o pedido do dono que virou
+    tarefa segue fora do que o roteador tirou dele, como seguiria no turno. `None` = nenhum (a
+    tarefa que o modelo pediu com `tarefa.iniciar`, como antes)."""
 
 
 @dataclass(frozen=True, slots=True)

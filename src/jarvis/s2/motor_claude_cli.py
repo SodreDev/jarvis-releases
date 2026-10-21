@@ -42,10 +42,15 @@ from jarvis.s2.motor import (
     Modo,
     MotivoDoFim,
     PedidoDeTool,
-    Raciocinio,
     Texto,
 )
 from jarvis.s2.persona import prompt_de_sistema
+from jarvis.s2.protocolo import (  # o leitor mora lá; o nome segue valendo aqui (ADR-0038)
+    FIM_DO_RACIOCINIO,
+    MARCA_DE_RACIOCINIO,
+)
+from jarvis.s2.protocolo import MARCA_DE_FERRAMENTA as MARCA_DE_FERRAMENTA
+from jarvis.s2.protocolo import LeitorDoProtocolo as LeitorDoProtocolo
 from jarvis.voz.interface import Cancelado, Onde
 from jarvis.voz.s2_provisorio import FERRAMENTAS_PROIBIDAS
 
@@ -61,15 +66,6 @@ CORTESIA_DEPOIS_DO_FIM_S: Final = 0.5
 No cancelamento e no prazo não há cortesia — ali o processo morre na hora."""
 
 _FIM_DA_LEITURA: Final = object()
-
-MARCA_DE_FERRAMENTA: Final = "<<ferramenta>>"
-"""O protocolo de texto do provisório (ADR-0028): a CLI roda **sem** ferramenta nenhuma (ADR-0018),
-então a proposta de chamada chega como uma linha que começa com esta marca e traz um JSON."""
-MARCA_DE_RACIOCINIO: Final = "<<pensar>>"
-FIM_DO_RACIOCINIO: Final = "<</pensar>>"
-"""O canal de raciocínio do protocolo (ADR-0031): o que vem entre as duas marcas é do modelo para
-ele mesmo, e sai do leitor como `Raciocinio`. Sem a marca que fecha, vale até a próxima proposta
-ou o fim da geração — na dúvida, o texto não vai para a fala."""
 
 INSTRUCAO_DE_FERRAMENTAS: Final = (
     "Você pode PROPOR ferramentas; quem decide se roda é o código do Jarvis. As simples rodam na "
@@ -122,178 +118,6 @@ def sistema_com_ferramentas(sistema: str, ferramentas: Sequence[Mapping[str, obj
             f"Obrigatórios: {obrigatorios or 'nenhum'}."
         )
     return "\n".join(linhas)
-
-
-_MARCA_RE: Final = re.compile(r"<<\s*ferramenta\s*>>", re.IGNORECASE)
-_PENSAR_RE: Final = re.compile(r"<<\s*pensar\s*>>", re.IGNORECASE)
-_FIM_DO_PENSAR_RE: Final = re.compile(r"<<\s*/\s*pensar\s*>>", re.IGNORECASE)
-_CERCA_NO_FIM: Final = re.compile(r"```(?:json)?\s*$", re.IGNORECASE)
-_CERCA_NO_COMECO: Final = re.compile(r"^\s*```(?:json)?\s*", re.IGNORECASE)
-LIMITE_DA_PROPOSTA: Final = 4000
-"""Caracteres que uma proposta pode ocupar antes de virar malformada: JSON que nunca fecha não
-pode segurar a fala do resto da resposta para sempre."""
-
-
-def _malformado(bruto: str) -> PedidoDeTool:
-    return PedidoDeTool("(malformado)", {"bruto": bruto.strip()[:200]})
-
-
-def _pedido_de(objeto: object, bruto: str) -> PedidoDeTool:
-    """O JSON já lido → pedido. Aceita os apelidos que o modelo usa por conta própria
-    (`tool`/`name`, `arguments`): recusar por nome de chave é falha que o dono sente como erro."""
-    if not isinstance(objeto, dict):
-        return _malformado(bruto)
-    ferramenta = next(
-        (objeto[k] for k in ("tool_id", "tool", "id", "name") if isinstance(objeto.get(k), str)),
-        None,
-    )
-    argumentos: object = next(
-        (objeto[k] for k in ("args", "arguments", "argumentos") if k in objeto), {}
-    )
-    if ferramenta is None or not isinstance(argumentos, dict):
-        return _malformado(bruto)
-    return PedidoDeTool(ferramenta, argumentos)
-
-
-@dataclass(slots=True)
-class LeitorDoProtocolo:
-    """Separa, ainda no stream, o texto falado das propostas de ferramenta.
-
-    A marca vale **em qualquer ponto** do texto (não só no começo da linha): o modelo escreve
-    "Vou abrir. <<ferramenta>> {...}" e o JSON não pode ir para a fala. O texto sai assim que
-    se sabe que não é o começo de uma marca (só um `<` no fim fica retido). Depois da marca, o
-    JSON é lido por **balanceamento** — vale em várias linhas, com cerca ``` em volta, com texto
-    depois — e a proposta sai no instante em que o objeto fecha, sem esperar a quebra de linha
-    nem o fim da geração. JSON que não fecha, ou sem objeto, vira um pedido malformado, que o
-    executor recusa e o motor fica sabendo.
-
-    O bloco `<<pensar>>` … `<</pensar>>` (ADR-0031) sai como `Raciocinio`, também no meio do
-    texto e partido entre deltas. Uma proposta dentro de um raciocínio aberto fecha o raciocínio
-    (o modelo esqueceu a marca de fim), e o que sobra aberto no fim da geração é raciocínio."""
-
-    _texto: str = ""
-    _proposta: str | None = None
-    _raciocinio: str | None = None
-
-    def alimentar(self, texto: str) -> Iterator[Delta]:
-        while True:
-            if self._proposta is not None:
-                self._proposta += texto
-                texto = ""
-                lido = self._ler_proposta(final=False)
-                if lido is None:
-                    return
-                pedido, resto = lido
-                yield pedido
-                self._proposta = None
-                texto = resto
-                if not texto:
-                    return
-                continue
-            if self._raciocinio is not None:
-                self._raciocinio += texto
-                texto = ""
-                fim = _FIM_DO_PENSAR_RE.search(self._raciocinio)
-                proposta = _MARCA_RE.search(self._raciocinio)
-                if fim is None and proposta is None:
-                    retido = _retencao(self._raciocinio, (FIM_DO_RACIOCINIO, MARCA_DE_FERRAMENTA))
-                    saida = self._raciocinio[: len(self._raciocinio) - retido]
-                    self._raciocinio = self._raciocinio[len(self._raciocinio) - retido :]
-                    if saida:
-                        yield Raciocinio(saida)
-                    return
-                if fim is not None and (proposta is None or fim.start() < proposta.start()):
-                    antes, texto = self._raciocinio[: fim.start()], self._raciocinio[fim.end() :]
-                else:
-                    assert proposta is not None
-                    # A marca da proposta fica no texto: é o ramo do texto comum que a lê.
-                    antes = self._raciocinio[: proposta.start()]
-                    texto = self._raciocinio[proposta.start() :]
-                self._raciocinio = None
-                if antes:
-                    yield Raciocinio(antes)
-                if not texto:
-                    return
-                continue
-            self._texto += texto
-            texto = ""
-            achada = _MARCA_RE.search(self._texto)
-            pensar = _PENSAR_RE.search(self._texto)
-            if pensar is not None and (achada is None or pensar.start() < achada.start()):
-                antes, texto = self._texto[: pensar.start()], self._texto[pensar.end() :]
-                self._texto = ""
-                self._raciocinio = ""
-                if antes.strip():
-                    yield Texto(antes)
-                if not texto:
-                    return
-                continue
-            if achada is None:
-                retido = _retencao(self._texto, (MARCA_DE_FERRAMENTA, MARCA_DE_RACIOCINIO))
-                saida = self._texto[: len(self._texto) - retido]
-                self._texto = self._texto[len(self._texto) - retido :]
-                if saida:
-                    yield Texto(saida)
-                return
-            antes = _CERCA_NO_FIM.sub("", self._texto[: achada.start()])
-            self._proposta = self._texto[achada.end() :]
-            self._texto = ""
-            if antes.strip():
-                yield Texto(antes)
-            lido = self._ler_proposta(final=False)
-            if lido is None:
-                return
-            pedido, resto = lido
-            yield pedido
-            self._proposta = None
-            texto = resto
-            if not texto:
-                return
-
-    def fechar(self) -> Iterator[Delta]:
-        if self._proposta is not None:
-            lido = self._ler_proposta(final=True)
-            self._proposta = None
-            if lido is not None:
-                yield lido[0]
-        if self._raciocinio is not None:
-            # Sem a marca que fecha: na dúvida, não é fala.
-            resto, self._raciocinio = self._raciocinio, None
-            if resto:
-                yield Raciocinio(resto)
-        if self._texto:
-            texto, self._texto = self._texto, ""
-            yield Texto(texto)
-
-    def _ler_proposta(self, *, final: bool) -> tuple[PedidoDeTool, str] | None:
-        """O pedido e o que sobrou depois dele; `None` enquanto o JSON ainda pode fechar."""
-        assert self._proposta is not None
-        corpo = _CERCA_NO_COMECO.sub("", self._proposta).lstrip()
-        if not corpo.startswith("{"):
-            linha, quebra, resto = corpo.partition("\n")
-            if not quebra and not final:
-                return None
-            return _malformado(linha), resto
-        try:
-            objeto, fim = json.JSONDecoder().raw_decode(corpo)
-        except ValueError:
-            if final or len(corpo) > LIMITE_DA_PROPOSTA:
-                return _malformado(corpo), ""
-            return None
-        resto = corpo[fim:]
-        if resto.lstrip().startswith("```"):  # a cerca que fecha o bloco não é fala
-            resto = resto.lstrip()[3:]
-        return _pedido_de(objeto, corpo[:fim]), resto
-
-
-def _retencao(texto: str, marcas: Sequence[str]) -> int:
-    """Quantos caracteres do fim ainda podem ser o começo de uma das marcas (e por isso esperam)."""
-    for tamanho in range(min(len(texto), max(len(m) for m in marcas) + 2), 0, -1):
-        cauda = texto[-tamanho:]
-        compacta = cauda.lower().replace(" ", "")
-        if cauda[0] == "<" and any(marca.startswith(compacta) for marca in marcas):
-            return tamanho
-    return 0
 
 
 @dataclass(slots=True)

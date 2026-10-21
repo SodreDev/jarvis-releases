@@ -137,6 +137,11 @@ def test_o_card_mostra_a_fila_real_sem_selo_e_o_resto_continua_demonstracao(
         )
     )
     _esperar(aplicativo, 1.0, ate=lambda: len(_card(ponte).dados["avisos"]) == 2)
+    _esperar(
+        aplicativo,
+        5.0,
+        ate=lambda: any(a["entrega"] == "falado" for a in _card(ponte).dados["avisos"]),
+    )
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
 
@@ -145,7 +150,11 @@ def test_o_card_mostra_a_fila_real_sem_selo_e_o_resto_continua_demonstracao(
         "pt_BR-faber-medium baixada e conferida",
         "O .rpm está pronto; publicar exige a sua ordem",
     ]
-    assert all(a["entrega"] == "na_fila" for a in avisos)
+    # Com o piso livre a fila vai à voz (ADR-0025, ligada no laço pela ADR-0038): um aviso
+    # espontâneo por vez, o pedido de decisão primeiro — o outro espera o teto do D22 na fila.
+    entregas = {a["resumo"]: a["entrega"] for a in avisos}
+    assert entregas["pt_BR-faber-medium baixada e conferida"] == "na_fila"
+    assert entregas["O .rpm está pronto; publicar exige a sua ordem"] == "falado"
     _capturar(janela, "assistente-avisos-reais.png")
 
 

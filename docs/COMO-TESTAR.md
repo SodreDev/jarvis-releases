@@ -1083,6 +1083,36 @@ KWin de verdade negando o foco ao navegador (provado com fakes: o resultado diz 
 Testes: `tests/unit/navegador/background_navegacao.test.mjs`,
 `tests/unit/navegador/test_ferramentas_browser.py`, `tests/unit/politica/test_metodo.py`.
 
+### 0.20 O pedido vira tarefa: o Jarvis segue ouvindo e não lê a ferramenta em voz alta (2026-10-21, ADR-0038)
+
+O que você relatou: ele lia em voz alta a chamada e os argumentos das ferramentas, ficava surdo
+enquanto trabalhava e, em «abra um vídeo no YouTube», parava depois da primeira tentativa. Agora:
+
+- **Pedido com ferramenta vira tarefa.** Ele diz uma frase curta («Vou procurar no YouTube.» ou
+  «Certo, já cuido disso.») e volta a ouvir; a tarefa aparece no card **Tarefas** e segue,
+  ferramenta por ferramenta, até terminar, precisar do seu sim, falhar ou você parar (botão
+  **parar** do card, ou «cancela a tarefa»). Interromper a fala não para a tarefa.
+- **A resposta chega sozinha, em voz**, quando você e ele estão calados (ou junto da sua próxima
+  mensagem): o resultado conferido («Abri o vídeo X na aba atual.») ou o erro dito como é («Não
+  consegui: nenhum navegador com a extensão do Jarvis está aberto.»). Nunca o nome da ferramenta,
+  JSON ou "chamei browser.navigate".
+- **No navegador, "abri" só depois de conferir:** se o modelo disser que abriu sem ler a aba, ele
+  é mandado ler; se ainda assim não ler, a resposta diz que não conferiu. Se nenhuma tentativa deu
+  certo, quem fala é o código, com o motivo — nunca um "pronto" inventado.
+- **O sim continua o mesmo** (só no crítico, ADR-0030): a pergunta da tarefa aparece na faixa e é
+  falada («Preciso do seu sim para abrir exemplo.com.br no seu navegador. Posso?»). Clique, ou diga
+  «sim» **depois** de ouvir a pergunta inteira; «não», outro assunto ou o prazo de 30 s cancelam.
+  Enquanto isso você pode falar de outra coisa — a tarefa espera sozinha.
+
+**Como conferir:** `uv run jarvis`, peça «abra o vídeo mais recente do canal do Primo Rico no
+YouTube»; logo depois, antes de ele terminar, pergunte «que horas são?» → ele responde a hora, e
+depois diz que abriu o vídeo (com a aba no vídeo). Com o Brave fechado, peça de novo → «Não
+consegui: …» em vez de "abri". **Provado** com extensão falsa e motor roteirizado (sem rede):
+`tests/unit/s2/test_tarefa_do_pedido.py`, `tests/unit/voz/test_tarefa_do_pedido_no_app.py`,
+`tests/unit/s2/test_protocolo_de_ferramenta.py`, `tests/unit/agentd/test_avisos_do_pedido.py`.
+**Não provado:** o `claude -p` de verdade cumprindo a tarefa e o YouTube de verdade. No terminal
+(`jarvis-voz --texto`), a resposta da tarefa sai junto da sua próxima mensagem.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

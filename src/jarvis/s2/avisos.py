@@ -17,7 +17,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from jarvis.agentd.fila_de_avisos import Entrega
+from jarvis.agentd.fila_de_avisos import ORIGEM_DO_PEDIDO, Entrega
 
 FALAR: Final = "falar"
 Decisao = str
@@ -57,6 +57,11 @@ def decidir_entrega(
 
 def frase_do_aviso(aviso: AvisoLiberado) -> str:
     """Uma frase curta, para ouvir: sem lista, sem markdown, terminada em ponto."""
+    if aviso.origem.startswith(ORIGEM_DO_PEDIDO) and not aviso.de_terceiros:
+        # A tarefa de um pedido do dono (ADR-0038): a frase já é a fala — a resposta, a pergunta
+        # "…Posso?" —, montada pelo código ou dita pelo motor da conversa; sem "Aviso:" na frente.
+        falado = " ".join(aviso.resumo.split())
+        return falado if falado.endswith((".", "!", "?", "…")) else falado + "."
     resumo = aviso.resumo.strip().rstrip(".!?")
     if aviso.de_terceiros:
         texto = f"Aviso de {aviso.origem}: {resumo}"

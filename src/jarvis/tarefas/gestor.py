@@ -73,6 +73,12 @@ class FimDaTarefa:
     aviso: str | None = None
     """O que o dono ouve no fim, escrito pelo **código** do motor: `None` = o aviso de sempre; `""`
     = nenhum (o card mostra o fim) — o foco de um app que abriu na hora (ADR-0037)."""
+    resposta: str = ""
+    """A resposta ao dono, na tarefa de um pedido dele (ADR-0038): o que o Jarvis diz no fim —
+    o resultado conferido ou o erro em frase de gente. Vazio = o aviso de sempre."""
+    falhou: bool = False
+    """O objetivo não foi cumprido (nenhum passo deu certo): a tarefa acaba `falhou`, com o
+    `resumo` como motivo, e a `resposta` diz isso ao dono."""
 
 
 Passo = PedidoDeTool | FimDaTarefa
@@ -116,6 +122,16 @@ class Tarefa:
     contaminacao: Contaminacao = field(default_factory=Contaminacao, repr=False)
     confirmar: Callable[[Confirmacao], bool] | None = field(default=None, repr=False)
     """Quem responde primeiro às perguntas desta tarefa (o "sim" já dado); `None` = a janela."""
+    de_objetivo: bool = False
+    """A tarefa é um pedido do dono que precisava de ferramenta (ADR-0038): o fim dela é a
+    resposta àquele pedido, e não um aviso de segundo plano."""
+    resposta: str = ""
+    """O que o Jarvis diz ao dono no fim da tarefa de um pedido (`FimDaTarefa.resposta`)."""
+    maximo_de_passos: int | None = None
+    """O teto de passos desta tarefa, quando o código que a criou escolheu outro."""
+    chamar: ChamarNaTarefa | None = field(default=None, repr=False)
+    """Por onde cada passo passa até o executor: na tarefa de um pedido, o mesmo portão do turno
+    (PDP, Jev, objetivo — `jarvis.s2.fluxo_de_acao`). `None` = direto ao executor (só o PDP)."""
 
     @property
     def progresso(self) -> int:
@@ -157,7 +173,8 @@ class MotorDireto:
         ultimo = feitos[-1]
         if ultimo.status == "ok":
             return FimDaTarefa(f"{tarefa.tool_id} terminou")
-        raise ErroDeTarefa(ultimo.motivo or f"{tarefa.tool_id}: {ultimo.status}")
+        # O motivo vai para o dono em voz: sem o id da ferramenta nem o status cru (ADR-0038).
+        raise ErroDeTarefa(ultimo.motivo or "não terminou")
 
 
 class ErroDeTarefa(RuntimeError):
@@ -168,7 +185,14 @@ class TarefaRecusada(ValueError):
     """`tarefa.iniciar` recusou antes de criar: a frase volta ao modelo."""
 
 
+ChamarNaTarefa = Callable[
+    [Tarefa, PedidoDeTool, str, Callable[["Confirmacao"], bool]], "ResultadoDeFerramenta"
+]
+"""Um passo da tarefa: a tarefa, a proposta, o `call_id` e quem confirma por ela."""
 Concluida = Callable[[Tarefa], None]
+AvisarDaTarefa = Callable[[Tarefa, str, str, str], None]
+"""A tarefa tem algo para o dono **agora** (ADR-0038): `(tarefa, id, tipo, frase)` — a pergunta
+que ela espera, o aviso de uma ação moderada. Quem liga aqui põe na fila de avisos."""
 ConfirmarDaTarefa = Callable[["Confirmacao", Callable[[], bool]], bool]
 FabricaDeMotor = Callable[[], MotorDeTarefa]
 
@@ -184,6 +208,12 @@ class GestorDeTarefas:
     """O card mudou (estado, passo, fim): a janela o renova. Chamada da linha da tarefa."""
     ao_concluir: Concluida = lambda _t: None
     """A tarefa terminou (de qualquer jeito): quem liga aqui põe o `Notification` na fila."""
+    ao_avisar: AvisarDaTarefa = lambda _t, _i, _tipo, _f: None
+    """A tarefa tem algo para o dono antes do fim (a pergunta que ela espera, o aviso de uma
+    moderada): chamada da linha da tarefa."""
+    ao_retirar_aviso: Callable[[Tarefa, str], None] = lambda _t, _i: None
+    """O aviso deste id perdeu a vez (a pergunta foi respondida antes de tocar): se ainda não
+    saiu, não sai mais."""
     maximo_ao_mesmo_tempo: int = MAXIMO_DE_TAREFAS_AO_MESMO_TEMPO
     prazo_s: float = PRAZO_DA_TAREFA_S
     tarefas: dict[str, Tarefa] = field(default_factory=dict)
@@ -207,15 +237,9 @@ class GestorDeTarefas:
         aquela chamada; o foco de um app lento, que espera mais que o prazo de sempre); o modelo,
         por `tarefa.iniciar`, nunca os escolhe."""
         self._conferir(tool_id, parametros)
-        with self._trava:
-            rodando = [t for t in self.tarefas.values() if not t.estado.final]
-            if len(rodando) >= self.maximo_ao_mesmo_tempo:
-                raise TarefaRecusada(
-                    f"já há {len(rodando)} tarefas rodando (o teto é "
-                    f"{self.maximo_ao_mesmo_tempo}): espere uma terminar ou cancele uma"
-                )
-            motor = motor if motor is not None else self.fabrica_de_motor()
-            tarefa = Tarefa(
+        motor = motor if motor is not None else self.fabrica_de_motor()
+        return self._comecar(
+            Tarefa(
                 id=f"t-{uuid7()[-8:]}",
                 descricao=" ".join(descricao.split())[:120],
                 tool_id=tool_id,
@@ -228,7 +252,49 @@ class GestorDeTarefas:
                 contaminacao=Contaminacao(contaminado, Objetivo.do_pedido(descricao)),
                 confirmar=confirmar,
                 prazo_s=prazo_s,
-            )
+            ),
+            motor,
+        )
+
+    def iniciar_objetivo(
+        self,
+        descricao: str,
+        motor: MotorDeTarefa,
+        *,
+        contaminacao: Contaminacao,
+        chamar: ChamarNaTarefa | None = None,
+        prazo_s: float | None = None,
+        maximo_de_passos: int | None = None,
+    ) -> Tarefa:
+        """A tarefa de um **pedido do dono** que precisa de ferramenta (ADR-0038): quem a cria é o
+        cérebro, nunca o modelo; o motor já traz a primeira proposta, e a `contaminacao` traz o
+        objetivo e o método daquele pedido. Cada passo vai por `chamar` (o portão do turno); o
+        teto de tarefas, o cancelar e o prazo são os de sempre."""
+        return self._comecar(
+            Tarefa(
+                id=f"t-{uuid7()[-8:]}",
+                descricao=" ".join(descricao.split())[:120],
+                tool_id="",
+                parametros={},
+                motor=motor.nome,
+                na_nuvem=motor.na_nuvem,
+                contaminacao=contaminacao,
+                prazo_s=prazo_s,
+                de_objetivo=True,
+                maximo_de_passos=maximo_de_passos,
+                chamar=chamar,
+            ),
+            motor,
+        )
+
+    def _comecar(self, tarefa: Tarefa, motor: MotorDeTarefa) -> Tarefa:
+        with self._trava:
+            rodando = [t for t in self.tarefas.values() if not t.estado.final]
+            if len(rodando) >= self.maximo_ao_mesmo_tempo:
+                raise TarefaRecusada(
+                    f"já há {len(rodando)} tarefas rodando (o teto é "
+                    f"{self.maximo_ao_mesmo_tempo}): espere uma terminar ou cancele uma"
+                )
             self.tarefas[tarefa.id] = tarefa
             linha = threading.Thread(
                 target=self._correr, args=(tarefa, motor), name=f"jarvis-{tarefa.id}", daemon=True
@@ -237,6 +303,28 @@ class GestorDeTarefas:
         linha.start()
         self.ao_mudar()
         return tarefa
+
+    def esperando_o_dono(self, tarefa: Tarefa, esperando: bool) -> None:
+        """A tarefa parou numa pergunta ao dono (ou voltou dela): o card diz isso."""
+        if tarefa.estado.final:
+            return
+        novo = EstadoDaTarefa.ESPERANDO_O_DONO if esperando else EstadoDaTarefa.RODANDO
+        if tarefa.estado is not novo:
+            tarefa.estado = novo
+            self.ao_mudar()
+
+    def avisar(self, tarefa: Tarefa, identificador: str, tipo: str, frase: str) -> None:
+        """Algo da tarefa para o dono agora; aviso que falha não derruba a linha da tarefa."""
+        try:
+            self.ao_avisar(tarefa, identificador, tipo, frase)
+        except Exception:
+            return
+
+    def retirar_aviso(self, tarefa: Tarefa, identificador: str) -> None:
+        try:
+            self.ao_retirar_aviso(tarefa, identificador)
+        except Exception:
+            return
 
     def cancelar(self, tarefa_id: str) -> Tarefa:
         tarefa = self.tarefas.get(tarefa_id)
@@ -323,7 +411,8 @@ class GestorDeTarefas:
         feitos: list[ResultadoDeFerramenta],
         limite: float,
     ) -> None:
-        for numero in range(1, MAXIMO_DE_PASSOS + 1):
+        maximo = tarefa.maximo_de_passos or MAXIMO_DE_PASSOS
+        for numero in range(1, maximo + 1):
             if tarefa.cancelada.is_set():
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             if time.monotonic() > limite:
@@ -334,7 +423,9 @@ class GestorDeTarefas:
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             if isinstance(passo, FimDaTarefa):
                 tarefa.resumo, tarefa.de_terceiros = passo.resumo, passo.de_terceiros
-                tarefa.aviso = passo.aviso
+                tarefa.aviso, tarefa.resposta = passo.aviso, passo.resposta
+                if passo.falhou:
+                    return self._terminar(tarefa, EstadoDaTarefa.FALHOU, motivo=passo.resumo)
                 return self._terminar(tarefa, EstadoDaTarefa.CONCLUIDA)
             if passo.tool_id.startswith(FORA_DA_ALLOWLIST):
                 # O motor propôs fora da allowlist da tarefa: nem chega ao PDP (e fica registrado).
@@ -342,20 +433,25 @@ class GestorDeTarefas:
                 continue
             tarefa.passo = numero
             self.ao_mudar()
-            resultado = self.executor.executar(
-                passo.tool_id,
-                passo.args,
-                cancelado=tarefa.cancelada.is_set,
-                confirmar=self._confirmar_da(tarefa),
-                session_id=self.session_id,
-                call_id=f"{tarefa.id}-{numero}",
-                contaminacao=tarefa.contaminacao,
-            )
+            if tarefa.chamar is not None:
+                resultado = tarefa.chamar(
+                    tarefa, passo, f"{tarefa.id}-{numero}", self._confirmar_da(tarefa)
+                )
+            else:
+                resultado = self.executor.executar(
+                    passo.tool_id,
+                    passo.args,
+                    cancelado=tarefa.cancelada.is_set,
+                    confirmar=self._confirmar_da(tarefa),
+                    session_id=self.session_id,
+                    call_id=f"{tarefa.id}-{numero}",
+                    contaminacao=tarefa.contaminacao,
+                )
             if tarefa.cancelada.is_set():
                 # Chegou depois do cancelamento: vai para a auditoria, não para o estado.
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             feitos.append(resultado)
-        raise ErroDeTarefa(f"{MAXIMO_DE_PASSOS} passos sem terminar")
+        raise ErroDeTarefa(f"passei de {maximo} passos sem terminar")
 
     def _confirmar_da(self, tarefa: Tarefa) -> Callable[[Confirmacao], bool]:
         def perguntar(pergunta: Confirmacao) -> bool:
