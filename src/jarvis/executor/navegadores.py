@@ -7,6 +7,13 @@ configuração (`navegadores = ["firefox=/usr/bin/firefox"]`), o `argv` é monta
 um elemento só dele, já validada (`validar_url`: só http/https, sem senha).
 
 Sem navegador configurado o comportamento de antes continua: o portal do desktop abre no padrão.
+
+**Uma instância só** (dono, 2026-10-21: o Jarvis abriu "outra instância" do Brave e o vídeo foi
+parar nela): o Jarvis só abre um navegador se não houver um ativo. Com a extensão conectada, o
+site vai por ela — inclusive o pedido de aba nova, que antes pulava a extensão e executava o
+binário com a URL, e o navegador a punha na última janela ativa dele, que podia não ser a do dono;
+"abrir o navegador" com ele já aberto traz a janela do dono para a frente. Sem extensão, um
+processo do navegador rodando (lido em `/proc`, só o executável) também conta como ativo.
 """
 
 from __future__ import annotations
@@ -16,7 +23,7 @@ import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from jarvis.executor.lancador import (
     PASTAS_DE_APLICATIVOS,
@@ -51,8 +58,80 @@ MARCADORES_DO_FLATPAK: Final = frozenset({"@@u", "@@U", "@@"})
 SUFIXOS_DE_NOME: Final = ("web browser", "browser", "navegador web", "navegador")
 """Tirados do nome para achar a família («Brave Web Browser (Beta)» é o Brave)."""
 
-ReutilizarAba = Callable[[str, str], bool]
-"""Controlador opcional de uma aba já aberta: URL e família, `True` só se navegou nela."""
+EXECUTAVEIS_DA_FAMILIA: Final[dict[str, frozenset[str]]] = {
+    "brave": frozenset({"brave", "brave-browser"}),
+    "chrome": frozenset({"chrome", "google-chrome"}),
+    "chromium": frozenset({"chromium", "chromium-browser"}),
+    "firefox": frozenset({"firefox", "firefox-bin", "firefox-esr"}),
+    "librewolf": frozenset({"librewolf"}),
+    "zen": frozenset({"zen", "zen-bin"}),
+    "vivaldi": frozenset({"vivaldi", "vivaldi-bin"}),
+    "opera": frozenset({"opera"}),
+    "microsoft": frozenset({"msedge", "microsoft-edge"}),
+    "edge": frozenset({"msedge", "microsoft-edge"}),
+    "falkon": frozenset({"falkon"}),
+    "epiphany": frozenset({"epiphany", "epiphany-browser"}),
+}
+"""O nome do executável de cada família, como `/proc/<pid>/exe` o mostra (no Flatpak, o de dentro
+da caixa: `/app/lib/firefox/firefox`). Família fora daqui: o próprio nome dela."""
+
+ReutilizarAba = Callable[[str, str, bool], Mapping[str, Any] | None]
+"""O navegador já aberto, pela extensão: URL, família e se o pedido é de aba nova. Devolve como
+abriu (`tab_id`, `nova_aba`, `visivel`…) ou `None` sem extensão daquela família conectada."""
+MostrarAberto = Callable[[str], Mapping[str, Any] | None]
+"""O navegador daquela família já aberto com a extensão: põe a janela do dono à vista e diz como
+ficou (`visivel`); `None` sem extensão conectada."""
+EmExecucao = Callable[[str], int | None]
+"""O PID de um processo daquele navegador rodando agora (do próprio usuário), ou `None`."""
+
+
+def navegador_em_execucao(familia: str, *, raiz: Path = Path("/proc")) -> int | None:
+    """Um processo da família rodando agora: lê só o executável de cada processo (`exe`), nunca o
+    ambiente nem a linha de comando; processo de outro usuário não se deixa ler e não conta."""
+    nomes = EXECUTAVEIS_DA_FAMILIA.get(familia, frozenset({familia}))
+    try:
+        entradas = sorted(
+            (e for e in raiz.iterdir() if e.name.isdigit()), key=lambda e: int(e.name)
+        )
+    except OSError:
+        return None
+    for entrada in entradas:
+        try:
+            executavel = (entrada / "exe").readlink()
+        except OSError:
+            continue
+        if executavel.name.removesuffix(" (deleted)").lower() in nomes:
+            return int(entrada.name)
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class NavegadorAberto:
+    """O que o `browser.launch` fez: abriu o navegador, ou ele já estava aberto (e não ganhou
+    outra janela nem instância)."""
+
+    familia: str
+    pid: int | None
+    ja_aberto: bool = False
+    visivel: bool = False
+
+    def para_o_modelo(self) -> dict[str, Any]:
+        if not self.ja_aberto:
+            return {"navegador": self.familia, "pid": self.pid}
+        situacao = (
+            "o navegador já estava aberto: a janela do dono veio para a frente, e nada de outra "
+            "janela"
+            if self.visivel
+            else "o navegador já estava aberto e não abri outra janela; ele não veio para a frente "
+            "(sem a extensão conectada, ou o sistema segurou o foco)"
+        )
+        return {
+            "navegador": self.familia,
+            "pid": None,
+            "ja_aberto": True,
+            "visivel": self.visivel,
+            "situacao": situacao,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,7 +253,11 @@ class AbridorDeNavegador:
     lancar: Callable[..., int] = lancar_argv
     ambiente: Mapping[str, str] | None = None
     reutilizar_aba: ReutilizarAba | None = None
-    """Quando há um controlador de navegador, ele navega a aba atual sem criar outra."""
+    """Com a extensão conectada, o site abre por ela, no navegador que já está aberto."""
+    mostrar_aberto: MostrarAberto | None = None
+    """Com a extensão conectada, "abrir o navegador" traz a janela do dono para a frente."""
+    em_execucao: EmExecucao | None = None
+    """Sem extensão, o navegador rodando também conta como aberto (o app liga o `/proc`)."""
 
     def familias(self) -> tuple[str, ...]:
         return tuple(self.navegadores)
@@ -189,14 +272,20 @@ class AbridorDeNavegador:
     def abrir(
         self, url: str, navegador: str = "", *, reutilizar_aba: bool = True
     ) -> tuple[str, bool]:
-        """Abre `url`; devolve família e se a aba atual foi reutilizada.
+        """Abre `url`; devolve família e se uma aba que já estava aberta foi reutilizada.
 
-        Sem controlador da aba, mantém o lançamento atual do navegador. Não há atalho de linha
-        de comando portátil que prometa trocar a aba ativa, portanto nunca fingimos reutilização.
+        Com a extensão conectada, vai por ela — também a aba nova (`reutilizar_aba=False`), que
+        antes pulava a extensão e executava o binário: com o navegador aberto, ele punha a URL na
+        última janela ativa dele, que foi a janela própria do Jarvis (dono, 2026-10-21). Só sem
+        extensão o binário é executado com a URL: abre o navegador, ou, se ele já está rodando,
+        o próprio navegador a entrega à instância que já existe. Não há atalho de linha de comando
+        portátil que prometa trocar a aba ativa, portanto nunca fingimos reutilização.
         """
         familia = self.escolher(navegador)
-        if reutilizar_aba and self.reutilizar_aba is not None and self.reutilizar_aba(url, familia):
-            return familia, True
+        if self.reutilizar_aba is not None:
+            feito = self.reutilizar_aba(url, familia, not reutilizar_aba)
+            if feito is not None:
+                return familia, not feito.get("nova_aba", False)
         argv = argv_da_entrada(self.navegadores[familia])
         if not argv:
             raise AppRecusado(
@@ -206,16 +295,27 @@ class AbridorDeNavegador:
         self.lancar((*argv, url), ambiente=self.ambiente)
         return familia, False
 
-    def abrir_sozinho(self, navegador: str = "") -> tuple[str, int]:
-        """Abre só o navegador, sem URL. Devolve a família usada e o pid."""
+    def abrir_sozinho(self, navegador: str = "") -> NavegadorAberto:
+        """Abre só o navegador, sem URL — se não houver um ativo (dono, 2026-10-21): com a extensão
+        conectada a janela do dono vem para a frente; com o processo rodando, nada se abre (abrir o
+        binário de novo daria outra janela). Só sem nenhum dos dois o navegador é lançado."""
         familia = self.escolher(navegador)
+        mostrado = self.mostrar_aberto(familia) if self.mostrar_aberto is not None else None
+        if mostrado is not None and not mostrado.get("sem_janela"):
+            return NavegadorAberto(
+                familia, None, ja_aberto=True, visivel=bool(mostrado.get("visivel"))
+            )
+        # Aberto sem janela nenhuma (a extensão diz): lançar só abre a janela dele, na instância
+        # que já existe. Sem extensão, o processo rodando basta para não abrir outra janela.
+        if mostrado is None and self.em_execucao is not None and self.em_execucao(familia):
+            return NavegadorAberto(familia, None, ja_aberto=True)
         argv = argv_da_entrada(self.navegadores[familia])
         if not argv:
             raise AppRecusado(
                 f"o navegador {familia} ({self.navegadores[familia]}) não está mais lá: "
                 "escolha o binário de novo em Configuração → Navegadores"
             )
-        return familia, self.lancar(argv, ambiente=self.ambiente)
+        return NavegadorAberto(familia, self.lancar(argv, ambiente=self.ambiente))
 
     def resolver(self, pedido: str) -> str | None:
         """A família configurada que o dono quis dizer («Brave», «brave-browser»), ou `None`."""

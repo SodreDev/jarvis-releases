@@ -162,8 +162,16 @@ def escolher_metodo(fala: str, contexto: ContextoDoMetodo) -> Escolha:
         _DOMINIO.search(texto) or _algum(texto, _SITES)
     )
     if abre_o_navegador:
+        # Uma instância só (dono, 2026-10-21): o browser.launch traz para a frente o navegador que
+        # já está aberto e só lança quando não há um; o apps.launch abriria outra janela.
         candidatos.append(
-            Escolha(Metodo.APP, "abre_o_navegador", ENTRADA, "use browser.launch (só o navegador)")
+            Escolha(
+                Metodo.APP,
+                "abre_o_navegador",
+                ENTRADA | {"apps.launch"},
+                "use browser.launch (só o navegador: traz para a frente o que já está aberto, ou "
+                "abre um)",
+            )
         )
     elif cita_site and sem_automacao and contexto.navegador and contexto.entrada:
         candidatos.append(

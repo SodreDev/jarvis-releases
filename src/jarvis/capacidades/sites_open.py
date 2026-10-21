@@ -10,8 +10,9 @@ Política desta capacidade (decidida no repositório, nunca pelo modelo):
   tier: livre
   risco: transitorio_reversivel · confirmação: never · egress: local
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
-  pós-condição verificada pelo executor: o navegador configurado (ou o portal do desktop) aceitou
-    abrir a URL
+  pós-condição verificada pelo executor: a URL abriu no navegador que já estava aberto (pela
+    extensão, numa aba da janela do dono), ou o navegador configurado (ou o portal do desktop)
+    aceitou abrir a URL
 """
 
 from __future__ import annotations
@@ -30,7 +31,10 @@ REQUIRES_ELEVATION: Final = False
 IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 3000
 ROOTS: Final[tuple[str, ...]] = ()
-POSTCONDITION: Final = "o navegador configurado (ou o portal do desktop) aceitou abrir a URL"
+POSTCONDITION: Final = (
+    "a URL abriu no navegador que já estava aberto (pela extensão, numa aba da janela do dono), ou "
+    "o navegador configurado (ou o portal do desktop) aceitou abrir a URL"
+)
 
 
 @dataclass(frozen=True, slots=True)

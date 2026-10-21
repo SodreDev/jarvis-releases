@@ -3,8 +3,9 @@
 id: browser.launch
 title: Abrir o navegador
 description: Abre só o navegador (sem endereço) — o principal que o dono configurou, ou o que ele nomear entre os
-  configurados. Use quando o dono pedir para abrir o navegador, sem dizer um site. Para abrir uma página use sites.open.
-  Não aceita comando, argumento nem caminho, e nunca roda shell.
+  configurados. Use quando o dono pedir para abrir o navegador, sem dizer um site. Se ele já está aberto, não abre outra
+  janela nem instância — traz a janela do dono para a frente (`ja_aberto`, `visivel`). Para abrir uma página use
+  sites.open. Não aceita comando, argumento nem caminho, e nunca roda shell.
 input_schema:
   type: object
   additionalProperties: false
@@ -19,7 +20,7 @@ output_schema:
   - pid
 preconditions:
 - navegador entre os configurados pelo dono (Configuração → Navegadores)
-postcondition: processo do navegador iniciado numa sessão própria, sem URL
+postcondition: processo do navegador iniciado numa sessão própria, sem URL; ou, já aberto, a janela do dono à frente e nenhuma janela nova
 capability: browser.launch
 risk_class: transitorio_reversivel
 side_effect: ephemeral

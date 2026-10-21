@@ -10,7 +10,8 @@ Política desta capacidade (decidida no repositório, nunca pelo modelo):
   tier: livre
   risco: transitorio_reversivel · confirmação: never · egress: none
   modo mínimo: jarvis · elevação: False · raízes: (nenhuma)
-  pós-condição verificada pelo executor: processo do navegador iniciado numa sessão própria, sem URL
+  pós-condição verificada pelo executor: processo do navegador iniciado numa sessão própria, sem
+    URL; ou, já aberto, a janela do dono à frente e nenhuma janela nova
 """
 
 from __future__ import annotations
@@ -29,7 +30,10 @@ REQUIRES_ELEVATION: Final = False
 IDEMPOTENCY: Final = "required"
 TIMEOUT_MS: Final = 3000
 ROOTS: Final[tuple[str, ...]] = ()
-POSTCONDITION: Final = "processo do navegador iniciado numa sessão própria, sem URL"
+POSTCONDITION: Final = (
+    "processo do navegador iniciado numa sessão própria, sem URL; ou, já aberto, a janela do dono "
+    "à frente e nenhuma janela nova"
+)
 
 
 @dataclass(frozen=True, slots=True)

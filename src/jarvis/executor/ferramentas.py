@@ -1131,7 +1131,20 @@ class ExecutorDeFerramentas:
                 if janelas is not None and do_turno
                 else frozenset()
             )
-            pid = self.lancar_app(app)
+            familia = self.navegadores.resolver(app.nome) if self.navegadores is not None else None
+            aberto = (
+                self.navegadores.abrir_sozinho(familia)
+                if self.navegadores is not None and familia is not None
+                else None
+            )
+            if aberto is not None and aberto.ja_aberto:
+                # O navegador já aberto não ganha outra janela (dono, 2026-10-21): o mesmo
+                # caminho do browser.launch, que só lança quando não há um ativo.
+                return {"app": app.nome} | aberto.para_o_modelo()
+            # Fechado, o navegador abre pelo que o dono configurou; e o foco é acompanhado.
+            pid = aberto.pid if aberto is not None and aberto.pid is not None else None
+            if pid is None:
+                pid = self.lancar_app(app)
             return {"app": app.nome, "pid": pid} | self._acompanhar_o_foco(
                 app, pid, antes, do_turno
             )
@@ -1141,8 +1154,8 @@ class ExecutorDeFerramentas:
                     "nenhum navegador configurado: escolha o principal em Configuração → "
                     "Navegadores"
                 )
-            familia, pid = self.navegadores.abrir_sozinho(str(args.get("navegador", "")).strip())
-            return {"navegador": familia, "pid": pid}
+            pedido = str(args.get("navegador", "")).strip()
+            return self.navegadores.abrir_sozinho(pedido).para_o_modelo()
         if tool_id == "sites.open":
             url = validar_url(str(args["url"]))
             pedido = str(args.get("navegador", "")).strip()

@@ -76,7 +76,7 @@ from jarvis.executor.alarmes import Alarme, agenda_compartilhada
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
 from jarvis.executor.janelas import janelas_do_ambiente
 from jarvis.executor.lancador import RegistroDeApps, listar_apps
-from jarvis.executor.navegadores import AbridorDeNavegador, separar
+from jarvis.executor.navegadores import AbridorDeNavegador, navegador_em_execucao, separar
 from jarvis.memoryd.conversa import ConversaPersistente
 from jarvis.memoryd.ferramentas import FerramentasDeMemoria
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
@@ -1038,6 +1038,8 @@ class Aplicativo:
                 principal=self.configuracao.navegador_principal,
                 ambiente=self.ambiente,
                 reutilizar_aba=self._na_aba_atual,
+                mostrar_aberto=self._mostrar_o_navegador,
+                em_execucao=navegador_em_execucao,
             ),
             navegador=self._corpos_do_navegador(),
             estado_do_navegador=self.estado_do_navegador,
@@ -1104,25 +1106,46 @@ class Aplicativo:
                 parados += len(controle.parar())
         return parados
 
-    def _na_aba_atual(self, url: str, familia: str) -> bool:
-        """`sites.open` pela extensão (dono, 2026-10-20: cada link abria uma aba nova): reaproveita
-        a aba que já tem o site e termina à vista, conferido, com a faixa "no controle" (ADR-0027,
-        emenda de 2026-10-21). Sem o controle ligado ou sem a extensão daquele navegador, devolve
-        `False` e o navegador é aberto com a URL, como antes; página que não abre é erro."""
+    def _controle_da_familia(self, familia: str) -> CorposDoNavegador | None:
+        """As `browser.*` do navegador daquela família (o principal, ou outro que o dono nomeou),
+        ou `None` com o controle desligado."""
         if not self.configuracao.navegador_controlado:
-            return False
+            return None
         alvo = familia_do_host(familia)
         corpos = self.ferramentas.navegador if self.ferramentas is not None else None
         if corpos is None or (alvo and corpos.cliente.navegador not in ("", alvo)):
             corpos = self._navegadores_de_outra_familia.get(alvo)
             if corpos is None:
                 corpos = self._navegadores_de_outra_familia[alvo] = self._ligar_o_controle(alvo)
+        return corpos
+
+    def _na_aba_atual(
+        self, url: str, familia: str, nova_aba: bool = False
+    ) -> dict[str, Any] | None:
+        """`sites.open` pela extensão, no navegador que já está aberto (dono, 2026-10-20 e
+        2026-10-21): reaproveita a aba que já tem o site, senão abre uma guia nova na janela do
+        dono — também quando o pedido é de aba nova —, e termina à vista, conferido, com a faixa
+        "no controle" (ADR-0027). Sem o controle ligado ou sem a extensão daquele navegador,
+        devolve `None` e o navegador é aberto com a URL; página que não abre é erro."""
+        corpos = self._controle_da_familia(familia)
+        if corpos is None:
+            return None
         objetivo = self.ferramentas.objetivo if self.ferramentas is not None else None
         try:
-            corpos.abrir_site(url, objetivo=objetivo)
+            return corpos.abrir_site(url, objetivo=objetivo, nova_aba=nova_aba)
         except NavegadorIndisponivel:
-            return False
-        return True
+            return None
+
+    def _mostrar_o_navegador(self, familia: str) -> dict[str, Any] | None:
+        """«Abre o navegador» com ele já aberto pela extensão: a janela do dono vem para a frente,
+        sem outra janela nem instância (dono, 2026-10-21). `None` sem a extensão conectada."""
+        corpos = self._controle_da_familia(familia)
+        if corpos is None:
+            return None
+        try:
+            return corpos.mostrar_o_navegador()
+        except NavegadorIndisponivel:
+            return None
 
     def estado_do_navegador(self) -> EstadoDaPonte:
         """O estado verdadeiro da ponte (`browser.estado`, `--diagnostico`): ligado ou não, com ou

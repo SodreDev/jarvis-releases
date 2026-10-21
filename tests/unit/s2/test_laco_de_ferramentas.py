@@ -178,9 +178,10 @@ def test_abre_o_video_mais_recente_em_passos_e_confere_a_pagina(
     """Harness completo: buscar, ler, extrair RSS, abrir na aba atual e verificar título/canal."""
     reutilizadas: list[tuple[str, str]] = []
 
-    def reutilizar(url: str, familia: str) -> bool:
+    def reutilizar(url: str, familia: str, nova_aba: bool) -> dict[str, Any]:
+        assert nova_aba is False
         reutilizadas.append((url, familia))
-        return True
+        return {"nova_aba": False}
 
     executor.nativas = Nativas(
         lar=executor.lar,

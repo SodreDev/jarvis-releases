@@ -8,6 +8,7 @@ from __future__ import annotations
 import stat
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -15,10 +16,12 @@ from jarvis.executor.ferramentas import ExecutorDeFerramentas
 from jarvis.executor.lancador import AppRecusado, RegistroDeApps, listar_apps
 from jarvis.executor.navegadores import (
     AbridorDeNavegador,
+    NavegadorAberto,
     argv_da_entrada,
     detectar,
     familia_de,
     juntar,
+    navegador_em_execucao,
     separar,
 )
 from jarvis.politica.auditoria import LogDeAuditoria
@@ -155,12 +158,12 @@ def test_abre_no_principal_ou_no_que_o_pedido_nomeia(instalados: tuple[Path, Pat
 
 
 def test_reutiliza_a_aba_atual_quando_o_controlador_do_navegador_oferece_isso() -> None:
-    reutilizadas: list[tuple[str, str]] = []
+    reutilizadas: list[tuple[str, str, bool]] = []
     lancados: list[tuple[str, ...]] = []
 
-    def reutilizar(url: str, familia: str) -> bool:
-        reutilizadas.append((url, familia))
-        return True
+    def reutilizar(url: str, familia: str, nova_aba: bool) -> dict[str, Any]:
+        reutilizadas.append((url, familia, nova_aba))
+        return {"nova_aba": False}
 
     abridor = AbridorDeNavegador(
         navegadores={"brave": "/nao-precisa-existir"},
@@ -170,8 +173,94 @@ def test_reutiliza_a_aba_atual_quando_o_controlador_do_navegador_oferece_isso() 
     )
 
     assert abridor.abrir("https://www.youtube.com/watch?v=novo") == ("brave", True)
-    assert reutilizadas == [("https://www.youtube.com/watch?v=novo", "brave")]
+    assert reutilizadas == [("https://www.youtube.com/watch?v=novo", "brave", False)]
     assert lancados == []
+
+
+def test_aba_nova_com_o_navegador_aberto_vai_pela_extensao_e_nao_executa_o_binario() -> None:
+    """O caso do dono (2026-10-21): `sites.open` com `nova_aba` pulava a extensão e executava o
+    Brave com a URL; o Brave aberto a punha na última janela ativa dele — a janela própria do
+    Jarvis —, e o vídeo foi parar lá. Agora a aba nova também vai pela extensão, na janela dele."""
+    pedidos: list[tuple[str, str, bool]] = []
+    lancados: list[tuple[str, ...]] = []
+
+    def pela_extensao(url: str, familia: str, nova_aba: bool) -> dict[str, Any]:
+        pedidos.append((url, familia, nova_aba))
+        return {"nova_aba": True, "janela": "dono", "visivel": True}
+
+    abridor = AbridorDeNavegador(
+        navegadores={"brave": "/nao-precisa-existir"},
+        principal="brave",
+        lancar=_anotando(lancados),
+        reutilizar_aba=pela_extensao,
+    )
+
+    url = "https://www.youtube.com/watch?v=video"
+    assert abridor.abrir(url, reutilizar_aba=False) == ("brave", False)
+    assert pedidos == [(url, "brave", True)]
+    assert lancados == [], "com o navegador aberto, o binário não é executado"
+
+
+def test_sem_extensao_o_binario_abre_o_navegador_com_a_url(
+    instalados: tuple[Path, Path],
+) -> None:
+    _, bins = instalados
+    lancados: list[tuple[str, ...]] = []
+    abridor = AbridorDeNavegador(
+        navegadores={"brave": f"{bins}/brave-stable"},
+        principal="brave",
+        lancar=_anotando(lancados),
+        reutilizar_aba=lambda *_: None,  # nenhuma extensão conectada
+    )
+
+    assert abridor.abrir("https://exemplo.com", reutilizar_aba=False) == ("brave", False)
+    assert lancados == [(f"{bins}/brave-stable", "https://exemplo.com")]
+
+
+def test_sem_navegador_ativo_abrir_o_navegador_lanca_um_e_so_entao(
+    instalados: tuple[Path, Path],
+) -> None:
+    _, bins = instalados
+    lancados: list[tuple[str, ...]] = []
+    rodando: set[str] = set()
+    abridor = AbridorDeNavegador(
+        navegadores={"brave": f"{bins}/brave-stable"},
+        principal="brave",
+        lancar=_anotando(lancados),
+        mostrar_aberto=lambda _f: None,
+        em_execucao=lambda f: 4242 if f in rodando else None,
+    )
+
+    primeiro = abridor.abrir_sozinho()
+    rodando.add("brave")  # agora ele está aberto
+    segundo = abridor.abrir_sozinho()
+
+    assert primeiro == NavegadorAberto("brave", 1)
+    assert segundo == NavegadorAberto("brave", None, ja_aberto=True)
+    assert lancados == [(f"{bins}/brave-stable",)], "uma vez só"
+
+
+def test_o_navegador_rodando_se_acha_pelo_executavel_no_proc(tmp_path: Path) -> None:
+    """Só o executável (`/proc/<pid>/exe`) é lido — nunca o ambiente nem a linha de comando."""
+    proc = tmp_path / "proc"
+    for pid, alvo in (
+        ("101", "/usr/bin/python3.12"),
+        ("202", "/opt/brave.com/brave/brave"),
+        ("303", "/app/lib/firefox/firefox"),  # o Firefox do Flatpak, de dentro da caixa
+        ("404", "/usr/lib64/chromium-browser/chromium-browser (deleted)"),  # atualizado rodando
+        ("505", "/usr/bin/zenity"),  # não é o Zen
+    ):
+        (proc / pid).mkdir(parents=True)
+        (proc / pid / "exe").symlink_to(alvo)
+    (proc / "606").mkdir()  # de outro usuário: o exe não se deixa ler
+    (proc / "self").mkdir()
+
+    assert navegador_em_execucao("brave", raiz=proc) == 202
+    assert navegador_em_execucao("firefox", raiz=proc) == 303
+    assert navegador_em_execucao("chromium", raiz=proc) == 404
+    assert navegador_em_execucao("zen", raiz=proc) is None
+    assert navegador_em_execucao("vivaldi", raiz=proc) is None
+    assert navegador_em_execucao("brave", raiz=tmp_path / "sem-proc") is None
 
 
 def test_binario_que_sumiu_diz_para_escolher_de_novo(tmp_path: Path) -> None:

@@ -557,6 +557,21 @@ class CorposDoNavegador:
         }
 
     # --- ação ---------------------------------------------------------------------------
+    def mostrar_o_navegador(self) -> dict[str, Any]:
+        """«Abre o navegador» com ele já aberto (dono, 2026-10-21): a aba atual da janela do dono
+        vem para a frente — sem concessão, porque não é trabalho numa aba (não põe a faixa) — e
+        nada abre outra janela. Navegador aberto sem janela nenhuma: `sem_janela` (aí abrir é
+        abrir a janela dele). Sem extensão, `NavegadorIndisponivel` sobe."""
+        try:
+            aba = self._base.aba()
+            identificador = aba.get("id")
+            if not isinstance(identificador, int):
+                return {"visivel": False}
+            mostrado = self._base.mostrar(identificador)
+        except NavegadorFalhou as erro:
+            return {"visivel": False, **({"sem_janela": True} if erro.codigo == "sem_aba" else {})}
+        return {"tab_id": identificador, "visivel": bool(mostrado.get("visivel"))}
+
     def abrir_site(
         self, url: str, *, objetivo: Objetivo | None = None, nova_aba: bool = False
     ) -> dict[str, Any]:

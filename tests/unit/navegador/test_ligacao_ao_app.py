@@ -203,6 +203,75 @@ def test_sites_open_abre_guia_nova_pela_extensao_na_janela_do_dono_e_nao_abre_o_
     }, "na janela do dono, à vista: nem fundo, nem a janela própria do Jarvis"
 
 
+def test_com_o_navegador_aberto_aba_nova_e_abrir_o_navegador_vao_pela_extensao_sem_lancar(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """O caso do dono (2026-10-21), no app inteiro com o host de verdade: o `sites.open` com
+    `nova_aba` executava o binário do navegador com a URL — e o Brave aberto a punha na janela
+    própria do Jarvis. Agora a guia nova vai pela extensão, na janela do dono, e o
+    `browser.launch` traz essa janela para a frente: nada é lançado."""
+    curto = tmp_path_factory.mktemp("s")
+    aba = {"id": 5, "janelaId": 1, "ativa": True, "url": "https://antes.example/", "titulo": "A"}
+
+    def extensao(pedido: dict[str, Any]) -> dict[str, Any]:
+        metodo, p = pedido["method"], pedido["params"]
+        resultado: dict[str, Any] = {}
+        if metodo == "tabs.current":
+            resultado = {"aba": aba}
+        elif metodo == "tabs.list":
+            resultado = {"abas": [aba]}
+        elif metodo == "tabs.show":
+            resultado = {"aba": aba, "janela": "dono", "visivel": True}
+        elif metodo == "tabs.open":
+            pagina = {"url": p["url"], "titulo": "V"}
+            resultado = {"aba": aba | {"id": 6, "url": p["url"]}, "janela": "dono"}
+            resultado |= {"visivel": True, "comecou": True, "carregou": True, "pagina": pagina}
+        else:
+            assert metodo.startswith("controle."), pedido
+        return {"id": pedido["id"], "ok": True, "result": resultado}
+
+    lancados: list[tuple[str, ...]] = []
+
+    def lancar(argv: Any, **_: Any) -> int:
+        lancados.append(tuple(argv))
+        return 1
+
+    navegador = Navegador(curto, extensao)
+    navegador.abrir()
+    try:
+        raiz = curto / "sessao"
+        raiz.mkdir()
+        app = Aplicativo(
+            configuracao=BASE.com(
+                navegador_controlado=True,
+                navegadores=("teste=/usr/bin/true",),
+                navegador_principal="teste",
+            ),
+            raiz=raiz,
+            ambiente={"JARVIS_AUDIO_BACKEND": "arquivo", "XDG_RUNTIME_DIR": str(curto)},
+            lar=curto / "casa",
+        )
+        ferramentas = app._montar_ferramentas()
+        assert ferramentas.navegadores is not None
+        ferramentas.navegadores.lancar = lancar
+        video = "https://www.youtube.com/watch?v=1"
+        aberto = ferramentas.executar(
+            "sites.open", {"url": video, "nova_aba": True}, cancelado=lambda: False
+        )
+        trazido = ferramentas.executar("browser.launch", {}, cancelado=lambda: False)
+        for controle in app._navegadores_de_outra_familia.values():
+            controle.controle.fechar()
+    finally:
+        navegador.fechar()
+
+    assert aberto.status == "ok", aberto.motivo
+    assert lancados == [], "com a extensão conectada, nada executa o navegador"
+    abriu = next(p for p in navegador.recebidos if p["method"] == "tabs.open")
+    assert {k: v for k, v in abriu["params"].items() if k != "controle"} == {"url": video}
+    assert trazido.status == "ok", trazido.motivo
+    assert trazido.dados["ja_aberto"] is True and trazido.dados["visivel"] is True
+
+
 # --- o PARAR e o sites.open pela extensão (ADR-0027 regra 4; dono, 2026-10-21) --------------------
 class _GestorFalso:
     def __init__(self, *tarefas: Any) -> None:
