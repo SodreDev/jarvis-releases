@@ -167,7 +167,11 @@ def provedores(
                 onde=motor.onde,
                 motor=vigente,
                 escolhido=atual in ids,
-                ligado=motor.onde is Onde.LOCAL or vigente in configuracao.nuvem_ligada,
+                ligado=(
+                    vigente in configuracao.uso_pessoal_aceito
+                    if motor.de_uso_pessoal
+                    else motor.onde is Onde.LOCAL or vigente in configuracao.nuvem_ligada
+                ),
                 aviso=motor.frase_de_aviso,
                 variavel_da_chave=motor.variavel_da_chave,
                 modelos=opcoes,

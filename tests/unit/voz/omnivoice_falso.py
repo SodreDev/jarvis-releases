@@ -7,7 +7,12 @@ biblioteca falha (sem GPU, sem memória, erro de síntese) — e o enquadramento
 
 Variáveis de ambiente que mudam o comportamento (o teste as põe no processo do trabalhador):
 `FALSO_CUDA=1` (há GPU), `FALSO_CARGA=memoria|quebrada` (a carga falha), `FALSO_DORMIR=s`
-(cada síntese demora), e o texto `explode` faz a síntese falhar.
+(cada síntese demora) e `FALSO_ORDEM=arquivo` (anota, em ordem, cada texto sintetizado). O texto
+`explode` faz a síntese falhar, e `morre` derruba o processo no meio.
+
+`LANCADOR` é como o motor sobe este trabalhador nos testes: o motor de verdade passa ao filho
+um ambiente **fechado** (sem `PYTHONPATH`, sem chave de API), então quem põe as bibliotecas de
+mentira no caminho — e as variáveis acima — é o lançador, lendo um JSON.
 """
 
 from __future__ import annotations
@@ -82,6 +87,12 @@ class OmniVoice:
     def generate(self, text, language=None, voice_clone_prompt=None, **kwargs):
         if "explode" in text:
             raise RuntimeError("falha de síntese de mentira")
+        if "morre" in text:
+            os._exit(9)
+        ordem = os.environ.get("FALSO_ORDEM")
+        if ordem:
+            with open(ordem, "a", encoding="utf-8") as arquivo:
+                arquivo.write(text + "\\n")
         time.sleep(float(os.environ.get("FALSO_DORMIR", "0")))
         n = 240 * max(1, len(text))
         t = np.arange(n, dtype=np.float32) / 24000
@@ -109,3 +120,28 @@ def criar_bibliotecas_falsas(pasta: Path) -> Path:
             f"Metadata-Version: 2.1\nName: {nome}\nVersion: {versao}\n", encoding="utf-8"
         )
     return pasta
+
+
+LANCADOR = """
+import json
+import os
+import runpy
+import sys
+
+falsos, configuracao, trabalhador, *resto = sys.argv[1:]
+with open(configuracao, encoding="utf-8") as arquivo:
+    dados = json.load(arquivo)
+if dados.get("despejo"):
+    with open(dados["despejo"], "w", encoding="utf-8") as arquivo:
+        json.dump(sorted(os.environ), arquivo)
+os.environ.update(dados.get("ambiente", {}))
+sys.path.insert(0, falsos)
+sys.argv = [trabalhador, *resto]
+runpy.run_path(trabalhador, run_name="__main__")
+"""
+
+
+def criar_lancador(pasta: Path) -> Path:
+    lancador = pasta / "lancador.py"
+    lancador.write_text(LANCADOR, encoding="utf-8")
+    return lancador

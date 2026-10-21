@@ -33,6 +33,7 @@ from jarvis.ambiente import ambiente_ou_os
 from jarvis.voz.chaves import proibir_segredo_na_configuracao
 from jarvis.voz.escuta import MODOS, CombinacaoInvalida, exigir_combinacao
 from jarvis.voz.interface import Onde
+from jarvis.voz.omnivoice import FORMA_DO_NOME_DE_VOZ
 from jarvis.voz.palavra import (
     LIMIAR_PADRAO,
     PALAVRA_PADRAO,
@@ -56,6 +57,7 @@ MODELO_DO_ASR_PADRAO: Final = "small"
 ESCUTAS: Final[tuple[str, ...]] = MODOS
 """`ptt` (atalho de teclas), `palavra` (palavra de ativação) e `vad` (escuta contínua)."""
 TTS_ELEVENLABS: Final = "tts-elevenlabs"
+TTS_OMNIVOICE: Final = "tts-omnivoice"
 FORMA_DO_ID_DE_VOZ: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_-]{1,64}")
 """O `voice_id` vai **no caminho** da URL (`/v1/text-to-speech/{voice_id}`): barra, `?`, `#`
 ou espaço mudariam o pedido. Os ids da ElevenLabs são alfanuméricos; o resto recusa."""
@@ -172,6 +174,13 @@ class Configuracao:
     prazo_do_foco_s: float = 300.0
     """Quanto o Jarvis espera a janela de um app que abriu para pô-la em foco (10 a 1800 s;
     ADR-0037). O padrão (o `PRAZO_DO_FOCO_S` do executor) é longo: o jogo pelo Steam demora."""
+    omnivoice_uso_pessoal: bool = False
+    """A declaração do dono de que usa o OmniVoice só para si, sem fim comercial (ADR-0039): os
+    pesos são CC-BY-NC. Sem ela, `tts = "tts-omnivoice"` cai no motor padrão — escolher não
+    liga, como na nuvem. Nenhuma tool escreve este campo."""
+    voz_omnivoice: str = ""
+    """O nome de uma voz que o dono cadastrou (`tools/instalar_omnivoice.py --cadastrar-voz`),
+    com a declaração de que a voz é dele ou de quem deu permissão. Vazio = nenhuma."""
 
     def para_dict(self) -> dict[str, Any]:
         return {
@@ -208,7 +217,14 @@ class Configuracao:
             "laco_max_passos": self.laco_max_passos,
             "laco_prazo_s": self.laco_prazo_s,
             "prazo_do_foco_s": self.prazo_do_foco_s,
+            "omnivoice_uso_pessoal": self.omnivoice_uso_pessoal,
+            "voz_omnivoice": self.voz_omnivoice,
         }
+
+    @property
+    def uso_pessoal_aceito(self) -> tuple[str, ...]:
+        """Os motores de uso pessoal que o dono declarou (hoje só o OmniVoice), para o portão."""
+        return (TTS_OMNIVOICE,) if self.omnivoice_uso_pessoal else ()
 
     @property
     def usa_nuvem(self) -> bool:
@@ -308,6 +324,13 @@ laco_max_passos = {configuracao.laco_max_passos}
 laco_prazo_s = {configuracao.laco_prazo_s}
 # Quantos segundos o Jarvis espera a janela de um app que abriu para pô-la em foco (10 a 1800).
 prazo_do_foco_s = {configuracao.prazo_do_foco_s}
+
+# OmniVoice (ADR-0039): motor OPCIONAL de USO PESSOAL — os pesos são NÃO COMERCIAIS (CC-BY-NC).
+# Só vale com tts = "tts-omnivoice" E esta declaração em true, depois de instalado no repositório
+# (`uv run --frozen python -m tools.instalar_omnivoice`). Faltou algo, volta ao motor padrão.
+omnivoice_uso_pessoal = {"true" if configuracao.omnivoice_uso_pessoal else "false"}
+# Uma voz que VOCÊ cadastrou (a sua, ou com permissão do titular): --cadastrar-voz.
+voz_omnivoice = {aspas(configuracao.voz_omnivoice)}
 """
 
 
@@ -386,6 +409,13 @@ def validar(configuracao: Configuracao) -> Configuracao:
         raise ConfiguracaoInvalida(
             f"tarefa_motor = {configuracao.tarefa_motor!r} não existe. Os que existem: "
             "direto, agente"
+        )
+    if configuracao.voz_omnivoice and not FORMA_DO_NOME_DE_VOZ.fullmatch(
+        configuracao.voz_omnivoice
+    ):
+        raise ConfiguracaoInvalida(
+            f"voz_omnivoice = {configuracao.voz_omnivoice!r} não é nome de voz cadastrada "
+            "(letras minúsculas, números, _ e -, até 40)"
         )
     if configuracao.voz_elevenlabs and not FORMA_DO_ID_DE_VOZ.fullmatch(
         configuracao.voz_elevenlabs
@@ -533,6 +563,8 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         laco_max_passos=_inteiro(dados, "laco_max_passos", 12),
         laco_prazo_s=_numero(dados, "laco_prazo_s", 90.0),
         prazo_do_foco_s=_numero(dados, "prazo_do_foco_s", 300.0),
+        omnivoice_uso_pessoal=_logico(dados, "omnivoice_uso_pessoal"),
+        voz_omnivoice=_texto(dados, "voz_omnivoice", ""),
     )
     return validar(configuracao)
 

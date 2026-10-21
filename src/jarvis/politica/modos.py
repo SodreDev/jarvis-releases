@@ -87,6 +87,8 @@ NEGADOS_RELATIVOS_AO_LAR: Final[tuple[str, ...]] = (
     ".git-credentials",
     ".cache/keyring",
     ".local/share/jarvis/cofre",
+    ".local/share/jarvis/vozes",
+    ".local/share/jarvis/omnivoice",
     ".electrum",
     ".bitcoin",
     ".ethereum",
@@ -96,8 +98,12 @@ NEGADOS_RELATIVOS_AO_LAR: Final[tuple[str, ...]] = (
     "AppData/Local/Google/Chrome/User Data",
     "AppData/Roaming/Mozilla/Firefox",
     "AppData/Local/Packages/Microsoft.Windows.Cortana_cw5n1h2txyewy",
+    "AppData/Local/jarvis/vozes",
+    "AppData/Local/jarvis/omnivoice",
 )
-"""Chaves, chaveiros, perfis de navegador, carteiras e o cofre do próprio Jarvis."""
+"""Chaves, chaveiros, perfis de navegador, carteiras e o cofre do próprio Jarvis — e as vozes de
+referência do dono e o motor de uso pessoal (ADR-0039): voz é dado biométrico, e nenhuma
+ferramenta de arquivo lê uma voz para fora nem põe áudio de terceiro lá para ser clonado."""
 
 NEGADOS_ABSOLUTOS_POSIX: Final[tuple[str, ...]] = (
     "/etc/shadow",

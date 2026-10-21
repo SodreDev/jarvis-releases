@@ -5,6 +5,9 @@
     uv run --frozen python -m tools.instalar_omnivoice --dispositivo cpu     # força a CPU (lenta)
     uv run --frozen python -m tools.instalar_omnivoice --estado              # o que está instalado
     uv run --frozen python -m tools.instalar_omnivoice --remover             # desfaz a instalação
+    uv run --frozen python -m tools.instalar_omnivoice --cadastrar-voz minha \
+        --audio ~/Gravações/eu.wav --texto "o que eu disse no áudio" --declaro minha
+    uv run --frozen python -m tools.instalar_omnivoice --vozes               # vozes cadastradas
 
 **Por que um script de `tools/`, e não uma opção do `jarvis-voz`** (ADR-0039). Os pesos são
 CC-BY-NC: não comercial não entra no produto (ADR-0011). Um `--instalar-omnivoice` dentro do
@@ -56,6 +59,7 @@ from jarvis.voz.modelos import ArquivoDeModelo, Descarga, ModeloRecusado, baixar
 from jarvis.voz.omnivoice import (
     AVISO_DE_LICENCA,
     CHAVE_DO_ACEITE,
+    DECLARACOES,
     MARCA,
     PROTOCOLO,
     REGISTRADO,
@@ -64,9 +68,14 @@ from jarvis.voz.omnivoice import (
     PesosMalRegistrados,
     PesosRegistrados,
     RegistroDaInstalacao,
+    VozNaoAutorizada,
+    cadastrar_voz,
+    ler_voz,
     pesos_registrados,
+    remover_voz,
     sha256_de,
     sha256_do_texto,
+    vozes_cadastradas,
 )
 
 PYTHON_DO_VENV: Final = "3.12"
@@ -516,6 +525,54 @@ class Instalador:
         return 0 if not falta else 1
 
 
+AVISO_DE_CLONAGEM: Final = """\
+Voz de referência (ADR-0039): só a SUA voz, ou a de quem lhe deu permissão. Clonar a voz de
+alguém sem autorização, imitar uma pessoa ou usar a voz para enganar é proibido pelo model card
+do OmniVoice — e pode ser crime. A declaração que você faz agora fica gravada junto da voz, com o
+sha256 do áudio: trocar o arquivo depois invalida a voz.
+"""
+
+
+def cadastrar(args: argparse.Namespace, escrever: Callable[[str], None] = print) -> int:
+    """`--cadastrar-voz`: comando do dono no terminal — não existe ferramenta do assistente."""
+    escrever(AVISO_DE_CLONAGEM)
+    if not args.declaro:
+        escrever("Recusado: diga --declaro minha (a voz é sua) ou --declaro permissao --titular …")
+        return 2
+    try:
+        voz = cadastrar_voz(
+            args.cadastrar_voz,
+            audio=str(args.audio or ""),
+            texto=str(args.texto or ""),
+            declaracao=args.declaro,
+            titular=str(args.titular or ""),
+            agora=_agora(),
+            pasta=args.pasta_das_vozes,
+        )
+    except VozNaoAutorizada as erro:
+        escrever(f"Recusado: {erro}")
+        return 2
+    escrever(
+        f"Voz {voz.nome!r} cadastrada em {voz.audio.parent}: {voz.frase_da_declaracao}, "
+        f'{voz.duracao_s:.1f} s.\nPara usar: voz_omnivoice = "{voz.nome}" na configuração.'
+    )
+    return 0
+
+
+def listar_vozes(pasta: Path | None, escrever: Callable[[str], None] = print) -> int:
+    nomes = vozes_cadastradas(pasta=pasta)
+    if not nomes:
+        escrever("Nenhuma voz cadastrada.")
+    for nome in nomes:
+        try:
+            voz = ler_voz(nome, pasta=pasta)
+        except VozNaoAutorizada as erro:
+            escrever(f"  {nome}: RECUSADA — {erro}")
+            continue
+        escrever(f"  {nome}: {voz.frase_da_declaracao}, {voz.duracao_s:.1f} s")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     analisador = argparse.ArgumentParser(
         prog="python -m tools.instalar_omnivoice",
@@ -530,7 +587,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     analisador.add_argument("--pasta", type=Path, default=None, help="outra pasta de instalação")
     analisador.add_argument("--estado", action="store_true", help="mostra o que está instalado")
     analisador.add_argument("--remover", action="store_true", help="desfaz a instalação")
+    vozes = analisador.add_argument_group(
+        "vozes de referência", "só a sua voz, ou a de quem lhe deu permissão (ADR-0039)"
+    )
+    vozes.add_argument("--cadastrar-voz", metavar="NOME", help="cadastra uma voz sua")
+    vozes.add_argument("--audio", help="WAV local de 3 a 20 s (nada de URL)")
+    vozes.add_argument("--texto", help="a transcrição exata do áudio")
+    vozes.add_argument(
+        "--declaro",
+        choices=tuple(DECLARACOES),
+        help="minha = a voz é minha; permissao = tenho permissão do titular",
+    )
+    vozes.add_argument("--titular", help="de quem é a voz, com --declaro permissao")
+    vozes.add_argument("--vozes", action="store_true", help="lista as vozes cadastradas")
+    vozes.add_argument("--remover-voz", metavar="NOME", help="apaga uma voz cadastrada")
+    vozes.add_argument("--pasta-das-vozes", type=Path, default=None, help=argparse.SUPPRESS)
     args = analisador.parse_args(argv)
+
+    if args.cadastrar_voz:
+        return cadastrar(args)
+    if args.vozes:
+        return listar_vozes(args.pasta_das_vozes)
+    if args.remover_voz:
+        try:
+            removida = remover_voz(args.remover_voz, pasta=args.pasta_das_vozes)
+        except VozNaoAutorizada as erro:
+            print(f"Recusado: {erro}")
+            return 2
+        print("Voz removida." if removida else "Essa voz não está cadastrada.")
+        return 0
 
     instalacao = Instalacao(args.pasta) if args.pasta is not None else Instalacao.padrao()
     try:

@@ -46,6 +46,7 @@ from jarvis.voz.config import (
     ler,
 )
 from jarvis.voz.interface import Onde
+from jarvis.voz.omnivoice import linhas_do_diagnostico
 from jarvis.voz.registro import conferir, ler_motores, motores_de
 from jarvis.voz.teclado import preparado, teclado_do_ambiente
 from jarvis.voz.tela_config import TelaDeConfiguracao
@@ -127,11 +128,18 @@ def diagnosticar(
     for motor in ler_motores():
         marca = "★" if motor.id in {configuracao.asr, configuracao.tts} else " "
         estado = "local" if motor.onde is Onde.LOCAL else "NUVEM"
-        ligado = (
-            ""
-            if motor.onde is Onde.LOCAL
-            else ("  ligado" if motor.id in configuracao.nuvem_ligada else "  desligado")
-        )
+        if motor.de_uso_pessoal:
+            ligado = (
+                "  uso pessoal: declarado"
+                if motor.id in configuracao.uso_pessoal_aceito
+                else "  uso pessoal: não declarado"
+            )
+        else:
+            ligado = (
+                ""
+                if motor.onde is Onde.LOCAL
+                else ("  ligado" if motor.id in configuracao.nuvem_ligada else "  desligado")
+            )
         linha(f"  {marca} {motor.papel:3} {motor.id:34} [{estado}]{ligado}")
 
     linha("")
@@ -151,6 +159,7 @@ def diagnosticar(
     linha("o que falta para cada motor rodar agora:")
     faltas = conferir(
         nuvem_ligada=configuracao.nuvem_ligada,
+        uso_pessoal_aceito=configuracao.uso_pessoal_aceito,
         ambiente=(
             *fonte.keys(),
             *(v for v in VARIAVEIS if Chave.origem(v, ambiente=ambiente) == "chaveiro"),
@@ -196,6 +205,15 @@ def diagnosticar(
             linha(f"  {modulo}: instalado, mas o sistema não tem a biblioteca — {erro}")
         else:
             linha(f"  {modulo}: ok ({para_que})")
+
+    linha("")
+    linha("OmniVoice (opcional, uso pessoal e não comercial — ADR-0039):")
+    for texto in linhas_do_diagnostico(
+        aceito=configuracao.omnivoice_uso_pessoal,
+        voz=configuracao.voz_omnivoice,
+        ambiente=ambiente,
+    ):
+        linha(texto)
     return 0
 
 

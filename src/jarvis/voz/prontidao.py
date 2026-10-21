@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Final
 
 from jarvis.voz.chaves import Chave
-from jarvis.voz.config import Configuracao
+from jarvis.voz.config import TTS_OMNIVOICE, Configuracao
 from jarvis.voz.registro import MotorRecusado, exigir_motor, motor_registrado
 
 PASTA_DE_VOZES: Final = Path.home() / ".cache" / "jarvis" / "vozes"
@@ -49,6 +49,7 @@ def o_que_falta(
             motor_id,
             nuvem_ligada=configuracao.nuvem_ligada,
             sem_termos_aceitos=configuracao.nuvem_sem_termos,
+            uso_pessoal_aceito=configuracao.uso_pessoal_aceito,
         )
     except MotorRecusado as erro:
         if "está desligado" in str(erro):
@@ -68,6 +69,12 @@ def o_que_falta(
         return 'falta escolher a voz da ElevenLabs: Configuração → "buscar vozes da conta"'
     if motor_id == "asr-oraculo":
         return "o oráculo não transcreve voz de verdade (devolve o texto do corpus de teste)"
+    if motor_id == TTS_OMNIVOICE:
+        # O laço não para por isto: cai no motor padrão (ADR-0039). A frase é para a janela e o
+        # diagnóstico dizerem por quê.
+        from jarvis.voz.omnivoice import o_que_falta_ao_omnivoice
+
+        return o_que_falta_ao_omnivoice(configuracao.voz_omnivoice, ambiente=ambiente)
     for modulo, grupo in BIBLIOTECAS.get(motor_id, ()):
         if importlib.util.find_spec(modulo) is None:
             return f"falta a biblioteca {modulo}: `uv sync --group {grupo}`"

@@ -121,7 +121,7 @@ from jarvis.tarefas.gestor import (
 from jarvis.tarefas.motores import MotorDeAgente
 from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.chaves import SegredoAusente
-from jarvis.voz.config import ASR_PADRAO, Configuracao
+from jarvis.voz.config import ASR_PADRAO, TTS_OMNIVOICE, TTS_PADRAO, Configuracao
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde
@@ -258,6 +258,21 @@ def motor_de_tts(
     ambiente: Mapping[str, str] | None = None,
 ) -> MotorDeTts:
     """O motor de TTS que a configuração pediu, já pelo portão (ADR-0017)."""
+    if configuracao.tts == TTS_OMNIVOICE:
+        # Uso pessoal (ADR-0039): sem a declaração, a instalação, a voz cadastrada — ou com
+        # erro no meio —, fala o motor padrão, sem derrubar a abertura e sem anunciar erro em
+        # voz. O motivo vai em `observacao`, que a tela de abertura mostra.
+        from jarvis.voz.omnivoice import motor_omnivoice
+
+        return motor_omnivoice(
+            aceito=configuracao.omnivoice_uso_pessoal,
+            voz=configuracao.voz_omnivoice,
+            cancelado=cancelado,
+            ambiente=ambiente,
+            reserva=lambda: motor_de_tts(
+                configuracao.com(tts=TTS_PADRAO), raiz=raiz, cancelado=cancelado, ambiente=ambiente
+            ),
+        )
     falta = o_que_falta(
         configuracao.tts, configuracao, ambiente=ambiente, pasta_de_vozes=PASTA_DE_VOZES
     )
@@ -1243,6 +1258,15 @@ class Aplicativo:
         except Exception:  # aquecimento é melhor-esforço: falhar aqui não derruba o turno
             return
 
+    def _fechar_a_voz(self) -> None:
+        """O motor que tem processo próprio (o trabalhador do OmniVoice) o encerra com o laço.
+
+        Se o laço voltar, o motor sobe de novo no primeiro lote — ele não é trocado aqui.
+        """
+        fechar = getattr(self._tts, "fechar", None)
+        if callable(fechar):
+            fechar()
+
     def _cancelado_do_turno_corrente(self) -> bool:
         """Os motores recebem **esta** função, que olha o epoch do turno em curso.
 
@@ -1588,6 +1612,7 @@ class Aplicativo:
             self._cancelar_tarefas()
             if sumidouro is not None:
                 sumidouro.fechar()
+            self._fechar_a_voz()
         self._mudar(Estado.PARADO)
         return 0
 
@@ -1735,6 +1760,7 @@ class Aplicativo:
             self._publicar_estado(captura, aberta=False)
             captura.fechar()
             sumidouro.fechar()
+            self._fechar_a_voz()
             self._escutando = False
             self._mudar(Estado.PARADO)
         return 0
@@ -1885,6 +1911,9 @@ class Aplicativo:
         else:
             self.escrever_na_tela(f"ouvindo com: {self._asr.nome}  [{self._asr.onde}]")
         self.escrever_na_tela(f"falando com: {self._tts.nome}  [{self._tts.onde}]")
+        observacao = str(getattr(self._tts, "observacao", ""))
+        if observacao:
+            self.escrever_na_tela(f"  ({observacao})")
         self.escrever_na_tela(f"respondendo com: {self._motor.nome}  [{self._motor.onde}]")
         if self.ferramentas is not None:
             modo = self.ferramentas.pdp.modo
