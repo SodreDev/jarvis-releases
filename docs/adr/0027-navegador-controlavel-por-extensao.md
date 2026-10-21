@@ -307,3 +307,22 @@ popup — o clique é o PARAR) e o segundo script de conteúdo.
 verdade (a faixa e o foco foram provados com openbox e com o Firefox headless); o Brave do dono (o
 roteiro usa o Chromium do Fedora); sites que montam o `<html>` de novo a cada navegação interna (a
 faixa volta até 20 vezes por documento e desiste).
+
+## Emenda de 2026-10-21 — uma instância só (ADR-0036, emenda (2))
+
+**Relato do dono depois do `8cc7bf6`:** o Jarvis começou no navegador dele e depois abriu «outra
+instância do Brave» — a janela própria do Jarvis — e o vídeo foi parar nela. O que muda aqui (o
+desenho todo, a causa e a prova estão na emenda (2) da ADR-0036):
+
+- **A regra 4 (reuso) continua** e ganha o fim que faltava: sem aba do site, o pedido de ver usa a
+  guia que ele mesmo abriu ou uma «nova aba» vazia, e senão abre uma **guia nova na janela do
+  dono** — a aba dele com outro site não tem a página trocada. A aba de banco, senha, pagamento,
+  mensageiro e e-mail continua protegida como antes.
+- **O trabalho de fundo é aba da janela do dono**, em segundo plano (sem `active`, sem mexer no
+  foco); a janela própria do Jarvis (emenda de 2026-10-20) só no modo `automacao_social`, o gancho
+  da automação de redes sociais, e-mail e agenda que vem depois — desligado e sem chave na
+  configuração.
+- **Abrir navegador só sem um ativo:** com a extensão conectada, `sites.open` (também com
+  `nova_aba`) vai por ela, e «abre o navegador» traz a janela do dono para a frente; sem extensão,
+  o processo do navegador rodando também conta como aberto. O binário só é executado sem nenhum dos
+  dois — antes, o `sites.open` com `nova_aba` o executava com a URL mesmo com o navegador aberto.

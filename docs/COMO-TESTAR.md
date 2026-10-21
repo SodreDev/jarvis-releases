@@ -998,6 +998,10 @@ Testes: `tests/unit/s2/test_objetivo_e_fase.py`.
 
 ### 0.17 O Jarvis trabalha numa janela dele, sem tirar o seu foco (2026-10-20, ADR-0036)
 
+**Mudou em 2026-10-21 (§0.24):** a janela do Jarvis ficou só para a automação de redes
+sociais, e-mail e agenda, que vem depois; o trabalho que você não precisa ver agora é uma aba
+em segundo plano **da sua janela**. O texto abaixo é o de antes.
+
 Trabalho que você não precisa ver — pesquisar, conferir, ler outro site — vai numa **janela do
 Jarvis**, atrás das suas: ele lê, clica e vê a tela lá, e a sua janela e a aba que você está vendo
 **não mudam**. A busca na web sem chave (§0.13) também usa essa janela. Se o navegador der o foco à
@@ -1062,9 +1066,10 @@ navegador continuou igual e a resposta parou). Três coisas mudaram:
   ver»: a aba vem para a frente no fim (ativa, com a janela do navegador em foco), mesmo que você
   esteja falando com a janela do Jarvis. Se o sistema não deixar o navegador vir para a frente, ele
   diz que a página está aberta na aba — sem fingir.
-- **Pesquisa que você não pediu para ver** («pesquisa…», «lê pra mim…», «confere…») vai para a
-  janela do Jarvis (§0.17), e não troca mais a página da aba que você está usando; o que ele lê
-  depois é a aba em que ele está trabalhando, não a sua.
+- **Pesquisa que você não pediu para ver** («pesquisa…», «lê pra mim…», «confere…») vai para
+  uma aba em segundo plano da sua janela (desde 2026-10-21, §0.24; antes, a janela do Jarvis),
+  e não troca mais a página da aba que você está usando; o que ele lê depois é a aba em que
+  ele está trabalhando, não a sua.
 
 **Recarregue a extensão** (código novo, e um arquivo novo: `janela.html`): no repositório,
 `uv run jarvis-native-host --instalar`, depois **Recarregar** em `brave://extensions`, F5 nas abas
@@ -1132,7 +1137,8 @@ você recarregar a extensão com a faixa na tela, ela some em poucos segundos.
   enquanto ele controla alguma aba.
 
 **Abas reaproveitadas.** «Abre o g1» com o g1 já aberto numa aba: ele só ativa essa aba (sem
-recarregar). Com o g1 aberto noutra página: navega aquela aba. Sem nenhuma: a aba atual, como antes.
+recarregar). Com o g1 aberto noutra página: navega aquela aba. Sem nenhuma: uma guia nova na sua
+janela, e a sua página fica (desde 2026-10-21, §0.24; antes, a aba atual).
 A sua aba de banco, senha, pagamento, mensageiro ou e-mail **não tem a página trocada**: do mesmo
 site ela vem como está (uma segunda aba do WhatsApp Web derrubaria a primeira); de outro site, o
 pedido abre numa aba nova. «Quais abas eu tenho abertas?» agora diz a janela e o estado de cada uma
@@ -1152,7 +1158,8 @@ Jarvis controla — apareceu 2 a 9 ms depois de cada página nascer, nunca sumiu
 do CDP no Chromium, ações do Marionette no Firefox): a faixa some, o turno é cancelado (epoch) e o
 pedido parado não age mais, e o seguinte volta a agir; os **3 casos de reuso** (a página já aberta
 numa aba de trás só é ativada; mesmo site noutra página navega a aba existente; site novo abre na
-aba atual, sem aba nova). **Não provado:** o Brave e o KDE de verdade; o botão da barra clicado de
+aba atual, sem aba nova — desde 2026-10-21, guia nova, §0.24). **Não provado:** o Brave e o KDE
+de verdade; o botão da barra clicado de
 verdade (só nos testes do fundo, com navegador falso); site que monta o `<html>` de novo a cada
 navegação interna (a faixa volta até 20 vezes por página). **Não feito:** atalho global de parar.
 Testes: `tests/unit/navegador/background_controle.test.mjs`, `indicador.test.mjs`,
@@ -1211,6 +1218,52 @@ perder áudio; o nome dito pelo próprio Jarvis no eco não corta; o «sim» dit
 pergunta não a confirma. **Não provado:** microfone e alto-falante de verdade, a sua voz, a sua sala,
 a TV de verdade, o whisper transcrevendo «Jarvis» por cima do próprio Jarvis, o tempo do ASR com a
 CPU disputada, e o cancelamento de eco do PipeWire.
+
+### 0.24 Uma instância só: o Jarvis usa o navegador que você já tem aberto (2026-10-21, ADR-0036 emendada)
+
+O que você relatou depois do teste: ele começou no seu Brave, depois abriu «outra instância» (era a
+janela de trabalho do Jarvis) e abriu o vídeo lá, não no navegador que você estava usando. Na sua
+trilha de diagnóstico estavam as duas causas: a busca na web sem chave criava a janela do Jarvis, e
+um «abrir numa aba nova» pulava a extensão e mandava o endereço para o Brave pela linha de comando —
+que o pôs na última janela ativa dele, a do Jarvis. Agora:
+
+- **Ele só abre um navegador se não houver um aberto.** Com o Brave aberto e a extensão ligada,
+  tudo vai nele: «abre o YouTube» com a aba atual noutro site abre uma **guia nova na sua janela**
+  (a sua página fica); com o YouTube já aberto numa aba, ele reaproveita essa aba, como antes; uma
+  «nova aba» vazia ele usa em vez de deixar outra ao lado. «Abre o navegador» com ele aberto traz a
+  sua janela para a frente, sem abrir outra. Só com o navegador fechado ele abre um.
+- **Trabalho que você não pediu para ver** (pesquisar, ler, conferir) acontece numa **aba em
+  segundo plano da sua janela**: ela aparece na barra de abas, mas a aba que você está vendo e o
+  foco não mudam. A busca na web sem chave abre uma dessas por um instante e fecha.
+- **A janela de trabalho do Jarvis não aparece mais.** Ela ficou só para a automação de redes
+  sociais, e-mail e agenda (com digitação humanizada), que vem depois e fica desligada. Se ficou uma
+  aberta da versão anterior (a da página «Janela de trabalho do Jarvis»), pode fechar.
+- Uma coisa que se perde: a **tela** de uma aba de fundo só sai no Firefox. No Brave o Jarvis lê a
+  página e o mapa dela normalmente, mas a imagem só de uma aba que está à vista.
+
+**Recarregue (extensão e host novos):** no repositório, `uv run jarvis-native-host --instalar`;
+depois **Recarregar** a extensão em `brave://extensions` (o host reinicia junto); feche a janela de
+trabalho do Jarvis se ela ainda estiver aberta; F5 nas abas que já estavam abertas; e reinicie o
+`uv run jarvis`. **Como conferir:** com o Brave aberto no Google, peça «abra um vídeo de gatos no
+YouTube» → uma guia nova na sua janela, à vista, e o Google continua na aba dele; nenhuma janela
+nova. Peça «pesquisa quantos inscritos tem o canal do Primo Rico» → uma aba aparece em segundo
+plano na sua barra de abas e a que você está vendo não muda. «Abre o navegador» → a janela dele vem
+para a frente, sem outra. Feche o Brave e peça «abre o g1» → aí sim ele abre o Brave.
+
+**Provado em contêiner** (`uv run --frozen python -m tools.harness_navegador`, Chromium 155 e
+Firefox 158 de verdade, 41/41 cada): sem navegador ativo o Jarvis abre um pelo `sites.open` — o
+único caso —, e com ele aberto nem «abre o navegador» nem a aba nova lançam outro; depois da busca,
+do trabalho de fundo, da guia nova e do reuso o navegador continua com **uma janela, nenhuma janela
+do Jarvis e um processo principal**; a aba de fundo nasce na sua janela sem ficar ativa, com a
+janela em foco, a aba à vista e a janela ativa do X iguais; aba atual de outro site → guia nova, e
+a sua página fica; site já aberto → reaproveitado; e só o modo da automação social (o gancho,
+desligado) abre a janela própria. O mesmo roteiro no código de antes (`6ed4134`) mostra o bug: a
+busca cria a segunda janela e o «abrir numa aba nova» executa o navegador. **Não provado:** o Brave
+e o KDE (Wayland) de verdade — o roteiro usa o Chromium do Fedora e o openbox —, o YouTube de
+verdade (o contêiner não tem rede) e a janela do Jarvis que ficou aberta da versão anterior no seu
+Brave (o Jarvis não a fecha sozinho). Testes: `tests/unit/navegador/background_navegacao.test.mjs`,
+`tests/unit/navegador/test_ferramentas_browser.py`, `tests/unit/executor/test_navegadores.py`,
+`tests/unit/executor/test_ferramentas.py`, `tests/unit/navegador/test_ligacao_ao_app.py`.
 
 ---
 
