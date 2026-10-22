@@ -365,6 +365,8 @@ def _na_web(limpa: _Fala, _fala: str, contexto: ContextoDoAtalho) -> Atalho | No
 
 
 def _nome_do_site(site: Site) -> str:
+    if "." in site.nome:
+        return site.nome  # um domínio dito («exemplo.com.br») sai como foi dito
     especiais = {"youtube": "YouTube", "github": "GitHub", "linkedin": "LinkedIn", "g1": "g1"}
     return especiais.get(site.nome, site.nome.title())
 

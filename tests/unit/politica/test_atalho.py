@@ -168,6 +168,7 @@ def test_a_fala_limpa_tira_a_chamada_e_a_cortesia() -> None:
         ("mata o discord", {"app": "Discord", "conferido": True}, ""),
         ("vai pro discord", {"app": "discord"}, "Pronto, o Discord está na frente."),
         ("abre o YouTube", {"visivel": True}, "Abri o YouTube."),
+        ("abre exemplo.com.br", {"visivel": True}, "Abri o exemplo.com.br."),
         (
             "pesquisa gatos no YouTube",
             {"visivel": True},
