@@ -531,6 +531,30 @@ def foco_para_o_modelo(janelas: Janelas) -> dict[str, Any]:
     return resposta
 
 
+def focar_o_navegador(janelas: Janelas, familia: str, titulo: str = "") -> bool:
+    """O navegador aberto vem para a frente pelo gerenciador de janelas (no KDE, o KWin) quando a
+    extensão não conseguiu: no Wayland o navegador não pega o foco sozinho (dono, 2026-10-21:
+    «não consegue abrir o Brave», com ele aberto). A janela é a da família (a classe traz o nome:
+    `brave-browser`, `org.mozilla.firefox`); com várias, a que mostra a aba pedida (o título começa
+    por ela), senão a ativa, a da frente, a do principal. `False` = nenhuma, ou o KWin recusou."""
+    alvo = _dobrar(familia)
+    if not alvo:
+        return False
+    candidatas = [j for j in estado_de(janelas).janelas if de_app(j) and alvo in _dobrar(j.classe)]
+    if not candidatas:
+        return False
+    pedida = _dobrar(titulo)
+
+    def preferencia(j: JanelaDoSistema) -> tuple[bool, bool, bool, bool, bool]:
+        mostra = bool(pedida) and _dobrar(j.titulo).startswith(pedida)
+        return (mostra, j.ativa, j.na_frente, j.principal, j.visivel)
+
+    escolhida = max(candidatas, key=preferencia)
+    if escolhida.ativa and not pedida:
+        return True  # já é a ativa: nada a pedir ao KWin
+    return janelas.ativar(escolhida.id)
+
+
 def focar(janelas: Janelas, app: str, janela_id: str = "") -> dict[str, Any]:
     """Põe em foco a janela `janela_id` (conferida na lista de agora) ou a do app pelo nome —
     escolhida pelo código, como em `desktop.achar_janela`. Já em foco, não mexe."""

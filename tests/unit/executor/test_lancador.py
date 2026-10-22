@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from jarvis.executor.lancador import App, AppRecusado, lancar, lancar_argv
+from jarvis.executor.lancador import App, AppRecusado, ambiente_saneado, lancar, lancar_argv
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX")
 
@@ -79,3 +79,32 @@ def test_lancar_argv_leva_a_url_como_um_unico_argumento(tmp_path: Path) -> None:
 def test_executavel_que_nao_existe_e_recusa_com_o_nome() -> None:
     with pytest.raises(AppRecusado, match="não está no PATH"):
         lancar(_app(("programa-que-nao-existe-jarvis",)))
+
+
+def test_o_app_lancado_sabe_que_esta_no_plasma_6_e_nao_leva_chave_nenhuma() -> None:
+    """Dono, 2026-10-21 («não consegue abrir o Brave»): sem `KDE_SESSION_VERSION` o Chromium/Brave
+    lê o desktop como "KDE4" e escolhe outro chaveiro para o perfil. O lançador do KDE passa as
+    variáveis do desktop a quem abre; o Jarvis também — e nada além da lista fechada."""
+    origem = {
+        "PATH": "/usr/bin",
+        "WAYLAND_DISPLAY": "wayland-0",
+        "XDG_CURRENT_DESKTOP": "KDE",
+        "KDE_SESSION_VERSION": "6",
+        "KDE_FULL_SESSION": "true",
+        "XDG_SESSION_DESKTOP": "KDE",
+        "DESKTOP_SESSION": "plasma",
+        "LC_TIME": "pt_BR.UTF-8",
+        "GROQ_API_KEY": "gsk_nao_vai",
+        "ELEVENLABS_API_KEY": "nao_vai",
+        "NVIDIA_API_KEY": "nao_vai",
+        "QUALQUER_OUTRA": "nao_vai",
+    }
+
+    filho = ambiente_saneado(origem)
+
+    assert filho["KDE_SESSION_VERSION"] == "6" and filho["KDE_FULL_SESSION"] == "true"
+    assert filho["XDG_SESSION_DESKTOP"] == "KDE" and filho["DESKTOP_SESSION"] == "plasma"
+    assert filho["LC_TIME"] == "pt_BR.UTF-8"
+    assert not {"GROQ_API_KEY", "ELEVENLABS_API_KEY", "NVIDIA_API_KEY", "QUALQUER_OUTRA"} & set(
+        filho
+    )

@@ -1199,6 +1199,29 @@ def test_abrir_com_o_foco_negado_diz_que_nao_ficou_a_vista_sem_fingir(
     assert "não veio para a frente" in ok.dados["situacao"]
 
 
+def test_com_o_foco_negado_o_kwin_traz_a_janela_e_a_pagina_termina_a_vista(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """No Wayland do KDE o navegador não pega o foco sozinho; o gerenciador de janelas pega
+    (provado no KWin virtual, `tools/harness_foco.py`). O pedido de ver termina à vista."""
+    executor.novo_turno("abre o youtube")
+    pagina.navegador_na_frente = False
+    pagina.foco_negado = True
+    pedidos: list[str] = []
+
+    def trazer(titulo: str) -> bool:
+        pedidos.append(titulo)
+        return True
+
+    assert executor.navegador is not None
+    executor.navegador.trazer_a_frente = trazer
+
+    ok, _ = _rodar(executor, "browser.navigate", {"url": "https://www.youtube.com/"})
+
+    assert ok.status == "ok" and ok.dados["visivel"] is True
+    assert len(pedidos) == 1, "um pedido ao KWin, com o título da aba"
+
+
 def test_pagina_que_nao_abre_e_erro_dito_e_nao_sucesso(
     executor: ExecutorDeFerramentas, pagina: PaginaFalsa
 ) -> None:

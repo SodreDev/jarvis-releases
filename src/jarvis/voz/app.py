@@ -74,7 +74,7 @@ from jarvis.entrada.limite import Interruptor
 from jarvis.executor import desktop
 from jarvis.executor.alarmes import Alarme, agenda_compartilhada
 from jarvis.executor.ferramentas import Confirmacao, Encerramento, ExecutorDeFerramentas
-from jarvis.executor.janelas import janelas_do_ambiente
+from jarvis.executor.janelas import focar_o_navegador, janelas_do_ambiente
 from jarvis.executor.lancador import RegistroDeApps
 from jarvis.executor.navegadores import AbridorDeNavegador, navegador_em_execucao, separar
 from jarvis.memoryd.conversa import ConversaPersistente
@@ -1163,6 +1163,7 @@ class Aplicativo:
                 reutilizar_aba=self._na_aba_atual,
                 mostrar_aberto=self._mostrar_o_navegador,
                 em_execucao=navegador_em_execucao,
+                focar_janela=self._focar_o_navegador,
             ),
             navegador=self._corpos_do_navegador(),
             estado_do_navegador=self.estado_do_navegador,
@@ -1196,7 +1197,18 @@ class Aplicativo:
         corpos = CorposDoNavegador(cliente)
         corpos.ao_parar = self._parar_pelo_navegador
         corpos.ao_mudar = self._navegador_mudou
+        # No Wayland o navegador não pega o foco sozinho: o KWin traz a janela dele (2026-10-21).
+        corpos.trazer_a_frente = lambda titulo: self._focar_o_navegador(
+            self.configuracao.navegador_principal or familia, titulo
+        )
         return corpos
+
+    def _focar_o_navegador(self, familia: str, titulo: str = "") -> bool:
+        """O navegador aberto vem para a frente pelo gerenciador de janelas (KWin, `kdotool`),
+        quando a extensão não conseguiu ou não está conectada (dono, 2026-10-21: «não consegue
+        abrir o Brave» com ele aberto, e o Brave na frente do principal que o Jarvis não via)."""
+        janelas = self.ferramentas.portas().janelas if self.ferramentas is not None else None
+        return janelas is not None and focar_o_navegador(janelas, familia, titulo)
 
     def _parar_pelo_navegador(self, objetivos: Sequence[Objetivo]) -> None:
         """O dono apertou PARAR (na faixa da página, no botão da extensão ou na janela do Jarvis):

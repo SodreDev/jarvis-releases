@@ -74,8 +74,45 @@ VARIAVEIS_DO_AMBIENTE: Final = (
     "XDG_CONFIG_DIRS",
     "DBUS_SESSION_BUS_ADDRESS",
     "XAUTHORITY",
+    # Quem é o desktop (dono, 2026-10-21: «não consegue abrir o Brave»). Sem estas, o app lançado
+    # pelo Jarvis não sabe que está num Plasma 6: o Chromium/Brave, sem `KDE_SESSION_VERSION`, lê
+    # o desktop como "KDE4" (`base/nix/xdg_util.cc`) e escolhe outro chaveiro para as senhas e os
+    # cookies do perfil; o lançador do KDE passa todas elas a quem ele abre.
+    "KDE_SESSION_VERSION",
+    "KDE_FULL_SESSION",
+    "KDE_APPLICATIONS_AS_SCOPE",
+    "XDG_SESSION_DESKTOP",
+    "DESKTOP_SESSION",
+    "XDG_SESSION_CLASS",
+    "XDG_SESSION_ID",
+    "XDG_SEAT",
+    "XDG_VTNR",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
+    "XDG_MENU_PREFIX",
+    "QT_QPA_PLATFORMTHEME",
+    "GTK_USE_PORTAL",
+    "XCURSOR_THEME",
+    "XCURSOR_SIZE",
+    "SSH_AUTH_SOCK",
+    "TZ",
+    "LC_CTYPE",
+    "LC_NUMERIC",
+    "LC_TIME",
+    "LC_COLLATE",
+    "LC_MONETARY",
+    "LC_MESSAGES",
+    "LC_PAPER",
+    "LC_NAME",
+    "LC_ADDRESS",
+    "LC_TELEPHONE",
+    "LC_MEASUREMENT",
+    "LC_IDENTIFICATION",
 )
-"""O que o app precisa para abrir na sessão do dono — e só isso: nada de `GROQ_API_KEY` & cia."""
+"""O que o app precisa para abrir na sessão do dono, como o lançador do desktop o abriria — e só
+isso: nada de `GROQ_API_KEY` & cia. (lista fechada: o que não está aqui não passa)."""
 
 
 class AppRecusado(LookupError):

@@ -396,3 +396,49 @@ def test_a_url_chega_ao_navegador_como_um_argumento_so(
     )
     assert lancados == [(f"{bins}/brave-stable", "https://exemplo.com/?a=1;--incognito")]
     assert Path(lancados[0][0]).is_absolute()
+
+
+def test_aberto_e_sem_vir_para_a_frente_o_kwin_traz_a_janela_dele(
+    instalados: tuple[Path, Path],
+) -> None:
+    """No Wayland do KDE o navegador não pega o foco sozinho: a extensão diz `visivel: false` e
+    o «abre o Brave» parecia falhar (dono, 2026-10-21). O gerenciador de janelas traz a janela
+    que mostra a aba atual — e nada é lançado."""
+    _, bins = instalados
+    lancados: list[tuple[str, ...]] = []
+    pedidos: list[tuple[str, str]] = []
+
+    def focar(familia: str, titulo: str) -> bool:
+        pedidos.append((familia, titulo))
+        return True
+
+    abridor = AbridorDeNavegador(
+        navegadores={"brave": f"{bins}/brave-stable"},
+        principal="brave",
+        lancar=_anotando(lancados),
+        mostrar_aberto=lambda _f: {"tab_id": 7, "titulo": "YouTube", "visivel": False},
+        focar_janela=focar,
+    )
+
+    aberto = abridor.abrir_sozinho()
+
+    assert aberto == NavegadorAberto("brave", None, ja_aberto=True, visivel=True)
+    assert pedidos == [("brave", "YouTube")] and lancados == []
+
+
+def test_aberto_sem_extensao_o_kwin_traz_a_janela_e_nada_e_lancado(
+    instalados: tuple[Path, Path],
+) -> None:
+    _, bins = instalados
+    lancados: list[tuple[str, ...]] = []
+    abridor = AbridorDeNavegador(
+        navegadores={"brave": f"{bins}/brave-stable"},
+        principal="brave",
+        lancar=_anotando(lancados),
+        mostrar_aberto=lambda _f: None,  # sem extensão conectada
+        em_execucao=lambda _f: 4242,
+        focar_janela=lambda _f, _t: True,
+    )
+
+    assert abridor.abrir_sozinho() == NavegadorAberto("brave", None, ja_aberto=True, visivel=True)
+    assert lancados == []

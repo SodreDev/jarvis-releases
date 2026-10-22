@@ -235,6 +235,10 @@ class CorposDoNavegador:
         self._local = threading.local()
         self._trava = threading.Lock()
         self._trabalhos: dict[int, Trabalho] = {}
+        self.trazer_a_frente: Callable[[str], bool] | None = None
+        """O gerenciador de janelas (KWin) traz para a frente a janela do navegador que mostra a
+        aba deste título, quando a extensão não conseguiu: no Wayland o navegador não pega o foco
+        sozinho (dono, 2026-10-21). O app liga; sem ele, o resultado diz `visivel: false`."""
 
     @property
     def cliente(self) -> ClienteDoNavegador:
@@ -575,7 +579,8 @@ class CorposDoNavegador:
             mostrado = self._base.mostrar(identificador)
         except NavegadorFalhou as erro:
             return {"visivel": False, **({"sem_janela": True} if erro.codigo == "sem_aba" else {})}
-        return {"tab_id": identificador, "visivel": bool(mostrado.get("visivel"))}
+        titulo = str(dict(mostrado.get("aba") or {}).get("titulo") or aba.get("titulo") or "")
+        return {"tab_id": identificador, "titulo": titulo, "visivel": bool(mostrado.get("visivel"))}
 
     def abrir_site(
         self, url: str, *, objetivo: Objetivo | None = None, nova_aba: bool = False
@@ -821,6 +826,9 @@ class CorposDoNavegador:
             mostrado = self.cliente.mostrar(tab_id)
             visivel = bool(mostrado.get("visivel"))
             janela = "jarvis" if mostrado.get("janela") == "jarvis" else "dono"
+            if not visivel and self.trazer_a_frente is not None:
+                titulo = str(dict(mostrado.get("aba") or {}).get("titulo", ""))
+                visivel = self.trazer_a_frente(titulo)
         if trabalho is not None and ver:
             trabalho.mostrada = trabalho.mostrada or visivel
         resultado: dict[str, Any] = {

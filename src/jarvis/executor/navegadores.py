@@ -264,6 +264,9 @@ class AbridorDeNavegador:
     """Com a extensão conectada, "abrir o navegador" traz a janela do dono para a frente."""
     em_execucao: EmExecucao | None = None
     """Sem extensão, o navegador rodando também conta como aberto (o app liga o `/proc`)."""
+    focar_janela: Callable[[str, str], bool] | None = None
+    """O gerenciador de janelas traz o navegador aberto para a frente quando a extensão não
+    conseguiu (no Wayland ele não pega o foco sozinho) ou não está conectada (o app liga o KWin)."""
 
     def familias(self) -> tuple[str, ...]:
         return tuple(self.navegadores)
@@ -311,12 +314,19 @@ class AbridorDeNavegador:
         if mostrado is not None:
             if mostrado.get("sem_janela"):
                 return None
-            return NavegadorAberto(
-                familia, None, ja_aberto=True, visivel=bool(mostrado.get("visivel"))
+            visivel = bool(mostrado.get("visivel")) or self._pela_janela(
+                familia, str(mostrado.get("titulo", ""))
             )
+            return NavegadorAberto(familia, None, ja_aberto=True, visivel=visivel)
         if self.em_execucao is not None and self.em_execucao(familia):
-            return NavegadorAberto(familia, None, ja_aberto=True)
+            return NavegadorAberto(
+                familia, None, ja_aberto=True, visivel=self._pela_janela(familia)
+            )
         return None
+
+    def _pela_janela(self, familia: str, titulo: str = "") -> bool:
+        """O KWin traz a janela dele para a frente — o navegador sozinho não consegue no Wayland."""
+        return self.focar_janela is not None and self.focar_janela(familia, titulo)
 
     def abrir_sozinho(self, navegador: str = "") -> NavegadorAberto:
         """Abre só o navegador, sem URL — se não houver um ativo (`ja_aberto`)."""

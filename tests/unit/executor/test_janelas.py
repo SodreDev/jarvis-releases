@@ -30,6 +30,7 @@ from jarvis.executor.janelas import (
     descendente,
     estado_do_kwin,
     focar,
+    focar_o_navegador,
     foco_para_o_modelo,
     janelas_do_ambiente,
     jogo_do_steam,
@@ -46,7 +47,7 @@ U7 = "{77777777-7777-7777-7777-777777777777}"
 
 
 # --- quem lista ----------------------------------------------------------------------------
-def _kwin(ativa: str = U3, **mudar: dict[str, Any]) -> str:
+def _kwin(ativa: str = U3, mudar: dict[str, dict[str, Any]] | None = None) -> str:
     """A resposta da `CONSULTA_DO_KWIN` no formato que o KWin 6.7.5 virtual deu (dois monitores,
     2026-10-21): o Brave (Wayland) e outro Brave (XWayland) no principal, o Jarvis ativo no
     segundo, a área de trabalho do Plasma em cada monitor, um app minimizado e um noutra área de
@@ -100,7 +101,7 @@ def _kwin(ativa: str = U3, **mudar: dict[str, Any]) -> str:
             "nesta_mesa": False,
         },
     }
-    for janela_id, campos in mudar.items():
+    for janela_id, campos in (mudar or {}).items():
         janelas[janela_id] |= campos
     base = {"minimizada": False, "normal": True, "nesta_mesa": True}
     dados = {
@@ -568,3 +569,16 @@ def test_a_instancia_que_ja_rodava_vale_pelo_executavel() -> None:
         processos=PROCESSOS,
     )
     assert leitura.alvo is not None and set(leitura.alvo.razoes) == {"executável", "nova", "título"}
+
+
+def test_o_kwin_traz_a_janela_do_navegador_que_mostra_a_aba_pedida() -> None:
+    lido = estado_do_kwin(
+        _kwin(mudar={U2: {"titulo": "Wikipédia - Brave"}, U1: {"titulo": "YouTube - Brave"}})
+    )
+    assert lido is not None
+    porta = _Porta(lido)
+
+    assert focar_o_navegador(porta, "brave", "Wikipédia") is True
+    assert porta.ativadas == [U2], "a que mostra a aba pedida, não a da frente"
+    assert focar_o_navegador(porta, "brave") is True and porta.ativadas[-1] == U1
+    assert focar_o_navegador(porta, "firefox") is False, "nenhuma janela dele: não inventa"
