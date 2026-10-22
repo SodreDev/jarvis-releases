@@ -15,9 +15,10 @@ apps e do portal de sites):
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -69,6 +70,22 @@ def instalado(programa: str) -> bool:
     return shutil.which(programa) is not None
 
 
+def ambiente_do_programa(
+    programa: str, origem: Mapping[str, str] | None = None
+) -> dict[str, str] | None:
+    """O ambiente do filho: o mesmo do Jarvis (`None`), com uma exceção. O `kdotool` ≥ 0.3 se
+    recusa a rodar sem `KDE_SESSION_VERSION=6` («Unsupported KDE version», lido no código dele e
+    medido num KWin virtual em 2026-10-21) — e o Jarvis aberto por um serviço, um lançador ou
+    outro programa pode não ter herdado a variável. Numa sessão KDE ela é completada só para ele;
+    fora do KDE, nada muda (o Plasma 5 recusaria do mesmo jeito)."""
+    fonte = os.environ if origem is None else origem
+    if programa != "kdotool" or fonte.get("KDE_SESSION_VERSION"):
+        return None
+    if "KDE" not in fonte.get("XDG_CURRENT_DESKTOP", "").upper():
+        return None
+    return {**fonte, "KDE_SESSION_VERSION": "6"}
+
+
 def executar(
     argv: Sequence[str], prazo_s: float = PRAZO_PADRAO_S, entrada: str | None = None
 ) -> Saida:
@@ -83,6 +100,7 @@ def executar(
     try:
         concluido = subprocess.run(  # noqa: S603 — argv fixo da lista, sem shell
             list(argv),
+            env=ambiente_do_programa(argv[0]),
             input=entrada,
             capture_output=True,
             text=True,

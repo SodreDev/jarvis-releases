@@ -1,0 +1,45 @@
+# Pedido do dono (2026-10-21): o Jarvis não identificou o Brave em foco no monitor principal (dois
+# monitores). «Em foco» são duas coisas: a janela ativa (a do teclado) e, em cada monitor, a da
+# frente. Só lê: nada muda na tela.
+id: window.focused
+title: Qual janela está em foco
+description: Diz qual janela está em foco agora — a ativa (a do teclado), com o app, o título e o monitor — e, em
+  cada monitor, a janela que está na frente, dizendo qual é o principal. Use para decidir onde agir ("o Brave já
+  está na frente do principal, use-o") ou quando o dono perguntar o que está em foco ou na tela. Rápido (uma
+  leitura do gerenciador de janelas); não mostra o conteúdo das janelas e não muda nada.
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - foco
+preconditions: []
+postcondition: a resposta diz a janela ativa e a da frente de cada monitor no instante da chamada
+capability: window.focused
+risk_class: leitura
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: metadata
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-desktop
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

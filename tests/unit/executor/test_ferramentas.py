@@ -650,6 +650,7 @@ def test_o_catalogo_do_modelo_so_tem_o_que_tem_corpo(casa: Path, auditoria: LogD
         "media.player.control",
         "media.player.status",
         "window.list",
+        "window.focused",
         "window.focus_app",
         "window.close",
         "apps.quit",

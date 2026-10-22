@@ -23,7 +23,7 @@ from jarvis.executor import desktop, sistema, web
 from jarvis.executor.alarmes import AgendaDeAlarmes, quando_da_fala
 from jarvis.executor.comandos import ComandoIndisponivel, Lancador, executar
 from jarvis.executor.fechar import Jarvis, TabelaDeProcessos
-from jarvis.executor.janelas import Janelas, focar, listar_para_o_modelo
+from jarvis.executor.janelas import Janelas, focar, foco_para_o_modelo, listar_para_o_modelo
 
 
 @dataclass(slots=True)
@@ -114,6 +114,16 @@ def _janelas(n: Nativas, _a: Mapping[str, Any]) -> dict[str, Any]:
     return listar_para_o_modelo(n.janelas)
 
 
+def _em_foco(n: Nativas, _a: Mapping[str, Any]) -> dict[str, Any]:
+    """A ativa e a da frente de cada monitor (dono, 2026-10-21). Sem porta de janelas (o Wayland
+    sem `kdotool`) não dá para saber — e o Jarvis diz isso em vez de chutar."""
+    if n.janelas is None:
+        raise ComandoIndisponivel(
+            "não consigo ver as janelas nesta sessão: no Wayland do KDE, instale o kdotool"
+        )
+    return foco_para_o_modelo(n.janelas)
+
+
 def _focar(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
     """Pelo nome (o código escolhe na lista real) ou pelo `janela_id` que uma lista deu — o do
     acompanhamento de foco (ADR-0037) ou o do `window.list`."""
@@ -153,6 +163,7 @@ CORPOS: Final[dict[str, Corpo]] = {
     ),
     "media.player.status": lambda n, a: desktop.estado_da_midia(n.lancar),
     "window.list": _janelas,
+    "window.focused": _em_foco,
     "window.focus_app": _focar,
     "clipboard.text.read": lambda n, a: desktop.texto_da_area(n.lancar, n.ambiente),
     "clipboard.text.write": _area_write,

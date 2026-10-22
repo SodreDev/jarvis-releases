@@ -69,6 +69,7 @@ TIER_ESPERADO: dict[str, str] = {
     "media.player.control": "livre",
     "media.player.status": "livre",
     "window.list": "livre",
+    "window.focused": "livre",
     "window.focus_app": "livre",
     # Fechar a janela é como o X (livre); encerrar o app é moderado, com o sim decidido pelo alvo
     # (dono, 2026-10-21; ADR-0042). Era a window.close_app, perigosa.
@@ -312,6 +313,7 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "media.player.control": _pedido(pdp, "media.player.control", {"acao": "pausar"}),
         "media.player.status": _pedido(pdp, "media.player.status", {}),
         "window.list": _pedido(pdp, "window.list", {}),
+        "window.focused": _pedido(pdp, "window.focused", {}),
         "window.focus_app": _pedido(pdp, "window.focus_app", {"app": "firefox"}),
         "window.close": _pedido(pdp, "window.close", {"app": "firefox"}),
         "apps.quit": _pedido(pdp, "apps.quit", {"app": "discord"}),

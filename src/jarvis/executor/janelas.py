@@ -25,6 +25,7 @@ dos outros apps — e o Jarvis diz isso em vez de chutar.
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -91,7 +92,47 @@ class JanelaDoSistema:
     classe: str
     pid: int | None
     ativa: bool = False
-    """Em primeiro plano (a janela ativa); as outras estão em segundo."""
+    """Em primeiro plano (a janela ativa, a do teclado); as outras estão em segundo."""
+    monitor: str = ""
+    """O monitor dela (`DP-1`, `HDMI-A-1`), quando a leitura diz; vazio = não se sabe."""
+    principal: bool = False
+    """Está no monitor principal (o primeiro da ordem do KDE)."""
+    na_frente: bool = False
+    """É a da frente **no monitor dela** — com dois monitores, a janela que o dono vê no principal
+    não é a ativa quando ele está no outro (dono, 2026-10-21: o Brave na frente do principal não
+    era «o que está em foco» para o Jarvis)."""
+    minimizada: bool = False
+    visivel: bool = True
+    """Nesta área de trabalho e não minimizada."""
+    normal: bool = True
+    """Janela de app ou diálogo — não painel, área de trabalho, menu ou aviso."""
+
+
+@dataclass(frozen=True, slots=True)
+class Monitor:
+    nome: str
+    principal: bool
+    x: int = 0
+    y: int = 0
+    largura: int = 0
+    altura: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class EstadoDasJanelas:
+    """Uma leitura só: as janelas, os monitores (o principal primeiro) e qual está ativa."""
+
+    janelas: tuple[JanelaDoSistema, ...]
+    monitores: tuple[Monitor, ...] = ()
+    monitor_ativo: str = ""
+    """O monitor do teclado e do mouse para o KWin (`activeScreen`)."""
+
+    @property
+    def ativa(self) -> JanelaDoSistema | None:
+        return next((j for j in self.janelas if j.ativa), None)
+
+    def da_frente(self, monitor: str) -> JanelaDoSistema | None:
+        return next((j for j in self.janelas if j.na_frente and j.monitor == monitor), None)
 
 
 class Janelas(Protocol):
@@ -128,17 +169,73 @@ def _pid(texto: str) -> int | None:
     return int(texto) if texto.isdigit() and int(texto) > 0 else None
 
 
+CONSULTA_DO_KWIN: Final = r"""
+const ordem = workspace.stackingOrder;
+const mesa = workspace.currentDesktop;
+const ativa = workspace.activeWindow;
+const telas = (workspace.screenOrder || workspace.screens).map((o) => ({
+    nome: String(o.name), x: o.geometry.x, y: o.geometry.y,
+    largura: o.geometry.width, altura: o.geometry.height,
+}));
+const janelas = [];
+for (const w of workspace.windowList()) {
+    if (janelas.length >= 200) break;
+    janelas.push({
+        id: String(w.internalId), titulo: String(w.caption || ""),
+        classe: String(w.resourceClass || ""), pid: w.pid || 0,
+        tela: w.output ? String(w.output.name) : "", pilha: ordem.indexOf(w),
+        minimizada: !!w.minimized, normal: !!(w.normalWindow || w.dialog),
+        nesta_mesa: !!(w.onAllDesktops || w.desktops.some((d) => mesa && d.id === mesa.id)),
+    });
+}
+output_result(JSON.stringify({
+    versao: 1, ativa: ativa ? String(ativa.internalId) : "",
+    tela_ativa: workspace.activeScreen ? String(workspace.activeScreen.name) : "",
+    telas: telas, janelas: janelas,
+}));
+"""
+"""A leitura de janelas do KWin numa chamada (`kdotool kwinscript --inline`, kdotool ≥ 0.3): só
+lê — nenhuma propriedade é escrita. Traz o que a busca encadeada não traz: o monitor de cada
+janela, a ordem dos monitores (o principal primeiro), a pilha (quem está na frente de quem), a área
+de trabalho e se está minimizada. E não quebra sem janela ativa: o `getactivewindow` da busca
+encadeada estoura em `null` (tudo minimizado, «mostrar a área de trabalho») e a lista inteira
+voltava vazia — medido num KWin 6.7.5 virtual com dois monitores, 2026-10-21."""
+_NOME_DE_MONITOR: Final = r"[\w.:() +-]{1,40}"
+
+
 class JanelasPorKdotool:
     """KDE Plasma (Wayland ou X11): `kdotool`, ids do KWin (`{uuid}`).
 
-    Uma chamada por ciclo: `search` põe todas as janelas na pilha e cada ação imprime uma linha
-    por janela (`%@`) — ids, títulos, classes, PIDs — e a última consulta, a janela ativa. Título
-    com quebra de linha desalinha os blocos: aí vale o caminho lento, uma chamada por janela."""
+    A leitura é a `CONSULTA_DO_KWIN`, numa chamada. Com um `kdotool` sem `kwinscript` (< 0.3), a
+    busca encadeada de antes: `search` põe todas as janelas na pilha e cada ação imprime uma linha
+    por janela (`%@`) — ids, títulos, classes, PIDs —, e a ativa vem numa chamada à parte, que
+    pode falhar sem levar a lista junto. Título com quebra de linha desalinha os blocos: aí vale o
+    caminho lento, uma chamada por janela."""
 
     def __init__(self, lancar: Lancador = executar) -> None:
         self._lancar = lancar
+        self._sem_kwinscript = False
+
+    def estado(self) -> EstadoDasJanelas | None:
+        """A leitura completa (com monitores), ou `None` se o `kdotool` não a faz."""
+        if self._sem_kwinscript:
+            return None
+        try:
+            saida = self._lancar(
+                ["kdotool", "kwinscript", "--inline", CONSULTA_DO_KWIN], PRAZO_S, None
+            )
+        except (ComandoIndisponivel, ComandoRecusado):
+            return None
+        if not saida.ok:
+            # O kdotool de antes não conhece `kwinscript`: não adianta perguntar de novo.
+            self._sem_kwinscript = "kwinscript" in saida.erro or "unexpected" in saida.erro
+            return None
+        return estado_do_kwin(saida.saida)
 
     def listar(self) -> list[JanelaDoSistema]:
+        estado = self.estado()
+        if estado is not None:
+            return list(estado.janelas)
         bruto = _rodar(
             self._lancar,
             "kdotool",
@@ -147,14 +244,14 @@ class JanelasPorKdotool:
             ".",
             *("getwindowid", "%@", "getwindowname", "%@"),
             *("getwindowclassname", "%@", "getwindowpid", "%@"),
-            "getactivewindow",
         )
         if bruto is None:
             return []
         linhas = bruto.split("\n")
         if linhas and linhas[-1] == "":
             linhas.pop()
-        janelas = _blocos_do_kdotool(linhas)
+        ativa = (_rodar(self._lancar, "kdotool", "getactivewindow") or "").strip()
+        janelas = _blocos_do_kdotool([*linhas, ativa or ID_SEM_ATIVA])
         return janelas if janelas is not None else self._uma_a_uma()
 
     def _uma_a_uma(self) -> list[JanelaDoSistema]:
@@ -184,6 +281,84 @@ class JanelasPorKdotool:
         if not id_de_janela(janela_id):
             return False
         return _rodar(self._lancar, "kdotool", "windowclose", janela_id) is not None
+
+
+ID_SEM_ATIVA: Final = "{00000000-0000-0000-0000-000000000000}"
+"""O lugar da ativa quando não há janela ativa: um id que nenhuma janela tem."""
+
+
+def _inteiro(valor: object) -> int:
+    return int(valor) if isinstance(valor, int | float) and not isinstance(valor, bool) else 0
+
+
+def estado_do_kwin(bruto: str) -> EstadoDasJanelas | None:
+    """A resposta da `CONSULTA_DO_KWIN` (a última linha, JSON) conferida campo a campo: id no
+    formato do KWin, texto como texto, número como número. Fora disso, `None` — e quem chamou
+    tenta a busca encadeada."""
+    linhas = [linha for linha in bruto.splitlines() if linha.strip()]
+    if not linhas:
+        return None
+    try:
+        dados = json.loads(linhas[-1])
+    except ValueError:
+        return None
+    if not isinstance(dados, dict) or not isinstance(dados.get("janelas"), list):
+        return None
+    telas = [t for t in dados.get("telas") or [] if isinstance(t, dict)]
+    nomes = [str(t.get("nome", "")) for t in telas]
+    if not all(re.fullmatch(_NOME_DE_MONITOR, n) for n in nomes):
+        return None
+    principal = nomes[0] if nomes else ""
+    monitores = tuple(
+        Monitor(
+            n,
+            n == principal,
+            _inteiro(t.get("x")),
+            _inteiro(t.get("y")),
+            _inteiro(t.get("largura")),
+            _inteiro(t.get("altura")),
+        )
+        for n, t in zip(nomes, telas, strict=True)
+    )
+    ativa = str(dados.get("ativa") or "")
+    brutas: list[dict[str, Any]] = []
+    for item in dados["janelas"][:LIMITE_DE_JANELAS]:
+        if not isinstance(item, dict) or not id_de_janela(str(item.get("id", ""))):
+            return None
+        brutas.append(item)
+    # A da frente em cada monitor: a de cima na pilha entre as que o dono pode ver ali (nesta área
+    # de trabalho, não minimizadas, de app — painel e área de trabalho não contam).
+    frente: dict[str, tuple[int, str]] = {}
+    for item in brutas:
+        tela = str(item.get("tela") or "")
+        visivel = bool(item.get("nesta_mesa")) and not item.get("minimizada")
+        classe = _dobrar(str(item.get("classe") or ""))
+        if not (tela and visivel and item.get("normal") and classe not in DO_SISTEMA):
+            continue
+        pilha = _inteiro(item.get("pilha"))
+        if tela not in frente or pilha > frente[tela][0]:
+            frente[tela] = (pilha, str(item["id"]))
+    na_frente = {janela_id for _, janela_id in frente.values()}
+    janelas = tuple(
+        JanelaDoSistema(
+            str(item["id"]),
+            str(item.get("titulo") or "")[:200],
+            str(item.get("classe") or "")[:120],
+            _pid(str(_inteiro(item.get("pid")))),
+            str(item["id"]) == ativa,
+            monitor=str(item.get("tela") or "")[:40],
+            principal=bool(principal) and str(item.get("tela") or "") == principal,
+            na_frente=str(item["id"]) in na_frente,
+            minimizada=bool(item.get("minimizada")),
+            visivel=bool(item.get("nesta_mesa")) and not item.get("minimizada"),
+            normal=bool(item.get("normal")),
+        )
+        for item in brutas
+    )
+    tela_ativa = str(dados.get("tela_ativa") or "")
+    return EstadoDasJanelas(
+        janelas, monitores, tela_ativa if re.fullmatch(_NOME_DE_MONITOR, tela_ativa) else ""
+    )
 
 
 def _blocos_do_kdotool(linhas: list[str]) -> list[JanelaDoSistema] | None:
@@ -269,17 +444,91 @@ def janelas_do_ambiente(
 
 # --- o que as ferramentas window.* fazem com a porta -----------------------------------------
 def de_app(janela: JanelaDoSistema) -> bool:
-    return bool(janela.titulo) and _dobrar(janela.classe) not in DO_SISTEMA
+    return bool(janela.titulo) and janela.normal and _dobrar(janela.classe) not in DO_SISTEMA
+
+
+@runtime_checkable
+class LeEstado(Protocol):
+    """A porta que lê tudo numa vez, com os monitores (o KWin, pela `CONSULTA_DO_KWIN`)."""
+
+    def estado(self) -> EstadoDasJanelas | None: ...
+
+
+def estado_de(janelas: Janelas) -> EstadoDasJanelas:
+    """A leitura com monitores quando a porta a faz; senão a lista, sem monitor."""
+    if isinstance(janelas, LeEstado):
+        estado = janelas.estado()
+        if estado is not None:
+            return estado
+    return EstadoDasJanelas(tuple(janelas.listar()))
+
+
+def _janela_para_o_modelo(j: JanelaDoSistema) -> dict[str, Any]:
+    dados: dict[str, Any] = {"id": j.id, "app": j.classe, "titulo": j.titulo[:100]}
+    if j.monitor:
+        dados |= {"monitor": j.monitor, "principal": j.principal}
+    return dados
 
 
 def listar_para_o_modelo(janelas: Janelas) -> dict[str, Any]:
-    lista = [j for j in janelas.listar() if de_app(j)][:NA_LISTA_DO_MODELO]
-    return {
+    """As janelas de app, cada uma com o monitor dela (quando a leitura diz), se é a ativa (a do
+    teclado) e se é a da frente no monitor dela; as da frente e a ativa primeiro."""
+    estado = estado_de(janelas)
+    lista = sorted(
+        (j for j in estado.janelas if de_app(j)),
+        key=lambda j: (not j.ativa, not j.na_frente, not j.principal, j.monitor),
+    )[:NA_LISTA_DO_MODELO]
+    resposta: dict[str, Any] = {
         "janelas": [
-            {"id": j.id, "app": j.classe, "titulo": j.titulo[:100], "primeiro_plano": j.ativa}
+            _janela_para_o_modelo(j)
+            | {"primeiro_plano": j.ativa}
+            | ({"na_frente_do_monitor": j.na_frente} if j.monitor else {})
+            | ({"minimizada": True} if j.minimizada else {})
             for j in lista
         ]
     }
+    if estado.monitores:
+        resposta["monitores"] = [
+            {"monitor": m.nome, "principal": m.principal} for m in estado.monitores
+        ]
+    return resposta
+
+
+def foco_para_o_modelo(janelas: Janelas) -> dict[str, Any]:
+    """«Qual janela está em foco?» (dono, 2026-10-21): a **ativa** — a do teclado — com o monitor
+    dela, e **em cada monitor a da frente**. Com dois monitores as duas perguntas têm respostas
+    diferentes: o dono fala com o Jarvis (ou usa o outro monitor) e o Brave continua na frente do
+    principal — é ele que o dono «está vendo» ali."""
+    estado = estado_de(janelas)
+    ativa = estado.ativa
+    resposta: dict[str, Any] = {"foco": None}
+    if ativa is None:
+        resposta["sem_foco"] = (
+            "nenhuma janela está ativa agora (tudo minimizado, ou a área de trabalho na frente)"
+        )
+    elif de_app(ativa):
+        resposta["foco"] = _janela_para_o_modelo(ativa)
+    else:  # o painel, a área de trabalho, o lançador: diz, sem fingir que é um app
+        resposta["foco"] = {"app": ativa.classe, "titulo": ativa.titulo[:100], "do_sistema": True}
+    if estado.monitores:
+        resposta["monitores"] = [
+            {
+                "monitor": m.nome,
+                "principal": m.principal,
+                "do_teclado": m.nome == estado.monitor_ativo,
+                "na_frente": (
+                    _janela_para_o_modelo(frente)
+                    if (frente := estado.da_frente(m.nome)) is not None
+                    else None
+                ),
+            }
+            for m in estado.monitores
+        ]
+    else:
+        resposta["aviso"] = (
+            "esta leitura não diz o monitor de cada janela (kdotool sem kwinscript, ou X11)"
+        )
+    return resposta
 
 
 def focar(janelas: Janelas, app: str, janela_id: str = "") -> dict[str, Any]:
