@@ -85,6 +85,7 @@ class Forma(Enum):
 
 CAMPOS: Final[Mapping[str, Forma]] = {
     "argumentos": Forma.CHAVES,
+    "atalho": Forma.CODIGO,
     "aviso": Forma.CODIGO,
     "cancelado": Forma.BOOLEANO,
     "caracteres_de_raciocinio": Forma.NUMERO,
@@ -109,8 +110,13 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "modo": Forma.CODIGO,
     "motivo": Forma.CAUSA,
     "motor": Forma.CODIGO,
+    "motor_chamado": Forma.BOOLEANO,
     "ms": Forma.NUMERO,
+    "ms_asr": Forma.NUMERO,
+    "ms_contexto": Forma.NUMERO,
+    "ms_ouvido": Forma.NUMERO,
     "ms_primeira_fala": Forma.NUMERO,
+    "ms_primeira_ferramenta": Forma.NUMERO,
     "ms_primeiro_audio": Forma.NUMERO,
     "ms_primeiro_token": Forma.NUMERO,
     "ms_total": Forma.NUMERO,
@@ -148,6 +154,13 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
             "resultados_podados",
             "objetivo",
             "erro",
+            # As etapas da velocidade (ADR-0045): ouvir → ASR → contexto → 1ª ferramenta → fala.
+            "ms_ouvido",
+            "ms_asr",
+            "ms_contexto",
+            "ms_primeira_ferramenta",
+            "atalho",
+            "motor_chamado",
         }
     ),
     "ferramenta.inicio": frozenset({"tool_id", "argumentos", "pdp", "fase"}),
@@ -518,6 +531,11 @@ def _linha(evento: Mapping[str, Any]) -> str:
             f"portão {evento.get('tool_id')}: {evento.get('decisao')} "
             f"(PDP {evento.get('pdp')}, {evento.get('jev')}, {_ms(evento.get('ms'))})"
         )
+    if tipo == "atalho":
+        return (
+            f"caminho rápido {evento.get('regra')} → {evento.get('tool_id')}: "
+            f"{evento.get('status')}{'' if evento.get('completo') else ' (o motor seguiu)'}"
+        )
     if tipo == "metodo":
         return (
             f"método {evento.get('metodo')} ({evento.get('motivo')})"
@@ -539,10 +557,23 @@ def _linha(evento: Mapping[str, Any]) -> str:
             pensou += f" · passos antigos podados {evento['resultados_podados']}"
         if evento.get("objetivo"):
             pensou += f" · objetivo {evento['objetivo']}"
+        etapas = ""
+        if any(
+            evento.get(c) is not None for c in ("ms_asr", "ms_contexto", "ms_primeira_ferramenta")
+        ):
+            # As etapas (ADR-0045): ouvir → ASR → contexto → 1ª ferramenta → 1ª fala → 1º áudio.
+            etapas = (
+                f" · etapas: fala {_ms(evento.get('ms_ouvido'))}, ASR {_ms(evento.get('ms_asr'))},"
+                f" contexto {_ms(evento.get('ms_contexto'))},"
+                f" 1ª ferramenta {_ms(evento.get('ms_primeira_ferramenta'))}"
+            )
+        if evento.get("atalho"):
+            sem_motor = " (sem o motor)" if evento.get("motor_chamado") is False else ""
+            etapas += f" · caminho rápido {evento['atalho']}{sem_motor}"
         return (
             f"fim: {evento.get('fim')} · 1ª fala {_ms(evento.get('ms_primeira_fala'))} · "
             f"1º áudio {_ms(evento.get('ms_primeiro_audio'))} · total {_ms(evento.get('ms_total'))}"
-            f" · {evento.get('ferramentas', 0)} ferramenta(s){pensou}"
+            f" · {evento.get('ferramentas', 0)} ferramenta(s){pensou}{etapas}"
         )
     resto = ", ".join(f"{k}={v}" for k, v in evento.items() if k not in ("t", "turno", "evento"))
     return f"{tipo}: {resto}"

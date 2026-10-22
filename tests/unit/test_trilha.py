@@ -332,3 +332,34 @@ def test_o_evento_de_ruido_leva_codigos_e_numeros_e_a_contagem_sai_por_motivo(
     assert "Obrigado" not in (tmp_path / ARQUIVO).read_text()
     assert ruidos_descartados(tmp_path) == {"impulso": 2, "sem_fala": 1}
     assert ruidos_descartados(tmp_path / "nao-existe") == {}
+
+
+def test_o_fim_do_turno_guarda_as_etapas_da_velocidade_e_o_caminho_rapido(tmp_path: Path) -> None:
+    """ADR-0045: ouvir → ASR → contexto → 1ª ferramenta → 1ª fala → 1º áudio, e o atalho que
+    resolveu sem o motor — só números e códigos."""
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.novo_turno("t-1", motor="claude")
+    trilha.evento("atalho", regra="abrir_app", tool_id="apps.launch", status="ok", completo=True)
+    trilha.evento(
+        "turno.fim",
+        fim="concluido",
+        ms_ouvido=1820.0,
+        ms_asr=412.5,
+        ms_contexto=3.1,
+        ms_primeira_ferramenta=3.4,
+        ms_primeira_fala=221.0,
+        ms_primeiro_audio=640.0,
+        ms_total=1900.0,
+        ferramentas=1,
+        atalho="abrir_app",
+        motor_chamado=False,
+    )
+    fim = _linhas(tmp_path)[2]
+
+    assert fim["ms_asr"] == 412.5 and fim["ms_primeira_ferramenta"] == 3.4
+    assert fim["atalho"] == "abrir_app" and fim["motor_chamado"] is False
+    assert "campos_fora" not in fim
+    resumo = "\n".join(resumo_do_ultimo_turno(tmp_path))
+    assert "caminho rápido abrir_app → apps.launch: ok" in resumo
+    assert "ASR 412 ms" in resumo or "ASR 413 ms" in resumo
+    assert "caminho rápido abrir_app (sem o motor)" in resumo

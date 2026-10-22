@@ -16,8 +16,9 @@ para provar o contrato, **não** para medir acerto.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal, Protocol
@@ -44,13 +45,33 @@ class Embedder(Protocol):
     def embed(self, textos: Sequence[str], tipo: Tipo) -> list[list[float]]: ...
 
 
+VARIAVEL_DAS_THREADS: Final = "JARVIS_THREADS_DA_MEMORIA"
+
+
+def threads_da_maquina(
+    nucleos: int | None = None, ambiente: Mapping[str, str] | None = None
+) -> int:
+    """Quantas threads o e5 usa, pela máquina (dono, 2026-10-21: escalar pelo hardware, com piso
+    seguro e override). Medido num Ryzen 5 5600G de 12 fios (`docs/medicoes/velocidade-pedido.md`):
+    a consulta de antes de cada turno leva 6 ms com 2 threads, 4–5 ms com 4 e o mesmo com 6. Piso 2
+    (máquina pequena não perde a voz para a memória, SLO-1/2), teto 4 (mais não rende); a variável
+    `JARVIS_THREADS_DA_MEMORIA` manda (1 a 16)."""
+    fonte = os.environ if ambiente is None else ambiente
+    pedido = fonte.get(VARIAVEL_DAS_THREADS, "").strip()
+    if pedido.isdigit() and int(pedido) > 0:
+        return min(int(pedido), 16)
+    fios = nucleos if nucleos is not None else (os.cpu_count() or 2)
+    return max(2, min(4, fios // 3))
+
+
 @dataclass(slots=True)
 class EmbedderE5:
-    """O e5 em ONNX, na CPU. `threads` limita o que ele tira da voz (SLO-1/2)."""
+    """O e5 em ONNX, na CPU. `threads` limita o que ele tira da voz (SLO-1/2): pela máquina,
+    `threads_da_maquina`."""
 
     pasta: Path = PASTA_DO_MODELO
     arquivo: str = ARQUIVO_DO_MODELO
-    threads: int = 2
+    threads: int = field(default_factory=threads_da_maquina)
     versao: str = VERSAO_E5
     dimensao: int = DIMENSAO
     _sessao: object = field(default=None, repr=False)

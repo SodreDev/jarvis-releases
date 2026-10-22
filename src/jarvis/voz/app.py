@@ -1486,7 +1486,14 @@ class Aplicativo:
     _decisoes_na_trilha: int = 0
 
     # --- um turno -----------------------------------------------------------------------
-    def responder(self, texto: str, *, fila: FilaDePlayback | None = None) -> Turno:
+    def responder(
+        self,
+        texto: str,
+        *,
+        fila: FilaDePlayback | None = None,
+        ms_ouvido: float | None = None,
+        ms_asr: float | None = None,
+    ) -> Turno:
         """Texto → cérebro em stream → áudio no sumidouro, falando enquanto o motor gera.
 
         O cérebro (`jarvis.s2.cerebro`, ADR-0025) roda numa linha de execução própria e publica
@@ -1639,6 +1646,13 @@ class Aplicativo:
             resultados_podados=resposta.resultados_podados if resposta else 0,
             objetivo=resposta.estado_do_objetivo if resposta else "",
             erro=falha[0] if falha else "",
+            # As etapas da velocidade (ADR-0045): só tempos e códigos.
+            ms_ouvido=ms_ouvido,
+            ms_asr=ms_asr,
+            ms_contexto=resposta.ms_ate_contexto if resposta else None,
+            ms_primeira_ferramenta=resposta.ms_ate_primeira_ferramenta if resposta else None,
+            atalho=resposta.atalho if resposta else "",
+            motor_chamado=resposta.motor_chamado if resposta else True,
         )
         return Turno(
             falou=texto,
@@ -2250,7 +2264,7 @@ class Aplicativo:
             self._mudar(self._repouso)
             return
         self.escrever_na_tela(f"Você: {pedido}")
-        turno = self.responder(pedido, fila=fila)
+        turno = self.responder(pedido, fila=fila, ms_ouvido=ouvido_ms, ms_asr=asr_ms)
         completo = Turno(
             falou=pedido,
             respondeu=turno.respondeu,

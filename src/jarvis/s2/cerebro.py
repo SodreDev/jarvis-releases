@@ -158,6 +158,9 @@ class Resposta:
     ms_ate_primeiro_token: float | None = None
     """Do turno aceito ao primeiro texto que o motor entregou (antes do fatiador)."""
     ms_ate_primeiro_pedaco: float | None = None
+    ms_ate_primeira_ferramenta: float | None = None
+    """Do turno aceito à primeira ferramenta (a do caminho rápido, a do turno ou a que foi para a
+    tarefa): a etapa «1ª tool» da medição de velocidade (ADR-0045)."""
     ms_cancelamento_ate_motor_parado: float | None = None
     tarefa_id: str = ""
     """O pedido virou a tarefa deste id (ADR-0038): o turno acabou na frase curta, e o resultado
@@ -383,6 +386,7 @@ class Cerebro:
         atalho = self._atalho(texto_do_dono) if visto_cancelamento is None else None
         if atalho is not None:
             resposta.atalho = str(atalho.regra)
+            _marcar_a_primeira_ferramenta(resposta, comeco)
             resultado = self._chamar(
                 PedidoDeTool(atalho.tool_id, dict(atalho.args)), cancelado_no_laco, texto_do_dono
             )
@@ -486,6 +490,7 @@ class Cerebro:
             # Uma por vez: o próximo pedido só pode nascer depois que o modelo viu este
             # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
             pedido = pedidos[0]
+            _marcar_a_primeira_ferramenta(resposta, comeco)
             if self._delegavel(pedido) and not cancelado():
                 # O pedido vira tarefa (ADR-0038): o turno acaba na frase curta.
                 self._delegar(
@@ -1029,6 +1034,11 @@ class Cerebro:
             resposta.ms_ate_primeiro_pedaco = _ms_desde(comeco)
         resposta.publicados.append(payload)
         publicar(payload)
+
+
+def _marcar_a_primeira_ferramenta(resposta: Resposta, comeco: float) -> None:
+    if resposta.ms_ate_primeira_ferramenta is None:
+        resposta.ms_ate_primeira_ferramenta = _ms_desde(comeco)
 
 
 def _estado_final(resposta: Resposta) -> EstadoDoObjetivo:
