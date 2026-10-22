@@ -273,6 +273,23 @@ def motor_de_asr(
     return local
 
 
+def _aquecer_em_segundo_plano(*motores: object) -> None:
+    """A conexão com a nuvem aberta no começo da sessão, numa linha à parte (2026-10-21, ADR-0045):
+    o primeiro pedido não paga DNS, TCP e TLS. Motor sem `aquecer` (local, falso) fica de fora;
+    falhar aqui não muda nada — o pedido abre a dele, como antes."""
+    for motor in motores:
+        aquecer = getattr(motor, "aquecer", None)
+        if callable(aquecer):
+            threading.Thread(
+                target=_sem_falhar, args=(aquecer,), name="jarvis-aquecer", daemon=True
+            ).start()
+
+
+def _sem_falhar(funcao: Callable[[], object]) -> None:
+    with contextlib.suppress(Exception):
+        funcao()
+
+
 def motor_de_tts(
     configuracao: Configuracao,
     *,
@@ -622,6 +639,7 @@ class Aplicativo:
             # aqui está o porquê" —, porque para ele são: motor desligado, chave ausente e
             # nuvem proibida sob CI resolvem-se lendo a frase, não um traceback.
             raise AplicativoIndisponivel(str(erro)) from None
+        _aquecer_em_segundo_plano(self._asr, self._tts)
         if self._motor is None:
             self._motor = motor_de_conversa(
                 self.configuracao, pasta_de_trabalho=self.raiz / "conversa"

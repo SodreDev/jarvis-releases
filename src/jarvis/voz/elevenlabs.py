@@ -116,6 +116,14 @@ class MotorTtsElevenLabs:
         )
         return motor
 
+    def aquecer(self) -> bool:
+        """Abre a conexão com o serviço antes do primeiro pedido — só o aperto de mão do TLS,
+        nenhum dado (2026-10-21, ADR-0045): o primeiro pedido da sessão não paga DNS, TCP e TLS.
+        O app chama numa linha à parte, no começo; falhar aqui não muda nada."""
+        if self._cliente is None:
+            self.abrir()
+        return self._cliente is not None and self._cliente.aquecer()
+
     @property
     def aviso(self) -> str:
         motor = self._motor or exigir_motor(self.registrado, nuvem_ligada=[self.registrado])

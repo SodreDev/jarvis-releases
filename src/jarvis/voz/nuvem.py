@@ -24,15 +24,19 @@ from __future__ import annotations
 
 import io
 import json
+import select
+import ssl
+import threading
+import time
 import urllib.error
 import urllib.request
 import uuid
 import wave
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from http.client import HTTPResponse
+from http.client import HTTPConnection, HTTPException, HTTPResponse, HTTPSConnection
 from typing import Any, Final
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 from jarvis import __version__
 from jarvis.ambiente import VARIAVEL_CI, ambiente_ou_os, em_ci
@@ -182,6 +186,196 @@ def _ler_cancelavel(
             )
 
 
+MAXIMO_DE_OCIOSAS: Final = 4
+"""Conexões paradas guardadas por servidor: o TTS sintetiza até três lotes à frente."""
+OCIOSA_ATE_S: Final = 30.0
+"""Conexão parada há mais que isto é fechada em vez de reaproveitada: o servidor (o Cloudflare na
+frente da Groq e da ElevenLabs) derruba a ociosa por conta dele."""
+LIMITE_DO_CORPO_DE_ERRO: Final = 64 * 1024
+
+
+class _RespostaPersistente:
+    """A resposta de `ConexoesPersistentes`: lê como a do `urlopen` e, no fim, devolve a conexão
+    ao pool — só se o corpo foi lido inteiro e o servidor não pediu para fechar. A leitura
+    abandonada (o cancelamento do epoch, o corpo grande demais) fecha a conexão: sobraria corpo
+    em voo nela."""
+
+    def __init__(self, resposta: HTTPResponse, devolver: Callable[[bool], None]) -> None:
+        self._resposta = resposta
+        self._devolver = devolver
+        self._abandonada = False
+        self._feita = False
+
+    @property
+    def status(self) -> int:
+        return self._resposta.status
+
+    def read(self, quantos: int = -1) -> bytes:
+        return self._resposta.read(quantos)
+
+    def close(self) -> None:
+        if not self._resposta.isclosed():
+            self._abandonada = True
+        self._terminar()
+
+    def __enter__(self) -> _RespostaPersistente:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._terminar()
+
+    def _terminar(self) -> None:
+        if self._feita:
+            return
+        self._feita = True
+        inteira = self._resposta.isclosed() and not self._abandonada
+        self._devolver(inteira and not self._resposta.will_close)
+
+
+@dataclass
+class ConexoesPersistentes:
+    """O `urlopen` com conexão que fica aberta entre um pedido e outro (keep-alive), por servidor.
+
+    Pedido do dono (2026-10-21, «precisa ser muito rápido»): o `urlopen` abre uma conexão nova —
+    DNS, TCP e TLS — a **cada** pedido: cada lote de fala da ElevenLabs e cada transcrição da Groq.
+    Medido desta rede em 2026-10-21 (sem chave, GET sem autenticação): conexão nova à ElevenLabs
+    ~70 ms acima da reaproveitada (213–230 ms × 147–155 ms), à Groq ~25 ms, e o DNS frio mais
+    120–200 ms. Aqui a conexão fica guardada e volta para o próximo pedido; `aquecer` a abre antes
+    do primeiro (sem mandar dado nenhum: só o aperto de mão do TLS).
+
+    Nada muda no contrato do `ClienteHttp`: erro 4xx/5xx sobe como `HTTPError`, falha de rede como
+    `URLError`, e a leitura cancelada fecha a conexão. Conexão que o servidor já fechou (a ociosa
+    derrubada) é conferida **antes** de reaproveitar — nunca se repete um POST."""
+
+    maximo: int = MAXIMO_DE_OCIOSAS
+    ociosa_ate_s: float = OCIOSA_ATE_S
+    relogio: Callable[[], float] = time.monotonic
+    abertas: int = 0
+    """Conexões novas abertas (para o teste e a medição)."""
+    reaproveitadas: int = 0
+    _ociosas: dict[tuple[str, str, int], list[tuple[HTTPConnection, float]]] = field(
+        default_factory=dict, repr=False
+    )
+    _trava: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def __call__(self, pedido: urllib.request.Request, timeout: float) -> _RespostaPersistente:
+        partes = urlsplit(pedido.full_url)
+        chave = _chave_do_servidor(partes.scheme, partes.hostname or "", partes.port)
+        caminho = (partes.path or "/") + (f"?{partes.query}" if partes.query else "")
+        conexao = self._tomar(chave, timeout)
+        try:
+            conexao.request(
+                pedido.get_method(),
+                caminho,
+                body=pedido.data if isinstance(pedido.data, bytes) else None,
+                headers=dict(pedido.header_items()),
+            )
+            resposta = conexao.getresponse()
+        except OSError as erro:
+            conexao.close()
+            raise urllib.error.URLError(erro) from None
+        except HTTPException as erro:
+            conexao.close()
+            raise urllib.error.URLError(str(erro) or type(erro).__name__) from None
+        if resposta.status >= 400:
+            corpo = resposta.read(LIMITE_DO_CORPO_DE_ERRO)
+            conexao.close()
+            raise urllib.error.HTTPError(
+                pedido.full_url,
+                resposta.status,
+                resposta.reason,
+                resposta.headers,
+                io.BytesIO(corpo),
+            )
+
+        def devolver(reaproveitavel: bool) -> None:
+            if reaproveitavel:
+                self._guardar(chave, conexao)
+            else:
+                conexao.close()
+
+        return _RespostaPersistente(resposta, devolver)
+
+    def aquecer(self, url: str, timeout: float = 5.0) -> bool:
+        """Abre (DNS, TCP, TLS) e guarda uma conexão com o servidor de `url`, sem pedido nenhum:
+        o primeiro lote de fala e a primeira transcrição não pagam o aperto de mão."""
+        partes = urlsplit(url)
+        chave = _chave_do_servidor(partes.scheme, partes.hostname or "", partes.port)
+        with self._trava:
+            if self._ociosas.get(chave):
+                return True
+        conexao = _nova_conexao(chave, timeout)
+        try:
+            conexao.connect()
+        except OSError:
+            conexao.close()
+            return False
+        self.abertas += 1
+        self._guardar(chave, conexao)
+        return True
+
+    def fechar(self) -> None:
+        with self._trava:
+            todas = [c for lista in self._ociosas.values() for c, _ in lista]
+            self._ociosas.clear()
+        for conexao in todas:
+            conexao.close()
+
+    def _tomar(self, chave: tuple[str, str, int], timeout: float) -> HTTPConnection:
+        agora = self.relogio()
+        with self._trava:
+            lista = self._ociosas.get(chave, [])
+            while lista:
+                conexao, desde = lista.pop()
+                if agora - desde <= self.ociosa_ate_s and _viva(conexao):
+                    self.reaproveitadas += 1
+                    if conexao.sock is not None:
+                        conexao.sock.settimeout(timeout)
+                    conexao.timeout = timeout
+                    return conexao
+                conexao.close()
+        self.abertas += 1
+        return _nova_conexao(chave, timeout)
+
+    def _guardar(self, chave: tuple[str, str, int], conexao: HTTPConnection) -> None:
+        with self._trava:
+            lista = self._ociosas.setdefault(chave, [])
+            if len(lista) < self.maximo:
+                lista.append((conexao, self.relogio()))
+                return
+        conexao.close()
+
+
+def _chave_do_servidor(esquema: str, host: str, porta: int | None) -> tuple[str, str, int]:
+    if esquema not in ("http", "https") or not host:
+        raise urllib.error.URLError(f"esquema {esquema!r} ou servidor vazio")
+    return esquema, host, porta or (443 if esquema == "https" else 80)
+
+
+def _nova_conexao(chave: tuple[str, str, int], timeout: float) -> HTTPConnection:
+    esquema, host, porta = chave
+    if esquema == "https":
+        return HTTPSConnection(host, porta, timeout=timeout, context=ssl.create_default_context())
+    return HTTPConnection(host, porta, timeout=timeout)
+
+
+def _viva(conexao: HTTPConnection) -> bool:
+    """A conexão parada continua de pé? Se o servidor a fechou, o soquete fica "legível" (EOF):
+    reaproveitá-la mandaria o pedido para o vazio."""
+    soquete = conexao.sock
+    if soquete is None:
+        return False
+    try:
+        legivel, _, _ = select.select([soquete], [], [], 0)
+    except (OSError, ValueError):
+        return False
+    return not legivel
+
+
+CONEXOES: Final = ConexoesPersistentes()
+"""O pool do processo: a Groq e a ElevenLabs (e o servidor falso dos testes) por servidor."""
+
+
 @dataclass(slots=True)
 class ClienteHttp:
     """Um POST (ou GET de catálogo) com prazo nosso, cabeçalho com a chave e corpo cancelável.
@@ -193,9 +387,17 @@ class ClienteHttp:
     base: str
     prazo_s: float = 10.0
     ambiente: Mapping[str, str] | None = None
-    abrir: Any = field(default=urllib.request.urlopen, repr=False)
-    """Injetável para o teste poder olhar o pedido sem subir servidor, quando é isso que se
-    quer provar. Nos testes de caminho inteiro quem responde é um servidor de verdade."""
+    abrir: Any = field(default_factory=lambda: CONEXOES, repr=False)
+    """Quem faz o pedido: o pool de conexões persistentes (2026-10-21). Injetável para o teste
+    poder olhar o pedido sem subir servidor, quando é isso que se quer provar (o `urlopen` de
+    antes também serve). Nos testes de caminho inteiro quem responde é um servidor de verdade."""
+
+    def aquecer(self) -> bool:
+        """A conexão com o serviço aberta antes do primeiro pedido (sem dado nenhum). Sob CI, a
+        nuvem de verdade continua proibida."""
+        proibir_nuvem_real_em_ci(self.base, self.ambiente)
+        aquecer = getattr(self.abrir, "aquecer", None)
+        return bool(aquecer(self.base, min(self.prazo_s, 5.0))) if callable(aquecer) else False
 
     chamadas: int = 0
     bytes_descartados: int = 0
