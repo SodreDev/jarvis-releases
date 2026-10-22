@@ -212,6 +212,8 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "site_sem_automacao",
         "cita_site",
         "cita_site_sem_extensao",
+        "busca_generica",
+        "pesquisa_no_navegador",
         "cita_app",
         "pede_sistema",
         "pede_memoria",

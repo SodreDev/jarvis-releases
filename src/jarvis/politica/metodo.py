@@ -21,6 +21,7 @@ from enum import StrEnum
 from typing import Final
 
 from jarvis.politica.fechamento import Fechamento, fechamento
+from jarvis.politica.sites import dobrar, dominio_citado, site_citado, tem_palavra
 
 
 class Metodo(StrEnum):
@@ -29,7 +30,8 @@ class Metodo(StrEnum):
     ENTRADA_VIRTUAL = "entrada_virtual"
     """Mouse e teclado virtuais: o dono pediu, ou o site proíbe automação (ADR-0027)."""
     WEB = "web"
-    """Sem extensão: `web.buscar`/`web.ler` e `sites.open` no navegador padrão."""
+    """`web.buscar`/`web.ler` direto, sem navegador: a busca genérica (sem site), e o pedido de
+    site quando a extensão está desligada (aí com `sites.open` no navegador padrão)."""
     APP = "app"
     """O resolvedor de apps (`apps.launch`, `browser.launch`) e o foco (`window.*`)."""
     SUBAGENTE = "subagente"
@@ -45,16 +47,21 @@ ENTRADA: Final = frozenset(
     {"input.key.press", "input.key.type", "input.mouse.click", "input.mouse.move"}
 )
 ABRIR_COMO_APP: Final = frozenset({"apps.launch", "browser.launch"})
+ABREM_PAGINA: Final = frozenset({"browser.navigate", "sites.open"})
+"""O que abre página no navegador: fica de fora da busca genérica, que vai direto (dono,
+2026-10-21)."""
 SITES_SEM_AUTOMACAO: Final = ("instagram", "whatsapp")
 """Sites que proíbem automação: ali a interação é por mouse e teclado virtuais (ADR-0027)."""
 
-_SITES: Final = (
-    "youtube", "google", "gmail", "wikipedia", "wikipédia", "twitter", "facebook", "netflix",
-    "amazon", "mercado livre", "mercadolivre", "reddit", "linkedin", "github", "spotify web",
-    "site", "página", "pagina", "aba", "link", "url", "na internet", "na web", "no navegador",
-    "pesquisa", "pesquisar", "procura na", "busca na", "notícia", "noticia",
+_DO_NAVEGADOR: Final = ("site", "página", "pagina", "aba", "guia", "link", "url", "no navegador")
+"""Fala de navegador sem site nomeado («abre esse link», «fecha a aba»): é da extensão."""
+_BUSCA_GENERICA: Final = (
+    "na internet", "na web", "na net", "pesquisa", "pesquisar", "pesquise", "procura na",
+    "procure na", "busca na", "busque na", "busca sobre", "procura sobre", "notícia", "noticia",
+    "notícias", "noticias",
 )  # fmt: skip
-_DOMINIO: Final = re.compile(r"\b[\w-]+\.(?:com|org|net|br|io|app|dev|gov|edu|tv|me)\b")
+"""Busca **genérica**, sem site («busca na internet o que é…», «as notícias de hoje»): vai direto,
+sem navegador (dono, 2026-10-21). Com um site citado, a busca é a do site, no navegador dele."""
 _TERMINAL: Final = (
     "terminal", "comando", "linha de comando", "shell", "bash", "script", "sudo", "console",
     "arquivos do sistema", "pasta do sistema", "systemctl", "compila",
@@ -201,10 +208,15 @@ def escolher_metodo(fala: str, contexto: ContextoDoMetodo) -> Escolha:
             )
         )
     sem_automacao = any(site in texto for site in SITES_SEM_AUTOMACAO)
-    cita_site = bool(_DOMINIO.search(texto)) or _algum(texto, _SITES) or sem_automacao
-    abre_o_navegador = bool(_ABRIR_O_NAVEGADOR.search(texto)) and not (
-        _DOMINIO.search(texto) or _algum(texto, _SITES)
-    )
+    palavras = dobrar(fala)
+    # Site **específico** (pelo nome ou pelo domínio) ou fala de navegador (aba, link): é do
+    # navegador do dono desde o primeiro passo. Busca sem site é genérica: direto, sem navegador
+    # (dono, 2026-10-21 — a busca numa aba escondida era a «aba que abre e fecha sozinha»).
+    especifico = bool(dominio_citado(fala)) or site_citado(fala) is not None or sem_automacao
+    cita_site = especifico or tem_palavra(palavras, _DO_NAVEGADOR)
+    generica = not cita_site and tem_palavra(palavras, _BUSCA_GENERICA)
+    pede_o_navegador = bool(_ABRIR_O_NAVEGADOR.search(texto))
+    abre_o_navegador = pede_o_navegador and not cita_site and not generica
     if abre_o_navegador:
         # Uma instância só (dono, 2026-10-21): o browser.launch (e o apps.launch de um navegador)
         # traz para a frente o que já está aberto e só lança quando não há um.
@@ -226,14 +238,47 @@ def escolher_metodo(fala: str, contexto: ContextoDoMetodo) -> Escolha:
                 "o site proíbe automação: leia pela extensão e aja com mouse e teclado virtuais",
             )
         )
+    elif generica and pede_o_navegador and contexto.navegador:
+        # «Abre o Brave e pesquisa receita de bolo»: o dono quer a busca à vista, no navegador.
+        candidatos.append(
+            Escolha(
+                Metodo.NAVEGADOR,
+                "pesquisa_no_navegador",
+                ENTRADA | frozenset({"web.buscar"}),
+                "o dono pediu a busca no navegador: browser.navigate na página de resultados (a "
+                "do buscador ou a do site que ele disser), à vista dele; browser.launch traz o "
+                "navegador que já está aberto",
+            )
+        )
+    elif generica:
+        candidatos.append(
+            Escolha(
+                Metodo.WEB,
+                "busca_generica",
+                ENTRADA | ABRIR_COMO_APP | ABREM_PAGINA,
+                "use web.buscar (direto, sem abrir o navegador) e web.ler para ler um resultado; "
+                "nada de abrir aba nem o navegador — só se o dono pedir para ver",
+            )
+        )
     elif cita_site and contexto.navegador:
+        # O pedido de um site vai pelo navegador do dono desde o primeiro passo, e a busca é a do
+        # próprio site — não o web.buscar, cuja aba escondida abria e fechava (dono, 2026-10-21).
+        # «Abre o Brave e pesquisa X no YouTube»: o dono pediu o navegador, o browser.launch fica.
         candidatos.append(
             Escolha(
                 Metodo.NAVEGADOR,
                 "cita_site",
-                ENTRADA | ABRIR_COMO_APP,
-                "use a extensão (browser.navigate, browser.read, browser.click, web.buscar), sem "
-                "abrir o navegador como app nem atalho de teclado",
+                ENTRADA
+                | frozenset({"web.buscar"})
+                | (frozenset() if pede_o_navegador else ABRIR_COMO_APP),
+                "use a extensão, no navegador do dono, desde o primeiro passo (browser.navigate — "
+                "na busca do próprio site quando é para procurar nele —, browser.read, "
+                "browser.click), sem web.buscar, sem atalho de teclado"
+                + (
+                    "; o dono pediu o navegador: browser.launch traz o que já está aberto"
+                    if pede_o_navegador
+                    else " e sem abrir o navegador como app"
+                ),
             )
         )
     elif cita_site:

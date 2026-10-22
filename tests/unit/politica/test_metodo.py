@@ -34,7 +34,28 @@ SEM_ENTRADA: ContextoDoMetodo = ContextoDoMetodo(navegador=True, entrada=False)
         # site → a extensão, direto (sem abrir o navegador como app, sem atalho, sem terminal)
         ("abre o youtube e procura o primo rico", TUDO, Metodo.NAVEGADOR, "cita_site"),
         ("entra no exemplo.com.br", TUDO, Metodo.NAVEGADOR, "cita_site"),
-        ("pesquisa na web sobre o eclipse", TUDO, Metodo.NAVEGADOR, "cita_site"),
+        ("pesquisa vídeos do primo rico no youtube", TUDO, Metodo.NAVEGADOR, "cita_site"),
+        ("me fala as notícias do g1", TUDO, Metodo.NAVEGADOR, "cita_site"),
+        ("abre esse link", TUDO, Metodo.NAVEGADOR, "cita_site"),
+        # busca genérica, sem site → direto, sem navegador (dono, 2026-10-21: a busca numa aba
+        # escondida era a «aba que abre e fecha sozinha» no começo da tarefa)
+        ("pesquisa na web sobre o eclipse", TUDO, Metodo.WEB, "busca_generica"),
+        ("busca na internet o que é um buraco negro", TUDO, Metodo.WEB, "busca_generica"),
+        ("quais as notícias de hoje?", TUDO, Metodo.WEB, "busca_generica"),
+        ("pesquisa sobre a copa", SEM_EXTENSAO, Metodo.WEB, "busca_generica"),
+        # o dono pede o navegador junto: a busca à vista, e o browser.launch fica no turno
+        (
+            "abre o navegador e pesquisa receita de bolo",
+            SEM_ENTRADA,
+            Metodo.NAVEGADOR,
+            "pesquisa_no_navegador",
+        ),
+        (
+            "abre o brave e pesquisa o primo rico no youtube",
+            SEM_ENTRADA,
+            Metodo.NAVEGADOR,
+            "cita_site",
+        ),
         ("abre o youtube", SEM_EXTENSAO, Metodo.WEB, "cita_site_sem_extensao"),
         # o caso do dono (2026-10-21): vídeo no site é do site, mesmo com "toca" ou "música"
         ("abra um vídeo no YouTube", TUDO, Metodo.NAVEGADOR, "cita_site"),
@@ -107,6 +128,16 @@ def test_o_que_cada_metodo_deixa_de_fora() -> None:
     assert {"apps.launch", "browser.launch"}.isdisjoint(navegador.evitar)
     assert "traz para a frente o que já está aberto" in navegador.nota()
     assert "Método deste pedido: navegador (cita_site)" in site.nota()
+    # Site específico: a busca é a do site, no navegador do dono — o web.buscar fica de fora.
+    assert "web.buscar" in site.evitar
+    generica = escolher_metodo("busca na internet o que é um eclipse", TUDO)
+    assert {"browser.navigate", "sites.open", "browser.launch", "apps.launch"} <= generica.evitar
+    assert "web.buscar" not in generica.evitar and "web.ler" not in generica.evitar
+    com_o_navegador = escolher_metodo(
+        "abre o brave e pesquisa o primo rico no youtube", SEM_ENTRADA
+    )
+    assert "browser.launch" not in com_o_navegador.evitar
+    assert "web.buscar" in com_o_navegador.evitar
     assert escolher_metodo("qual a capital da França?", TUDO).nota() == ""
 
 
