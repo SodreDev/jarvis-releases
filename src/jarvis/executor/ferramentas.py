@@ -52,6 +52,8 @@ from jarvis.navegador.ferramentas import (
     CorposDoNavegador,
 )
 from jarvis.politica.abertura import nome_de_app
+from jarvis.politica.atalho import Atalho, ContextoDoAtalho
+from jarvis.politica.atalho import achar as achar_atalho
 from jarvis.politica.canonicalizacao import CaminhoRecusado, Sistema, canonicalizar
 from jarvis.politica.descritor import AberturaRecusada, RaizAberta, abrir_raiz
 from jarvis.politica.memoria import Proveniencia
@@ -92,6 +94,9 @@ def _podado(valor: object) -> object:
     return "[podado]"
 
 
+LIMIAR_DO_ATALHO: Final = 0.85
+"""O caminho rápido só abre o app que a fala casou forte (o resolvedor aceita a partir de 0,74):
+«bravo» → Brave (0,86) passa; o que ficou no meio vai ao modelo, que pode perguntar."""
 FERRAMENTAS_LIGADAS: Final = frozenset(
     {
         "files.list_dir",
@@ -396,6 +401,42 @@ class ExecutorDeFerramentas:
                     motivo=self.metodo.motivo,
                     de_fora=len(self.metodo.evitar),
                 )
+
+    def atalho(self, fala: str) -> Atalho | None:
+        """O caminho rápido (dono, 2026-10-21): a ferramenta e os argumentos de um comando simples,
+        pela regra do código — `None` quando a fala não cabe inteira numa regra. Só o que existe
+        neste turno e o método do pedido deixou (ADR-0035); o app só quando resolve sem dúvida.
+        Quem chama é o cérebro, e a chamada vai pelo PDP, pelo Jev e pela pergunta de sempre."""
+        metodo = self.metodo
+
+        def disponivel(tool_id: str) -> bool:
+            return self.disponivel(tool_id) and (metodo is None or tool_id not in metodo.evitar)
+
+        def app(nome: str) -> str | None:
+            resolucao = self.registro_de_apps.resolver_detalhado(nome)
+            if resolucao.estado != "encontrado" or resolucao.app is None:
+                return None
+            if not resolucao.candidatos or resolucao.candidatos[0].score < LIMIAR_DO_ATALHO:
+                return None
+            return resolucao.app.nome
+
+        def navegador_configurado(nome: str) -> str | None:
+            if self.navegadores is None or not self.navegadores.navegadores:
+                return None
+            if nome in ("navegador", "browser", "navegador da internet"):
+                return self.navegadores.principal or None
+            return self.navegadores.resolver(nome)
+
+        return achar_atalho(
+            fala,
+            ContextoDoAtalho(
+                disponivel,
+                app,
+                navegador_configurado,
+                navegador=self.navegador is not None,
+                motivo_do_metodo=metodo.motivo if metodo is not None else "",
+            ),
+        )
 
     @property
     def pasta_do_jarvis(self) -> Path:

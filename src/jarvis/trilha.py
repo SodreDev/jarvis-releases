@@ -92,6 +92,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "caracteres_falados": Forma.NUMERO,
     "caracteres_so_na_tela": Forma.NUMERO,
     "codigo": Forma.CODIGO,
+    "completo": Forma.BOOLEANO,
     "contraste_db": Forma.NUMERO,
     "de_fora": Forma.NUMERO,
     "decisao": Forma.CODIGO,
@@ -118,6 +119,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "origem": Forma.CODIGO,
     "pdp": Forma.ROTULO,
     "raciocinio_descartado": Forma.NUMERO,
+    "regra": Forma.CODIGO,
     "resposta": Forma.CODIGO,
     "resultados_podados": Forma.NUMERO,
     "sem_fala": Forma.NUMERO,
@@ -155,6 +157,9 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     "portao": frozenset({"tool_id", "pdp", "jev", "decisao", "ms"}),
     "permissao": frozenset({"tool_id", "origem", "motivo", "resposta"}),
     "metodo": frozenset({"metodo", "motivo", "de_fora"}),
+    # O caminho rápido (ADR-0045): que regra achou a ferramenta, qual e como terminou — nunca a
+    # fala nem o argumento.
+    "atalho": frozenset({"regra", "tool_id", "status", "completo"}),
     # Interromper por voz (ADR-0040): o modo de escuta, o que a vigia fez, por quê e em quantos ms
     # de trecho — nunca o que o dono disse nem o que o ASR ouviu.
     "interrupcao": frozenset({"modo", "decisao", "motivo", "ms"}),

@@ -191,8 +191,9 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
     monkeypatch: pytest.MonkeyPatch,
     sem_chaveiro: None,
 ) -> None:
-    """Uma conversa, quatro pedidos: marcado abre sem faixa (inclusive por nome parcial), não
-    marcado é negado com sugestão, e site abre sem faixa (abrir site é livre desde 2026-10-18)."""
+    """Uma conversa, quatro pedidos: marcado abre sem faixa (inclusive por nome parcial, e pelo
+    caminho rápido, sem o motor), não marcado é negado com sugestão, e site abre sem faixa (abrir
+    site é livre desde 2026-10-18)."""
     vistos.clear()
     maquina = Maquina(tmp_path)
     laco, ponte = _montar(
@@ -223,11 +224,11 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
 
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
-    assert [f for f, r in vistos if r["status"] == "ok"] == [
-        "abre o discord",
-        "abre o brave",
-        "abre o exemplo",
-    ]
+    # O caminho rápido (ADR-0045): «abre o discord» e «abre o brave» vão ao apps.launch pela regra
+    # do código — pelo mesmo PDP —, e o motor nem é chamado; o que não cabe numa regra (o site que
+    # não está na tabela, o app não marcado) continua com ele.
+    assert [f for f, r in vistos if r["status"] == "ok"] == ["abre o exemplo"]
+    assert "abre o discord" not in dict(vistos) and "abre o brave" not in dict(vistos)
 
 
 def test_o_modelo_ve_quais_apps_estao_autorizados(

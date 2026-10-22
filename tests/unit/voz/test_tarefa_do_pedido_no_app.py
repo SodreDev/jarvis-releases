@@ -63,7 +63,13 @@ def test_a_tarefa_trabalha_a_conversa_segue_e_a_resposta_chega_em_voz(tmp_path: 
     app.rodar_texto(dono())
 
     falas = [linha for linha in linhas if linha.startswith("Jarvis: ")]
-    assert falas == ["Jarvis: Vou procurar no YouTube.", "Jarvis: São dez horas.", final]
+    # O caminho rápido (ADR-0045): a busca do YouTube é o primeiro passo, do código e à vista, com
+    # a frase dele; o modelo segue dali na tarefa (sem o "Certo, já cuido disso.").
+    assert falas == [
+        "Jarvis: Abri a busca do YouTube por canal X.",
+        "Jarvis: São dez horas.",
+        final,
+    ]
     for fala in falas:
         for marca in PROTOCOLO:
             assert marca not in fala, f"{marca!r} vazou em {fala!r}"

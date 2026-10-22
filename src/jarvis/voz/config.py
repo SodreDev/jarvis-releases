@@ -189,6 +189,11 @@ class Configuracao:
     prazo_do_foco_s: float = 300.0
     """Quanto o Jarvis espera a janela de um app que abriu para pô-la em foco (10 a 1800 s;
     ADR-0037). O padrão (o `PRAZO_DO_FOCO_S` do executor) é longo: o jogo pelo Steam demora."""
+    caminho_rapido: bool = True
+    """Comando simples (abrir/fechar/focar um app liberado, o que está em foco, as janelas, as
+    abas, abrir um site, procurar no site) vai à ferramenta pela regra do código, sem esperar o
+    motor (dono, 2026-10-21; ADR-0045). A chamada passa pelo mesmo PDP, Jev e pergunta de sempre.
+    Desligado, todo pedido espera o motor, como antes."""
     omnivoice_uso_pessoal: bool = False
     """A declaração do dono de que usa o OmniVoice só para si, sem fim comercial (ADR-0039): os
     pesos são CC-BY-NC. Sem ela, `tts = "tts-omnivoice"` cai no motor padrão — escolher não
@@ -237,6 +242,7 @@ class Configuracao:
             "laco_max_passos": self.laco_max_passos,
             "laco_prazo_s": self.laco_prazo_s,
             "prazo_do_foco_s": self.prazo_do_foco_s,
+            "caminho_rapido": self.caminho_rapido,
             "omnivoice_uso_pessoal": self.omnivoice_uso_pessoal,
             "voz_omnivoice": self.voz_omnivoice,
         }
@@ -366,6 +372,9 @@ laco_max_passos = {configuracao.laco_max_passos}
 laco_prazo_s = {configuracao.laco_prazo_s}
 # Quantos segundos o Jarvis espera a janela de um app que abriu para pô-la em foco (10 a 1800).
 prazo_do_foco_s = {configuracao.prazo_do_foco_s}
+# Caminho rápido (ADR-0045): "abre o Discord", "fecha o Steam", "abre o YouTube", "o que está
+# em foco" vão direto à ferramenta pela regra, sem esperar o motor, com as permissões de sempre.
+caminho_rapido = {"true" if configuracao.caminho_rapido else "false"}
 
 # OmniVoice (ADR-0039): motor OPCIONAL de USO PESSOAL — os pesos são NÃO COMERCIAIS (CC-BY-NC).
 # Só vale com tts = "tts-omnivoice" E esta declaração em true, depois de instalado no repositório
@@ -622,6 +631,7 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         laco_max_passos=_inteiro(dados, "laco_max_passos", 12),
         laco_prazo_s=_numero(dados, "laco_prazo_s", 90.0),
         prazo_do_foco_s=_numero(dados, "prazo_do_foco_s", 300.0),
+        caminho_rapido=_logico(dados, "caminho_rapido", padrao=True),
         omnivoice_uso_pessoal=_logico(dados, "omnivoice_uso_pessoal"),
         voz_omnivoice=_texto(dados, "voz_omnivoice", ""),
     )

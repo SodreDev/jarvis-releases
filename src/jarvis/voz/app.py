@@ -637,6 +637,9 @@ class Aplicativo:
         # O pedido que precisa de ferramenta vira tarefa (ADR-0038): o laço fica livre para a
         # próxima fala enquanto ela trabalha.
         self._cerebro.delegar_em_tarefa = True
+        # O caminho rápido (ADR-0045): comando simples vai à ferramenta pela regra, sem esperar o
+        # motor — pelo mesmo PDP, Jev e pergunta da proposta do modelo.
+        self._cerebro.caminho_rapido = self.configuracao.caminho_rapido
         self._cerebro.confirmar = self._confirmar
         self._cerebro.ao_status = self._status_do_laco
         self._cerebro.maximo_de_passos = self.configuracao.laco_max_passos

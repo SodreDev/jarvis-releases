@@ -44,6 +44,8 @@ from jarvis.executor.ferramentas import (
 from jarvis.fatiador import PALAVRAS_MINIMAS_POR_PEDACO, Corte, FatiadorDeFala, PedacoDeFala
 from jarvis.imagem import Imagem
 from jarvis.memoryd.livro import LivroDeMemoria
+from jarvis.politica.atalho import Atalho
+from jarvis.politica.atalho import frase as frase_do_atalho
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.politica.objetivo import EstadoDoObjetivo
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
@@ -89,6 +91,10 @@ e descartado: o canal interno não pode crescer o prompt de cada rodada sem fim.
 LIMITE_DO_JA_DITO: Final = 300
 """Caracteres do que o dono já ouviu no turno que voltam ao motor (o fim, que é o mais novo)."""
 FRASE_AO_DELEGAR: Final = "Certo, já cuido disso."
+NOTA_DO_ATALHO: Final = (
+    "O primeiro passo deste pedido o código já fez, pelo caminho rápido: o resultado está entre os "
+    "das ferramentas. Siga daí, sem repetir esse passo."
+)
 """O que o dono ouve quando o pedido vira tarefa e o motor não disse nada antes da ferramenta
 (ADR-0038): curto, e a resposta de verdade vem quando a tarefa acabar."""
 
@@ -159,6 +165,11 @@ class Resposta:
     so_na_tela: str = ""
     """O que passou do orçamento da fala e foi só para a tela (emenda de 2026-10-21 à ADR-0031):
     entra na conversa marcado, para o modelo saber que o dono viu e não ouviu."""
+    atalho: str = ""
+    """A regra do caminho rápido que fez o primeiro passo (`jarvis.politica.atalho.Regra`), ou
+    vazio: o turno foi todo do motor."""
+    motor_chamado: bool = True
+    """`False` quando o atalho resolveu o pedido sozinho e o motor nem foi chamado."""
 
     @property
     def cancelada(self) -> bool:
@@ -209,6 +220,11 @@ class Cerebro:
     ferramentas pelo mesmo PDP, Jev e objetivo até cumprir, precisar do dono, falhar ou ser
     cancelada. Precisa do gestor de tarefas no executor; o aplicativo liga. Desligado = o laço no
     turno, como antes (o que os testes do laço e o harness usam)."""
+    caminho_rapido: bool = False
+    """O comando simples vai à ferramenta pela regra do código, sem esperar o motor (dono,
+    2026-10-21: «precisa ser muito rápido»; `jarvis.politica.atalho`). A chamada passa pelo mesmo
+    PDP, Jev, objetivo e pergunta da proposta do modelo; pronta e certa, a frase é do código e o
+    motor nem é chamado. O aplicativo liga; desligado, como antes (os testes do laço)."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
 
     @property
@@ -359,7 +375,58 @@ class Cerebro:
         def cancelado_no_laco() -> bool:
             return cancelado() or prazo_esgotado()
 
-        for passo in range(1, self.maximo_de_passos + 1):
+        # O caminho rápido (dono, 2026-10-21): o comando simples vai à ferramenta pela regra do
+        # código, sem esperar o motor — pelo mesmo `_chamar` (PDP, Jev, objetivo, pergunta) que a
+        # proposta do modelo. Pronto e certo, a frase é do código e o motor nem é chamado; erro,
+        # pergunta ou pedido que continua (abrir o canal de alguém): o motor segue dali.
+        pular_o_motor = False
+        atalho = self._atalho(texto_do_dono) if visto_cancelamento is None else None
+        if atalho is not None:
+            resposta.atalho = str(atalho.regra)
+            resultado = self._chamar(
+                PedidoDeTool(atalho.tool_id, dict(atalho.args)), cancelado_no_laco, texto_do_dono
+            )
+            resposta.ferramentas.append(resultado)
+            if self.ferramentas is not None and self.ferramentas.trilha is not None:
+                self.ferramentas.trilha.evento(
+                    "atalho",
+                    regra=str(atalho.regra),
+                    tool_id=atalho.tool_id,
+                    status=resultado.status,
+                    completo=atalho.completo,
+                )
+            if resultado.aviso:  # o de uma moderada, ou a pergunta: do código, já em voz
+                resposta.gerado += resultado.aviso + " "
+                crescer()
+                for pedaco in fatiador.alimentar(resultado.aviso + " ") + fatiador.descarregar():
+                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+            if cancelado():
+                visto_cancelamento = time.monotonic()
+            elif resultado.status == "pendente":
+                pular_o_motor = True  # a pergunta é a última coisa do turno, como no laço
+            elif resultado.status == "ok":
+                # Pronto e certo, a frase é do código. No primeiro passo à vista ("Abri a busca do
+                # YouTube por …") ela sai já, e o motor segue — sem o "Certo, já cuido disso."
+                # Frase do código: não passa pelo orçamento da fala (como o aviso) e sai já.
+                dita = frase_do_atalho(atalho, resultado.dados)
+                if dita:
+                    resposta.gerado += dita
+                    crescer()
+                    for pedaco in fatiador.alimentar(dita + " ") + fatiador.descarregar():
+                        self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+                pular_o_motor = atalho.completo
+                if not atalho.completo:
+                    contexto = Contexto(
+                        sistema=f"{contexto.sistema}\n\n{NOTA_DO_ATALHO}",
+                        mensagens=contexto.mensagens,
+                    )
+            else:
+                contexto = Contexto(
+                    sistema=f"{contexto.sistema}\n\n{NOTA_DO_ATALHO}", mensagens=contexto.mensagens
+                )
+        resposta.motor_chamado = not pular_o_motor
+        passos = range(0) if pular_o_motor else range(1, self.maximo_de_passos + 1)
+        for passo in passos:
             if visto_cancelamento is not None:
                 break
             if cancelado_no_laco():
@@ -460,9 +527,10 @@ class Cerebro:
             if cancelado():
                 visto_cancelamento = time.monotonic()
         else:
-            resposta.detalhe = (
-                f"o motor pediu ferramenta {self.maximo_de_passos} vezes sem responder"
-            )
+            if not pular_o_motor:
+                resposta.detalhe = (
+                    f"o motor pediu ferramenta {self.maximo_de_passos} vezes sem responder"
+                )
         if visto_cancelamento is None and cancelado():
             visto_cancelamento = time.monotonic()
         if visto_cancelamento is not None or resposta.fim is MotivoDoFim.CANCELADO:
@@ -490,6 +558,11 @@ class Cerebro:
         self.autorizacoes.encerrar()
         self._pendentes[resposta.response_id] = resposta
         return resposta
+
+    def _atalho(self, texto_do_dono: str) -> Atalho | None:
+        if not self.caminho_rapido or self.ferramentas is None:
+            return None
+        return self.ferramentas.atalho(texto_do_dono)
 
     def _delegavel(self, pedido: PedidoDeTool) -> bool:
         """A proposta vai para a tarefa do pedido? `tarefa.*` e `acao.desfazer` não rodam em
