@@ -15,7 +15,7 @@ import socket
 import stat
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 from jarvis.navegador.host import PRAZO_S, pasta_dos_sockets
 from jarvis.navegador.protocolo import (
@@ -44,6 +44,14 @@ def familia_do_host(principal: str) -> str:
 
 class NavegadorIndisponivel(RuntimeError):
     """Não há navegador com a extensão do Jarvis aberto (ou o host não respondeu)."""
+
+
+SEM_ABA: Final = "sem_aba"
+MENSAGEM_SEM_ABA: Final = (
+    "essa aba não existe mais (foi fechada ou o id é de outra sessão): veja as abas abertas"
+)
+ABA_QUE_NAO_EXISTE: Final = "no tab with id"
+"""O texto do Chromium para um `tabId` que não existe (em minúsculas)."""
 
 
 class NavegadorFalhou(RuntimeError):
@@ -292,6 +300,11 @@ class ClienteDoNavegador:
             raise NavegadorIndisponivel("a resposta veio com outro id")
         if not resposta["ok"]:
             erro = resposta["error"]
+            if erro["codigo"] == "falha" and ABA_QUE_NAO_EXISTE in erro["mensagem"].casefold():
+                # A extensão de antes do `1565698` (não recarregada) devolve o «No tab with id» do
+                # navegador como "falha" crua: é a aba que não existe mais (trilha do dono,
+                # 2026-10-21, 21:13: duas navegações com um id velho, 2–3 ms cada).
+                raise NavegadorFalhou(SEM_ABA, MENSAGEM_SEM_ABA)
             raise NavegadorFalhou(erro["codigo"], erro["mensagem"])
         resultado: dict[str, Any] = resposta["result"]
         return resultado

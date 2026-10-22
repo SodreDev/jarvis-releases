@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ import pytest
 
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas, ResultadoDeFerramenta
 from jarvis.executor.nativas import Nativas
+from jarvis.executor.web import Resposta
 from jarvis.imagem import CHAVE_DOS_ANEXOS
 from jarvis.navegador.cliente import ClienteDoNavegador, NavegadorIndisponivel
 from jarvis.navegador.estado import EstadoDaPonte
@@ -74,6 +75,10 @@ class PaginaFalsa:
         """Concessões que o dono parou (PARAR na faixa): a extensão recusa o que vier delas."""
         self.concessoes: list[tuple[str, str | None]] = []
         """A concessão de cada pedido, na ordem: `(método, controle)`."""
+        self.abas_fechadas: set[int] = set()
+        """Ids de abas que não existem mais (a da busca que fechou, a de outra sessão)."""
+        self.extensao_antiga = False
+        """Responde a aba que não existe como a extensão de antes do `1565698`: «falha» crua."""
 
     def elemento(self, alvo: str, **dados: Any) -> None:
         base = {"tag": "button", "texto": alvo, "campo": False, "sensivel": False}
@@ -142,6 +147,13 @@ class PaginaFalsa:
             case "tabs.list":
                 return ok | {"result": {"abas": self.abas}}
             case "tabs.current":
+                if p.get("tabId") in self.abas_fechadas:
+                    erro = (
+                        {"codigo": "falha", "mensagem": f"No tab with id: {p['tabId']}."}
+                        if self.extensao_antiga
+                        else {"codigo": "sem_aba", "mensagem": "essa aba não existe mais"}
+                    )
+                    return {"id": pedido.id, "ok": False, "error": erro}
                 achada = next((a for a in self.abas if a["id"] == p.get("tabId", 7)), self.abas[0])
                 return ok | {"result": {"aba": achada}}
             case "page.read":
@@ -1026,27 +1038,70 @@ def test_a_tela_vai_so_ao_motor_que_aceita_imagem_e_morre_com_o_turno(
     assert all(isinstance(m.texto, str) for m in cerebro.conversa.turnos)
 
 
-# --- a busca na web pelo navegador do dono (ADR-0033) --------------------------------------------
-def test_sem_chave_a_busca_vai_pela_extensao_numa_aba_de_fundo_e_alcanca_o_objetivo(
+# --- o id de uma aba que não existe mais (trilha do dono, 2026-10-21) -----------------------------
+@pytest.mark.parametrize("antiga", [False, True])
+def test_navegar_com_o_id_de_uma_aba_que_fechou_vai_para_a_url_mesmo_assim(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa, antiga: bool
+) -> None:
+    """Na trilha do dono (21/10, 21:13) o modelo mandou duas vezes o id de uma aba que não existia
+    mais, ouviu «falha» crua (a extensão dele era a de antes) e cada correção custou uma rodada do
+    motor. Navegar é ir para a URL: com o id velho, o caminho de sempre (reuso ou guia nova), e o
+    resultado diz que a aba pedida não existia."""
+    pagina.abas_fechadas = {99}
+    pagina.extensao_antiga = antiga
+
+    feito, perguntas = _rodar(
+        executor, "browser.navigate", {"url": "https://exemplo.org/a", "tab_id": 99}
+    )
+
+    assert feito.status == "ok" and perguntas == []
+    assert feito.dados["aba_pedida_nao_existia"] == 99
+    assert ("tabs.open", {"url": "https://exemplo.org/a", "fundo": False}) in pagina.chamadas or (
+        ("tabs.open", {"url": "https://exemplo.org/a"}) in pagina.chamadas
+    )
+    assert pagina.abas[0]["url"] == "https://loja.example/p", "a aba do dono não foi trocada"
+
+
+@pytest.mark.parametrize("antiga", [False, True])
+def test_ler_com_o_id_de_uma_aba_que_fechou_diz_que_ela_nao_existe_e_nao_le_outra(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa, antiga: bool
+) -> None:
+    pagina.abas_fechadas = {99}
+    pagina.extensao_antiga = antiga
+
+    lido, _ = _rodar(executor, "browser.read", {"tab_id": 99})
+
+    assert lido.status == "erro" and "(sem_aba)" in lido.motivo
+    assert "page.read" not in pagina.metodos()
+
+
+# --- a busca genérica não usa o navegador (ADR-0033, emenda de 2026-10-21) -----------------------
+def test_web_buscar_vai_direto_e_nao_abre_aba_nem_fala_com_a_extensao(
     executor: ExecutorDeFerramentas, pagina: PaginaFalsa
 ) -> None:
-    executor.novo_turno("abra o canal do Thiago Nigro")
-    pagina.links_da_busca = [
-        {"texto": "O Primo Rico - YouTube", "href": "https://www.youtube.com/@primorico"},
-        {"texto": "Brave", "href": "https://search.brave.com/"},
-    ]
-    executor.nativas = Nativas(lar=executor.lar, ambiente={})
+    """Dono, 2026-10-21: «a aba abre e fecha sozinha no começo da tarefa» era a busca sem chave
+    numa aba de fundo do navegador dele. Agora a busca genérica é HTTP direto: nenhum pedido à
+    extensão, e os resultados continuam contaminando o turno e entrando no objetivo."""
+    executor.novo_turno("busca na internet o canal do Thiago Nigro")
+    corpo = (
+        '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.youtube.com'
+        '%2F%40primorico">O Primo Rico - YouTube</a>'
+    )
+
+    def obter(url: str, _h: Mapping[str, str]) -> Resposta:
+        assert url.startswith("https://html.duckduckgo.com/html/?q=thiago+nigro+canal")
+        return Resposta(200, url, "text/html", corpo.encode())
+
+    executor.nativas = Nativas(
+        lar=executor.lar, ambiente={}, obter=obter, resolver=lambda _h: ["93.184.216.34"]
+    )
 
     achado, perguntas = _rodar(executor, "web.buscar", {"consulta": "thiago nigro canal"})
 
     assert achado.status == "ok" and perguntas == []
-    assert achado.dados["fonte"] == "Brave Search, pelo navegador do dono"
-    assert achado.dados["resultados"] == [
-        {"titulo": "O Primo Rico - YouTube", "url": "https://www.youtube.com/@primorico"}
-    ]
-    (lida,) = [p for m, p in pagina.chamadas if m == "page.readUrl"]
-    assert lida["url"].startswith("https://search.brave.com/search?q=thiago+nigro+canal")
-    assert "modo" not in lida, "na janela do dono, nunca na janela própria do Jarvis"
+    assert achado.dados["fonte"] == "DuckDuckGo (direto, sem navegador)"
+    assert [r["url"] for r in achado.dados["resultados"]] == ["https://www.youtube.com/@primorico"]
+    assert pagina.chamadas == [], "a busca genérica não toca o navegador do dono"
     assert executor.contaminado and executor.objetivo is not None
     assert executor.objetivo.dentro("https://www.youtube.com/@primorico")
 
@@ -1079,13 +1134,14 @@ def test_so_o_modo_automacao_social_leva_o_fundo_para_a_janela_do_jarvis(
     """O gancho da automação social (padrão desligado): é o único caminho para a janela própria."""
     assert executor.navegador is not None
     executor.navegador.cliente.automacao_social = True
-    executor.nativas = Nativas(lar=executor.lar, ambiente={})
     pagina.links_da_busca = [{"texto": "Exemplo", "href": "https://exemplo.org/"}]
 
     aberto, _ = _rodar(
         executor, "browser.navigate", {"url": "https://exemplo.org/a", "segundo_plano": True}
     )
-    _rodar(executor, "web.buscar", {"consulta": "exemplo"})
+    # A leitura numa aba de fundo (`page.readUrl`) ficou só para este modo: a busca genérica é
+    # HTTP direto desde 2026-10-21 (ADR-0033, emenda) e não passa mais por aqui.
+    executor.navegador.cliente.ler_em_segundo_plano("https://exemplo.org/lista")
 
     assert aberto.status == "ok" and aberto.dados["janela"] == "jarvis"
     assert (

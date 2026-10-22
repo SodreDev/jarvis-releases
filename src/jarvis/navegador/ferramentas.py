@@ -18,7 +18,12 @@ from urllib.parse import urlsplit
 
 from jarvis.imagem import CHAVE_DOS_ANEXOS, ImagemInvalida, da_url_de_dados
 from jarvis.navegador import risco
-from jarvis.navegador.cliente import ClienteDoNavegador, NavegadorFalhou, NavegadorIndisponivel
+from jarvis.navegador.cliente import (
+    SEM_ABA,
+    ClienteDoNavegador,
+    NavegadorFalhou,
+    NavegadorIndisponivel,
+)
 from jarvis.navegador.controle import PARADO_PELO_DONO, Assinatura, ControleDoNavegador
 from jarvis.politica.abertura import UrlRecusada, dominio, validar_url
 from jarvis.politica.metodo import quer_ver
@@ -620,7 +625,21 @@ class CorposDoNavegador:
         except UrlRecusada as erro:
             raise ValueError(str(erro)) from None
         nova_aba = bool(args.get("nova_aba", False))
-        explicita = args.get("tab_id") is not None
+        alvo_dito: int | None = None
+        sumida: object = None
+        if args.get("tab_id") is not None:
+            try:
+                alvo_dito = self._aba(args)[0]
+            except NavegadorFalhou as erro:
+                if erro.codigo != SEM_ABA:
+                    raise
+                # O modelo mandou o id de uma aba que não existe mais (a de uma busca, a de outra
+                # sessão): o pedido é ir para a URL, e a aba era só o lugar. Antes isso voltava
+                # erro, e cada correção custava uma rodada inteira do motor (trilha do dono,
+                # 2026-10-21: duas navegações perdidas assim antes da que deu certo).
+                sumida = args.get("tab_id")
+                args = {chave: valor for chave, valor in args.items() if chave != "tab_id"}
+        explicita = alvo_dito is not None
         ver = ver_sempre or (trabalho is not None and trabalho.ver)
         # Segundo plano: o trabalho que o dono não pediu para ver (pesquisar, ler, conferir) vai
         # numa aba em segundo plano NA JANELA DELE — sem `active`, sem tirar o foco nem trocar a
@@ -633,7 +652,7 @@ class CorposDoNavegador:
         alvo: int | None = None
         reuso = ""
         if explicita:
-            alvo = self._aba(args)[0]
+            alvo = alvo_dito
         elif fundo:
             alvo = None if nova_aba else self._aba_de_fundo(trabalho)
         elif not nova_aba:
@@ -656,6 +675,8 @@ class CorposDoNavegador:
         resultado = self._conferido(url, feito, trabalho, ver=ver, nova=alvo is None, fundo=fundo)
         if reuso:
             resultado["reutilizou"] = reuso
+        if sumida is not None:
+            resultado["aba_pedida_nao_existia"] = sumida
         return resultado
 
     def _aba_para_ver(

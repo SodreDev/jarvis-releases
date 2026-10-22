@@ -37,9 +37,6 @@ class Nativas:
     obter: web.Obter = web.obter_publico
     resolver: web.Resolver = web._resolver_dns
     dormir: Callable[[float], None] = time.sleep
-    busca_no_navegador: web.BuscaPeloNavegador | None = None
-    """A busca pela extensão (ADR-0033), quando o controle do navegador está ligado: o executor a
-    põe aqui a cada chamada, com o navegador dele daquele momento."""
     janelas: Janelas | None = None
     """Quem lista e foca as janelas (`kdotool` no KDE, `wmctrl` no X11; ADR-0037). `None` = o
     `wmctrl` de antes nas `window.*`, e nada de acompanhar o foco de um app aberto."""
@@ -165,9 +162,7 @@ CORPOS: Final[dict[str, Corpo]] = {
     "timer.alarm.set": _alarme_set,
     "timer.alarm.list": _alarme_list,
     "timer.alarm.cancel": _alarme_cancel,
-    "web.buscar": lambda n, a: web.buscar(
-        str(a["consulta"]), n.obter, n.ambiente, n.resolver, navegador=n.busca_no_navegador
-    ),
+    "web.buscar": lambda n, a: web.buscar(str(a["consulta"]), n.obter, n.ambiente, n.resolver),
     "web.canal_videos": lambda n, a: web.canal_videos(str(a["canal"]), n.obter, n.resolver),
     "web.ler": _web_ler,
 }

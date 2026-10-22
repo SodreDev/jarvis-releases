@@ -733,9 +733,9 @@ def dentro(nome: str) -> int:
 def _roteiro(nome: str, relatorio: Relatorio) -> None:
     """O roteiro, de cima a baixo: um roteiro linear lê melhor que dez funções."""
     from jarvis.executor.ferramentas import Confirmacao, ResultadoDeFerramenta
-    from jarvis.executor.web import BuscaIndisponivel
+    from jarvis.executor.nativas import Nativas
+    from jarvis.executor.web import Resposta
     from jarvis.navegador import instalar
-    from jarvis.navegador.busca import Buscador, BuscaNoNavegador
     from jarvis.navegador.cliente import NavegadorFalhou, NavegadorIndisponivel
     from jarvis.politica.objetivo import EstadoDoObjetivo
     from jarvis.s2.motor_claude_cli import sistema_com_ferramentas
@@ -1054,34 +1054,60 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
 
         uma_so = {"janelas": 1, "janela_do_jarvis": None, "janela_html": 0, "principais": 1}
 
-        # A busca sem chave (ADR-0033): numa aba de fundo da janela do dono, lida e fechada.
-        buscador = Buscador(
-            "Página de busca de teste",
-            url.replace("pagina.html", "busca.html") + "?q={consulta}",
-            frozenset({""}),  # os links do próprio servidor (IP) são do buscador
+        # A busca genérica (ADR-0033, emenda de 2026-10-21) não toca o navegador do dono: sem
+        # chave, ela abria uma aba de fundo e a fechava — a «aba que abre e fecha sozinha» no
+        # começo da tarefa. Agora vai direto (o buscador aqui é falso: o contêiner não tem rede).
+        resultado_falso = (
+            '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.youtube.com'
+            '%2F%40primorico">O Primo Rico - YouTube</a>'
         )
-        ativa_antes = corpos.cliente.aba()
+        ferramentas.nativas = Nativas(
+            lar=ferramentas.lar,
+            ambiente={},
+            obter=lambda u, _h: Resposta(200, u, "text/html", resultado_falso.encode()),
+            resolver=lambda _host: ["93.184.216.34"],
+        )
+        ids_antes = sorted(str(a.get("id")) for a in abas_agora())
         x_antes = _janela_ativa_do_x()
         foco_antes = corpos.cliente.janela_em_foco()
+        busca = rodar("web.buscar", {"consulta": "o primo rico"})
+        time.sleep(1.0)  # uma aba que nascesse e fechasse teria aparecido nos eventos até aqui
+        relatorio.conferir(
+            "a busca genérica vai direto: nenhuma aba abre nem fecha no navegador do dono e o foco "
+            "não muda",
+            busca.status == "ok"
+            and busca.dados.get("fonte") == "DuckDuckGo (direto, sem navegador)"
+            and sorted(str(a.get("id")) for a in abas_agora()) == ids_antes
+            and corpos.cliente.janela_em_foco().get("janelaId") == foco_antes.get("janelaId")
+            and _janela_ativa_do_x() == x_antes,
+            {"busca": busca.status, "fonte": busca.dados.get("fonte"), "abas": ids_antes},
+        )
+
+        # A leitura numa aba de fundo (`page.readUrl`) ficou só para a automação social: a
+        # extensão continua lendo na janela do dono, sem foco, e fechando a aba no fim.
+        ativa_antes = corpos.cliente.aba()
+        foco_antes = corpos.cliente.janela_em_foco()
         try:
-            achado = BuscaNoNavegador(corpos.cliente, (buscador,))("o primo rico")
-        except BuscaIndisponivel as erro:
-            achado = {"erro": str(erro)}
+            lida = corpos.cliente.ler_em_segundo_plano(
+                url.replace("pagina.html", "busca.html") + "?q=o+primo+rico"
+            )
+        except (NavegadorFalhou, NavegadorIndisponivel) as erro:
+            lida = {"erro": str(erro)}
         fechou = _esperar(
             lambda: not any("Resultados de teste" in a.get("titulo", "") for a in abas_agora()), 10
         )
+        links = [str(link.get("href")) for link in (lida.get("pagina") or {}).get("links", [])]
         ativa_depois = corpos.cliente.aba()
         foco_depois = corpos.cliente.janela_em_foco()
         relatorio.conferir(
-            "a busca pela extensão lê numa aba de fundo, fecha a aba e não troca a aba do dono",
-            [r.get("url") for r in achado.get("resultados", [])]
-            == ["https://www.youtube.com/@primorico", "https://pt.wikipedia.org/wiki/Thiago_Nigro"]
+            "page.readUrl lê numa aba de fundo, fecha a aba e não troca a aba do dono",
+            "https://www.youtube.com/@primorico" in links
             and bool(fechou)
             and ativa_depois.get("id") == ativa_antes.get("id")
             and foco_depois.get("janelaId") == foco_antes.get("janelaId")
             and _janela_ativa_do_x() == x_antes,
             {
-                "achado": achado,
+                "links": links[:4],
                 "ativa": [ativa_antes.get("id"), ativa_depois.get("id")],
                 "foco": [foco_antes, foco_depois],
             },

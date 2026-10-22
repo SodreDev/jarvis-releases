@@ -14,12 +14,15 @@ estiver lá. Então:
   abre site fora da lista sem o "sim" do dono;
 - tamanho e tempo limitados (1,5 MB, 10 s).
 
-A busca tem uma ordem (dono, 2026-10-20, ADR-0033): a **API do Brave Search** quando há
-`BRAVE_SEARCH_API_KEY` no ambiente ou no chaveiro (a chave só aparece no cabeçalho da requisição,
-`jarvis.voz.chaves.Chave`; não verificada ao vivo: sem chave aqui); sem chave, o **navegador do
-dono** pela extensão (`jarvis.navegador.busca`), numa aba de fundo; sem navegador, a
-**Wikipédia**, dizendo que a busca geral não estava disponível. O DuckDuckGo HTML pedido por aqui
-devolve 202 de anti-robô — pelo navegador do dono ele é a reserva do Brave Search.
+A busca tem uma ordem (dono, 2026-10-20, ADR-0033; emendada em 2026-10-21): a **API do Brave
+Search** quando há `BRAVE_SEARCH_API_KEY` no ambiente ou no chaveiro (a chave só aparece no
+cabeçalho da requisição, `jarvis.voz.chaves.Chave`; não verificada ao vivo: sem chave aqui); sem
+chave, o **DuckDuckGo em HTML pedido daqui mesmo** — direto, sem abrir navegador nenhum; sem ele (o
+202 de anti-robô, que é intermitente, ou nenhum resultado), a **Wikipédia**, dizendo por que a busca
+geral não veio. Antes, sem chave, a busca abria uma aba de fundo no navegador do dono e a fechava
+no fim — era a «aba que abre e fecha sozinha» no começo das tarefas (dono, 2026-10-21): a busca
+genérica não precisa do navegador, e o pedido de um site é do navegador desde o primeiro passo
+(ADR-0035, emenda de 2026-10-21).
 """
 
 from __future__ import annotations
@@ -37,7 +40,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
 from typing import Any, Final
-from urllib.parse import quote, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urljoin, urlsplit
 
 from jarvis.memoryd.importacao import redigir
 from jarvis.voz.chaves import VARIAVEL_BRAVE, Chave
@@ -73,12 +76,8 @@ class PaginaInexistente(WebRecusada):
 
 
 class BuscaIndisponivel(Exception):
-    """A busca pelo navegador do dono não deu (desligado, sem extensão, sem resultado): `buscar`
-    cai na Wikipédia e diz o porquê."""
-
-
-BuscaPeloNavegador = Callable[[str], dict[str, Any]]
-"""A consulta já limpa → resultados no formato de `buscar`; `BuscaIndisponivel` se não deu."""
+    """A busca geral sem chave não deu (o buscador pediu para esperar, respondeu erro ou não trouxe
+    resultado): `buscar` cai na Wikipédia e diz o porquê."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,22 +502,117 @@ def buscar(
     obter: Obter = obter_publico,
     ambiente: Mapping[str, str] | None = None,
     resolver: Resolver = _resolver_dns,
-    navegador: BuscaPeloNavegador | None = None,
 ) -> dict[str, Any]:
-    """A ordem do dono (ADR-0033): a API com chave; sem chave, o navegador dele; sem navegador, a
-    Wikipédia — e o resultado diz qual foi e, na Wikipédia, por que não houve busca geral."""
+    """A ordem do dono (ADR-0033, emendada): a API com chave; sem chave, o DuckDuckGo pedido
+    daqui, sem navegador; sem ele, a Wikipédia — e o resultado diz qual foi e, na Wikipédia, por
+    que não houve busca geral. Nada daqui abre aba, janela ou navegador."""
     texto = _consulta_limpa(consulta)
     if Chave.presente(VARIAVEL_BRAVE, ambiente=ambiente):
         return _brave(texto, Chave.do_ambiente(VARIAVEL_BRAVE, ambiente=ambiente), obter, resolver)
-    motivo = "o controle do navegador está desligado e não há chave do Brave Search"
-    if navegador is not None:
-        try:
-            return navegador(texto)
-        except BuscaIndisponivel as erro:
-            motivo = f"o navegador não buscou ({str(erro)[:160]}) e não há chave do Brave Search"
+    try:
+        return _duckduckgo(texto, obter, resolver)
+    except (BuscaIndisponivel, WebRecusada) as erro:
+        motivo = f"o DuckDuckGo não buscou ({str(erro)[:160]}) e não há chave do Brave Search"
     resultado = _wikipedia(texto, obter, resolver)
     resultado["sem_busca_geral"] = f"só a Wikipédia: {motivo}"
     return resultado
+
+
+DUCKDUCKGO: Final = "https://html.duckduckgo.com/html/?"
+"""A versão HTML do DuckDuckGo, a que responde sem JavaScript. Pedida com o nosso agente honesto
+(`AGENTE`), sem cookie: quando ela devolve o 202 do anti-robô (intermitente — medido em 2026-10-19
+e de novo, com 200 e resultados, em 2026-10-21), o Jarvis respeita e cai na Wikipédia."""
+LIMITE_DE_RESULTADOS: Final = 8
+
+
+class _ResultadosDoDuckDuckGo(HTMLParser):
+    """Os links `result__a` (título) e `result__snippet` (trecho) da página de resultados."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.achados: list[dict[str, str]] = []
+        self._em: str = ""
+        self._href = ""
+        self._texto: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        campos = dict(attrs)
+        classes = (campos.get("class") or "").split()
+        if "result__a" in classes:
+            self._em, self._href, self._texto = "titulo", campos.get("href") or "", []
+        elif "result__snippet" in classes:
+            self._em, self._texto = "trecho", []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "a" or not self._em:
+            return
+        texto = " ".join("".join(self._texto).split())
+        if self._em == "titulo":
+            self.achados.append({"titulo": texto, "url": _alvo_do_duckduckgo(self._href)})
+        elif self.achados and "trecho" not in self.achados[-1]:
+            self.achados[-1]["trecho"] = texto
+        self._em = ""
+
+    def handle_data(self, data: str) -> None:
+        if self._em:
+            self._texto.append(data)
+
+
+def _alvo_do_duckduckgo(href: str) -> str:
+    """O endereço de verdade de um resultado: os links passam pelo redirecionamento do próprio
+    buscador (`//duckduckgo.com/l/?uddg=<endereço>`). Link que fica no buscador (anúncio, `y.js`)
+    não é resultado: vazio."""
+    partes = urlsplit(href if "://" in href else f"https:{href}")
+    host = (partes.hostname or "").lower()
+    if host == "duckduckgo.com" or host.endswith(".duckduckgo.com"):
+        destino = parse_qs(partes.query).get("uddg")
+        return _alvo_do_duckduckgo(destino[0]) if destino else ""
+    if partes.scheme not in ("http", "https") or not host:
+        return ""
+    return href
+
+
+def resultados_do_duckduckgo(corpo: bytes) -> list[dict[str, str]]:
+    """Os resultados da página, na ordem dela, sem repetir endereço e sem anúncio."""
+    leitor = _ResultadosDoDuckDuckGo()
+    leitor.feed(corpo.decode("utf-8", errors="replace"))
+    vistos: set[str] = set()
+    achados: list[dict[str, str]] = []
+    for item in leitor.achados:
+        url = item["url"]
+        chave = url.split("#")[0].rstrip("/")
+        if not url or len(item["titulo"]) < 3 or chave in vistos:
+            continue
+        vistos.add(chave)
+        achados.append(
+            {
+                "titulo": item["titulo"][:120],
+                "url": url[:500],
+                "trecho": item.get("trecho", "")[:240],
+            }
+        )
+        if len(achados) >= LIMITE_DE_RESULTADOS:
+            break
+    return achados
+
+
+def _duckduckgo(consulta: str, obter: Obter, resolver: Resolver) -> dict[str, Any]:
+    url = DUCKDUCKGO + urlencode({"q": consulta, "kl": "br-pt"})
+    resposta = _seguir(url, obter, {}, resolver)
+    if resposta.status == 202:
+        raise BuscaIndisponivel("o buscador pediu para esperar (202, anti-robô)")
+    if resposta.status != 200:
+        raise BuscaIndisponivel(f"o buscador respondeu {resposta.status}")
+    achados = resultados_do_duckduckgo(resposta.corpo)
+    if not achados:
+        raise BuscaIndisponivel("a página de resultados veio sem resultado")
+    return {
+        "fonte": "DuckDuckGo (direto, sem navegador)",
+        "resultados": achados,
+        "aviso": AVISO_DE_TERCEIROS,
+    }
 
 
 def _json(resposta: Resposta) -> Any:

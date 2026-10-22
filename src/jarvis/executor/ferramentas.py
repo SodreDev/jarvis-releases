@@ -41,7 +41,6 @@ from jarvis.imagem import CHAVE_DOS_ANEXOS, Imagem
 from jarvis.manifesto.validador import carregar_catalogo
 from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
 from jarvis.memoryd.livro import AlvoInexistente
-from jarvis.navegador.busca import BuscaNoNavegador
 from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.navegador.ferramentas import (
     FERRAMENTA_DE_CONFIRMACAO as CONFIRMACAO_DO_NAVEGADOR,
@@ -435,11 +434,6 @@ class ExecutorDeFerramentas:
     def portas(self) -> Nativas:
         if self.nativas is None:
             self.nativas = Nativas(lar=self.lar)
-        # A busca sem chave vai pelo navegador do dono (ADR-0033) — o deste executor, agora: o
-        # app troca de executor quando o dono muda o acesso, e as portas passam de um ao outro.
-        self.nativas.busca_no_navegador = (
-            BuscaNoNavegador(self.navegador.cliente) if self.navegador is not None else None
-        )
         return self.nativas
 
     def disponivel(self, tool_id: str) -> bool:
