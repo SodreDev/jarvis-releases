@@ -76,3 +76,11 @@ apps.launch (executor, pelo PDP)
 - O Steam de verdade (a linha de comando do `reaper`, a classe dos jogos do Proton).
 - O título com acento de app X11 antigo no `wmctrl` sai `N/A` (o Jarvis o trata como desconhecido):
   no contêiner, os casos usam nomes sem acento.
+
+## Continua em `velocidade-e-foco.md` (2026-10-21)
+
+A porta de janelas lê o KWin numa chamada (`kdotool kwinscript`): monitores (o principal primeiro),
+a ativa, a da frente de cada monitor, a pilha e a área de trabalho — e não quebra sem janela ativa.
+Ferramenta nova `window.focused`; o `kdotool` ganha a `KDE_SESSION_VERSION` que exige; roteiro no KWin
+virtual com dois monitores (`tools/harness_foco.py`) e o diagnóstico de 1 comando
+(`tools/diagnostico_foco.py`).

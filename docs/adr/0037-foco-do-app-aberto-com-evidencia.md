@@ -48,3 +48,34 @@
 - **[SUPOSIÇÃO]** o `kdotool` imprime, em cada ação com `%@`, uma linha por janela na ordem do `search`, e a consulta final imprime a janela ativa (lido no código-fonte dele, `templates.rs`). Confirma: rodar a chamada no KDE do dono. Se derrubar, os blocos não fecham e vale o caminho de uma chamada por janela, que o teste cobre.
 - **Não provado:** o KWin de verdade (o contêiner tem openbox), o Steam de verdade e o Wayland.
 - Testes: `tests/unit/executor/test_janelas.py` (as listas do `kdotool` e do `wmctrl`, o ambiente, a tabela de evidência, o Steam, a carência), `tests/unit/tarefas/test_foco.py` (o motor no tempo: rápido, Steam lento, dúvida, palpite, prazo, a janela de abertura, o parar), `tests/unit/executor/test_foco_do_app.py` (ponta a ponta no executor, com PDP e auditoria) e o roteiro em contêiner `tools/harness_janelas.py` (X de verdade com openbox sem foco em janela nova, `wmctrl`/`xprop`, apps `xterm` e um Steam falso).
+
+## Emenda de 2026-10-21 — as janelas por monitor, numa leitura do KWin, e o `window.focused`
+
+**Relato do dono (dois monitores):** o Jarvis não identificou o Brave em foco no monitor principal.
+Causa medida num KWin 6.7.5 **virtual** com duas saídas (o mesmo KWin da máquina, numa sessão
+isolada: `tools/harness_foco.py`, 13 conferências): a porta só conhecia «a janela ativa» — a do
+teclado. Com o Jarvis (ou qualquer janela) ativo no segundo monitor, o Brave na frente do principal
+era «segundo plano», sem monitor nem pilha. E sem janela ativa (tudo minimizado, «mostrar a área de
+trabalho») o `getactivewindow` da busca encadeada estoura em `null` e a lista inteira voltava vazia.
+
+1. **A leitura é uma consulta do KWin** (`kdotool kwinscript --inline`, `CONSULTA_DO_KWIN`, só lê):
+   os monitores na ordem do KDE (`workspace.screenOrder`: o principal primeiro), o monitor ativo, e
+   cada janela com o monitor dela, a pilha (`stackingOrder`), a área de trabalho e se está
+   minimizada. A **da frente de cada monitor** é a de cima na pilha entre as de app que o dono pode
+   ver ali. A resposta é conferida campo a campo; com um `kdotool` sem `kwinscript` (< 0.3), a busca
+   encadeada de antes, agora com a ativa numa chamada à parte (falhar não leva a lista junto).
+   Medido no KWin virtual: ~5 ms por leitura (a de antes, ~6 ms).
+2. **`window.focused`** (livre, só leitura): a ativa com o monitor dela e a da frente de cada
+   monitor, dizendo qual é o principal. `window.list` ganha o monitor, a da frente e a minimizada.
+   O caminho rápido (ADR-0045) responde «o que está em foco?» por ela, sem o motor.
+3. **O `kdotool` 0.3 recusa rodar sem `KDE_SESSION_VERSION=6`** («Unsupported KDE version», no código
+   dele): numa sessão KDE o executor completa a variável só para ele (`comandos.ambiente_do_programa`)
+   — o Jarvis aberto por um serviço ou um lançador pode não tê-la herdado.
+4. **O diagnóstico de 1 comando** que o dono roda e cola: `tools/diagnostico_foco.py` (a sessão, o
+   `kdotool`, a leitura nova e a de antes com os tempos, o que o `window.focused` responderia, e o
+   que a extensão acha que está em foco; só lê; títulos cortados ou omitidos com `--sem-titulos`).
+
+**Não provado:** o KWin da sessão do dono (o painel e a área de trabalho do Plasma de verdade, os
+monitores físicos, o Brave de verdade) — é para isso o diagnóstico. Testes:
+`tests/unit/executor/test_janelas.py` (a resposta gravada do KWin, sem ativa, fora do formato, a
+lista por monitor, sem `kwinscript`, a variável do kdotool), `tests/unit/politica/test_tiers.py`.

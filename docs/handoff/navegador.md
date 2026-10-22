@@ -452,3 +452,10 @@ Antes de cada novo commit: `git diff --check`, `git add -- <somente arquivos pr�
 `git diff --cached --stat`, `git diff --cached --check`, `git commit -m ...`; sem `stash`,
 `checkout`, `restore`, `reset`, `rebase`, coautoria ou push. Ao terminar cada fatia, chamar
 `cli_ping` com commit, compartilhados tocados e verificações não executadas.
+
+## Continua em `velocidade-e-foco.md` (2026-10-21)
+
+A busca sem chave **não** usa mais a aba de fundo (`jarvis.navegador.busca` saiu): busca genérica
+vai direto pelo DuckDuckGo; pedido de site começa no navegador do dono pelo caminho rápido (a busca
+do próprio site). `browser.navigate` com id de aba que não existe mais vai para a URL. O Brave aberto
+vem para a frente pelo KWin quando a extensão não consegue. Detalhes, commits e armadilhas lá.

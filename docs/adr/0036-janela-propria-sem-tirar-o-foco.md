@@ -151,3 +151,28 @@ o lançou de novo (no Chromium, um desses lançamentos ficou como um segundo pro
 openbox; no KDE a guia nova e a aba de fundo não dependem do foco, o que mudava era a janela
 própria); o YouTube de verdade (o contêiner não tem rede); a janela do Jarvis que ficou aberta no
 Brave do dono, que o Jarvis não fecha sozinho.
+
+## Emenda de 2026-10-21 (3) — o Brave aberto vem para a frente pelo KWin, e o app lançado sabe que está no Plasma 6
+
+**Relato do dono:** "não consegue abrir o Brave". Três causas: (a) com um site junto, o roteador
+tirava o `browser.launch` do turno (emenda (2) da ADR-0035); (b) com o Brave aberto, a extensão
+pede a frente (`windows.update` com `focused`), e no Wayland do KDE o navegador não consegue pegar
+o foco sozinho — a resposta era «já estava aberto, mas não veio para a frente», e para o dono nada
+acontecia; (c) o app lançado pelo Jarvis recebia um ambiente sem as variáveis do desktop: sem
+`KDE_SESSION_VERSION` o Chromium/Brave lê o KDE como "KDE4" (`base/nix/xdg_util.cc`) e escolhe
+outro chaveiro para as senhas e os cookies do perfil.
+
+- **O gerenciador de janelas traz o navegador** quando a extensão não trouxe ou não está conectada
+  (`AbridorDeNavegador.focar_janela`, `CorposDoNavegador.trazer_a_frente`,
+  `janelas.focar_o_navegador`): a janela da família (a classe `brave-browser`), a que mostra a aba
+  pedida pelo título, senão a ativa ou a da frente. O KWin ativa a janela mesmo com outra ativa
+  noutro monitor — provado no KWin 6.7.5 virtual (`tools/harness_foco.py`). O pedido de ver uma
+  página que o sistema segurou atrás termina à vista do mesmo jeito.
+- **O ambiente do app lançado** leva as variáveis de identidade do desktop, como o lançador do KDE
+  passa (`KDE_SESSION_VERSION`, `KDE_FULL_SESSION`, `XDG_SESSION_DESKTOP`, `DESKTOP_SESSION`, as da
+  sessão e das pastas, locale, cursor, tema, `SSH_AUTH_SOCK`) — e só a lista fechada: nenhuma chave.
+- **Não provado:** o Brave de verdade vindo para a frente no KWin do dono (o roteiro usa janelas
+  Qt com a classe dele); o efeito do chaveiro sobre o perfil dele — a variável agora vai, e o
+  `tools/diagnostico_foco.py` mostra a sessão e as janelas.
+- Testes: `tests/unit/executor/test_navegadores.py`, `tests/unit/executor/test_janelas.py`,
+  `tests/unit/navegador/test_ferramentas_browser.py`, `tests/unit/executor/test_lancador.py`.

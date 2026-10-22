@@ -39,3 +39,26 @@ dono**, pelo id, sem `active` — ela aparece por um instante na barra de abas d
 mesmo na falha; a aba que ele está vendo e o foco não mudam. A janela própria só no modo
 `automacao_social` (desligado). Testes: `tests/unit/navegador/background_navegacao.test.mjs` (a
 aba de fundo na janela do dono, nenhuma janela criada) e o roteiro em contêiner.
+
+## Emenda de 2026-10-21 (2) — a busca genérica vai direto, sem navegador (ADR-0045)
+
+**Relato do dono:** "ao iniciar, o Jarvis abre uma aba (link inicial), ela fecha sozinha, e o passo
+a passo só começa depois". Era esta busca: sem chave, o primeiro passo de toda tarefa de site era o
+`web.buscar`, lido numa aba de fundo do navegador dele e fechado no fim (trilha de 21/10: 5 buscas
+assim, 0,3–1,4 s cada, antes de qualquer página à vista). O dono decidiu: busca **genérica** (sem
+site) vai direto, sem abrir navegador; pedido de **site** usa o navegador dele desde o primeiro
+passo, com a busca do próprio site (emenda da ADR-0035).
+
+- **A ordem das fontes** passa a ser: a API do Brave Search com chave; sem chave, o **DuckDuckGo em
+  HTML pedido pelo cliente do Jarvis** (`web._duckduckgo`: o agente honesto, sem cookie; os links
+  com o redirecionamento `uddg` desfeito, sem anúncio nem repetido, até 8, com o trecho); no 202 do
+  anti-robô, noutra resposta ou sem resultado, a Wikipédia com `sem_busca_geral` dizendo por quê.
+  A alternativa descartada lá em cima ("202 de anti-robô, medido em 2026-10-19") é intermitente: em
+  2026-10-21 o GET e o POST do `html.duckduckgo.com` responderam 200 com 10 resultados desta rede.
+- **Sai o `jarvis.navegador.busca`** (a busca pela aba de fundo) e a ligação dele no executor. O
+  `page.readUrl` fica na extensão para a automação social (ADR-0036, emenda (2)); o roteiro em
+  contêiner prova que ele ainda lê numa aba de fundo e fecha, e que a busca genérica não abre nem
+  fecha aba nenhuma e não mexe no foco (Chromium 155 e Firefox 158).
+- Testes: `tests/unit/executor/test_web.py` (a busca direta, o 202, a resposta de erro, a página
+  sem resultado, a API preferida), `tests/unit/navegador/test_ferramentas_browser.py` (a busca não
+  chama a extensão e ainda alimenta o objetivo).

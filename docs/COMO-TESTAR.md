@@ -1385,6 +1385,91 @@ nomes fictícios (`tests/unit/voz/test_vocabulario.py`, `test_vocabulario_no_lac
 `tests/unit/executor/test_vocabulario_aprender.py`). **Não provado:** o `claude -p` de verdade
 chamando a ferramenta, a pronúncia soando bem em cada voz, e a fonética com os seus nomes.
 
+### 0.29 Rápido: «abre o Discord», «fecha o Steam», «o que está em foco» sem esperar o motor (2026-10-21, ADR-0045)
+
+Comando simples vai à ferramenta **pela regra do código**, sem esperar o motor (o `claude -p` leva
+de 2,5 a 9 s para começar a responder): abrir, fechar a janela ("fecha o Discord"), encerrar ("fecha
+o Discord todo", "mata o Steam") e focar ("vai pro Discord") um app **liberado**; "o que está em
+foco?"; "quais janelas estão abertas?"; "quais abas estão abertas?"; "abre o YouTube" (ou um
+domínio, "abre exemplo.com.br"); "pesquisa vídeos de gatos no YouTube" (a busca do próprio site).
+A resposta é curta e do código ("Abrindo o Discord.", "Fechei a janela do Discord.").
+
+**As permissões são as de sempre:** a chamada passa pelo mesmo PDP, Jev e pergunta. Encerrar o
+editor com arquivo aberto, fechar a janela do navegador e o resto do que pedia o seu sim continuam
+pedindo — e sem o sim nada acontece. O que não cabe inteiro numa regra (pedido composto, "o Discord
+no terminal", um app que não está liberado ou que ele não reconhece com certeza) vai ao motor,
+como antes. Para desligar: `caminho_rapido = false` em `~/.config/jarvis/jarvis-voz.toml`.
+
+**Como conferir:** fale "abre o Discord" e meça de ouvido: a fala vem em menos de um segundo.
+`jarvis-voz --diagnostico` mostra «caminho rápido abrir_app → apps.launch: ok» e, no fim do turno,
+«(sem o motor)» e as etapas (fala, ASR, contexto, 1ª ferramenta, 1ª fala, 1º áudio). Os números de
+antes e depois estão em `docs/medicoes/velocidade-pedido.md` (gerado por
+`uv run --frozen python tools/medir_velocidade.py --desde 2026-10-21 --rede`; o `--rede` faz GET
+sem chave na Groq e na ElevenLabs). **Provado** com o cérebro, o executor e o PDP de verdade e a
+máquina falsa dos testes de fechar (`tests/unit/s2/test_caminho_rapido.py`,
+`tests/unit/politica/test_atalho.py`, e a janela inteira em `tests/unit/gui/test_janela_abrir_apps.py`).
+**Não provado:** no seu desktop, de ponta a ponta.
+
+### 0.30 Pedido de site começa no seu navegador; busca genérica não abre aba nenhuma (2026-10-21, ADR-0045)
+
+Antes, toda tarefa de site começava por uma busca numa **aba escondida** do seu navegador, que
+abria e fechava sozinha, e o passo a passo só aparecia ~14 s depois (mediana da sua trilha de 21/10).
+Agora:
+
+- **site específico** ("pesquisa vídeos do Primo Rico no YouTube", "as notícias do g1", "abre o
+  canal do X no YouTube"): o **primeiro passo é do código**, já na sua aba — a busca do próprio site
+  (ou a página dele), em ~1 s. Pedido de **ver** termina à vista ("Abri a busca do YouTube por
+  Primo Rico."), e o Jarvis segue dali (abrir o canal, o vídeo); pedido de **ler** ("quais as
+  notícias do g1") abre numa aba de fundo da sua janela e ele responde com o que leu;
+- **busca genérica** ("busca na internet o que é um buraco negro"): vai **direto**, pelo DuckDuckGo,
+  sem abrir navegador; se o DuckDuckGo recusar (o 202 do anti-robô), a Wikipédia responde e ele diz
+  por quê;
+- se o modelo mandar o número de uma aba que não existe mais, navegar vai para a página mesmo assim
+  (antes era "falha" e mais uma rodada do motor).
+
+**Recarregue a extensão** (`brave://extensions` → Recarregar) se ainda não fez desde as mudanças
+de 21/10: a sua trilha das 21:13 mostra a extensão de antes respondendo "falha" a um id velho.
+
+**Como conferir:** peça "pesquisa vídeos de gatos no YouTube" e veja a aba do YouTube com os
+resultados em ~1 s, sem nenhuma aba piscando antes; peça "busca na internet quem inventou o rádio" e
+veja que nenhuma aba abriu. **Provado** em contêiner com Chromium 155 e Firefox 158 de verdade
+(`tools/harness_navegador.py`, 42 conferências em cada: a busca genérica não abre nem fecha aba e
+não muda o foco). **Não provado:** o YouTube e o DuckDuckGo de verdade dentro do seu Jarvis.
+
+### 0.31 Dois monitores: o que está em foco e o que está na frente de cada um (2026-10-21, ADR-0037 emendada)
+
+"Em foco" são duas coisas com dois monitores: a janela **ativa** (a do teclado) e a que está **na
+frente** em cada monitor. Antes o Jarvis só via a ativa — com ele (ou outra janela) ativo no
+segundo monitor, o Brave na frente do principal era "segundo plano". Agora `window.focused` diz as
+duas, com o monitor e qual é o principal, e "o que está em foco?" responde pelo caminho rápido. Com
+o Brave aberto atrás, "abre o Brave" traz a janela dele para a frente **pelo KWin** (no Wayland o
+navegador não consegue pegar o foco sozinho).
+
+**Precisa do `kdotool` ≥ 0.3** (`cargo install kdotool`; ele já está em `~/.cargo/bin` aqui). O
+Jarvis completa sozinho a `KDE_SESSION_VERSION` que o `kdotool` exige, se ela não chegou a ele.
+
+**O diagnóstico de 1 comando** (só lê; não move, não foca, não fecha nada):
+
+```bash
+cd ~/GranaFacil/J.A.R.V.I.S && uv run --frozen python tools/diagnostico_foco.py
+```
+
+Deixe o Brave na frente do monitor principal, clique numa janela do segundo monitor e rode; cole o
+resultado na conversa. Ele mostra a sessão, o `kdotool`, os monitores (o principal), a ativa, a da
+frente de cada monitor, as janelas de app com o estado, o tempo das duas leituras e o que a
+extensão acha que está em foco. `--sem-titulos` omite os títulos (o de uma aba pode ser privado).
+**Provado** num KWin 6.7.5 virtual com dois monitores (`tools/harness_foco.py`, 13/13, relatório
+em `docs/medicoes/foco-kwin-virtual.md`). **Não provado:** o seu KWin, os seus monitores e o Brave
+de verdade — é o que o diagnóstico mostra.
+
+### 0.32 A nuvem com a conexão aberta (2026-10-21, ADR-0045)
+
+A Groq (ASR) e a ElevenLabs (voz) agora reaproveitam a conexão entre um pedido e outro, e a abrem
+já no começo da sessão. Medido desta rede: cada lote de fala da ElevenLabs economiza ~70 ms
+(conexão nova ~227 ms × reaproveitada ~154 ms) e a Groq ~15 ms; o primeiro pedido da sessão não paga
+o DNS frio (120–200 ms). Nada muda no que é mandado: o aquecimento só abre o TLS, sem dado nenhum.
+**Não provado:** o efeito somado no seu turno — a trilha nova (§0.29) vai mostrar o 1º áudio.
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)
@@ -1685,6 +1770,10 @@ sudo dnf remove jarvis
 9. **o filtro de ruído e o vocabulário no seu microfone** (§0.27, §0.28): os limiares foram
    escolhidos com áudio sintético e o whisper small; com a sua voz, os seus ruídos e a Groq turbo,
    nada foi medido — a trilha `ruido` e o `--diagnostico` contam o que ele segurou.
+10. **o caminho rápido, o foco por monitor e o Brave à frente no seu desktop** (§0.29–§0.31): as
+    regras e o cérebro rodaram com o PDP de verdade e máquinas falsas; o foco por monitor e o KWin
+    trazendo a janela, num KWin 6.7.5 virtual com dois monitores e janelas Qt com a classe do Brave;
+    o seu KWin, os seus monitores e o Brave de verdade, não — `tools/diagnostico_foco.py` mostra.
 
 ## 4. Como reportar
 

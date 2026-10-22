@@ -203,3 +203,21 @@ def test_desligado_tudo_vai_ao_motor_como_antes(
     )
 
     assert resposta.atalho == "" and len(vistos) == 1 and lancados == []
+
+
+def test_fechar_a_janela_do_navegador_pela_regra_ainda_pergunta(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """Fechar a janela do navegador do dono pede o sim (ADR-0042) — pela regra também."""
+    _tabela, janelas = _ligar(executor)
+    perguntas: list[Confirmacao] = []
+    motor = MotorRoteirizado(resposta="Deixei o Firefox aberto.")
+
+    resposta = _cerebro(executor, motor, perguntas=perguntas).responder(
+        "fecha o firefox", epoch=1, publicar=lambda _: None
+    )
+
+    assert resposta.atalho == "fechar_janela"
+    assert perguntas, "o navegador do dono pergunta antes de fechar"
+    assert janelas.fechadas == [], "sem o sim, a janela fica"
+    assert resposta.ferramentas[0].status == "negado"

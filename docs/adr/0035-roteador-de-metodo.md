@@ -66,3 +66,20 @@ o dono pode ter o Brave liberado como app sem tê-lo em Configuração → Naveg
 `browser.launch` nem existe (no `cc119e8` o roteador o tirava; o ajuste seguinte desfez isso, que o
 teste da janela de apps pegou). `quer_ver` não muda: pedido de ver termina à vista; o trabalho de
 fundo, agora numa aba de segundo plano da janela do dono. Testes: `tests/unit/politica/test_metodo.py`.
+
+## Emenda de 2026-10-21 (2) — site específico × busca genérica, e o caminho rápido (ADR-0045)
+
+Pedido do dono: tarefa de site **específico** usa o navegador dele desde o primeiro passo; busca
+**genérica** vai direto, sem navegador. Na tabela (`jarvis.politica.sites` diz os sites que o dono
+chama pelo nome, com a página inicial e a busca de cada um; o casamento é por palavra inteira):
+
+| O pedido | Método | Motivo | De fora no turno |
+|---|---|---|---|
+| busca sem site ("busca na internet o que é…", "as notícias de hoje") | `web` | `busca_generica` | abrir página (`browser.navigate`, `sites.open`), abrir o navegador como app, mouse e teclado |
+| "abre o navegador e pesquisa receita de bolo" | `navegador` | `pesquisa_no_navegador` | `web.buscar`, mouse e teclado |
+| cita um site (nome ou domínio), com a extensão | `navegador` | `cita_site` | **também o `web.buscar`** — a busca é a do site, na aba do dono |
+| "abre o Brave e pesquisa X no YouTube" | `navegador` | `cita_site` | o `web.buscar`; o `browser.launch` **fica** (o dono pediu o navegador) |
+
+A trilha do dono mostra por quê: em 21/10 às 21:12 o «abre o Brave …» com o YouTube junto ouviu
+`metodo_de_fora` para o `browser.launch`. E o caminho rápido (ADR-0045) usa o método: ferramenta
+que o roteador tirou do turno não vira atalho. Testes: `tests/unit/politica/test_metodo.py`.
