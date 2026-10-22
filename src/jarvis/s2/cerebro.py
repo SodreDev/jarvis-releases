@@ -44,6 +44,7 @@ from jarvis.executor.ferramentas import (
 from jarvis.fatiador import PALAVRAS_MINIMAS_POR_PEDACO, Corte, FatiadorDeFala, PedacoDeFala
 from jarvis.imagem import Imagem
 from jarvis.memoryd.livro import LivroDeMemoria
+from jarvis.navegador.cliente import SEM_NAVEGADOR_ABERTO
 from jarvis.politica.atalho import Atalho
 from jarvis.politica.atalho import frase as frase_do_atalho
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
@@ -391,6 +392,17 @@ class Cerebro:
                 PedidoDeTool(atalho.tool_id, dict(atalho.args)), cancelado_no_laco, texto_do_dono
             )
             resposta.ferramentas.append(resultado)
+            if _sem_navegador_aberto(atalho, resultado.status, resultado.motivo) and self._pode(
+                "sites.open"
+            ):
+                # Nenhum navegador com a extensão (o Brave fechado): o sites.open abre o do dono já
+                # com a página — o único caso em que o navegador é lançado (ADR-0036, emenda (2)).
+                resultado = self._chamar(
+                    PedidoDeTool("sites.open", {"url": atalho.args["url"]}),
+                    cancelado_no_laco,
+                    texto_do_dono,
+                )
+                resposta.ferramentas.append(resultado)
             if self.ferramentas is not None and self.ferramentas.trilha is not None:
                 self.ferramentas.trilha.evento(
                     "atalho",
@@ -563,6 +575,13 @@ class Cerebro:
         self.autorizacoes.encerrar()
         self._pendentes[resposta.response_id] = resposta
         return resposta
+
+    def _pode(self, tool_id: str) -> bool:
+        """A ferramenta existe nesta sessão e o método do pedido não a tirou (ADR-0035)."""
+        executor = self.ferramentas
+        if executor is None or not executor.disponivel(tool_id):
+            return False
+        return executor.metodo is None or tool_id not in executor.metodo.evitar
 
     def _atalho(self, texto_do_dono: str) -> Atalho | None:
         if not self.caminho_rapido or self.ferramentas is None:
@@ -1034,6 +1053,15 @@ class Cerebro:
             resposta.ms_ate_primeiro_pedaco = _ms_desde(comeco)
         resposta.publicados.append(payload)
         publicar(payload)
+
+
+def _sem_navegador_aberto(atalho: Atalho, status: str, motivo: str) -> bool:
+    return (
+        atalho.tool_id == "browser.navigate"
+        and status == "erro"
+        and SEM_NAVEGADOR_ABERTO in motivo
+        and isinstance(atalho.args.get("url"), str)
+    )
 
 
 def _marcar_a_primeira_ferramenta(resposta: Resposta, comeco: float) -> None:

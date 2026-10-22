@@ -221,3 +221,34 @@ def test_fechar_a_janela_do_navegador_pela_regra_ainda_pergunta(
     assert perguntas, "o navegador do dono pergunta antes de fechar"
     assert janelas.fechadas == [], "sem o sim, a janela fica"
     assert resposta.ferramentas[0].status == "negado"
+
+
+class _SemNavegador:
+    """O transporte da extensão quando nenhum navegador com ela está aberto (o Brave fechado)."""
+
+    def chamar(self, _pedido: object, navegador: str = "") -> dict[str, object]:
+        from jarvis.navegador.cliente import NavegadorIndisponivel
+
+        raise NavegadorIndisponivel("nenhum navegador com a extensão do Jarvis está aberto")
+
+
+def test_com_o_navegador_fechado_o_site_abre_pelo_sites_open_sem_esperar_o_motor(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """«Pesquisa vídeos de gatos no YouTube» com o Brave fechado: a extensão não responde, e o
+    caminho rápido abre o navegador do dono já com a página (o único caso em que ele é lançado)."""
+    from jarvis.navegador.cliente import ClienteDoNavegador
+    from jarvis.navegador.ferramentas import CorposDoNavegador
+
+    abertos: list[str] = []
+    executor.navegador = CorposDoNavegador(ClienteDoNavegador(_SemNavegador()))
+    executor.abrir_site = abertos.append
+    motor = MotorRoteirizado(resposta="o motor não devia falar")
+
+    resposta = _cerebro(executor, motor).responder(
+        "pesquisa vídeos de gatos no YouTube", epoch=1, publicar=lambda _: None
+    )
+
+    assert [r.tool_id for r in resposta.ferramentas] == ["browser.navigate", "sites.open"]
+    assert abertos == ["https://www.youtube.com/results?search_query=v%C3%ADdeos+de+gatos"]
+    assert motor.pedidos == [] and resposta.gerado == "Abri a busca do YouTube por vídeos de gatos."

@@ -1426,6 +1426,8 @@ Agora:
   por quê;
 - se o modelo mandar o número de uma aba que não existe mais, navegar vai para a página mesmo assim
   (antes era "falha" e mais uma rodada do motor).
+- com o Brave **fechado**, o mesmo pedido abre o Brave já na página (pelo `sites.open`, sem esperar o
+  motor); com ele aberto, nada é lançado — é a aba no navegador que você já tem.
 
 **Recarregue a extensão** (`brave://extensions` → Recarregar) se ainda não fez desde as mudanças
 de 21/10: a sua trilha das 21:13 mostra a extensão de antes respondendo "falha" a um id velho.

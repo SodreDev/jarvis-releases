@@ -50,6 +50,9 @@ SEM_ABA: Final = "sem_aba"
 MENSAGEM_SEM_ABA: Final = (
     "essa aba não existe mais (foi fechada ou o id é de outra sessão): veja as abas abertas"
 )
+SEM_NAVEGADOR_ABERTO: Final = "com a extensão do Jarvis está aberto"
+"""O pedaço da frase de `NavegadorIndisponivel` quando não há navegador com a extensão: o caminho
+rápido a reconhece para abrir o navegador do dono pelo `sites.open` (ADR-0045)."""
 ABA_QUE_NAO_EXISTE: Final = "no tab with id"
 """O texto do Chromium para um `tabId` que não existe (em minúsculas)."""
 
