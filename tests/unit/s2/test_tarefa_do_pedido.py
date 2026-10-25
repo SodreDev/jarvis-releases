@@ -41,7 +41,7 @@ from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.s2.pendencias import RegistroDePendencias
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
-from jarvis.s2.tarefa_do_pedido import NOTA_DE_CONFERIR
+from jarvis.s2.tarefa_do_pedido import NOTA_DE_CONFERIR, SEM_CONFERIR
 from jarvis.tarefas.gestor import EstadoDaTarefa, GestorDeTarefas, Tarefa
 
 BUSCA = "https://www.youtube.com/results?search_query=canal+x"
@@ -345,12 +345,15 @@ def _roteiro_de_quem_mente(contexto: Contexto) -> Sequence[Parte]:
     return ["Pronto, abri o vídeo."]  # afirma sem ter lido nada
 
 
-def test_navegador_fora_do_ar_volta_como_frase_de_gente_sem_fingir_sucesso(
+def test_navegador_fechado_o_jarvis_abre_ele_mesmo_e_nao_finge_conferir(
     executor: ExecutorDeFerramentas, extensao: ExtensaoFalsa
 ) -> None:
-    """O primeiro passo no turno falhou; a tarefa segue (o objetivo de navegador confere) e, sem
-    nenhum efeito que tenha dado certo, a resposta é do código — nunca o «abri» do modelo."""
+    """Dono, 2026-10-25: «abre um vídeo no YouTube» com o navegador fechado mandava o dono abrir.
+    Agora o Jarvis abre o navegador dele já na página (`sites.open`), e a tarefa continua; sem ter
+    lido a página, a resposta diz que não conferiu."""
     extensao.fora_do_ar = True
+    abertos: list[str] = []
+    executor.abrir_site = abertos.append
 
     publicados: list[dict[str, Any]] = []
     resposta = _cerebro(executor, MotorRoteirizado(resposta=_roteiro_de_quem_mente)).responder(
@@ -358,12 +361,33 @@ def test_navegador_fora_do_ar_volta_como_frase_de_gente_sem_fingir_sucesso(
     )
     tarefa = _tarefa(executor, resposta.tarefa_id)
 
-    assert [r.status for r in resposta.ferramentas] == ["erro"], "a tentativa, no turno"
-    assert tarefa.estado is EstadoDaTarefa.FALHOU
-    assert tarefa.resposta == (
-        "Não consegui: nenhum navegador com a extensão do Jarvis está aberto."
+    assert [(r.tool_id, r.status) for r in resposta.ferramentas] == [
+        ("browser.navigate", "erro"),
+        ("sites.open", "ok"),
+    ]
+    assert abertos == [BUSCA], "o navegador do dono abriu, já na busca"
+    assert _falado(publicados) == "Vou abrir.", "nada de mandar o dono abrir o navegador"
+    assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
+    assert tarefa.resposta.endswith(SEM_CONFERIR), "não leu a página: não afirma"
+
+
+def test_sem_como_abrir_o_navegador_a_falha_e_frase_de_gente_sem_fingir_sucesso(
+    executor: ExecutorDeFerramentas, extensao: ExtensaoFalsa
+) -> None:
+    extensao.fora_do_ar = True
+
+    def sem_portal(_url: str) -> None:
+        raise OSError("o portal do navegador não respondeu")
+
+    executor.abrir_site = sem_portal
+    resposta = _cerebro(executor, MotorRoteirizado(resposta=_roteiro_de_quem_mente)).responder(
+        PEDIDO, epoch=0, publicar=lambda _p: None
     )
-    assert "Pronto" not in tarefa.resposta
+    tarefa = _tarefa(executor, resposta.tarefa_id)
+
+    assert [r.status for r in resposta.ferramentas] == ["erro", "erro"]
+    assert tarefa.estado is EstadoDaTarefa.FALHOU
+    assert tarefa.resposta.startswith("Não consegui:") and "Pronto" not in tarefa.resposta
     _sem_protocolo(tarefa.resposta)
 
 

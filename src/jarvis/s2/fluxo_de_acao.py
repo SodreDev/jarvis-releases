@@ -102,8 +102,10 @@ class FluxoDeAcao:
         confirmar: Confirmar = negar_sempre,
         session_id: str = "",
         proveniencia: Proveniencia | None = None,
+        contaminacao: Contaminacao | None = None,
     ) -> ResultadoDeFerramenta:
-        """A chamada do **turno**: o que precisa do dono vira pendência, e o turno acaba nela."""
+        """A chamada do **turno**: o que precisa do dono vira pendência, e o turno acaba nela.
+        `contaminacao` só vem do código (a abertura do navegador fechado, ADR-0046)."""
         decidido = self._decidir(
             executor,
             pedido,
@@ -113,7 +115,7 @@ class FluxoDeAcao:
             confirmar=confirmar,
             session_id=session_id,
             proveniencia=proveniencia,
-            contaminacao=None,
+            contaminacao=contaminacao,
             autorizacoes=self.autorizacoes,
         )
         if isinstance(decidido, ResultadoDeFerramenta):

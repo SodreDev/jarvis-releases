@@ -107,6 +107,10 @@ PASSOS_NO_TURNO: Final = 2
 """Ferramentas que o próprio turno roda antes de passar o resto do pedido a uma tarefa (dono,
 2026-10-25: pedido simples ou de um passo responde no turno; tarefa só para trabalho longo). No
 objetivo que precisa conferir (navegador, entrada virtual: agir e depois ler), é uma."""
+ESPERA_DA_EXTENSAO_S: Final = 12.0
+"""Quanto se espera a extensão conectar depois de o Jarvis abrir o navegador (o Brave frio leva
+alguns segundos para carregar a extensão)."""
+INTERVALO_DA_EXTENSAO_S: Final = 0.25
 SEGUNDOS_NO_TURNO: Final = 12.0
 """Laço que já passou disto é trabalho longo: a próxima ferramenta vai para a tarefa."""
 ACOES_DE_UM_PASSO: Final = frozenset(
@@ -434,17 +438,16 @@ class Cerebro:
                 PedidoDeTool(atalho.tool_id, dict(atalho.args)), cancelado_no_laco, texto_do_dono
             )
             resposta.ferramentas.append(resultado)
-            if _sem_navegador_aberto(atalho, resultado.status, resultado.motivo) and self._pode(
-                "sites.open"
-            ):
-                # Nenhum navegador com a extensão (o Brave fechado): o sites.open abre o do dono já
-                # com a página — o único caso em que o navegador é lançado (ADR-0036, emenda (2)).
-                resultado = self._chamar(
-                    PedidoDeTool("sites.open", {"url": atalho.args["url"]}),
-                    cancelado_no_laco,
-                    texto_do_dono,
-                )
-                resposta.ferramentas.append(resultado)
+            # Nenhum navegador com a extensão (o Brave fechado): o Jarvis abre o do dono — o
+            # sites.open já com a página (ADR-0036, emenda (2); ADR-0046).
+            extras = self._abrir_o_navegador(
+                PedidoDeTool(atalho.tool_id, dict(atalho.args)),
+                resultado,
+                lambda p: self._chamar(p, cancelado_no_laco, texto_do_dono),
+                lambda p: self._chamar(p, cancelado_no_laco, texto_do_dono, self._sem_o_metodo()),
+            )
+            resposta.ferramentas.extend(extras)
+            resultado = extras[-1] if extras else resultado
             if self.ferramentas is not None and self.ferramentas.trilha is not None:
                 self.ferramentas.trilha.evento(
                     "atalho",
@@ -581,6 +584,16 @@ class Cerebro:
                 break
             resultado = self._chamar(pedido, cancelado_no_laco, texto_do_dono)
             resposta.ferramentas.append(resultado)
+            # O navegador fechado não é motivo para mandar o dono abri-lo (dono, 2026-10-25): o
+            # Jarvis abre e segue — a página pelo sites.open, ou o navegador e o passo de novo.
+            extras = self._abrir_o_navegador(
+                pedido,
+                resultado,
+                lambda p: self._chamar(p, cancelado_no_laco, texto_do_dono),
+                lambda p: self._chamar(p, cancelado_no_laco, texto_do_dono, self._sem_o_metodo()),
+            )
+            resposta.ferramentas.extend(extras)
+            resultado = extras[-1] if extras else resultado
             if resultado.anexos and aceita_imagem(self.motor):
                 imagens = resultado.anexos
             # Sem status entre passos (dono, 2026-10-20, ADR-0031): ele não acompanha passo a
@@ -646,6 +659,64 @@ class Cerebro:
         self.autorizacoes.encerrar()
         self._pendentes[resposta.response_id] = resposta
         return resposta
+
+    def _abrir_o_navegador(
+        self,
+        pedido: PedidoDeTool,
+        resultado: ResultadoDeFerramenta,
+        chamar: Callable[[PedidoDeTool], ResultadoDeFerramenta],
+        abrir: Callable[[PedidoDeTool], ResultadoDeFerramenta] | None = None,
+    ) -> list[ResultadoDeFerramenta]:
+        """Com o navegador fechado, o Jarvis o abre — ele pode e deve (dono, 2026-10-25: «abre um
+        vídeo no YouTube» com o Brave fechado mandava o dono abrir). A navegação com endereço vai
+        pelo `sites.open`, que abre o navegador do dono já na página; outro passo (ler as abas, a
+        página) abre o navegador (`browser.launch`), espera a extensão conectar e tenta de novo,
+        uma vez. As chamadas passam pelo PDP, Jev e pergunta de sempre; `abrir` é a do
+        `browser.launch`, sem o método do pedido — que tira o `browser.launch` do **modelo** num
+        pedido de site, e aqui quem decide abrir é o código. Devolve o que rodou a mais."""
+        if not _sem_navegador_aberto(pedido, resultado):
+            return []
+        url = pedido.args.get("url")
+        if (
+            pedido.tool_id == "browser.navigate"
+            and isinstance(url, str)
+            and self._pode("sites.open")
+        ):
+            return [chamar(PedidoDeTool("sites.open", {"url": url}))]
+        executor = self.ferramentas
+        if pedido.tool_id == "browser.launch" or executor is None:
+            return []
+        if executor.navegadores is None or not executor.disponivel("browser.launch"):
+            return []  # nenhum navegador configurado: não há o que abrir, e o motor diz
+        aberto = (abrir or chamar)(PedidoDeTool("browser.launch", {}))
+        if aberto.status != "ok" or not self._esperar_a_extensao():
+            return [aberto]
+        return [aberto, chamar(pedido)]
+
+    def _sem_o_metodo(self) -> Contaminacao | None:
+        """A marca do turno sem o método do pedido — a contaminação e o objetivo de agora seguem
+        para o PDP — para a chamada que o próprio código decide (abrir o navegador fechado)."""
+        executor = self.ferramentas
+        if executor is None:
+            return None
+        return Contaminacao(executor.turno.valor, executor.objetivo, None)
+
+    def _esperar_a_extensao(self) -> bool:
+        """Espera a extensão do navegador recém-aberto conectar (até `ESPERA_DA_EXTENSAO_S`). Sem
+        como sondar a ponte (o teste, a sessão sem navegador configurado), tenta de novo direto."""
+        executor = self.ferramentas
+        sondar = executor.estado_do_navegador if executor is not None else None
+        if sondar is None:
+            return True
+        limite = time.monotonic() + ESPERA_DA_EXTENSAO_S
+        while time.monotonic() < limite:
+            try:
+                if sondar().conectado:
+                    return True
+            except Exception:
+                return False
+            time.sleep(INTERVALO_DA_EXTENSAO_S)
+        return False
 
     def _ids_das_ferramentas(self) -> frozenset[str]:
         return (
@@ -855,12 +926,21 @@ class Cerebro:
                 )
                 return bool(resposta) and not tarefa.cancelada.is_set()
 
-            try:
+            extras = 0
+
+            def passo(chamada: PedidoDeTool, *, sem_metodo: bool = False) -> ResultadoDeFerramenta:
+                nonlocal extras
+                identificador = (
+                    call_id if chamada is pedido and not extras else f"{call_id}-{extras}"
+                )
+                extras += 1
+                # A abertura do navegador fechado é do código: sem o método do pedido (ADR-0046).
+                quem = Contaminacao(marca.valor, marca.objetivo, None) if sem_metodo else marca
                 if fluxo is not None:
-                    resultado = fluxo.chamar_na_tarefa(
+                    return fluxo.chamar_na_tarefa(
                         executor,
-                        pedido,
-                        contaminacao=marca,
+                        chamada,
+                        contaminacao=quem,
                         autorizacoes=autorizacoes,
                         pedido_do_dono=texto_do_dono,
                         mensagens=mensagens,
@@ -870,17 +950,24 @@ class Cerebro:
                         session_id=session_id,
                         proveniencia=proveniencia,
                     )
-                else:
-                    resultado = executor.executar(
-                        pedido.tool_id,
-                        pedido.args,
-                        cancelado=tarefa.cancelada.is_set,
-                        confirmar=confirmar_na_janela,
-                        session_id=session_id,
-                        call_id=call_id,
-                        proveniencia=proveniencia,
-                        contaminacao=marca,
-                    )
+                return executor.executar(
+                    chamada.tool_id,
+                    chamada.args,
+                    cancelado=tarefa.cancelada.is_set,
+                    confirmar=confirmar_na_janela,
+                    session_id=session_id,
+                    call_id=identificador,
+                    proveniencia=proveniencia,
+                    contaminacao=quem,
+                )
+
+            try:
+                resultado = passo(pedido)
+                # O navegador fechado: a tarefa o abre e segue, como o turno (ADR-0046).
+                abertos = self._abrir_o_navegador(
+                    pedido, resultado, passo, lambda p: passo(p, sem_metodo=True)
+                )
+                resultado = abertos[-1] if abertos else resultado
             finally:
                 gestor.esperando_o_dono(tarefa, False)
                 for identificador in anunciadas:
@@ -1050,8 +1137,14 @@ class Cerebro:
         return pedidos, visto_cancelamento
 
     def _chamar(
-        self, pedido: PedidoDeTool, cancelado: Cancelado, texto_do_dono: str = ""
+        self,
+        pedido: PedidoDeTool,
+        cancelado: Cancelado,
+        texto_do_dono: str = "",
+        contaminacao: Contaminacao | None = None,
     ) -> ResultadoDeFerramenta:
+        """Uma chamada do turno pelo caminho de sempre (PDP, Jev, objetivo, pergunta).
+        `contaminacao` só vem do código (a abertura do navegador fechado, sem o método)."""
         if self.ferramentas is None:
             return ResultadoDeFerramenta(
                 pedido.tool_id, "negado", motivo="nenhuma ferramenta está ligada nesta sessão"
@@ -1067,6 +1160,7 @@ class Cerebro:
                 confirmar=self.confirmar,
                 session_id=self.session_id,
                 proveniencia=self.proveniencia,
+                contaminacao=contaminacao,
             )
         return self.ferramentas.executar(
             pedido.tool_id,
@@ -1075,6 +1169,7 @@ class Cerebro:
             confirmar=self.confirmar,
             session_id=self.session_id,
             proveniencia=self.proveniencia,
+            contaminacao=contaminacao,
         )
 
     def _status(self, texto: str) -> None:
@@ -1215,12 +1310,12 @@ class Cerebro:
         publicar(payload)
 
 
-def _sem_navegador_aberto(atalho: Atalho, status: str, motivo: str) -> bool:
+def _sem_navegador_aberto(pedido: PedidoDeTool, resultado: ResultadoDeFerramenta) -> bool:
+    """A `browser.*` falhou porque nenhum navegador com a extensão do Jarvis está aberto."""
     return (
-        atalho.tool_id == "browser.navigate"
-        and status == "erro"
-        and SEM_NAVEGADOR_ABERTO in motivo
-        and isinstance(atalho.args.get("url"), str)
+        pedido.tool_id.startswith("browser.")
+        and resultado.status == "erro"
+        and SEM_NAVEGADOR_ABERTO in resultado.motivo
     )
 
 
