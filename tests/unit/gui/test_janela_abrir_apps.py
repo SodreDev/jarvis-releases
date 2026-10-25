@@ -192,8 +192,8 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
     sem_chaveiro: None,
 ) -> None:
     """Uma conversa, quatro pedidos: marcado abre sem faixa (inclusive por nome parcial, e pelo
-    caminho rápido, sem o motor), não marcado é negado com sugestão, e site abre sem faixa (abrir
-    site é livre desde 2026-10-18)."""
+    caminho rápido, sem o motor), instalado e não marcado pergunta antes (ADR-0046) e sem o sim
+    não abre, e site abre sem faixa (abrir site é livre desde 2026-10-18)."""
     vistos.clear()
     maquina = Maquina(tmp_path)
     laco, ponte = _montar(
@@ -212,11 +212,11 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
     assert not _falar(aplicativo, tela, laco, "abre o brave"), "nome parcial pediu confirmação"
     assert maquina.apps_abertos == ["discord", "brave-browser"]
 
-    assert not _falar(aplicativo, tela, laco, "abre a calculadora"), "negar não é perguntar"
+    # Instalado e fora da lista: pergunta (ADR-0046) — e, com o "não" do dono, nada abre.
+    assert _falar(aplicativo, tela, laco, "abre a calculadora", sim=False), "fora da lista pergunta"
     assert maquina.apps_abertos == ["discord", "brave-browser"], "app não marcado abriu"
     negado = dict(vistos)["abre a calculadora"]
-    assert negado["status"] == "negado" and "Parecidos:" in negado["motivo"]
-    assert "Discord" in negado["motivo"], json.dumps(negado, ensure_ascii=False)
+    assert negado["status"] == "negado", json.dumps(negado, ensure_ascii=False)
 
     assert maquina.sites_abertos == []
     assert not _falar(aplicativo, tela, laco, "abre o exemplo"), "abrir site é livre: sem faixa"
