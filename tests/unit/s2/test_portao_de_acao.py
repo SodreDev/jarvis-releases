@@ -601,21 +601,22 @@ def _pendencia_de_site(
     return cerebro, motor
 
 
-def test_sim_falado_resolve_a_pendencia_e_despacha_tarefa(
+def test_sim_falado_resolve_a_pendencia_e_roda_a_acao_no_turno(
     executor: ExecutorDeFerramentas, abertos: list[str], concluidas: list[Tarefa]
 ) -> None:
+    """A ação rápida confirmada pela voz roda no turno do "sim", e o dono ouve o resultado numa
+    frase só (dono, 2026-10-25: pedido de um passo não vira tarefa nem fala duas vezes)."""
     cerebro, motor = _pendencia_de_site(executor, _jev("pedir_permissao", 0.9))
     resposta, falado = _dizer(cerebro, "Sim, pode.")
     assert resposta.motor == "portao" and len(motor.pedidos) == 1, "o motor não é chamado"
-    assert [r.status for r in resposta.ferramentas] == ["despachado"]
-    assert falado.startswith("Certo, estou fazendo")
-    _esperar_tarefas(executor)
+    assert [r.status for r in resposta.ferramentas] == ["ok"]
+    assert falado == "Abri o exemplo.com.br."
     assert abertos == ["https://exemplo.com.br"]
-    assert [t.estado for t in concluidas] == [EstadoDaTarefa.CONCLUIDA]
+    assert executor.tarefas is not None and executor.tarefas.tarefas == {}, "não virou tarefa"
+    assert concluidas == []
     # Consumida: outro "sim" não autoriza mais nada.
     resposta, _ = _dizer(cerebro, "sim")
     assert resposta.motor != "portao" and resposta.ferramentas == []
-    _esperar_tarefas(executor)
     assert abertos == ["https://exemplo.com.br"]
 
 
@@ -649,12 +650,11 @@ def test_sim_contextual_pelo_jev_resolve(
     jev = _jev("pedir_permissao", 0.9, resposta="sim", p_resposta=0.95)
     cerebro, _motor = _pendencia_de_site(executor, jev)
     resposta, _ = _dizer(cerebro, "manda bala, pode abrir esse aí")
-    assert [r.status for r in resposta.ferramentas] == ["despachado"]
+    assert [r.status for r in resposta.ferramentas] == ["ok"]
     estado, perguntas = jev.chamadas[-1]
     assert set(perguntas) == {"resposta"}
     assert "exemplo.com.br" in estado["acao_pendente"]
     assert any("Posso?" in linha for linha in estado["conversa"])
-    _esperar_tarefas(executor)
     assert abertos == ["https://exemplo.com.br"]
 
 
@@ -702,8 +702,8 @@ def test_clique_resolve_so_o_id_certo_e_uma_vez(
 def test_sim_depois_de_confirm_do_pdp_roda_com_o_pdp_de_novo(
     executor: ExecutorDeFerramentas, abertos: list[str]
 ) -> None:
-    """A tarefa passa pelo PDP outra vez (turno contaminado → `confirm`): o "sim" dado vale para
-    aquela pergunta exata, e só ela."""
+    """A ação confirmada passa pelo PDP outra vez, com a contaminação do turno da pergunta
+    (`confirm`): o "sim" dado vale para aquela pergunta exata, e só ela."""
     motor = _roteiro(
         [PedidoDeTool("files.read_text", {"path": "~/Documentos/notas.txt"})],
         [PedidoDeTool("sites.open", {"url": "https://exemplo.com.br"})],
@@ -712,8 +712,7 @@ def test_sim_depois_de_confirm_do_pdp_roda_com_o_pdp_de_novo(
     cerebro = _cerebro(executor, motor, _jev("fazer", 0.99))
     _dizer(cerebro, "lê as notas e abre o site que estiver nelas")
     resposta, _ = _dizer(cerebro, "sim")
-    assert [r.status for r in resposta.ferramentas] == ["despachado"]
-    _esperar_tarefas(executor)
+    assert [r.status for r in resposta.ferramentas] == ["ok"]
     assert abertos == ["https://exemplo.com.br"]
 
 
@@ -761,9 +760,12 @@ def test_resposta_literal(fala: str, esperado: RespostaDoDono | None) -> None:
 
 
 # --- execução delegada: a conversa segue enquanto a tarefa roda --------------------------------
-def test_execucao_confirmada_nao_prende_a_conversa(
-    executor: ExecutorDeFerramentas, concluidas: list[Tarefa]
+def test_execucao_confirmada_demorada_vai_para_tarefa_e_nao_prende_a_conversa(
+    executor: ExecutorDeFerramentas, concluidas: list[Tarefa], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A ação confirmada que demora (prazo de manifesto acima de `PRAZO_NA_HORA_MS`) vai para uma
+    tarefa: o turno não prende o laço de voz. O teto vai a zero para o site fazer esse papel."""
+    monkeypatch.setattr("jarvis.s2.fluxo_de_acao.PRAZO_NA_HORA_MS", 0)
     liberar = threading.Event()
     comecou = threading.Event()
     abertos: list[str] = []

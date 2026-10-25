@@ -278,7 +278,9 @@ def test_o_cerebro_fala_o_aviso_da_tool_moderada_e_o_motor_nao_o_repete(
     resposta = cerebro.responder("anota café", epoch=0, publicar=falado.append)
 
     texto = " ".join(p["text"] for p in falado if p["text"])
-    assert texto == "Vou anotar. Gravei o rascunho compras.md na pasta do Jarvis. Pronto."
+    # O «Pronto.» do motor só repetiria o aviso: vai à tela, não à voz (ADR-0046).
+    assert texto == "Vou anotar. Gravei o rascunho compras.md na pasta do Jarvis."
+    assert resposta.caladas == ["Pronto."]
     assert [r.tool_id for r in resposta.ferramentas] == ["files.write_draft"]
     contexto_da_segunda = motor.pedidos[1].mensagens[-1].texto
     assert "já dito em voz ao dono" in contexto_da_segunda

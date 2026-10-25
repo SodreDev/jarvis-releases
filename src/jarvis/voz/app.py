@@ -100,6 +100,7 @@ from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
 from jarvis.s2.avisos import FALAR, AvisoLiberado, decidir_entrega, frase_do_aviso
 from jarvis.s2.cerebro import Cerebro, Resposta
+from jarvis.s2.entrega import so_o_novo
 from jarvis.s2.motor import (
     INTERVALO_DE_CONSULTA_S,
     Mensagem,
@@ -522,6 +523,11 @@ class Aplicativo:
     _telas_dos_avisos: dict[str, str] = field(default_factory=dict, repr=False)
     """A resposta de uma tarefa como a tela a mostra, quando ela passou do orçamento da fala: a voz
     diz o que cabe (`_falas_dos_avisos`), a tela, tudo."""
+    _ditos_das_tarefas: dict[str, list[str]] = field(default_factory=dict, repr=False)
+    """O que cada tarefa de um pedido já pôs na voz (o aviso de um passo, a pergunta): o fim dela
+    não repete (dono, 2026-10-25)."""
+    _tarefas_entregues: set[str] = field(default_factory=set, repr=False)
+    """As tarefas cujo fim já foi entregue: o fim de uma tarefa sai uma vez só, por id."""
 
     def __post_init__(self) -> None:
         self.avisos = FilaDeAvisos(session_id=self.session_id)
@@ -745,9 +751,17 @@ class Aplicativo:
         """A conclusão entra pela fila de avisos (ADR-0025) como `Notification`: o Jarvis decide
         se fala e quando, sem cortar fala em andamento. O texto é **nosso** (a descrição e o
         estado, ou o aviso que o código do motor escreveu — ADR-0037), exceto o resumo de um motor
-        `agente`, que é de terceiros e vem marcado."""
+        `agente`, que é de terceiros e vem marcado. O fim de uma tarefa é entregue **uma vez**, pelo
+        id dela (dono, 2026-10-25: nada de responder duas vezes ao mesmo pedido)."""
+        with self._trava_dos_avisos:
+            if tarefa.id in self._tarefas_entregues:
+                return
+            self._tarefas_entregues.add(tarefa.id)
         if tarefa.de_objetivo:
             self._resposta_da_tarefa(tarefa)
+            return
+        if tarefa.confirmar is not None and tarefa.motor == "direto":
+            self._resposta_da_acao_confirmada(tarefa)
             return
         if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
             if tarefa.aviso == "":
@@ -772,21 +786,87 @@ class Aplicativo:
 
     def _resposta_da_tarefa(self, tarefa: Tarefa) -> None:
         """O fim da tarefa de um pedido é a **resposta** a ele (ADR-0038): o resultado conferido
-        ou o erro em frase de gente, dito como fala do Jarvis — nunca o nome da ferramenta."""
+        ou o erro em frase de gente, dito como fala do Jarvis — nunca o nome da ferramenta.
+
+        Entrega silenciosa (dono, 2026-10-25): o que o dono já ouviu deste pedido — a frase do
+        turno, o aviso de um passo, a pergunta — não volta à voz. O fim só fala se traz algo novo
+        (`jarvis.s2.entrega`); senão, só o card e a tela mudam. Cancelada (pelo botão, pela
+        `tarefa.cancelar` que ele pediu) e recusada por ele (disse não à pergunta) acabam caladas:
+        quem decidiu foi ele."""
+        if tarefa.estado is EstadoDaTarefa.CANCELADA:
+            self._entrega_silenciosa(
+                tarefa, "cancelada_pelo_dono", "Parei o que você tinha pedido."
+            )
+            return
+        if tarefa.aviso == "":
+            self._entrega_silenciosa(tarefa, "recusada_pelo_dono", tarefa.motivo)
+            return
         if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
             tipo, frase = "concluida", tarefa.resposta or "Terminei o que você pediu."
-        elif tarefa.estado is EstadoDaTarefa.FALHOU:
+        else:
             motivo = tarefa.motivo
             if not motivo or re.match(ERRO_CRU, motivo):
                 motivo = "deu um erro aqui dentro"
             tipo = "falhou"
             frase = tarefa.resposta or f"Não consegui terminar o que você pediu: {motivo}."
-        else:
-            tipo, frase = "evento", "Parei o que você tinha pedido."
+        frase = sem_protocolo(frase)
+        with self._trava_dos_avisos:
+            ditos = [tarefa.ja_dito, *self._ditos_das_tarefas.get(tarefa.id, [])]
+        novo = so_o_novo(frase, ditos)
+        if not novo:
+            self._entrega_silenciosa(tarefa, "ja_dito", frase)
+            return
         # Falar menos (dono, 2026-10-21): a voz resume a execução em até quatro frases, a não ser
         # que o pedido peça detalhe; o que passar disso vai só para a tela.
-        falado, _so_na_tela = orcar(sem_protocolo(frase), livre=quer_detalhe(tarefa.descricao))
+        falado, _so_na_tela = orcar(novo, livre=quer_detalhe(tarefa.descricao))
         self._aviso_da_tarefa(tarefa, f"tarefa-{tarefa.id}", tipo, falado, na_tela=frase)
+        self.trilha.evento(
+            "entrega",
+            turno=tarefa.turno or tarefa.id,
+            origem="tarefa",
+            decisao="falada",
+            motivo="falha" if tipo == "falhou" else "nova_informacao",
+        )
+
+    def _resposta_da_acao_confirmada(self, tarefa: Tarefa) -> None:
+        """A ação que o dono confirmou no clique (`fluxo_de_acao._despachar`): o fim é a resposta a
+        ela, dita como fala — o aviso da ferramenta («Encerrei o Steam.») ou a frase da ação."""
+        if tarefa.estado is EstadoDaTarefa.CANCELADA:
+            self._entrega_silenciosa(tarefa, "cancelada_pelo_dono", "Parei o que você confirmou.")
+            return
+        if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
+            tipo, frase = "concluida", tarefa.aviso or f"Feito: {tarefa.descricao}."
+        else:
+            tipo, frase = "falhou", f"Não deu para {tarefa.descricao}: {tarefa.motivo}."
+        self._aviso_da_tarefa(tarefa, f"tarefa-{tarefa.id}", tipo, frase)
+
+    def _entrega_silenciosa(self, tarefa: Tarefa, motivo: str, frase: str) -> None:
+        """O fim de uma tarefa que não vai à voz: o card guarda (`SO_CARD`), a tela mostra, e a
+        trilha diz por quê — o dono olha a janela e vê o estado, sem ouvir a repetição."""
+        texto = " ".join(sem_protocolo(frase).split()) or tarefa.descricao
+        identificador = f"tarefa-{tarefa.id}"
+        with self._trava_dos_avisos:
+            self.avisos.receber(
+                notificacao(
+                    self.session_id,
+                    identificador,
+                    tipo="concluida" if tarefa.estado is EstadoDaTarefa.CONCLUIDA else "evento",
+                    origem=f"{ORIGEM_DO_PEDIDO}{tarefa.descricao}"[:80],
+                    resumo=texto,
+                ),
+                self.relogio_dos_avisos(),
+            )
+            self.avisos.decidido(identificador, Entrega.SO_CARD)
+        self._avisos_mudaram()
+        if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
+            self.escrever_na_tela(f"  ({texto})")
+        self.trilha.evento(
+            "entrega",
+            turno=tarefa.turno or tarefa.id,
+            origem="tarefa",
+            decisao="silenciosa",
+            motivo=motivo,
+        )
 
     def _aviso_da_tarefa(
         self, tarefa: Tarefa, identificador: str, tipo: str, frase: str, *, na_tela: str = ""
@@ -801,6 +881,8 @@ class Aplicativo:
         tela = sem_protocolo(na_tela)
         with self._trava_dos_avisos:
             self._falas_dos_avisos[identificador] = texto
+            # O que esta tarefa já pôs na voz: o fim dela não repete (dono, 2026-10-25).
+            self._ditos_das_tarefas.setdefault(tarefa.id, []).append(texto)
             if tela and tela != texto:
                 self._telas_dos_avisos[identificador] = tela
             self.avisos.receber(
@@ -1653,6 +1735,7 @@ class Aplicativo:
             ms_primeira_ferramenta=resposta.ms_ate_primeira_ferramenta if resposta else None,
             atalho=resposta.atalho if resposta else "",
             motor_chamado=resposta.motor_chamado if resposta else True,
+            frases_caladas=len(resposta.caladas) if resposta else 0,
         )
         return Turno(
             falou=texto,

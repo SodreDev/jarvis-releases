@@ -103,6 +103,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "fase": Forma.CODIGO,
     "ferramentas": Forma.NUMERO,
     "fim": Forma.CODIGO,
+    "frases_caladas": Forma.NUMERO,
     "jev": Forma.MOTIVO,
     "logprob": Forma.NUMERO,
     "maior_fala_ms": Forma.NUMERO,
@@ -161,6 +162,8 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
             "ms_primeira_ferramenta",
             "atalho",
             "motor_chamado",
+            # Uma resposta por pedido (ADR-0046): frases do motor que repetiam o já dito no turno.
+            "frases_caladas",
         }
     ),
     "ferramenta.inicio": frozenset({"tool_id", "argumentos", "pdp", "fase"}),
@@ -181,6 +184,8 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     "ruido": frozenset(
         {"etapa", "motivo", "modo", "ms", "maior_fala_ms", "contraste_db", "sem_fala", "logprob"}
     ),
+    # A entrega do fim de uma tarefa (ADR-0046): falada ou silenciosa, e por quê — nunca o texto.
+    "entrega": frozenset({"origem", "decisao", "motivo"}),
 }
 """Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
 dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""
@@ -265,6 +270,12 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "eco_da_dica",
         "incerto_curto",
         "sim_incerto",
+        # a entrega do fim de uma tarefa (`jarvis.voz.app`, ADR-0046)
+        "ja_dito",
+        "nova_informacao",
+        "falha",
+        "cancelada_pelo_dono",
+        "recusada_pelo_dono",
     }
 )
 """A allowlist do `motivo`: códigos que o nosso código escolhe pelo caminho que tomou. Código novo

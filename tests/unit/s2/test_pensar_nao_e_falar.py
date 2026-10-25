@@ -233,11 +233,13 @@ def test_o_aviso_de_um_efeito_que_fica_continua_sendo_falado(
     )
     publicados: list[dict[str, Any]] = []
 
-    Cerebro(motor=motor, ferramentas=executor).responder(
+    resposta = Cerebro(motor=motor, ferramentas=executor).responder(
         "cria a pasta viagem em Documentos", epoch=0, publicar=publicados.append
     )
 
-    assert _falado(publicados) == "Criei a pasta viagem. Pronto."
+    # O «Pronto.» do motor repete o aviso: vai à tela, não à voz (dono, 2026-10-25, ADR-0046).
+    assert _falado(publicados) == "Criei a pasta viagem."
+    assert resposta.caladas == ["Pronto."] and resposta.gerado.endswith("Pronto.")
 
 
 RESPOSTA_LONGA = (

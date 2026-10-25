@@ -41,9 +41,14 @@ class Espera:
     so_clique: bool = False
     """Só o clique responde: a pergunta por ação (o que está sob o clique, ADR-0027) e a que nasce
     sem o portão (sem o Jev, nada interpreta a fala) — como na janela de antes."""
+    origem: str = ""
+    """Quem respondeu: `voz`, `clique`, `interrompida` (o dono cortou a pergunta com outra coisa),
+    `cancelada`; vazio = ninguém (o prazo venceu). O fim da tarefa só fala do "não" que o dono não
+    ouviu acontecer (o prazo): o "não" dele já teve a frase dele (dono, 2026-10-25)."""
 
-    def responder(self, sim: bool) -> None:
+    def responder(self, sim: bool, origem: str = "") -> None:
         self.sim = sim
+        self.origem = origem
         self.evento.set()
 
 
@@ -104,18 +109,20 @@ class RegistroDePendencias:
         self._avisar_fim(aberta.id)
         return None
 
-    def tomar(self, pendencia_id: str, *, sim: bool | None = None) -> Pendencia | None:
+    def tomar(
+        self, pendencia_id: str, *, sim: bool | None = None, origem: str = ""
+    ) -> Pendencia | None:
         """Retira a pendência **deste id**, se ainda vale. Uma vez só.
 
         Com `sim`, a tarefa que espera por ela é acordada com a resposta **dentro** da trava: quem
-        espera e vê a pendência fechada já encontra a resposta dada."""
+        espera e vê a pendência fechada já encontra a resposta dada (e quem a deu, `origem`)."""
         with self._trava:
             aberta = self.valida()
             if aberta is None or aberta.id != pendencia_id:
                 return None
             self._aberta = None
             if sim is not None and aberta.espera is not None:
-                aberta.espera.responder(sim)
+                aberta.espera.responder(sim, origem)
         self._avisar_fim(aberta.id)
         return aberta
 
@@ -145,7 +152,7 @@ class RegistroDePendencias:
         anunciar(pergunta)
         while not espera.evento.wait(INTERVALO_DA_ESPERA_S):
             if cancelado():
-                self.tomar(pergunta.id, sim=False)  # a faixa sai da janela
+                self.tomar(pergunta.id, sim=False, origem="cancelada")  # a faixa sai da janela
                 return False
             if not self.aberta_agora(pergunta.id):
                 # Vencida, cancelada, ou respondida agora mesmo: quem respondeu acordou a espera
@@ -159,7 +166,7 @@ class RegistroDePendencias:
         with self._trava:
             aberta = self._aberta
         if aberta is not None and aberta.espera is not None and not aberta.espera.ouvida:
-            self.tomar(aberta.id, sim=False)
+            self.tomar(aberta.id, sim=False, origem="interrompida")
 
     def aberta_agora(self, pendencia_id: str) -> bool:
         """Esta pendência ainda está aberta e no prazo (a tarefa que espera olha aqui)."""

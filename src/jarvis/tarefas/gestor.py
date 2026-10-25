@@ -32,6 +32,7 @@ import jsonschema
 
 from jarvis.barramento.envelope import uuid7
 from jarvis.executor.desfazer import Contaminacao
+from jarvis.politica.atalho import frase_da_ferramenta
 from jarvis.politica.objetivo import EstadoDoObjetivo, Objetivo
 from jarvis.s2.motor import PedidoDeTool
 
@@ -52,6 +53,8 @@ encerrar o Jarvis (`jarvis.encerrar`, ADR-0041) roda no turno em que o dono pedi
 segundo plano não desliga o assistente. Aprender um nome (`vocabulario.aprender`, ADR-0044)
 também: é a correção que o dono acabou de fazer, nunca algo que uma tarefa leu por aí."""
 MOTORES_DE_TAREFA: Final = ("direto", "agente")
+LEVES: Final = frozenset({"foco"})
+"""Motores de tarefa que só acompanham (sem motor de conversa): não contam no teto de tarefas."""
 
 
 class EstadoDaTarefa(StrEnum):
@@ -135,6 +138,11 @@ class Tarefa:
     chamar: ChamarNaTarefa | None = field(default=None, repr=False)
     """Por onde cada passo passa até o executor: na tarefa de um pedido, o mesmo portão do turno
     (PDP, Jev, objetivo — `jarvis.s2.fluxo_de_acao`). `None` = direto ao executor (só o PDP)."""
+    ja_dito: str = ""
+    """O que o dono já ouviu deste pedido no turno que o criou (a frase curta, o aviso de um passo
+    do turno): o fim da tarefa não repete (dono, 2026-10-25)."""
+    turno: str = ""
+    """O turno que criou a tarefa: a trilha liga a entrega do fim ao pedido."""
 
     @property
     def progresso(self) -> int:
@@ -175,7 +183,12 @@ class MotorDireto:
             return PedidoDeTool(tarefa.tool_id, dict(tarefa.parametros))
         ultimo = feitos[-1]
         if ultimo.status == "ok":
-            return FimDaTarefa(f"{tarefa.tool_id} terminou")
+            # O fim diz o que mudou, na frase do código (o aviso da moderada, «Encerrei o Steam.»,
+            # ou a da ação, «Fechei a janela do Brave.»), e não "a tarefa terminou".
+            frase = ultimo.aviso or frase_da_ferramenta(
+                tarefa.tool_id, tarefa.parametros, ultimo.dados
+            )
+            return FimDaTarefa(f"{tarefa.tool_id} terminou", aviso=frase or None)
         # O motivo vai para o dono em voz: sem o id da ferramenta nem o status cru (ADR-0038).
         raise ErroDeTarefa(ultimo.motivo or "não terminou")
 
@@ -268,11 +281,14 @@ class GestorDeTarefas:
         chamar: ChamarNaTarefa | None = None,
         prazo_s: float | None = None,
         maximo_de_passos: int | None = None,
+        ja_dito: str = "",
+        turno: str = "",
     ) -> Tarefa:
         """A tarefa de um **pedido do dono** que precisa de ferramenta (ADR-0038): quem a cria é o
         cérebro, nunca o modelo; o motor já traz a primeira proposta, e a `contaminacao` traz o
         objetivo e o método daquele pedido. Cada passo vai por `chamar` (o portão do turno); o
-        teto de tarefas, o cancelar e o prazo são os de sempre."""
+        teto de tarefas, o cancelar e o prazo são os de sempre. `ja_dito` e `turno` entram antes
+        de a linha começar: a tarefa que acaba na hora não pode chegar ao fim sem eles."""
         return self._comecar(
             Tarefa(
                 id=f"t-{uuid7()[-8:]}",
@@ -286,13 +302,20 @@ class GestorDeTarefas:
                 de_objetivo=True,
                 maximo_de_passos=maximo_de_passos,
                 chamar=chamar,
+                ja_dito=ja_dito,
+                turno=turno,
             ),
             motor,
         )
 
     def _comecar(self, tarefa: Tarefa, motor: MotorDeTarefa) -> Tarefa:
         with self._trava:
-            rodando = [t for t in self.tarefas.values() if not t.estado.final]
+            # Acompanhar o foco de um app aberto (ADR-0037) não é subagente: não usa motor de
+            # conversa nem ocupa o teto (dono, 2026-10-25 — com o pedido de um passo no turno, dois
+            # apps abertos seguidos travavam a tarefa longa que viesse depois).
+            rodando = [
+                t for t in self.tarefas.values() if not t.estado.final and t.motor not in LEVES
+            ]
             if len(rodando) >= self.maximo_ao_mesmo_tempo:
                 raise TarefaRecusada(
                     f"já há {len(rodando)} tarefas rodando (o teto é "

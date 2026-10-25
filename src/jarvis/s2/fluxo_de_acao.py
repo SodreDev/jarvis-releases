@@ -12,10 +12,12 @@ A ordem, com quem manda em cada passo:
 4. `allow` do PDP e "fazer" → roda **agora**, no turno (o motor precisa do resultado);
 5. o resto vira uma **pendência** (`RegistroDePendencias`): o Jarvis diz a pergunta e o turno
    acaba, sem prender o laço de voz;
-6. o "sim" (voz, texto ou clique) resolve **só** aquela pendência, válida, uma vez; e a execução
-   vai para uma **tarefa** (`GestorDeTarefas`, motor direto), com o "sim" valendo só para a
-   chamada exata. O Jarvis segue conversando; o fim chega pela fila de avisos (ADR-0025), que
-   nunca corta fala em andamento.
+6. o "sim" (voz, texto ou clique) resolve **só** aquela pendência, válida, uma vez, com o "sim"
+   valendo só para a chamada exata. Falado no turno, a ação rápida roda **ali mesmo** e o dono
+   ouve o resultado numa frase (dono, 2026-10-25: pedido de um passo não vira tarefa); a demorada
+   (prazo do manifesto acima de `PRAZO_NA_HORA_MS`) e a do clique, que chega pela linha da janela,
+   vão para uma **tarefa** (`GestorDeTarefas`, motor direto) — o fim chega pela fila de avisos
+   (ADR-0025), que nunca corta fala em andamento.
 """
 
 from __future__ import annotations
@@ -33,16 +35,32 @@ from jarvis.executor.ferramentas import (
     ResultadoDeFerramenta,
     negar_sempre,
 )
+from jarvis.politica.atalho import frase_da_ferramenta
 from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Veredito
 from jarvis.s2.motor import Mensagem, PedidoDeTool
-from jarvis.s2.pendencias import Pendencia, PendenciaOcupada, RegistroDePendencias
+from jarvis.s2.pendencias import Espera, Pendencia, PendenciaOcupada, RegistroDePendencias
 from jarvis.s2.portao import AutorizacoesExplicitas, Classe, PortaoDeAcao, RespostaDoDono
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, MotorDireto, TarefaRecusada
 
 Anunciar = Callable[[Confirmacao], None]
 """Leva a pergunta de uma tarefa à voz (a fila de avisos): ela não acaba um turno."""
+PRAZO_NA_HORA_MS: Final = 10_000
+"""Ação confirmada com prazo de manifesto até isto roda no turno do "sim"; mais demorada (instalar
+um programa), numa tarefa — o turno não prende o laço de voz por minutos."""
+FRASE_DO_SIM_DA_TAREFA: Final = "Certo."
+"""O "sim" a uma pergunta de tarefa: a tarefa segue sozinha e o resultado dela é a resposta — o
+turno não promete "aviso quando terminar" (seria a segunda fala do mesmo pedido)."""
+MOTIVO_DO_NAO: Final[Mapping[str, str]] = {
+    "voz": "nada foi feito: o dono disse não",
+    "clique": "nada foi feito: o dono disse não",
+    "interrompida": "nada foi feito: o dono interrompeu a pergunta e falou de outra coisa",
+    "cancelada": "nada foi feito: a tarefa foi cancelada",
+    "prazo": "nada foi feito: o prazo da pergunta acabou sem resposta do dono",
+}
+"""O "não" de uma pergunta de tarefa, por quem o deu: o motor da tarefa não volta a propor a mesma
+ação (o laço de perguntas da trilha do dono, 2026-10-24), e o fim só fala do prazo."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,8 +179,13 @@ class FluxoDeAcao:
         if isinstance(decidido, ResultadoDeFerramenta):
             return decidido
         pergunta = decidido.pergunta
+        espera = Espera()
         resposta = self.pendencias.esperar(
-            pergunta, contaminado=decidido.contaminado, cancelado=cancelado, anunciar=anunciar
+            pergunta,
+            contaminado=decidido.contaminado,
+            cancelado=cancelado,
+            anunciar=anunciar,
+            espera=espera,
         )
         if executor.trilha is not None:
             executor.trilha.evento(
@@ -181,13 +204,12 @@ class FluxoDeAcao:
                 causa="pergunta_ocupada",
             )
         if not resposta:
+            origem = espera.origem or "prazo"
             return ResultadoDeFerramenta(
                 pergunta.tool_id,
                 "negado",
-                motivo=(
-                    "nada foi feito: o dono não confirmou (disse não, falou de outra coisa ou o "
-                    "prazo acabou)"
-                ),
+                motivo=MOTIVO_DO_NAO.get(origem, MOTIVO_DO_NAO["prazo"]),
+                dados={"resposta_do_dono": origem},
                 call_id=pergunta.id,
                 causa="dono_nao_confirmou",
             )
@@ -361,19 +383,32 @@ class FluxoDeAcao:
             fala, acao_pendente=detalhe, mensagens=mensagens, cancelado=cancelado
         )
         if resposta is RespostaDoDono.SIM:
-            resultado = self.resolver(executor, pendencia.id, sim=True)
+            resultado = self.resolver(
+                executor, pendencia.id, sim=True, na_hora=True, cancelado=cancelado, origem="voz"
+            )
             if resultado is None:  # venceu entre a leitura e o tomar: o "sim" não vale mais
                 return LeituraDaResposta(
                     frase=f"A pergunta sobre {falado} já tinha vencido; não fiz nada.",
                 )
-            if resultado.status == "despachado":
+            if resultado.status == "despachado" and pendencia.espera is not None:
+                frase = FRASE_DO_SIM_DA_TAREFA
+            elif resultado.status == "despachado":
                 frase = f"Certo, estou fazendo: {falado}. Aviso quando terminar."
             elif resultado.status == "ok":
-                frase = f"Feito: {falado}."
+                pergunta = pendencia.pergunta
+                frase = (
+                    resultado.aviso
+                    or frase_da_ferramenta(pergunta.tool_id, pergunta.argumentos, resultado.dados)
+                    or f"Feito: {falado}."
+                )
             else:
                 frase = f"Não deu para fazer {falado}: {resultado.motivo}."
             return LeituraDaResposta(frase=frase, resultado=resultado)
-        self.pendencias.cancelar()
+        if pendencia.espera is not None:
+            # A tarefa que esperava acorda com o "não" e acaba calada: a frase é esta.
+            self.pendencias.tomar(pendencia.id, sim=False, origem="voz")
+        else:
+            self.pendencias.cancelar()
         if resposta is RespostaDoDono.NAO:
             return LeituraDaResposta(frase=f"Tudo bem, não vou fazer isso ({falado}).")
         return LeituraDaResposta(
@@ -385,10 +420,20 @@ class FluxoDeAcao:
         )
 
     def resolver(
-        self, executor: ExecutorDeFerramentas, pendencia_id: str, *, sim: bool
+        self,
+        executor: ExecutorDeFerramentas,
+        pendencia_id: str,
+        *,
+        sim: bool,
+        na_hora: bool = False,
+        cancelado: Cancelado = lambda: False,
+        origem: str = "clique",
     ) -> ResultadoDeFerramenta | None:
-        """Resposta do dono a **esta** pendência. `None` = não havia (vencida, outra, já usada)."""
-        pendencia = self.pendencias.tomar(pendencia_id, sim=sim)
+        """Resposta do dono a **esta** pendência. `None` = não havia (vencida, outra, já usada).
+
+        `na_hora` (o "sim" falado, na linha do turno): a ação rápida roda aqui, e o resultado é a
+        resposta. Sem ele (o clique, na linha da janela), ela vai para uma tarefa."""
+        pendencia = self.pendencias.tomar(pendencia_id, sim=sim, origem=origem)
         if pendencia is None:
             return None
         if pendencia.espera is not None:
@@ -407,7 +452,23 @@ class FluxoDeAcao:
                 motivo="o dono disse não",
                 call_id=pendencia.id,
             )
+        pergunta = pendencia.pergunta
+        if na_hora and _rapida(executor, pergunta.tool_id):
+            # Pelo PDP de novo, com a contaminação do turno em que a pergunta nasceu: o "sim" de uso
+            # único responde à confirmação que ele cobrar, e a nenhuma outra.
+            return executor.executar(
+                pergunta.tool_id,
+                pergunta.argumentos,
+                cancelado=cancelado,
+                confirmar=_sim_de_uso_unico(pergunta),
+                contaminacao=Contaminacao(pendencia.contaminado),
+            )
         return _despachar(executor, pendencia)
+
+
+def _rapida(executor: ExecutorDeFerramentas, tool_id: str) -> bool:
+    manifesto = executor.manifestos.get(tool_id, {})
+    return int(manifesto.get("timeout_ms", PRAZO_NA_HORA_MS + 1)) <= PRAZO_NA_HORA_MS
 
 
 def _despachar(executor: ExecutorDeFerramentas, pendencia: Pendencia) -> ResultadoDeFerramenta:

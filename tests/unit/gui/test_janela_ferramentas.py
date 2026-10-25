@@ -182,9 +182,10 @@ def test_o_dono_aprova_na_janela_e_so_entao_a_memoria_e_apagada(
     _capturar(janela, "confirmar-apagar.png")
 
     tela.responderPendencia(pedido["id"], True)
-    # O pedido virou tarefa (ADR-0038): o turno acabou em "Vou apagar."; a resposta chega depois,
-    # em voz, pela fila de avisos.
-    _esperar(aplicativo, 8.0, ate=lambda: "Jarvis: Apaguei." in _respostas(tela))
+    # Pedido de um passo responde no turno (ADR-0046): a frase curta e o resultado numa resposta
+    # só — nada de tarefa, nem de segunda fala pela fila de avisos.
+    final = "Jarvis: Vou apagar. Apaguei."
+    _esperar(aplicativo, 8.0, ate=lambda: final in _respostas(tela))
     _esperar(aplicativo, 0.5)
     _capturar(janela, "memoria-apagada.png")
     tela.pararConversa()
@@ -192,9 +193,7 @@ def test_o_dono_aprova_na_janela_e_so_entao_a_memoria_e_apagada(
 
     assert not _memoria_viva(conversa, alvo), "com o sim do dono, apagou"
     assert _pendente(tela) is None
-    respostas = _respostas(tela)
-    assert respostas[0] == "Jarvis: Vou apagar." and respostas[-1] == "Jarvis: Apaguei."
-    assert set(respostas[1:-1]) <= {ANUNCIO}, "nada além da frase curta, do aviso e do resultado"
+    assert _respostas(tela) == [final], "uma resposta por pedido"
 
 
 def test_sem_resposta_no_prazo_e_nao_e_a_faixa_some(
@@ -215,7 +214,7 @@ def test_sem_resposta_no_prazo_e_nao_e_a_faixa_some(
     tela.enviarTexto("apaga aquela anotação do café")
     _esperar(aplicativo, 5.0, ate=lambda: _pendente(tela) is not None)
     assert _pendente(tela) is not None
-    nao_fiz = "Jarvis: Não fiz, porque você não confirmou."
+    nao_fiz = "Jarvis: Vou apagar. Não apaguei."
     _esperar(aplicativo, 8.0, ate=lambda: nao_fiz in _respostas(tela))
     _esperar(aplicativo, 0.3)
     tela.pararConversa()
@@ -223,8 +222,8 @@ def test_sem_resposta_no_prazo_e_nao_e_a_faixa_some(
 
     assert _memoria_viva(conversa, alvo), "sem resposta no prazo, não apaga"
     assert _pendente(tela) is None, "pedido vencido continuou na tela"
-    # Sem nenhum passo feito, quem diz é o código (ADR-0038), não o "Não apaguei." do modelo.
-    assert _respostas(tela)[0] == "Jarvis: Vou apagar." and _respostas(tela)[-1] == nao_fiz
+    # No turno (ADR-0046), o motor recebe o "não confirmou" e diz que não apagou — uma vez.
+    assert _respostas(tela) == [nao_fiz]
 
 
 def test_interromper_com_a_confirmacao_aberta_e_nao(
@@ -267,13 +266,13 @@ def test_listar_a_pasta_e_responder_em_voz(
     tela.iniciarConversa()
     _esperar(aplicativo, 1.0, ate=lambda: laco.estado.value != "parado")
     tela.enviarTexto("o que tem na minha pasta Documentos?")
-    resultado = "Jarvis: Na sua pasta Documentos tem notas.txt e orcamento.ods."
+    resultado = "Jarvis: Deixa eu ver. Na sua pasta Documentos tem notas.txt e orcamento.ods."
     _esperar(aplicativo, 8.0, ate=lambda: resultado in _respostas(tela))
     _esperar(aplicativo, 0.5)
     _capturar(janela, "pasta-listada.png")
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
 
-    # A frase curta no turno; o resultado, quando a tarefa acaba, em voz (ADR-0038).
-    assert _respostas(tela) == ["Jarvis: Deixa eu ver.", resultado]
+    # Um passo: a frase curta e o resultado no mesmo turno, uma resposta só (ADR-0046).
+    assert _respostas(tela) == [resultado]
     assert _pendente(tela) is None, "leitura não pede confirmação"

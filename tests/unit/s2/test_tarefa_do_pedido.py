@@ -6,7 +6,8 @@ primeira tentativa. Aqui, sem rede e sem navegador de verdade (a extensão é um
 `ClienteDoNavegador`), o que se prova:
 
 - o protocolo de ferramenta nunca chega à fala do turno nem à resposta da tarefa;
-- o turno acaba na frase curta e as ferramentas seguem **encadeadas na mesma tarefa**;
+- o pedido de um passo responde no turno; o trabalho longo (mais passos, ou o objetivo que precisa
+  conferir) acaba o turno na frase curta e segue **encadeado na mesma tarefa** (ADR-0046);
 - a conversa recebe um pedido novo enquanto a tarefa trabalha;
 - a aba muda de verdade antes de o Jarvis dizer que abriu, e "abri" sem conferir não passa;
 - a falha do navegador volta como frase de gente, sem fingir sucesso;
@@ -182,27 +183,45 @@ def _sem_protocolo(texto: str) -> None:
 
 
 # --- o protocolo não vaza --------------------------------------------------------------------
-def test_protocolo_escrito_como_texto_nao_vai_a_fala_nem_a_resposta(
-    executor: ExecutorDeFerramentas,
-) -> None:
-    """O motor esqueceu a marca, depois narrou o passo e por fim citou a ferramenta: nada disso é
-    fala. O JSON solto e a marca viram propostas (rodam pelo PDP), a narração vira raciocínio e a
-    frase que cita a ferramenta sai da resposta."""
+def _roteiro_da_nota(contexto: Contexto) -> Sequence[Parte]:
+    """O motor esqueceu a marca, depois narrou o passo e por fim citou a ferramenta."""
     listar = json.dumps({"tool_id": "files.list_dir", "args": {"path": "~/Documentos"}})
     ler = json.dumps({"tool_id": "files.read_text", "args": {"path": "~/Documentos/notas.txt"}})
+    feitas = len(_feitas(contexto))
+    if feitas == 0:
+        return [f"Deixa eu ver. {listar}"]
+    if feitas == 1:
+        return [f"Achei a pasta, agora leio. <<ferramenta>> {ler}"]
+    return ["Usei files.read_text para ler a nota. Na sua nota tem comprar café."]
 
-    def roteiro(contexto: Contexto) -> Sequence[Parte]:
-        feitas = len(_feitas(contexto))
-        if feitas == 0:
-            return [f"Deixa eu ver. {listar}"]
-        if feitas == 1:
-            return [f"Achei a pasta, agora leio. <<ferramenta>> {ler}"]
-        return ["Usei files.read_text para ler a nota. Na sua nota tem comprar café."]
 
-    motor = MotorRoteirizado(resposta=roteiro)
+def test_protocolo_escrito_como_texto_nao_vai_a_fala_no_turno(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """Dois passos cabem no turno (ADR-0046): o JSON solto e a marca viram propostas (rodam pelo
+    PDP), a narração vira raciocínio e a frase que cita a ferramenta não chega à voz."""
+    motor = MotorRoteirizado(resposta=_roteiro_da_nota)
     publicados: list[dict[str, Any]] = []
 
     resposta = _cerebro(executor, motor).responder(
+        "o que tem na minha nota?", epoch=0, publicar=publicados.append
+    )
+
+    assert not resposta.tarefa_id and [r.status for r in resposta.ferramentas] == ["ok", "ok"]
+    assert _falado(publicados) == "Deixa eu ver. Na sua nota tem comprar café."
+    _sem_protocolo(_falado(publicados))
+    assert executor.tarefas is not None and executor.tarefas.tarefas == {}
+
+
+def test_protocolo_escrito_como_texto_nao_vai_a_resposta_da_tarefa(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """Com um passo só no turno, o segundo vai para a tarefa — e a resposta dela também perde o
+    protocolo e a frase que cita a ferramenta."""
+    motor = MotorRoteirizado(resposta=_roteiro_da_nota)
+    publicados: list[dict[str, Any]] = []
+
+    resposta = _cerebro(executor, motor, passos_no_turno=1).responder(
         "o que tem na minha nota?", epoch=0, publicar=publicados.append
     )
     tarefa = _tarefa(executor, resposta.tarefa_id)
@@ -210,13 +229,14 @@ def test_protocolo_escrito_como_texto_nao_vai_a_fala_nem_a_resposta(
     assert _falado(publicados) == "Deixa eu ver."
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
     assert tarefa.resposta == "Na sua nota tem comprar café."
+    assert tarefa.ja_dito == "Deixa eu ver.", "o fim sabe o que o dono já ouviu"
     _sem_protocolo(_falado(publicados))
     _sem_protocolo(tarefa.resposta)
 
 
-def test_sem_frase_do_motor_o_turno_diz_a_frase_curta_do_codigo(
-    executor: ExecutorDeFerramentas,
-) -> None:
+def test_pedido_de_um_passo_responde_no_turno_sem_tarefa(executor: ExecutorDeFerramentas) -> None:
+    """Dono, 2026-10-25: pedido de um passo não vira tarefa — a ferramenta roda no turno e a
+    resposta sai nele, uma vez."""
     motor = MotorRoteirizado(
         resposta=lambda c: (
             [PedidoDeTool("files.list_dir", {"path": "~/Documentos"})]
@@ -228,8 +248,30 @@ def test_sem_frase_do_motor_o_turno_diz_a_frase_curta_do_codigo(
     resposta = _cerebro(executor, motor).responder(
         "lista Documentos", epoch=0, publicar=publicados.append
     )
+    assert not resposta.tarefa_id and FRASE_AO_DELEGAR not in _falado(publicados)
+    assert _falado(publicados) == "Tem só o arquivo de notas."
+    assert executor.tarefas is not None and executor.tarefas.tarefas == {}
+
+
+def test_sem_frase_do_motor_o_trabalho_longo_diz_a_frase_curta_do_codigo(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    def roteiro(contexto: Contexto) -> Sequence[Parte]:
+        feitas = len(_feitas(contexto))
+        if feitas == 0:
+            return [PedidoDeTool("files.list_dir", {"path": "~/Documentos"})]
+        if feitas == 1:
+            return [PedidoDeTool("files.read_text", {"path": "~/Documentos/notas.txt"})]
+        return ["Na sua nota tem comprar café."]
+
+    publicados: list[dict[str, Any]] = []
+    resposta = _cerebro(executor, MotorRoteirizado(resposta=roteiro), passos_no_turno=1).responder(
+        "lê a nota de Documentos", epoch=0, publicar=publicados.append
+    )
     assert _falado(publicados) == FRASE_AO_DELEGAR
-    assert _tarefa(executor, resposta.tarefa_id).resposta == "Tem só o arquivo de notas."
+    tarefa = _tarefa(executor, resposta.tarefa_id)
+    assert tarefa.resposta == "Na sua nota tem comprar café."
+    assert tarefa.ja_dito == FRASE_AO_DELEGAR and tarefa.turno == resposta.turn_id
 
 
 # --- várias ferramentas, uma tarefa; a conversa segue ---------------------------------------
@@ -259,12 +301,14 @@ def test_abrir_video_no_youtube_encadeia_ate_a_aba_mudar_e_conferir(
     resposta = _cerebro(executor, motor).responder(PEDIDO, epoch=0, publicar=publicados.append)
     tarefa = _tarefa(executor, resposta.tarefa_id)
 
-    assert resposta.ferramentas == [], "o turno não roda ferramenta: ela vai para a tarefa"
+    # O primeiro passo é do turno; o objetivo de navegador precisa conferir (agir e depois ler),
+    # então a segunda ferramenta já é trabalho longo e vai para a tarefa (ADR-0046).
+    assert [r.tool_id for r in resposta.ferramentas] == ["browser.navigate"]
     assert _falado(publicados) == "Vou procurar no YouTube."
     assert extensao.url == VIDEO, "a aba do dono mudou de verdade"
     navegou = extensao.metodos.count("tabs.navigate") + extensao.metodos.count("tabs.open")
     assert navegou == 2 and extensao.metodos.count("page.read") == 2
-    assert tarefa.passo == 4, "quatro ferramentas na mesma tarefa, uma depois da outra"
+    assert tarefa.passo == 3, "as outras três ferramentas na mesma tarefa, uma depois da outra"
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
     assert tarefa.resposta == f"Abri «{TITULO}» na aba atual."
     assert any(NOTA_DE_CONFERIR in c.sistema for c in motor.pedidos), "o código cobrou a leitura"
@@ -294,26 +338,27 @@ def test_a_conversa_recebe_outro_pedido_enquanto_a_tarefa_trabalha(
 
 
 # --- a falha volta como resultado útil ------------------------------------------------------
+def _roteiro_de_quem_mente(contexto: Contexto) -> Sequence[Parte]:
+    feitas = len(_feitas(contexto))
+    if feitas == 0:
+        return ["Vou abrir. ", PedidoDeTool("browser.navigate", {"url": BUSCA})]
+    return ["Pronto, abri o vídeo."]  # afirma sem ter lido nada
+
+
 def test_navegador_fora_do_ar_volta_como_frase_de_gente_sem_fingir_sucesso(
     executor: ExecutorDeFerramentas, extensao: ExtensaoFalsa
 ) -> None:
+    """O primeiro passo no turno falhou; a tarefa segue (o objetivo de navegador confere) e, sem
+    nenhum efeito que tenha dado certo, a resposta é do código — nunca o «abri» do modelo."""
     extensao.fora_do_ar = True
 
-    def roteiro(contexto: Contexto) -> Sequence[Parte]:
-        feitas = len(_feitas(contexto))
-        if feitas == 0:
-            return ["Vou abrir. ", PedidoDeTool("browser.navigate", {"url": BUSCA})]
-        if feitas == 1:  # outra tentativa, por outro caminho
-            return [PedidoDeTool("browser.navigate", {"url": VIDEO, "nova_aba": True})]
-        return ["Pronto, abri o vídeo."]  # mente: nenhuma tentativa deu certo
-
     publicados: list[dict[str, Any]] = []
-    resposta = _cerebro(executor, MotorRoteirizado(resposta=roteiro)).responder(
+    resposta = _cerebro(executor, MotorRoteirizado(resposta=_roteiro_de_quem_mente)).responder(
         PEDIDO, epoch=0, publicar=publicados.append
     )
     tarefa = _tarefa(executor, resposta.tarefa_id)
 
-    assert tarefa.passo == 2, "não parou depois da primeira tentativa"
+    assert [r.status for r in resposta.ferramentas] == ["erro"], "a tentativa, no turno"
     assert tarefa.estado is EstadoDaTarefa.FALHOU
     assert tarefa.resposta == (
         "Não consegui: nenhum navegador com a extensão do Jarvis está aberto."
@@ -396,6 +441,7 @@ def test_a_pergunta_da_tarefa_espera_o_sim_falado_depois_de_tocar(
         portao=PortaoDeAcao(classificador=_jev("sim")),
         pendencias=RegistroDePendencias(relogio=relogio),
         autorizacoes=AutorizacoesExplicitas(relogio=relogio),
+        passos_no_turno=1,  # a segunda ferramenta já é da tarefa: a pergunta nasce nela
     )
     resposta = cerebro.responder(
         "lê as notas e abre o site que estiver nelas", epoch=0, publicar=lambda _p: None
@@ -421,7 +467,8 @@ def test_a_pergunta_da_tarefa_espera_o_sim_falado_depois_de_tocar(
     tarefa = _tarefa(executor, tarefa_id)
 
     assert depois.motor == "portao"
-    assert _falado(publicados).startswith("Certo, estou fazendo: abrir exemplo.com.br")
+    # O "sim" a uma pergunta de tarefa é só um «Certo.»: o resultado da tarefa é a resposta.
+    assert _falado(publicados) == "Certo."
     assert abertos == ["https://exemplo.com.br"]
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
     # O motor foi cobrado a conferir e não leu: a resposta diz isso, em vez de afirmar sozinha.

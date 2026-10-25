@@ -86,8 +86,10 @@ class MotorDoObjetivo:
     """O do turno em que o pedido chegou: sistema (persona, método, memória) e a conversa até a
     fala do dono. As ferramentas vêm do `catalogo`, as de agora."""
     catalogo: Callable[[], Sequence[Mapping[str, Any]]]
-    primeiro: PedidoDeTool
-    """A proposta que o motor já fez no turno: é o primeiro passo, sem pedir de novo."""
+    primeiro: PedidoDeTool | None
+    """A proposta que o motor já fez no turno: é o primeiro passo, sem pedir de novo. `None` = o
+    turno já fez o primeiro passo (o objetivo que precisa conferir, ADR-0046): a tarefa pergunta ao
+    motor o próximo, com os resultados do turno na mão."""
     feitos_antes: tuple[ResultadoDeFerramenta, ...] = ()
     """O que o turno já tinha rodado antes de delegar (só o que não vai em tarefa)."""
     raciocinio: str = ""
@@ -108,8 +110,13 @@ class MotorDoObjetivo:
     def proximo(
         self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
     ) -> Passo:
-        if not feitos:
+        if not feitos and self.primeiro is not None:
             return self.primeiro
+        if feitos and feitos[-1].causa == "dono_nao_confirmou":
+            # O dono disse não (ou cortou a pergunta, ou ela venceu): a tarefa acaba aqui. Chamar o
+            # motor de novo era a mesma ação proposta outra vez — a pergunta em laço da trilha do
+            # dono (2026-10-24: três perguntas seguidas para o mesmo apps.quit).
+            return _recusado(feitos[-1])
         objetivo = tarefa.contaminacao.objetivo
         catalogo = tuple(
             f for f in self.catalogo() if not str(f["id"]).startswith(FORA_DA_ALLOWLIST)
@@ -229,6 +236,16 @@ class MotorDoObjetivo:
         if objetivo is not None and objetivo.falta_conferir:
             resposta = f"{resposta} {SEM_CONFERIR}"
         return FimDaTarefa(resposta, resposta=resposta)
+
+
+def _recusado(resultado: ResultadoDeFerramenta) -> FimDaTarefa:
+    """O fim da tarefa cuja pergunta o dono não confirmou. Ele disse não, clicou não ou cortou a
+    pergunta com outro assunto: já ouviu (ou disse) o que importa, e o fim é calado — só o card
+    muda. O prazo que venceu sem resposta é o único "não" que ele não viu acontecer: esse é dito."""
+    origem = str(resultado.dados.get("resposta_do_dono", "prazo"))
+    if origem == "prazo":
+        return FimDaTarefa(resultado.motivo, resposta=NAO_CONFIRMADO, falhou=True)
+    return FimDaTarefa(resultado.motivo, resposta="", falhou=True, aviso="")
 
 
 def _imagens(feitos: Sequence[ResultadoDeFerramenta]) -> tuple[Imagem, ...]:

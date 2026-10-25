@@ -22,6 +22,10 @@ para o contrato ser testado inteiro em memória:
 - **Falar menos** (emenda de 2026-10-21 à ADR-0031). O texto do motor vai inteiro para a tela, e
   para a voz só até o orçamento (`jarvis.s2.orcamento_da_fala`: quatro frases, 60 palavras), com
   o fecho «O resto está na tela.» — a não ser que o dono tenha pedido detalhe.
+- **Uma resposta por pedido** (dono, 2026-10-25, ADR-0046). O pedido de um passo responde no
+  turno: a primeira ferramenta roda aqui, e só o trabalho longo (mais passos, mais tempo) vai para
+  uma tarefa. Depois de uma ferramenta, a frase que repete o que o dono já ouviu fica só na tela
+  (`jarvis.s2.entrega`).
 """
 
 from __future__ import annotations
@@ -45,11 +49,12 @@ from jarvis.fatiador import PALAVRAS_MINIMAS_POR_PEDACO, Corte, FatiadorDeFala, 
 from jarvis.imagem import Imagem
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.navegador.cliente import SEM_NAVEGADOR_ABERTO
-from jarvis.politica.atalho import Atalho
+from jarvis.politica.atalho import Atalho, fala_simples, frase_da_ferramenta
 from jarvis.politica.atalho import frase as frase_do_atalho
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.politica.objetivo import EstadoDoObjetivo
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
+from jarvis.s2.entrega import FiltroDoJaDito, traz_algo_novo
 from jarvis.s2.fluxo_de_acao import FluxoDeAcao
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
 from jarvis.s2.motor import (
@@ -92,12 +97,39 @@ e descartado: o canal interno não pode crescer o prompt de cada rodada sem fim.
 LIMITE_DO_JA_DITO: Final = 300
 """Caracteres do que o dono já ouviu no turno que voltam ao motor (o fim, que é o mais novo)."""
 FRASE_AO_DELEGAR: Final = "Certo, já cuido disso."
+"""O que o dono ouve quando o pedido vira tarefa e o motor não disse nada antes da ferramenta
+(ADR-0038): curto, e a resposta de verdade vem quando a tarefa acabar."""
 NOTA_DO_ATALHO: Final = (
     "O primeiro passo deste pedido o código já fez, pelo caminho rápido: o resultado está entre os "
     "das ferramentas. Siga daí, sem repetir esse passo."
 )
-"""O que o dono ouve quando o pedido vira tarefa e o motor não disse nada antes da ferramenta
-(ADR-0038): curto, e a resposta de verdade vem quando a tarefa acabar."""
+PASSOS_NO_TURNO: Final = 2
+"""Ferramentas que o próprio turno roda antes de passar o resto do pedido a uma tarefa (dono,
+2026-10-25: pedido simples ou de um passo responde no turno; tarefa só para trabalho longo). No
+objetivo que precisa conferir (navegador, entrada virtual: agir e depois ler), é uma."""
+SEGUNDOS_NO_TURNO: Final = 12.0
+"""Laço que já passou disto é trabalho longo: a próxima ferramenta vai para a tarefa."""
+ACOES_DE_UM_PASSO: Final = frozenset(
+    {
+        "apps.launch",
+        "apps.quit",
+        "browser.launch",
+        "clipboard.text.write",
+        "jarvis.encerrar",
+        "media.player.control",
+        "notify.desktop.send",
+        "system.brightness.set",
+        "system.volume.set",
+        "timer.alarm.cancel",
+        "timer.alarm.set",
+        "vocabulario.aprender",
+        "window.close",
+        "window.focus_app",
+    }
+)
+"""Ações que cumprem sozinhas um pedido simples: deu certo e o dono já ouviu o que mudou (o aviso,
+a frase do código ou a do motor antes dela), o turno acaba — sem outra rodada do motor para dizer
+"pronto" de novo."""
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
@@ -174,6 +206,9 @@ class Resposta:
     vazio: o turno foi todo do motor."""
     motor_chamado: bool = True
     """`False` quando o atalho resolveu o pedido sozinho e o motor nem foi chamado."""
+    caladas: list[str] = field(default_factory=list)
+    """Frases do motor que repetiam o que o dono já tinha ouvido neste turno (o aviso, a frase do
+    código): foram à tela e não à voz (`jarvis.s2.entrega`, dono, 2026-10-25)."""
 
     @property
     def cancelada(self) -> bool:
@@ -219,16 +254,23 @@ class Cerebro:
     pendencias: RegistroDePendencias = field(default_factory=RegistroDePendencias)
     autorizacoes: AutorizacoesExplicitas = field(default_factory=AutorizacoesExplicitas)
     delegar_em_tarefa: bool = False
-    """O pedido que precisa de ferramenta vira uma **tarefa** do objetivo (ADR-0038; dono,
-    2026-10-21): o turno diz a frase curta e acaba — o Jarvis segue ouvindo —, e a tarefa itera as
-    ferramentas pelo mesmo PDP, Jev e objetivo até cumprir, precisar do dono, falhar ou ser
-    cancelada. Precisa do gestor de tarefas no executor; o aplicativo liga. Desligado = o laço no
-    turno, como antes (o que os testes do laço e o harness usam)."""
+    """O trabalho longo de um pedido vira uma **tarefa** do objetivo (ADR-0038, emendada pela
+    ADR-0046): a primeira ferramenta roda no turno — o pedido de um passo responde aqui —, e
+    quando o motor pede mais do que `passos_no_turno` ferramentas (uma, no objetivo que precisa
+    conferir) ou o laço passa de `segundos_no_turno`, o resto vai para a tarefa: o turno diz a
+    frase curta e acaba — o Jarvis segue ouvindo —, e ela itera pelo mesmo PDP, Jev e objetivo até
+    cumprir, precisar do dono, falhar ou ser cancelada. Precisa do gestor de tarefas no executor;
+    o aplicativo liga. Desligado = o laço todo no turno (o que os testes do laço e o harness
+    usam)."""
     caminho_rapido: bool = False
     """O comando simples vai à ferramenta pela regra do código, sem esperar o motor (dono,
     2026-10-21: «precisa ser muito rápido»; `jarvis.politica.atalho`). A chamada passa pelo mesmo
     PDP, Jev, objetivo e pergunta da proposta do modelo; pronta e certa, a frase é do código e o
     motor nem é chamado. O aplicativo liga; desligado, como antes (os testes do laço)."""
+    passos_no_turno: int = PASSOS_NO_TURNO
+    """Com `delegar_em_tarefa`: ferramentas que o turno roda antes de passar o resto à tarefa."""
+    segundos_no_turno: float = SEGUNDOS_NO_TURNO
+    """Com `delegar_em_tarefa`: laço mais longo que isto passa a próxima ferramenta à tarefa."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
 
     @property
@@ -243,16 +285,16 @@ class Cerebro:
         if aberta is not None and aberta.id == pendencia_id and aberta.espera is not None:
             # A tarefa de um pedido parada nesta pergunta (ADR-0038): o clique a acorda, com ou
             # sem portão, e ela segue sozinha.
-            return self.pendencias.tomar(pendencia_id, sim=sim) is not None
+            return self.pendencias.tomar(pendencia_id, sim=sim, origem="clique") is not None
         fluxo = self.fluxo
         if fluxo is None or self.ferramentas is None:
             return False
         resultado = fluxo.resolver(self.ferramentas, pendencia_id, sim=sim)
         if resultado is None:
             return False
-        if resultado.status == "despachado":
-            self._status("Confirmado: está rodando em segundo plano; aviso quando terminar.")
-        elif sim and resultado.status != "ok":
+        # Confirmado no clique, a ação vai para uma tarefa e o fim dela é a resposta (o aviso da
+        # ferramenta): nada de "está rodando, aviso quando terminar" antes (dono, 2026-10-25).
+        if sim and resultado.status not in ("ok", "despachado"):
             self._status(f"Não deu para fazer o que você confirmou: {resultado.motivo}")
         return True
 
@@ -455,6 +497,14 @@ class Cerebro:
                         f"{self.prazo_do_laco_de_ferramentas_s:.0f} s"
                     )
                 break
+            if self._continua_na_tarefa(resposta) and not cancelado():
+                # O objetivo que precisa conferir (navegador, entrada virtual): o turno fez o
+                # primeiro passo; ler, seguir e conferir antes de dizer «abri» é da tarefa — o turno
+                # não afirma o que ninguém conferiu (ADR-0038, ADR-0046).
+                self._delegar(
+                    None, contexto, texto_do_dono, resposta, fatiador, publicar, comeco, crescer
+                )
+                break
             # A memória de trabalho do turno (ADR-0034): o passo mais novo inteiro, os antigos
             # inteiros enquanto couberem no orçamento e, depois, podados.
             textos, podados = textos_no_contexto(resposta.ferramentas)
@@ -467,6 +517,15 @@ class Cerebro:
                 ja_dito=_ja_dito(resposta),
                 imagens=imagens,
             )
+            # Depois de uma ferramenta, a frase que repete o que o dono já ouviu neste turno (o
+            # aviso, a frase do código, o "vou abrir") vai só à tela (dono, 2026-10-25), e a que
+            # cita uma ferramenta pelo id nem à tela da voz chega (ADR-0038, agora também no turno).
+            dito = _dito_no_turno(resposta)
+            filtro = (
+                FiltroDoJaDito(ditos=[dito] if dito else [], ids=self._ids_das_ferramentas())
+                if resposta.ferramentas
+                else None
+            )
             pedidos, visto_cancelamento = self._rodada(
                 da_vez,
                 modo,
@@ -476,8 +535,9 @@ class Cerebro:
                 publicar,
                 comeco,
                 crescer,
-                segurar=passo > 1,
+                segurar=passo > 1 or bool(resposta.ferramentas),
                 orcamento=orcamento,
+                filtro=filtro,
             )
             if prazo_esgotado() and not cancelado():
                 visto_cancelamento = None
@@ -503,8 +563,8 @@ class Cerebro:
             # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
             pedido = pedidos[0]
             _marcar_a_primeira_ferramenta(resposta, comeco)
-            if self._delegavel(pedido) and not cancelado():
-                # O pedido vira tarefa (ADR-0038): o turno acaba na frase curta.
+            if self._vai_para_tarefa(pedido, resposta, comeco) and not cancelado():
+                # O trabalho longo vira tarefa (ADR-0038, ADR-0046): o turno acaba na frase curta.
                 self._delegar(
                     pedido, contexto, texto_do_dono, resposta, fatiador, publicar, comeco, crescer
                 )
@@ -534,6 +594,17 @@ class Cerebro:
                     self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             if resultado.status == "pendente":
                 # A pergunta é a última coisa do turno: o laço de voz fica livre para o "sim".
+                break
+            # A ação de um passo que deu certo (dono, 2026-10-25): o resultado sai já, na frase do
+            # código, se o dono ainda não o ouviu; e o pedido simples acaba aqui, sem outra rodada
+            # do motor para dizer "pronto" de novo.
+            dita = self._frase_da_acao(pedido, resultado, resposta)
+            if dita:
+                resposta.gerado += dita + " "
+                crescer()
+                for pedaco in fatiador.alimentar(dita + " ") + fatiador.descarregar():
+                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+            if self._cumpriu_no_turno(pedido, resultado, resposta, texto_do_dono):
                 break
             if prazo_esgotado() and not cancelado():
                 resposta.fim = MotivoDoFim.PRAZO
@@ -576,6 +647,11 @@ class Cerebro:
         self._pendentes[resposta.response_id] = resposta
         return resposta
 
+    def _ids_das_ferramentas(self) -> frozenset[str]:
+        return (
+            frozenset(self.ferramentas.manifestos) if self.ferramentas is not None else frozenset()
+        )
+
     def _pode(self, tool_id: str) -> bool:
         """A ferramenta existe nesta sessão e o método do pedido não a tirou (ADR-0035)."""
         executor = self.ferramentas
@@ -589,7 +665,7 @@ class Cerebro:
         return self.ferramentas.atalho(texto_do_dono)
 
     def _delegavel(self, pedido: PedidoDeTool) -> bool:
-        """A proposta vai para a tarefa do pedido? `tarefa.*` e `acao.desfazer` não rodam em
+        """A proposta pode ir para a tarefa do pedido? `tarefa.*` e `acao.desfazer` não rodam em
         tarefa (profundidade 1) e são rápidas; a ferramenta que não existe aqui, a malformada e a
         que o método do pedido tirou são recusadas na hora, no turno, para o motor se corrigir."""
         executor = self.ferramentas
@@ -599,9 +675,77 @@ class Cerebro:
             return False
         return executor.metodo is None or pedido.tool_id not in executor.metodo.evitar
 
-    def _delegar(
+    def _vai_para_tarefa(self, pedido: PedidoDeTool, resposta: Resposta, comeco: float) -> bool:
+        """A proposta vai para a tarefa, ou roda no turno? (dono, 2026-10-25; ADR-0046)
+
+        A primeira ferramenta do pedido é sempre do turno: o pedido de um passo — abrir, fechar,
+        focar, uma pergunta, uma ferramenta — responde aqui, uma vez. Vira tarefa o trabalho longo:
+        o motor pediu mais ferramentas do que `passos_no_turno`, ou o laço passou de
+        `segundos_no_turno`. O objetivo que precisa conferir passa à tarefa logo depois do primeiro
+        passo (`_continua_na_tarefa`)."""
+        if not self._delegavel(pedido):
+            return False
+        feitas = len(resposta.ferramentas)
+        if feitas == 0:
+            return False
+        return (
+            feitas >= self.passos_no_turno or _ms_desde(comeco) >= 1000.0 * self.segundos_no_turno
+        )
+
+    def _continua_na_tarefa(self, resposta: Resposta) -> bool:
+        """Depois do primeiro passo de um objetivo que precisa conferir (agir e depois ler: o
+        navegador, a entrada virtual), o resto — inclusive a resposta — vai para a tarefa, que cobra
+        a leitura antes de deixar dizer «abri». A pergunta ao dono continua no turno."""
+        executor = self.ferramentas
+        if not self.delegar_em_tarefa or executor is None or executor.tarefas is None:
+            return False
+        objetivo = executor.objetivo
+        if objetivo is None or not objetivo.pede_conferencia or not resposta.ferramentas:
+            return False
+        return resposta.ferramentas[-1].status != "pendente"
+
+    def _frase_da_acao(
+        self, pedido: PedidoDeTool, resultado: ResultadoDeFerramenta, resposta: Resposta
+    ) -> str:
+        """A frase do código para a ação de um passo que o motor propôs e deu certo («Abrindo o
+        Discord.»), se o dono ainda não ouviu isso neste turno — o "vou abrir o Discord" do motor
+        já disse. O app que já estava aberto é sempre novidade."""
+        if resultado.status != "ok":
+            return ""
+        objetivo = self.ferramentas.objetivo if self.ferramentas is not None else None
+        if objetivo is not None and objetivo.pede_conferencia:
+            return ""  # no navegador, "abri" só depois de ler e conferir (ADR-0038)
+        if pedido.tool_id not in ACOES_DE_UM_PASSO and len(resposta.ferramentas) > 1:
+            return ""  # no meio de uma cadeia (abrir o site achado), quem conta é a resposta final
+        frase = frase_da_ferramenta(pedido.tool_id, pedido.args, resultado.dados)
+        if not frase:
+            return ""
+        dito = _dito_no_turno(resposta)
+        if not dito or resultado.dados.get("ja_aberto") or traz_algo_novo(frase, [dito]):
+            return frase
+        return ""
+
+    def _cumpriu_no_turno(
         self,
         pedido: PedidoDeTool,
+        resultado: ResultadoDeFerramenta,
+        resposta: Resposta,
+        texto_do_dono: str,
+    ) -> bool:
+        """O pedido simples acabou nesta ação: deu certo, foi a única do turno, é uma ação de um
+        passo, a fala pedia só ela e o dono já ouviu o resultado (o aviso, a frase do código ou a
+        do motor). Outra rodada do motor só diria "pronto" de novo — e custaria segundos."""
+        return (
+            resultado.status == "ok"
+            and len(resposta.ferramentas) == 1
+            and pedido.tool_id in ACOES_DE_UM_PASSO
+            and fala_simples(texto_do_dono)
+            and bool(_dito_no_turno(resposta).strip())
+        )
+
+    def _delegar(
+        self,
+        pedido: PedidoDeTool | None,
         contexto: Contexto,
         texto_do_dono: str,
         resposta: Resposta,
@@ -645,6 +789,9 @@ class Cerebro:
                 ),
                 prazo_s=self.prazo_do_laco_de_ferramentas_s,
                 maximo_de_passos=max(1, self.maximo_de_passos - len(resposta.ferramentas)),
+                # O que o dono já ouviu deste pedido (dono, 2026-10-25): o fim da tarefa não repete.
+                ja_dito=f"{_dito_no_turno(resposta)} {frase}".strip(),
+                turno=resposta.turn_id,
             )
         except TarefaRecusada as erro:
             frase = f"Agora não dá para começar isso: {erro}."
@@ -794,6 +941,7 @@ class Cerebro:
         *,
         segurar: bool = False,
         orcamento: OrcamentoDaFala | None = None,
+        filtro: FiltroDoJaDito | None = None,
     ) -> tuple[list[PedidoDeTool], float | None]:
         """Uma chamada ao motor: publica o texto em pedaços e junta os pedidos de ferramenta.
 
@@ -802,7 +950,8 @@ class Cerebro:
         rodadas depois de uma ferramenta), o texto espera até ter o tamanho de um lote: se uma
         proposta chega antes, era narração de passo e vai para o raciocínio; senão, é a resposta.
         O lote de fala só fecha com 14 palavras, então segurar não atrasa a voz — só a tela,
-        nessas rodadas, espera o primeiro lote."""
+        nessas rodadas, espera o primeiro lote. Com `filtro`, a frase que só repete o que o dono já
+        ouviu neste turno vai à tela e não à voz (`jarvis.s2.entrega`)."""
         pedidos: list[PedidoDeTool] = []
         visto_cancelamento: float | None = None
         retido = ""
@@ -815,9 +964,12 @@ class Cerebro:
 
         def falar(texto: str) -> bool:
             """Tela e fala; devolve se o cancelamento chegou no meio. A tela recebe tudo; a voz, o
-            que cabe no orçamento."""
+            que traz algo novo e cabe no orçamento."""
             resposta.gerado += texto
             crescer()  # a tela, já: o lote de fala pode levar 14 palavras para fechar
+            return dizer(filtro.passar(texto) if filtro is not None else texto)
+
+        def dizer(texto: str) -> bool:
             falado = orcamento.passar(texto) if orcamento is not None else texto
             for pedaco in fatiador.alimentar(falado):
                 if cancelado():
@@ -887,6 +1039,14 @@ class Cerebro:
         # A rodada acabou sem proposta: o que estava seguro era a resposta.
         if retido.strip() and visto_cancelamento is None and not cancelado() and falar(retido):
             visto_cancelamento = time.monotonic()
+        if filtro is not None:
+            # A última frase, sem ponto no fim, também passa pelo crivo do já dito — e o que ele
+            # calou fica registrado (a trilha conta; a tela já mostrou).
+            if not pedidos and visto_cancelamento is None and not cancelado():
+                resto = filtro.fechar()
+                if resto and dizer(resto):
+                    visto_cancelamento = time.monotonic()
+            resposta.caladas.extend(filtro.caladas)
         return pedidos, visto_cancelamento
 
     def _chamar(
@@ -1089,11 +1249,16 @@ def _guardar_raciocinio(resposta: Resposta, texto: str, *, separado: bool = Fals
     resposta.raciocinio_descartado += max(0, len(texto) - cabe)
 
 
-def _ja_dito(resposta: Resposta) -> str:
-    """O que já foi para a fala neste turno, sem os avisos da fila (esses o prompt já conta)."""
-    dito = " ".join(
+def _dito_no_turno(resposta: Resposta) -> str:
+    """Tudo o que já foi para a fala neste turno, sem os avisos da fila."""
+    return " ".join(
         str(p["text"]) for p in resposta.publicados if p["text"] and not p.get("notif_ids")
     )
+
+
+def _ja_dito(resposta: Resposta) -> str:
+    """O que já foi para a fala neste turno, sem os avisos da fila (esses o prompt já conta)."""
+    dito = _dito_no_turno(resposta)
     return dito if len(dito) <= LIMITE_DO_JA_DITO else "…" + dito[-LIMITE_DO_JA_DITO:]
 
 

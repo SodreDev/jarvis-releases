@@ -408,6 +408,54 @@ def _curta(nome: str) -> str:
     return palavras[0] if len(palavras) > 2 else nome
 
 
+_CONECTIVOS: Final = frozenset({"e", "depois", "entao", "tambem", "enquanto", "antes", "mas"})
+"""O que liga uma segunda ação à primeira («abre o Discord e manda um oi»)."""
+_CHAMADA: Final = r"^\s*(?:(?:ei|oi|ok|hey|ola|olá)[\s,]+)?jarvis\s*[,.!:]?\s*"
+
+
+def fala_simples(fala: str) -> bool:
+    """A fala pede uma coisa só: sem conectivo nem vírgula entre duas ações (dono, 2026-10-25).
+
+    É o que deixa o turno acabar na frase do código depois de uma ação de um passo, sem outra
+    rodada do motor: «fecha o navegador que está no outro monitor» é uma coisa só; «abre o Discord e
+    o Spotify», «abre o Discord, manda um oi» não são. Na dúvida, não é simples (o motor segue)."""
+    sem_chamada = re.sub(_CHAMADA, "", fala, flags=re.IGNORECASE)
+    if "," in sem_chamada.strip().rstrip(".!?"):
+        return False
+    return not _CONECTIVOS & set(limpar(sem_chamada).split())
+
+
+_REGRA_DA_FERRAMENTA: Final[Mapping[str, Regra]] = {
+    "apps.launch": Regra.ABRIR_APP,
+    "browser.launch": Regra.ABRIR_NAVEGADOR,
+    "window.close": Regra.FECHAR_JANELA,
+    "apps.quit": Regra.ENCERRAR_APP,
+    "window.focus_app": Regra.FOCAR_APP,
+}
+
+
+def frase_da_ferramenta(tool_id: str, args: Mapping[str, Any], dados: Mapping[str, Any]) -> str:
+    """A frase do código para uma ação de um passo que **o motor** propôs e deu certo — a mesma do
+    caminho rápido, para o dono ouvir o resultado já, e uma vez (dono, 2026-10-25). Vazia para o que
+    não é ação de um passo (o motor responde) e quando o aviso da ferramenta já diz tudo."""
+    if tool_id == "sites.open":
+        endereco = re.match(r"^https?://(?:www\.)?([^/?#:]+)", str(args.get("url", "")))
+        if endereco is None:
+            return ""
+        return frase(Atalho(Regra.ABRIR_SITE, tool_id, args, endereco.group(1)), dados)
+    regra = _REGRA_DA_FERRAMENTA.get(tool_id)
+    if regra is None:
+        return ""
+    bruto = dados.get("app") or args.get("nome") or args.get("app") or args.get("navegador") or ""
+    nome = _curta(" ".join(str(bruto).split()))
+    if "." in nome and " " not in nome:  # a classe da janela («org.kde.kate»)
+        nome = nome.rsplit(".", 1)[-1]
+    alvo = nome.title() if nome.islower() else nome
+    if regra is Regra.FECHAR_JANELA and not args.get("app"):
+        alvo = ""  # «fecha a janela»: a da frente, dita pelo nome do app que a frase acha
+    return frase(Atalho(regra, tool_id, args, alvo), dados)
+
+
 # --- a frase ---------------------------------------------------------------------------------
 LIMITE_DO_TITULO_FALADO: Final = 60
 
