@@ -4,6 +4,9 @@ title: Lembrar o que o Jarvis sabe
 description: 'Recupera memórias ativas sobre o dono (fatos, preferências e relações do grafo) para uma
   consulta, com o caminho de cada evidência. Use quando a resposta depende do que o dono já contou. Não
   devolve memória proposta nem vencida e não inventa: sem evidência, diz que não encontrou.'
+quando: "lembrar o que o dono contou ou combinou — busque antes de responder"
+exemplos:
+- "qual é o meu time?"
 input_schema:
   type: object
   additionalProperties: false

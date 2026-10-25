@@ -8,6 +8,9 @@ description: >-
   cada ação: terminal, banco, mensageiro, gerenciador de senhas e janela desconhecida pedem o sim do dono, e o
   próprio Jarvis em foco é recusado. Tem limite de taxa e o dono pode parar tudo. Prefira browser.* quando a
   página deixar; use isto onde o site proíbe automação.
+quando: "mover o mouse virtual"
+exemplos:
+- "move o mouse para a direita"
 input_schema:
   type: object
   additionalProperties: false

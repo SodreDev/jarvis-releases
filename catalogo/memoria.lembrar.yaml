@@ -4,6 +4,9 @@ title: Gravar uma memória
 description: Grava uma memória nova sobre o dono, ligada ao turno em que ela apareceu. Use quando o dono
   pedir para o Jarvis lembrar de algo. Só nasce ativa se o texto for fala do próprio dono neste turno;
   senão fica proposta. Não grava segredo e não apaga nada.
+quando: "guardar um fato curto que o dono pediu para lembrar"
+exemplos:
+- "lembra que eu tomo café sem açúcar"
 input_schema:
   type: object
   additionalProperties: false

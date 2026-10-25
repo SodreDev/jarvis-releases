@@ -5,6 +5,9 @@ title: Status do próprio Jarvis
 description: >
   Devolve estado interno do assistente (processos vivos, epoch, fila). Use quando o usuário
   perguntar como o Jarvis está. Não lê arquivo do usuário, não sai da máquina.
+quando: "o estado do sistema (bateria, rede) só para leitura"
+exemplos:
+- "como está o computador?"
 input_schema: {type: object, additionalProperties: false, properties: {}}
 output_schema: {type: object, required: [processos, epoch]}
 preconditions: []

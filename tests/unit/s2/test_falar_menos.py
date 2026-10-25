@@ -165,9 +165,9 @@ def test_pedindo_detalhe_o_cerebro_fala_a_resposta_inteira() -> None:
 
 
 def test_a_persona_pede_o_resumo_curto_da_execucao() -> None:
-    persona = prompt_de_sistema()
-    assert "resuma a execução em três ou quatro frases curtas" in persona
-    assert "o resto está na tela" in persona
+    persona = prompt_de_sistema()  # v15 (ADR-0047): a seção VOZ E TELA
+    assert "três ou quatro frases no máximo" in persona
+    assert "o resto aparece na tela" in persona
     assert "Detalhe só quando ele pedir" in persona
 
 

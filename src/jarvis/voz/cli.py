@@ -29,6 +29,8 @@ from jarvis.executor.navegadores import separar
 from jarvis.navegador.cliente import TransporteUnix
 from jarvis.navegador.estado import sondar
 from jarvis.rede import ErroDeRede
+from jarvis.s2.regras import arquivo_do_dono, na_pasta
+from jarvis.s2.regras import padrao as padrao_das_regras
 from jarvis.trilha import limites as limites_da_trilha
 from jarvis.trilha import resumo_do_ultimo_turno, ruidos_descartados
 from jarvis.voz.app import PASTA_DA_TRILHA, Aplicativo, AplicativoIndisponivel
@@ -115,6 +117,26 @@ def _linhas_do_vocabulario(ambiente: Mapping[str, str] | None) -> list[str]:
     return linhas
 
 
+def _linhas_das_regras(ambiente: Mapping[str, str] | None) -> list[str]:
+    """De onde vêm as regras de comportamento (ADR-0047), quantas e o tamanho do bloco — o texto
+    delas o dono vê no arquivo; aqui só o que ajuda a achar o problema."""
+    arquivo = arquivo_do_dono(ambiente)
+    regras = na_pasta(arquivo.parent) if arquivo is not None else padrao_das_regras()
+    if arquivo is None:
+        origem = "sem pasta de configuração neste ambiente: as do repositório"
+    elif regras.origem == "padrao":
+        existe = "" if arquivo.exists() else " (ainda não existe)"
+        origem = f"as do repositório; o do dono seria {arquivo}{existe}"
+    else:
+        origem = f"as do dono: {arquivo}"
+    linhas = [
+        f"  {origem} · exemplo: docs/exemplos/regras.toml",
+        f"  {len(regras.regras)} regra(s), {len(regras.bloco())} caracteres no bloco de cada turno",
+    ]
+    linhas.extend(f"  ! {aviso}" for aviso in regras.avisos)
+    return linhas
+
+
 def diagnosticar(
     escrever: object = print,
     *,
@@ -167,6 +189,11 @@ def diagnosticar(
     linha("")
     linha("vocabulário do dono (ADR-0044) — nomes que o Jarvis ouve e fala certo:")
     for texto in _linhas_do_vocabulario(ambiente):
+        linha(texto)
+
+    linha("")
+    linha("regras de comportamento (ADR-0047) — o bloco curto que vai em todo turno:")
+    for texto in _linhas_das_regras(ambiente):
         linha(texto)
 
     linha("")

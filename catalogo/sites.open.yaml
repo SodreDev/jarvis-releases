@@ -11,6 +11,10 @@ description: >-
   e também vai pela extensão. Sem a extensão, o navegador é aberto com o endereço. Abre sem perguntar; só
   confirma, na tela, se neste turno você leu um arquivo ou página e o endereço não é de um site que o dono
   liberou. Não lê a página, não abre outro esquema (arquivo, javascript, dados) e não aceita URL com senha.
+quando: "abrir um site no navegador do dono — também quando ele está fechado (abre já na página)"
+exemplos:
+- "abre o gmail.com"
+- "abre o site do banco"
 input_schema:
   type: object
   additionalProperties: false

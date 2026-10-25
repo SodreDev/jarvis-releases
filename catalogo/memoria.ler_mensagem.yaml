@@ -4,6 +4,9 @@ title: Ler um turno da conversa
 description: Lê um turno do histórico pelo identificador e os turnos vizinhos da mesma sessão. Use depois
   de buscar no histórico, para ver o contexto do trecho achado. Não lê fora do histórico, não devolve
   segredo e não altera nada.
+quando: "ler inteira uma mensagem antiga achada na busca, pelo id"
+exemplos:
+- "lê aquela conversa inteira"
 input_schema:
   type: object
   additionalProperties: false

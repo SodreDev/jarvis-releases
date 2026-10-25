@@ -5,6 +5,9 @@ title: Instalar pacote do sistema
 description: >
   Instala um pacote da distribuição por id de um registro versionado. Use só quando o dono
   pedir explicitamente para instalar um programa. Nunca recebe linha de comando.
+quando: "instalar um programa; o sistema pergunta antes"
+exemplos:
+- "instala o VLC"
 input_schema:
   {type: object, additionalProperties: false, required: [package_id],
    properties: {package_id: {type: string}}}

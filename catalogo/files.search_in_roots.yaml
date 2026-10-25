@@ -4,6 +4,9 @@ title: Procurar arquivo pelo nome
 description: Procura arquivos e pastas cujo nome contenha o texto pedido, em todas as raízes do modo de
   acesso, até 50 achados. Use quando o dono não souber onde está um arquivo. Não procura dentro do conteúdo,
   não segue link simbólico, não entra em pasta negada e para quando o dono interrompe.
+quando: "procurar arquivo pelo nome nas pastas liberadas"
+exemplos:
+- "acha o contrato do aluguel"
 input_schema:
   type: object
   additionalProperties: false

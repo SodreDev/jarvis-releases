@@ -3,6 +3,9 @@ id: system.brightness.set
 title: Mudar o brilho da tela
 description: 'Muda o brilho da tela: um `nivel` de 0 a 100 ou um `delta` para aumentar ou diminuir. Use quando o
   dono pedir mais ou menos brilho. Nunca apaga a tela (o mínimo é 1%) e não controla monitor externo.'
+quando: "mudar o brilho da tela (nivel de 0 a 100, ou delta)"
+exemplos:
+- "aumenta o brilho"
 input_schema:
   type: object
   additionalProperties: false

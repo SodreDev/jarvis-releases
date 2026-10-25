@@ -4,6 +4,10 @@ title: Marcar alarme ou lembrete
 description: 'Marca um alarme ou lembrete: daqui a `em_segundos` ou numa hora (`quando`: HH:MM ou data e hora ISO).
   Na hora, o Jarvis recebe o aviso e fala a mensagem, mesmo com a conversa parada. Use para timers e lembretes.
   Sobrevive a fechar o Jarvis, não toca nada além do aviso e vai até 30 dias.'
+quando: "lembrete ou timer: em_segundos para daqui a pouco, quando para uma hora; o sistema fala quando vence"
+exemplos:
+- "me lembra em dez minutos"
+- "timer de cinco minutos"
 input_schema:
   type: object
   additionalProperties: false

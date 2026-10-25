@@ -3,6 +3,9 @@ id: timer.alarm.list
 title: Listar alarmes
 description: Lista os alarmes e lembretes marcados e quanto falta para cada um. Use quando o dono perguntar o que
   está marcado. Não marca nem cancela nada.
+quando: "listar os lembretes"
+exemplos:
+- "quais lembretes eu tenho?"
 input_schema:
   type: object
   additionalProperties: false

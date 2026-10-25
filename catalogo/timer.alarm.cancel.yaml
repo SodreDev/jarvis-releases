@@ -3,6 +3,9 @@ id: timer.alarm.cancel
 title: Cancelar alarme
 description: Cancela um alarme ou lembrete marcado, pelo id que a lista ou a marcação devolveu. Use quando o dono
   pedir para desmarcar. Não apaga os que já dispararam e não mexe em outro alarme.
+quando: "cancelar um lembrete"
+exemplos:
+- "cancela o lembrete do almoço"
 input_schema:
   type: object
   additionalProperties: false

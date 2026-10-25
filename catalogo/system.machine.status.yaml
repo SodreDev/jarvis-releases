@@ -4,6 +4,10 @@ title: Estado da máquina
 description: 'Diz como está o computador: bateria, rede, uso de CPU, memória e espaço em disco. Use quando o dono
   perguntar sobre bateria, internet, lentidão ou espaço. Não lista processos, não mexe em nada e não inventa o que
   a máquina não tem (sem bateria, ele diz isso).'
+quando: "bateria, memória, disco e internet da máquina"
+exemplos:
+- "quanto de bateria?"
+- "tem internet?"
 input_schema:
   type: object
   additionalProperties: false

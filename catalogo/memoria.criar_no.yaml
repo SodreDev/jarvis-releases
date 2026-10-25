@@ -4,6 +4,9 @@ title: Criar uma entidade no grafo
 description: Cria uma pessoa, lugar, projeto ou coisa no grafo pessoal, com apelidos. Use quando o dono
   apresentar alguém ou algo novo. Só nasce ativa se o nome estiver na fala do dono neste turno; não duplica
   entidade que já existe e não cria relação.
+quando: "registrar uma pessoa, lugar, projeto ou app na memória"
+exemplos:
+- "guarda que o Kauã é meu sócio"
 input_schema:
   type: object
   additionalProperties: false

@@ -68,23 +68,21 @@ No cancelamento e no prazo não há cortesia — ali o processo morre na hora.""
 _FIM_DA_LEITURA: Final = object()
 
 INSTRUCAO_DE_FERRAMENTAS: Final = (
-    "Você pode PROPOR ferramentas; quem decide se roda é o código do Jarvis. As simples rodam na "
-    "hora; as pequenas e desfazíveis rodam e o Jarvis já avisa o dono em voz (o resultado traz "
-    "`aviso_ao_dono`: não repita); só as perigosas pedem a confirmação do dono na tela. Para "
-    "propor, responda com uma "
-    "linha que começa exatamente com " + MARCA_DE_FERRAMENTA + " seguida de um JSON "
-    '{"tool_id": "...", "args": {...}} — uma linha por chamada, sem markdown, sem explicar o '
-    'JSON. Antes da primeira ferramenta do pedido você pode dizer uma frase curta ("vou ver"), '
-    "uma vez só; entre um passo e outro, nada em voz. O que for raciocínio (plano, o que "
-    "conferir, o próximo passo) vai entre " + MARCA_DE_RACIOCINIO + " e " + FIM_DO_RACIOCINIO + ": "
-    "o dono não ouve nem vê, e ele volta para você no passo seguinte. Depois você recebe os "
-    "resultados e, quando o pedido estiver pronto, responde ao dono, em voz, curto. Use só as "
-    "ferramentas da lista, só com os argumentos dela, e nunca invente resultado. Caminhos: "
-    "sempre a pasta inteira (~/Documentos/...). Ferramentas disponíveis agora:"
+    "FERRAMENTAS. Você pode PROPOR ferramentas; quem decide se roda é o código do Jarvis. Para "
+    "propor, responda com uma linha que começa exatamente com " + MARCA_DE_FERRAMENTA + " seguida "
+    'de um JSON {"tool_id": "...", "args": {...}} — uma linha por chamada, sem markdown, sem '
+    "explicar o JSON. As pequenas e desfazíveis rodam e o sistema já avisa o dono em voz (o "
+    "resultado traz `aviso_ao_dono`: não repita); só as perigosas pedem o sim dele. Raciocínio "
+    "vai entre " + MARCA_DE_RACIOCINIO + " e " + FIM_DO_RACIOCINIO + ". Depois você recebe os "
+    "resultados e, pronto o pedido, responde ao dono, em voz, curto. Use só as ferramentas e os "
+    "argumentos da lista (* = obrigatório) e nunca invente resultado; caminhos, sempre a pasta "
+    "inteira (~/Documentos/...). Cada linha: nome(argumentos): quando usar. «pedidos do dono»."
 )
+"""O protocolo da proposta e a legenda do catálogo: vai uma vez, antes das linhas."""
 
 
 LIMITE_DA_DESCRICAO: Final = 230
+EXEMPLOS_POR_FERRAMENTA: Final = 3
 
 
 def _curta(descricao: str) -> str:
@@ -102,21 +100,67 @@ def _curta(descricao: str) -> str:
     return saida[:LIMITE_DA_DESCRICAO]
 
 
+_TIPOS: Final[Mapping[str, str]] = {
+    "integer": ":int",
+    "number": ":num",
+    "boolean": ":bool",
+    "array": "[]",
+    "object": "{}",
+}
+
+
+def assinatura(argumentos: Mapping[str, object], obrigatorios: Sequence[object]) -> str:
+    """`url*, segundo_plano:bool, acao*=tocar|pausar`: o nome de cada argumento, `*` no
+    obrigatório, o tipo quando não é texto e os valores quando são fixos — o que o motor precisa
+    para propor certo, sem o esquema JSON inteiro (que custava ~8 mil tokens em todo turno)."""
+    partes: list[str] = []
+    for nome, esquema in argumentos.items():
+        marca = "*" if nome in obrigatorios else ""
+        tipo = ""
+        if isinstance(esquema, Mapping):
+            if isinstance(esquema.get("enum"), list):
+                tipo = "=" + "|".join(str(v) for v in esquema["enum"])
+            else:
+                tipo = _TIPOS.get(str(esquema.get("type", "")), "")
+        partes.append(f"{nome}{marca}{tipo}")
+    return ", ".join(partes)
+
+
+def linha_da_ferramenta(ferramenta: Mapping[str, object]) -> str:
+    """Uma linha do catálogo, gerada do registro (ADR-0047): o nome com os argumentos, quando
+    usar (o `quando` do manifesto, ou o começo da descrição), o que só esta sessão sabe e até três
+    pedidos naturais do dono que a pedem."""
+    argumentos = ferramenta.get("argumentos")
+    obrigatorios = ferramenta.get("obrigatorios")
+    assinado = assinatura(
+        argumentos if isinstance(argumentos, Mapping) else {},
+        obrigatorios if isinstance(obrigatorios, list) else [],
+    )
+    quando = " ".join(str(ferramenta.get("quando") or "").split()) or _curta(
+        str(ferramenta.get("descricao", ""))
+    )
+    linha = f"- {ferramenta['id']}({assinado}): {quando.rstrip('.')}."
+    agora = " ".join(str(ferramenta.get("agora") or "").split())
+    if agora:
+        linha += f" {agora}"
+    bruto = ferramenta.get("exemplos")
+    exemplos = (
+        [str(e) for e in bruto if not str(e).startswith("(")] if isinstance(bruto, list) else []
+    )
+    if exemplos:
+        linha += " " + " · ".join(f"«{e}»" for e in exemplos[:EXEMPLOS_POR_FERRAMENTA])
+    return linha
+
+
 def sistema_com_ferramentas(sistema: str, ferramentas: Sequence[Mapping[str, object]]) -> str:
-    """O prompt de sistema com o catálogo fixo do modo (C0). Sem ferramentas, fica como estava."""
+    """O prompt de sistema com o catálogo do turno (C0, ADR-0024; compacto, com exemplos —
+    ADR-0047). Sem ferramentas, fica como estava. A ordem é a do registro (estável): o começo igual
+    em todo turno é o que o cache de prompt reaproveita."""
     if not ferramentas:
         return sistema
     linhas = [sistema.replace("Você não tem ferramentas, não lê arquivos e não executa nada", "")]
     linhas.append(INSTRUCAO_DE_FERRAMENTAS)
-    for ferramenta in ferramentas:
-        argumentos = json.dumps(ferramenta.get("argumentos", {}), ensure_ascii=False)
-        pedidos = ferramenta.get("obrigatorios")
-        obrigatorios = ", ".join(str(o) for o in pedidos) if isinstance(pedidos, list) else ""
-        linhas.append(
-            f"- {ferramenta['id']}: {_curta(str(ferramenta['descricao']))} "
-            f"Argumentos: {argumentos}. "
-            f"Obrigatórios: {obrigatorios or 'nenhum'}."
-        )
+    linhas += [linha_da_ferramenta(f) for f in ferramentas]
     return "\n".join(linhas)
 
 

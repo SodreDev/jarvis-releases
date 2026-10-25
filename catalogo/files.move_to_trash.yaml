@@ -5,6 +5,9 @@ description: >
   Move um arquivo dentro de uma raiz autorizada para a lixeira do sistema. Use quando o
   usuário pedir para remover/limpar um arquivo. Não apaga de forma permanente, não sai da
   raiz autorizada, não lê o conteúdo.
+quando: "mandar um arquivo para a lixeira; o sistema pergunta antes"
+exemplos:
+- "apaga esse arquivo"
 input_schema:
   {type: object, additionalProperties: false, required: [path], properties: {path: {type: string}}}
 output_schema: {type: object, required: [trash_id, restored_path_hint]}

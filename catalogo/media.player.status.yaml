@@ -3,6 +3,9 @@ id: media.player.status
 title: O que está tocando
 description: Diz qual player de mídia está aberto, se está tocando ou pausado e o título e artista. Use quando o
   dono perguntar o que está tocando. Não muda nada e não busca letra nem informação na internet.
+quando: "o que está tocando agora"
+exemplos:
+- "que música é essa?"
 input_schema:
   type: object
   additionalProperties: false

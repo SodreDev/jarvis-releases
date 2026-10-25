@@ -3,6 +3,9 @@ id: clipboard.text.write
 title: Escrever na área de transferência
 description: 'Põe um texto na área de transferência para o dono colar. Use quando ele pedir para copiar algo. Substitui
   o que estava lá (dá para desfazer: o texto anterior volta) e não cola em lugar nenhum nem lê o que já havia.'
+quando: "copiar um texto para a área de transferência"
+exemplos:
+- "copia esse endereço"
 input_schema:
   type: object
   additionalProperties: false

@@ -6,6 +6,10 @@ description: Desfaz uma ação pequena que o Jarvis acabou de fazer sem pergunta
   ou "não era isso". Sem `acao_id` desfaz a última; o id vem no resultado da ação. Não apaga nada de verdade (o
   arquivo vai para a lixeira do Jarvis, a memória é retratada), não desfaz o que o dono confirmou na tela e não
   mexe em arquivo fora da área do Jarvis.
+quando: "desfazer a última ação que o Jarvis fez e avisou (pasta, rascunho, nome anotado)"
+exemplos:
+- "desfaz isso"
+- "volta o que você fez"
 input_schema:
   type: object
   additionalProperties: false

@@ -4,6 +4,9 @@ title: Retratar uma memória
 description: 'Marca uma memória, entidade ou relação como retratada: o Jarvis deixa de usá-la, mas o rastro
   fica e dá para desfazer. Use quando o dono disser para esquecer algo sem apagar de vez. Não apaga dado
   nenhum e sempre pede confirmação.'
+quando: "retirar uma memória que o dono desmentiu"
+exemplos:
+- "isso não é verdade, esquece"
 input_schema:
   type: object
   additionalProperties: false

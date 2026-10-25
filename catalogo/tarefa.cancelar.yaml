@@ -3,6 +3,9 @@ title: Cancelar uma tarefa
 description: Cancela uma tarefa em segundo plano que ainda está rodando, pelo id que `tarefa.iniciar` devolveu. Use quando
   o dono pedir para parar, cancelar ou desistir de uma tarefa. Não desfaz o que passos já terminados fizeram (para isso
   existe acao.desfazer) e não mexe em tarefa que já terminou.
+quando: "parar uma tarefa em segundo plano"
+exemplos:
+- "para aquela tarefa"
 input_schema:
   type: object
   additionalProperties: false

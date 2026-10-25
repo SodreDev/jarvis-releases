@@ -3,6 +3,9 @@ id: files.copy
 title: Copiar um arquivo
 description: Copia um arquivo comum (até 50 MB) para outro lugar das raízes liberadas. Use quando o dono pedir para
   copiar. Nunca sobrescreve (nome repetido ganha sufixo), não copia pasta inteira e avisa em voz; dá para desfazer.
+quando: "copiar um arquivo dentro das pastas liberadas"
+exemplos:
+- "copia o relatório para Documentos"
 input_schema:
   type: object
   additionalProperties: false

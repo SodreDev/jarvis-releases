@@ -4,6 +4,10 @@ title: Mudar o volume
 description: 'Muda o volume do som do computador: um `nivel` de 0 a 100, ou um `delta` para subir ou descer, e/ou
   `mudo`. Use quando o dono pedir para aumentar, abaixar, silenciar ou pôr o volume em tal valor. Nunca passa de
   100% e não mexe no volume de um aplicativo só.'
+quando: "mudar o volume (nivel de 0 a 100, delta, ou mudo)"
+exemplos:
+- "aumenta o volume"
+- "muta"
 input_schema:
   type: object
   additionalProperties: false

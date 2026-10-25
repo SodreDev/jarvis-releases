@@ -3,6 +3,9 @@ id: system.volume.get
 title: Volume atual
 description: Diz o volume do som do computador e se está mudo. Use quando o dono perguntar quanto está o volume.
   Não muda nada e não fala do volume de um aplicativo específico.
+quando: "o volume de agora"
+exemplos:
+- "qual o volume?"
 input_schema:
   type: object
   additionalProperties: false

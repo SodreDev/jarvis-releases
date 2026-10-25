@@ -7,6 +7,9 @@ description: >-
   Diz se o controle do navegador pela extensão do Jarvis está ligado na configuração e se a extensão está conectada
   agora (e em qual navegador), com o que falta fazer. Use quando o dono perguntar sobre a extensão, o controle do
   navegador ou as abas, antes de dizer que não tem essa capacidade. Não lê página nem abas e não muda nada.
+quando: "saber se a extensão do navegador está ligada e conectada; com o navegador fechado, abra-o você mesmo"
+exemplos:
+- "a extensão está funcionando?"
 input_schema:
   type: object
   additionalProperties: false

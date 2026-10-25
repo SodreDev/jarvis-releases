@@ -4,6 +4,9 @@ title: Mover ou renomear
 description: Move ou renomeia um arquivo ou pasta dentro da mesma raiz liberada. Use quando o dono pedir para mover
   ou renomear. Nunca sobrescreve (nome repetido ganha sufixo), não sai de uma raiz para outra (para isso, copie)
   e avisa em voz; dá para desfazer.
+quando: "mover um arquivo dentro das pastas liberadas"
+exemplos:
+- "move a foto para Imagens"
 input_schema:
   type: object
   additionalProperties: false

@@ -4,6 +4,9 @@ title: Gravar um rascunho
 description: 'Grava um texto novo como rascunho na pasta de rascunhos do Jarvis, e só lá. Use quando o
   dono pedir para anotar, redigir ou guardar um texto. Nunca sobrescreve: se o nome existir, grava com
   outro. Não escreve fora da pasta do Jarvis; avisa o dono em voz depois de gravar e dá para desfazer.'
+quando: "escrever um rascunho na pasta do Jarvis"
+exemplos:
+- "anota isso num rascunho"
 input_schema:
   type: object
   additionalProperties: false

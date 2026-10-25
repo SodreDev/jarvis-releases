@@ -73,7 +73,7 @@ from jarvis.s2.motor import (
 )
 from jarvis.s2.orcamento_da_fala import OrcamentoDaFala, quer_detalhe
 from jarvis.s2.pendencias import Espera, RegistroDePendencias
-from jarvis.s2.persona import prompt_de_sistema
+from jarvis.s2.persona import sistema_do_jarvis
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
 from jarvis.s2.protocolo import LeitorDoProtocolo
 from jarvis.s2.rascunho import textos_no_contexto
@@ -148,8 +148,9 @@ AvisarStatus = Callable[[str], None]
 class Conversa:
     """Os turnos estáveis da sessão. Do Jarvis, só o que tocou."""
 
-    sistema: str = field(default_factory=prompt_de_sistema)
-    """A persona (`persona.md`), no lugar do prompt curto do provisório."""
+    sistema: str = field(default_factory=sistema_do_jarvis)
+    """A persona (`persona.md`) e as regras do dono (ADR-0047), no lugar do prompt curto do
+    provisório. O aplicativo põe as do arquivo do dono, quando ele tem."""
     turnos: list[Mensagem] = field(default_factory=list)
     maximo: int = TURNOS_NO_CONTEXTO
 

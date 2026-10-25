@@ -4,6 +4,10 @@ title: Controlar a mídia
 description: Toca, pausa, alterna, passa para a próxima, volta para a anterior ou para a música ou vídeo que está
   tocando (MPRIS). Use quando o dono pedir para dar play, pausar, próxima faixa e afins. Não escolhe o que tocar,
   não abre o player e não controla o volume.
+quando: "tocar, pausar ou pular a música ou o vídeo do player do sistema"
+exemplos:
+- "pausa a música"
+- "próxima"
 input_schema:
   type: object
   additionalProperties: false

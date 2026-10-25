@@ -5,6 +5,9 @@ description: Lista as janelas abertas (aplicativo, título, id, o monitor de cad
   monitor; o principal é dito). Use quando o dono perguntar o que está aberto; para "o que está em foco", use
   window.focused. Não mostra o conteúdo das janelas e não muda nada; sem o kdotool, no Wayland só enxerga as
   janelas X11 e XWayland.
+quando: "listar as janelas abertas, em primeiro e segundo plano"
+exemplos:
+- "quais janelas estão abertas?"
 input_schema:
   type: object
   additionalProperties: false

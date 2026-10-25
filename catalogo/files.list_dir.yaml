@@ -4,6 +4,9 @@ title: Listar uma pasta
 description: 'Lista o que há numa pasta dentro das raízes que o modo de acesso do dono libera: nome, tipo
   e tamanho, até 200 entradas. Use quando o dono perguntar o que tem numa pasta. Não lê o conteúdo dos
   arquivos, não sai das raízes e não mostra chaves, cofres nem pastas negadas.'
+quando: "listar o que há numa pasta"
+exemplos:
+- "o que tem em Downloads?"
 input_schema:
   type: object
   additionalProperties: false

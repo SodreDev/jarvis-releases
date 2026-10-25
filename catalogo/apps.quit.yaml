@@ -5,8 +5,14 @@ description: Encerra um aplicativo inteiro, com os processos dele — o que o do
   inteiro", "fecha de vez", "mata o X" ou "encerra o X". Pede ao app para sair e só força o que não sair em poucos
   segundos. Sem nome, o app da janela em primeiro plano ("encerra esse aí"); com janela_id, o app daquela janela. Para
   fechar só a janela ("fecha o X"), use window.close. Nunca encerra o próprio Jarvis (para isso, jarvis.encerrar), a
-  sessão do desktop nem processo de outro usuário; app que pode ter trabalho não salvo, com mais de uma instância, o
-  navegador do dono ou programa do sistema pedem o sim antes, e o sistema pergunta sozinho.
+  sessão do desktop nem processo de outro usuário. A ordem explícita do dono vale sem o sim (também o navegador); trabalho
+  não salvo detectado, um jogo aberto, app fora da lista liberada ou alvo que o dono não citou pedem o sim, e o sistema
+  pergunta sozinho.
+quando: "encerrar o APP inteiro, com os processos; sem nome, o da janela em foco; «o navegador» o código resolve"
+exemplos:
+- "fecha o Discord todo"
+- "mata o Steam"
+- "encerra o navegador"
 input_schema:
   type: object
   additionalProperties: false

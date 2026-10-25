@@ -6,6 +6,10 @@ description: Começa uma tarefa em segundo plano e devolve o id na hora, para o 
   várias páginas). Diga `tool` (uma ferramenta do catálogo) e os `parametros` dela. Cada passo passa pela mesma política
   da conversa e o que for perigoso pede o sim do dono. Não aceita outra tarefa dentro, não escolhe o motor e não
   roda comando livre.
+quando: "trabalho longo de terminal ou de arquivos do sistema, em segundo plano; o que é rápido, faça no turno"
+exemplos:
+- "roda o backup"
+- "procura em todas as pastas"
 input_schema:
   type: object
   additionalProperties: false

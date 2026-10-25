@@ -5,6 +5,9 @@ description: >-
   Pedido interno do Jarvis ao PDP, nunca do modelo: registra e confirma com o dono uma ação de mouse ou teclado
   virtual em terminal, banco, mensageiro, e-mail ou janela de autenticação, ou que aperta Enter. Sempre pede o
   sim do dono, uma vez por ação. Não aparece para o modelo e não executa nada por si.
+quando: "a confirmação de uma ação sensível no teclado ou mouse, pedida pelo próprio sistema"
+exemplos:
+- "(o sistema usa sozinho)"
 input_schema:
   type: object
   additionalProperties: false

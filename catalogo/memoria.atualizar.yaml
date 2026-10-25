@@ -4,6 +4,9 @@ title: Corrigir uma memória
 description: 'Corrige o que o Jarvis sabe: encerra a validade da memória antiga e grava a nova no lugar,
   com o motivo. Use quando o dono disser que algo mudou ou estava errado. Não edita no lugar, não apaga
   a antiga e sempre pede confirmação.'
+quando: "corrigir uma memória guardada"
+exemplos:
+- "na verdade meu aniversário é dia cinco"
 input_schema:
   type: object
   additionalProperties: false

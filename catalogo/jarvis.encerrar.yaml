@@ -5,6 +5,10 @@ description: Encerra o próprio Jarvis, limpo — cancela as tarefas, solta o mo
   navegador, guarda a conversa e fecha a janela. Use quando o dono pedir para encerrar, fechar, desligar ou sair do
   Jarvis ("encerra o sistema", "pode fechar o Jarvis", "desliga o Jarvis"). Não desliga nem reinicia o computador e
   não fecha nenhum outro programa. Com tarefa em andamento ou pergunta esperando o dono, o sistema pede o sim antes.
+quando: "encerrar o próprio Jarvis, com uma despedida curta; não desliga o computador"
+exemplos:
+- "encerra o sistema"
+- "pode fechar o Jarvis"
 input_schema:
   type: object
   additionalProperties: false

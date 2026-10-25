@@ -4,6 +4,9 @@ title: Apagar de vez
 description: 'Apaga de vez um turno, uma sessão de conversa ou uma memória, em cascata: bruto, índice,
   busca textual e o grafo que só ele sustentava. Use só quando o dono pedir para apagar definitivamente.
   Não tem desfazer e nunca roda sem confirmação na tela, uma por vez.'
+quando: "apagar algo da memória; o sistema pergunta antes"
+exemplos:
+- "esquece o que eu disse sobre a viagem"
 input_schema:
   type: object
   additionalProperties: false

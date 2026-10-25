@@ -7,6 +7,10 @@ description: Diz qual janela está em foco agora — a ativa (a do teclado), com
   cada monitor, a janela que está na frente, dizendo qual é o principal. Use para decidir onde agir ("o Brave já
   está na frente do principal, use-o") ou quando o dono perguntar o que está em foco ou na tela. Rápido (uma
   leitura do gerenciador de janelas); não mostra o conteúdo das janelas e não muda nada.
+quando: "qual janela está em foco e o que está na frente de cada monitor"
+exemplos:
+- "o que está na tela?"
+- "qual janela está ativa?"
 input_schema:
   type: object
   additionalProperties: false

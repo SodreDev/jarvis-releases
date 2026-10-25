@@ -6,6 +6,10 @@ description: Abre só o navegador (sem endereço) — o principal que o dono con
   configurados. Use quando o dono pedir para abrir o navegador, sem dizer um site. Se ele já está aberto, não abre outra
   janela nem instância — traz a janela do dono para a frente (`ja_aberto`, `visivel`). Para abrir uma página use
   sites.open. Não aceita comando, argumento nem caminho, e nunca roda shell.
+quando: "abrir só o navegador, ou trazer o aberto para a frente; fechado, abra você mesmo, nunca peça ao dono"
+exemplos:
+- "abre o navegador"
+- "abre o Brave"
 input_schema:
   type: object
   additionalProperties: false

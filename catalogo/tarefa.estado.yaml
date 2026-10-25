@@ -3,6 +3,9 @@ title: Estado das tarefas
 description: Diz como estão as tarefas em segundo plano (rodando, esperando o sim do dono, concluída, falhou, cancelada) e o
   progresso. Use quando o dono perguntar como está a tarefa. Sem `tarefa_id` lista as mais recentes. Não inicia nem
   cancela nada e não mostra o conteúdo que a tarefa leu.
+quando: "como está uma tarefa em segundo plano"
+exemplos:
+- "terminou aquilo?"
 input_schema:
   type: object
   additionalProperties: false

@@ -4,6 +4,9 @@ title: Ler um arquivo de texto
 description: Lê um arquivo de texto (UTF-8) dentro das raízes do modo de acesso, até 64 KiB. Use quando
   o dono pedir para ver ou resumir o que um arquivo diz. Não lê binário, não segue link simbólico, não
   sai das raízes e nunca lê chave, cofre ou arquivo de segredo.
+quando: "ler um arquivo de texto"
+exemplos:
+- "lê minhas notas"
 input_schema:
   type: object
   additionalProperties: false

@@ -4,6 +4,9 @@ title: Ligar duas entidades no grafo
 description: Cria uma relação entre duas entidades do grafo, com validade no tempo. Use quando o dono
   contar como duas pessoas ou coisas se relacionam. Só nasce ativa se os dois nomes estiverem na fala
   do dono neste turno; não apaga relação antiga e não cria entidade.
+quando: "ligar duas coisas na memória por uma relação"
+exemplos:
+- "a Ana é minha irmã"
 input_schema:
   type: object
   additionalProperties: false

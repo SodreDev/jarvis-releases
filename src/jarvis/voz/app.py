@@ -111,8 +111,11 @@ from jarvis.s2.motor import (
 from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.s2.orcamento_da_fala import orcar, quer_detalhe
+from jarvis.s2.persona import sistema_do_jarvis
 from jarvis.s2.portao import PortaoDeAcao, RespostaDoDono, resposta_literal
 from jarvis.s2.protocolo import sem_protocolo
+from jarvis.s2.regras import Regras, na_pasta
+from jarvis.s2.regras import padrao as padrao_das_regras
 from jarvis.tarefas.gestor import (
     EstadoDaTarefa,
     GestorDeTarefas,
@@ -479,6 +482,8 @@ class Aplicativo:
     falados certo — vão na dica do ASR, corrigem a transcrição e mudam a pronúncia do TTS. `None` =
     sem vocabulário, que é o caso da suíte (ela nunca lê a pasta do dono): quem monta o laço de
     produção (a janela, o `jarvis-voz`) passa o repositório."""
+    regras: Regras | None = field(default=None, repr=False)
+    """As regras de comportamento que valem nesta sessão (ADR-0047), lidas em `abrir`."""
     _vocabulario_lido: Vocabulario = field(default=VAZIO, repr=False)
     _vocabulario_carregado: bool = field(default=False, repr=False)
     vigia: VigiaDeInterrupcao | None = field(default=None, repr=False)
@@ -655,6 +660,9 @@ class Aplicativo:
         if self._cerebro is None:
             self._cerebro = Cerebro(motor=self._motor, session_id=self.session_id)
             self._ligar_o_portao(self._cerebro)
+            # As regras do dono (ADR-0047), depois da persona, em todo turno: as do arquivo dele
+            # (a pasta do vocabulário, a do jarvis-voz.toml), ou as do repositório.
+            self._cerebro.conversa.sistema = sistema_do_jarvis(self._ler_as_regras().bloco())
         if self.ferramentas is None:
             self.ferramentas = self._montar_ferramentas()
         self._cerebro.ferramentas = self.ferramentas
@@ -1147,6 +1155,19 @@ class Aplicativo:
         return dica_do_asr(self.configuracao.palavra, self._vocabulario_lido.termos_da_dica())
 
     # --- o vocabulário do dono (ADR-0044) -------------------------------------------------------
+    def _ler_as_regras(self) -> Regras:
+        """As regras de comportamento do dono (ADR-0047): o `regras.toml` da pasta de configuração
+        dele, ou as do repositório. A suíte, sem o repositório do vocabulário, nunca lê a pasta do
+        dono. O que não serviu fica de fora com aviso, como no vocabulário."""
+        pasta = self.vocabulario.pasta if self.vocabulario is not None else None
+        self.regras = na_pasta(pasta) if pasta is not None else padrao_das_regras()
+        if self.regras.avisos:
+            self.escrever_na_tela(
+                f"  (regras: {len(self.regras.avisos)} aviso(s) — `jarvis-voz --diagnostico` diz"
+                " quais)"
+            )
+        return self.regras
+
     def _ler_o_vocabulario(self) -> None:
         """Lê o vocabulário uma vez por abertura. O que não serve fica de fora com aviso — a voz
         não cai por um arquivo torto; a tela diz quantas entradas e onde ver."""

@@ -5,6 +5,10 @@ description: Traz para a frente a janela de um aplicativo que já está aberto, 
   janela_id que o window.list deu. Use quando o dono pedir para ir para o navegador, voltar ao editor e afins. Não
   abre o aplicativo (para isso existe apps.launch, que já põe o app em foco sozinho quando a janela dele abrir) e,
   se mais de um casar, pergunta qual.
+quando: "trazer um app para a frente; depois de abrir um app o foco vai sozinho, não chame em seguida"
+exemplos:
+- "foca no Discord"
+- "volta pro Brave"
 input_schema:
   type: object
   additionalProperties: false

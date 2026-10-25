@@ -4,6 +4,9 @@ title: Criar uma pasta
 description: Cria uma pasta nova (um nível só) dentro de uma pasta que já existe, nas raízes liberadas para escrita.
   Use quando o dono pedir para criar uma pasta. Não sobrescreve nem renomeia nada, não cria em pasta que não existe
   e avisa em voz; dá para desfazer.
+quando: "criar uma pasta"
+exemplos:
+- "cria a pasta viagem em Documentos"
 input_schema:
   type: object
   additionalProperties: false

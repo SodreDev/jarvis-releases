@@ -15,6 +15,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Final
 
+from jarvis.s2.regras import bloco_padrao
+
 ARQUIVO: Final = Path(__file__).with_name("persona.md")
 DELIMITADOR: Final = "---"
 
@@ -62,3 +64,10 @@ def persona_do_jarvis() -> Persona:
 
 def prompt_de_sistema() -> str:
     return persona_do_jarvis().texto
+
+
+def sistema_do_jarvis(regras: str | None = None) -> str:
+    """A persona e, depois dela, o bloco curto das regras do dono (ADR-0047): `None` = as regras
+    padrão do repositório; `""` = sem regras."""
+    bloco = bloco_padrao() if regras is None else regras
+    return f"{prompt_de_sistema()}\n\n{bloco}" if bloco else prompt_de_sistema()

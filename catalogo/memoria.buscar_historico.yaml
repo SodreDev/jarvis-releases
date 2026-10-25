@@ -4,6 +4,9 @@ title: Buscar no histórico de conversas
 description: 'Procura nos turnos de conversas passadas com o dono, por texto e por período. Use quando
   o dono perguntar o que disse ou o que o Jarvis disse antes. Devolve trechos com o turno e o caminho
   do acerto; não devolve segredo, não lê arquivo e não inventa: sem acerto, diz que não encontrou.'
+quando: "achar o que foi dito numa conversa antiga"
+exemplos:
+- "o que eu falei ontem da viagem?"
 input_schema:
   type: object
   additionalProperties: false

@@ -4,6 +4,9 @@ title: Notificação do desktop
 description: Mostra uma notificação do desktop com título e texto curtos. Use quando o dono pedir um aviso na tela
   ou quando o Jarvis precisar chamar a atenção sem falar. Não aceita botões nem links, não pede resposta e o texto
   aparece como foi escrito.
+quando: "mostrar uma notificação na tela do computador"
+exemplos:
+- "me avisa na tela"
 input_schema:
   type: object
   additionalProperties: false

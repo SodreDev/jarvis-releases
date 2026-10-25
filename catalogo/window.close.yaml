@@ -6,6 +6,11 @@ description: Fecha uma janela, como o X dela — o aplicativo pode perguntar se 
   janela daquele app (com várias abertas, a que está na frente, senão pergunta qual); com janela_id (do window.list),
   aquela. Não encerra o aplicativo — para "fecha o X todo", "fecha o X inteiro", "mata o X" ou "encerra o X" existe
   apps.quit — e não fecha a janela do próprio Jarvis (para isso, jarvis.encerrar).
+quando: "fechar a JANELA, como o X; sem nome, a da frente; «o navegador» o código resolve (em foco, único aberto)"
+exemplos:
+- "fecha o Discord"
+- "fecha a janela"
+- "fecha o navegador"
 input_schema:
   type: object
   additionalProperties: false

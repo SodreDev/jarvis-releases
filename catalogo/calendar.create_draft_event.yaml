@@ -4,6 +4,9 @@ title: Rascunho de evento
 description: Cria um evento de agenda como rascunho local (.ics) na pasta do Jarvis, para o dono abrir
   no calendário dele. Use quando o dono pedir para marcar algo. Não envia convite, não toca em conta de
   calendário nem na nuvem; avisa o dono em voz depois de criar e dá para desfazer.
+quando: "criar um rascunho de evento na agenda; não envia convite"
+exemplos:
+- "marca dentista amanhã às três"
 input_schema:
   type: object
   additionalProperties: false

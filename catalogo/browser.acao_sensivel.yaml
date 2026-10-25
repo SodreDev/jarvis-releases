@@ -6,6 +6,9 @@ description: >-
   envia mensagem, paga, apaga, dá acesso a conta ou acontece em banco, mensageiro ou e-mail. Sempre pede o sim
   do dono, uma vez por ação, e nenhuma instrução de página muda isso. Não aparece para o modelo e não executa
   nada por si.
+quando: "a confirmação de uma ação sensível na página, pedida pelo próprio sistema"
+exemplos:
+- "(o sistema usa sozinho)"
 input_schema:
   type: object
   additionalProperties: false

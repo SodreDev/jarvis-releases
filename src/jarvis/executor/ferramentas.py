@@ -453,12 +453,19 @@ class ExecutorDeFerramentas:
         self.registro_de_apps = self.registro_de_apps.com_correcao(fala, app_id)
 
     def catalogo_para_o_modelo(self) -> tuple[dict[str, Any], ...]:
-        """O catálogo pequeno e fixo do modo (braço C0 da ADR-0024): o que o motor pode propor."""
+        """O catálogo pequeno e fixo do modo (braço C0 da ADR-0024): o que o motor pode propor.
+        `quando` e `exemplos` vêm do manifesto (o registro — ADR-0047); `agora` é o que só esta
+        sessão sabe (os apps autorizados, os navegadores configurados, o controle ligado)."""
         return tuple(
             {
                 "id": tool_id,
                 "titulo": str(self.manifestos[tool_id]["title"]),
                 "descricao": self._descricao(tool_id),
+                "quando": str(self.manifestos[tool_id].get("quando", "")),
+                "exemplos": list(self.manifestos[tool_id].get("exemplos", [])),
+                "agora": self._descricao(tool_id)
+                .removeprefix(" ".join(str(self.manifestos[tool_id]["description"]).split()))
+                .strip(),
                 "argumentos": self.manifestos[tool_id]["input_schema"].get("properties", {}),
                 "obrigatorios": self.manifestos[tool_id]["input_schema"].get("required", []),
             }
