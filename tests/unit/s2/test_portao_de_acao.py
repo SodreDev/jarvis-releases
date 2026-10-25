@@ -379,7 +379,8 @@ def test_pedir_permissao_vira_pendencia_e_o_turno_acaba_na_pergunta(
     resposta, falado = _dizer(cerebro, "dá uma olhada naquilo")
     assert [r.status for r in resposta.ferramentas] == ["pendente"]
     assert abertos == []
-    assert falado.rstrip().endswith("Posso?")
+    assert falado.startswith("Posso abrir exemplo.com.br") and falado.rstrip().endswith("?")
+    assert "sim" not in falado.casefold().split(), "sem «sim» na pergunta: o eco não responde"
     assert len(motor.pedidos) == 1, "depois da pergunta, o motor não é chamado de novo"
     pendencia = cerebro.pendencias.valida()
     assert pendencia is not None and pendencia.pergunta.tool_id == "sites.open"
@@ -654,7 +655,7 @@ def test_sim_contextual_pelo_jev_resolve(
     estado, perguntas = jev.chamadas[-1]
     assert set(perguntas) == {"resposta"}
     assert "exemplo.com.br" in estado["acao_pendente"]
-    assert any("Posso?" in linha for linha in estado["conversa"])
+    assert any("Posso abrir" in linha for linha in estado["conversa"])
     assert abertos == ["https://exemplo.com.br"]
 
 

@@ -55,7 +55,7 @@ from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrent
 from jarvis.politica.objetivo import EstadoDoObjetivo
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
 from jarvis.s2.entrega import FiltroDoJaDito, traz_algo_novo
-from jarvis.s2.fluxo_de_acao import FluxoDeAcao
+from jarvis.s2.fluxo_de_acao import FluxoDeAcao, frase_do_feito
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
 from jarvis.s2.motor import (
     Contexto,
@@ -258,6 +258,11 @@ class Cerebro:
     confirmada vai para uma tarefa. `None` = o caminho de antes: só o PDP, e a janela bloqueia."""
     pendencias: RegistroDePendencias = field(default_factory=RegistroDePendencias)
     autorizacoes: AutorizacoesExplicitas = field(default_factory=AutorizacoesExplicitas)
+    pendencia_sem_portao: bool = False
+    """A confirmação vira pendência mesmo sem o portão (o dono não ligou o classificador): o
+    turno acaba na pergunta, e o dono responde com o «sim»/«não» falado — o literal, lido pelo
+    código — ou com o clique (dono, 2026-10-25; ADR-0048). O aplicativo liga; desligado, a janela
+    bloqueia a linha do cérebro até o clique, como antes (o que os testes do laço usam)."""
     delegar_em_tarefa: bool = False
     """O trabalho longo de um pedido vira uma **tarefa** do objetivo (ADR-0038, emendada pela
     ADR-0046): a primeira ferramenta roda no turno — o pedido de um passo responde aqui —, e
@@ -280,7 +285,7 @@ class Cerebro:
 
     @property
     def fluxo(self) -> FluxoDeAcao | None:
-        if self.portao is None:
+        if self.portao is None and not self.pendencia_sem_portao:
             return None
         return FluxoDeAcao(self.portao, self.pendencias, self.autorizacoes)
 
@@ -298,8 +303,11 @@ class Cerebro:
         if resultado is None:
             return False
         # Confirmado no clique, a ação vai para uma tarefa e o fim dela é a resposta (o aviso da
-        # ferramenta): nada de "está rodando, aviso quando terminar" antes (dono, 2026-10-25).
-        if sim and resultado.status not in ("ok", "despachado"):
+        # ferramenta): nada de "está rodando, aviso quando terminar" antes (dono, 2026-10-25). A
+        # que roda aqui mesmo (a memória) tem a frase dela, como no "sim" falado.
+        if sim and resultado.status == "ok" and aberta is not None and aberta.id == pendencia_id:
+            self._status(frase_do_feito(aberta.pergunta, resultado))
+        elif sim and resultado.status not in ("ok", "despachado"):
             self._status(f"Não deu para fazer o que você confirmou: {resultado.motivo}")
         return True
 
@@ -1274,8 +1282,8 @@ class Cerebro:
         """O dono cortou a fala antes do fim da pergunta: ela não foi feita, e um "sim" dito por
         cima não pode autorizar o que ele não ouviu. A pendência cai."""
         aberta = self.pendencias.valida()
-        if aberta is None:
-            return
+        if aberta is None or self.pendencias.foi_ouvida(aberta.id):
+            return  # respondida por cima (ADR-0048): o corte foi a resposta, não o descaso
         for resultado in resposta.ferramentas:
             if resultado.call_id == aberta.id and resultado.aviso not in texto_tocado:
                 self.pendencias.cancelar()

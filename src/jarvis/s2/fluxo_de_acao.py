@@ -41,7 +41,14 @@ from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Veredito
 from jarvis.s2.motor import Mensagem, PedidoDeTool
 from jarvis.s2.pendencias import Espera, Pendencia, PendenciaOcupada, RegistroDePendencias
-from jarvis.s2.portao import AutorizacoesExplicitas, Classe, PortaoDeAcao, RespostaDoDono
+from jarvis.s2.portao import (
+    AutorizacoesExplicitas,
+    Classe,
+    Classificacao,
+    PortaoDeAcao,
+    RespostaDoDono,
+    resposta_literal,
+)
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, MotorDireto, TarefaRecusada
 
 Anunciar = Callable[[Confirmacao], None]
@@ -49,6 +56,8 @@ Anunciar = Callable[[Confirmacao], None]
 PRAZO_NA_HORA_MS: Final = 10_000
 """Ação confirmada com prazo de manifesto até isto roda no turno do "sim"; mais demorada (instalar
 um programa), numa tarefa — o turno não prende o laço de voz por minutos."""
+SEM_PORTAO: Final = Classificacao(Classe.FAZER, "sem o portão contextual: o PDP decide sozinho")
+"""Sem o Jev, a ferramenta segue o que o PDP disser — o `confirm` dele é a pergunta de sempre."""
 FRASE_DO_SIM_DA_TAREFA: Final = "Certo."
 """O "sim" a uma pergunta de tarefa: a tarefa segue sozinha e o resultado dela é a resposta — o
 turno não promete "aviso quando terminar" (seria a segunda fala do mesmo pedido)."""
@@ -87,7 +96,10 @@ class LeituraDaResposta:
 
 @dataclass(slots=True)
 class FluxoDeAcao:
-    portao: PortaoDeAcao
+    portao: PortaoDeAcao | None
+    """O Jev antes de cada ferramenta. `None` = sem o portão (o dono não ligou o classificador):
+    o PDP decide sozinho, a confirmação vira pendência do mesmo jeito, e a resposta falada vale só
+    no «sim»/«não» literal, que o código lê sem rede (dono, 2026-10-25; ADR-0048)."""
     pendencias: RegistroDePendencias
     autorizacoes: AutorizacoesExplicitas
 
@@ -123,7 +135,9 @@ class FluxoDeAcao:
         pergunta = decidido.pergunta
         tool_id, chamada = pergunta.tool_id, pergunta.id
         try:
-            self.pendencias.abrir(pergunta, contaminado=decidido.contaminado)
+            self.pendencias.abrir(
+                pergunta, contaminado=decidido.contaminado, proveniencia=proveniencia
+            )
         except PendenciaOcupada:
             return ResultadoDeFerramenta(
                 tool_id,
@@ -261,20 +275,25 @@ class FluxoDeAcao:
         """A avaliação já foi concluída ou descartada: o grant deixou de ser desta função."""
         try:
             manifesto = executor.manifestos[tool_id]
-            classificacao = self.portao.classificar(
-                tool_id=tool_id,
-                titulo=str(manifesto["title"]),
-                argumentos=avaliacao.argumentos,
-                pedido_do_dono=pedido_do_dono,
-                mensagens=mensagens,
-                situacao=_situacao(manifesto, executor, avaliacao.pedido.contaminado),
-                cancelado=cancelado,
-                objetivo=objetivo,
+            portao = self.portao
+            classificacao = (
+                portao.classificar(
+                    tool_id=tool_id,
+                    titulo=str(manifesto["title"]),
+                    argumentos=avaliacao.argumentos,
+                    pedido_do_dono=pedido_do_dono,
+                    mensagens=mensagens,
+                    situacao=_situacao(manifesto, executor, avaliacao.pedido.contaminado),
+                    cancelado=cancelado,
+                    objetivo=objetivo,
+                )
+                if portao is not None
+                else SEM_PORTAO
             )
             classe, motivo = classificacao.classe, classificacao.motivo
 
             def trilhar(decisao: str) -> None:
-                if executor.trilha is not None:
+                if executor.trilha is not None and portao is not None:
                     executor.trilha.evento(
                         "portao",
                         tool_id=tool_id,
@@ -305,11 +324,11 @@ class FluxoDeAcao:
                     # o Jev só veta (dono, 2026-10-20). O PDP e o risco dinâmico seguem valendo.
                     classe = Classe.FAZER
                     trilhar("objetivo")
-                elif autorizacoes.consumir(
+                elif portao is not None and autorizacoes.consumir(
                     tool_id,
                     pedido.args,
                     p_explicito=classificacao.p_explicito,
-                    limiar=self.portao.limiar_explicito,
+                    limiar=portao.limiar_explicito,
                 ):
                     classe = Classe.FAZER
                     trilhar("explicita")
@@ -381,9 +400,14 @@ class FluxoDeAcao:
             return LeituraDaResposta()
         detalhe = pendencia.pergunta.detalhe
         falado = pendencia.pergunta.para_ouvir
-        resposta = self.portao.interpretar_resposta(
-            fala, acao_pendente=detalhe, mensagens=mensagens, cancelado=cancelado
-        )
+        if self.portao is not None:
+            resposta = self.portao.interpretar_resposta(
+                fala, acao_pendente=detalhe, mensagens=mensagens, cancelado=cancelado
+            )
+        else:
+            # Sem o Jev, só o literal curto vale (lido pelo código, sem rede); o resto é outro
+            # assunto, como antes.
+            resposta = resposta_literal(fala) or RespostaDoDono.OUTRA_COISA
         if resposta is RespostaDoDono.SIM:
             resultado = self.resolver(
                 executor, pendencia.id, sim=True, na_hora=True, cancelado=cancelado, origem="voz"
@@ -397,12 +421,7 @@ class FluxoDeAcao:
             elif resultado.status == "despachado":
                 frase = f"Certo, estou fazendo: {falado}. Aviso quando terminar."
             elif resultado.status == "ok":
-                pergunta = pendencia.pergunta
-                frase = (
-                    resultado.aviso
-                    or frase_da_ferramenta(pergunta.tool_id, pergunta.argumentos, resultado.dados)
-                    or f"Feito: {falado}."
-                )
+                frase = frase_do_feito(pendencia.pergunta, resultado)
             else:
                 frase = f"Não deu para fazer {falado}: {resultado.motivo}."
             return LeituraDaResposta(frase=frase, resultado=resultado)
@@ -464,8 +483,18 @@ class FluxoDeAcao:
                 cancelado=cancelado,
                 confirmar=_sim_de_uso_unico(pergunta),
                 contaminacao=Contaminacao(pendencia.contaminado),
+                proveniencia=pendencia.proveniencia,
             )
         return _despachar(executor, pendencia)
+
+
+def frase_do_feito(pergunta: Confirmacao, resultado: ResultadoDeFerramenta) -> str:
+    """O que o dono ouve da ação confirmada que rodou na hora — pela voz ou pelo clique."""
+    return (
+        resultado.aviso
+        or frase_da_ferramenta(pergunta.tool_id, pergunta.argumentos, resultado.dados)
+        or f"Feito: {pergunta.para_ouvir}."
+    )
 
 
 def _rapida(executor: ExecutorDeFerramentas, tool_id: str) -> bool:
@@ -477,14 +506,16 @@ def _despachar(executor: ExecutorDeFerramentas, pendencia: Pendencia) -> Resulta
     """A execução autorizada vai para uma tarefa; o "sim" vale só para a chamada exata."""
     pergunta = pendencia.pergunta
     ja_confirmado = _sim_de_uso_unico(pergunta)
-    if pergunta.tool_id.startswith(FORA_DA_ALLOWLIST):
+    if pergunta.tool_id.startswith((*FORA_DA_ALLOWLIST, "memoria.")):
         # `tarefa.*` e `acao.desfazer` não rodam dentro de tarefa (profundidade 1) e são só
-        # registro: rodam aqui mesmo, ainda pelo PDP.
+        # registro; a memória é local e rápida, e a escrita dela é do turno em que a pergunta
+        # nasceu (a tarefa não tem turno, e o PDP a negaria): rodam aqui mesmo, ainda pelo PDP.
         return executor.executar(
             pergunta.tool_id,
             pergunta.argumentos,
             cancelado=lambda: False,
             confirmar=ja_confirmado,
+            proveniencia=pendencia.proveniencia,
         )
     gestor = executor.tarefas
     if gestor is None:

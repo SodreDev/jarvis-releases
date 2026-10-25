@@ -118,7 +118,8 @@ def test_com_tarefa_rodando_encerrar_pede_o_sim_dizendo_por_que(tmp_path: Path) 
         assert negado.status == "negado" and not app._fim_pedido()
         assert len(perguntas) == 1
         assert "«procurar as fotos da viagem»" in perguntas[0].razao_falada
-        assert perguntas[0].pergunta_falada.startswith("Preciso do seu sim para encerrar o Jarvis:")
+        assert perguntas[0].pergunta_falada.startswith("Posso encerrar o Jarvis")
+        assert "A tarefa «procurar as fotos da viagem»" in perguntas[0].pergunta_falada
 
         sim = app.ferramentas.executar(
             "jarvis.encerrar", {}, cancelado=lambda: False, confirmar=lambda _p: True

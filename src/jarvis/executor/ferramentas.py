@@ -202,9 +202,12 @@ class Confirmacao:
 
     @property
     def pergunta_falada(self) -> str:
-        """A pergunta que a voz faz: a ação e, quando o alvo pede o sim por um motivo, o motivo."""
-        razao = f": {self.razao_falada}" if self.razao_falada else ""
-        return f"Preciso do seu sim para {self.para_ouvir}{razao}. Posso?"
+        """A pergunta que a voz faz: a ação primeiro e, quando o alvo pede o sim por um motivo, o
+        motivo depois. Sem "sim" na frase (ADR-0048): ela passa pelo alto-falante e volta pelo
+        microfone, e o eco de "preciso do seu sim" soava como resposta."""
+        razao = self.razao_falada.strip().rstrip(".")
+        motivo = f" {razao[:1].upper()}{razao[1:]}." if razao else ""
+        return f"Posso {self.para_ouvir}?{motivo}"
 
 
 Confirmar = Callable[[Confirmacao], bool]

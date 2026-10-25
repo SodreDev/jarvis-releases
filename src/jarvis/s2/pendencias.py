@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from jarvis.executor.ferramentas import Cancelado, Confirmacao
+from jarvis.politica.memoria import Proveniencia
 
 Agendar = Callable[[float, Callable[[], None]], None]
 """Chama a função depois de tantos segundos (na janela, um `threading.Timer`)."""
@@ -61,6 +62,9 @@ class Pendencia:
     espera: Espera | None = None
     """A tarefa que espera esta resposta; `None` = a pergunta do fim de um turno (a execução
     confirmada vira tarefa nova, `jarvis.s2.fluxo_de_acao`)."""
+    proveniencia: Proveniencia | None = None
+    """O turno em que a pergunta nasceu: a escrita de memória confirmada depois (o clique, o "sim"
+    no turno seguinte) é daquele pedido, e o PDP a cobra (ADR-0026, regra 2)."""
 
     @property
     def id(self) -> str:
@@ -81,15 +85,25 @@ class RegistroDePendencias:
     agendar: Agendar | None = None
     """Sem agenda (testes), a expiração é preguiçosa: vale no próximo olhar."""
     _aberta: Pendencia | None = None
+    _ouvidas: set[str] = field(default_factory=set)
+    """As pendências cuja pergunta o dono ouviu — inclusive a do fim de um turno que ele cortou
+    respondendo por cima (ADR-0048): o corte não a derruba."""
     _trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     def abrir(
-        self, pergunta: Confirmacao, *, contaminado: bool = False, espera: Espera | None = None
+        self,
+        pergunta: Confirmacao,
+        *,
+        contaminado: bool = False,
+        espera: Espera | None = None,
+        proveniencia: Proveniencia | None = None,
     ) -> Pendencia:
         with self._trava:
             if self.valida() is not None:
                 raise PendenciaOcupada("já há uma confirmação pendente com o dono")
-            pendencia = Pendencia(pergunta, self.relogio() + pergunta.prazo_s, contaminado, espera)
+            pendencia = Pendencia(
+                pergunta, self.relogio() + pergunta.prazo_s, contaminado, espera, proveniencia
+            )
             self._aberta = pendencia
         if self.ao_abrir is not None:
             self.ao_abrir(pergunta)
@@ -127,11 +141,25 @@ class RegistroDePendencias:
         return aberta
 
     def marcar_ouvida(self, pendencia_id: str) -> None:
-        """A pergunta desta pendência tocou inteira em voz: daqui em diante o "sim" falado vale."""
+        """A pergunta desta pendência foi ouvida — tocou inteira, ou o dono a respondeu por cima
+        (ADR-0048): daqui em diante o "sim" falado vale, e o corte da fala não a derruba."""
         with self._trava:
             aberta = self._aberta
-            if aberta is not None and aberta.id == pendencia_id and aberta.espera is not None:
+            if aberta is None or aberta.id != pendencia_id:
+                return
+            self._ouvidas.add(pendencia_id)
+            if aberta.espera is not None:
                 aberta.espera.ouvida = True
+
+    def marcar_ouvida_a_aberta(self) -> None:
+        """O dono respondeu por cima da pergunta que estava no ar: ela foi ouvida."""
+        aberta = self.valida()
+        if aberta is not None:
+            self.marcar_ouvida(aberta.id)
+
+    def foi_ouvida(self, pendencia_id: str) -> bool:
+        with self._trava:
+            return pendencia_id in self._ouvidas
 
     def esperar(
         self,
@@ -165,7 +193,10 @@ class RegistroDePendencias:
         como a do fim de um turno cortada antes de tocar (`Cerebro.ouvido`)."""
         with self._trava:
             aberta = self._aberta
-        if aberta is not None and aberta.espera is not None and not aberta.espera.ouvida:
+            ouvida = aberta is not None and aberta.id in self._ouvidas
+        if aberta is None or ouvida:
+            return
+        if aberta.espera is not None and not aberta.espera.ouvida:
             self.tomar(aberta.id, sim=False, origem="interrompida")
 
     def aberta_agora(self, pendencia_id: str) -> bool:
@@ -184,5 +215,7 @@ class RegistroDePendencias:
         self.valida()
 
     def _avisar_fim(self, pendencia_id: str) -> None:
+        with self._trava:
+            self._ouvidas.discard(pendencia_id)
         if self.ao_fechar is not None:
             self.ao_fechar(pendencia_id)

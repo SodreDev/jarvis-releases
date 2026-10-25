@@ -181,10 +181,14 @@ def test_o_dono_aprova_na_janela_e_so_entao_a_memoria_e_apagada(
     assert _memoria_viva(conversa, alvo), "nada é apagado antes do sim"
     _capturar(janela, "confirmar-apagar.png")
 
+    # A confirmação é uma pergunta (ADR-0048): o turno acaba nela, e o clique — ou o «sim»
+    # falado — a responde depois, sem prender a linha do cérebro.
+    pergunta = "Jarvis: Vou apagar. Posso apagar de vez?"
+    _esperar(aplicativo, 5.0, ate=lambda: pergunta in _respostas(tela))
     tela.responderPendencia(pedido["id"], True)
-    # Pedido de um passo responde no turno (ADR-0046): a frase curta e o resultado numa resposta
-    # só — nada de tarefa, nem de segunda fala pela fila de avisos.
-    final = "Jarvis: Vou apagar. Apaguei."
+    # A memória roda na hora, com a proveniência do turno do pedido, e a frase do feito é a
+    # resposta — uma só, pela fila de avisos.
+    final = "Jarvis: Aviso: Feito: apagar de vez."
     _esperar(aplicativo, 8.0, ate=lambda: final in _respostas(tela))
     _esperar(aplicativo, 0.5)
     _capturar(janela, "memoria-apagada.png")
@@ -193,7 +197,7 @@ def test_o_dono_aprova_na_janela_e_so_entao_a_memoria_e_apagada(
 
     assert not _memoria_viva(conversa, alvo), "com o sim do dono, apagou"
     assert _pendente(tela) is None
-    assert _respostas(tela) == [final], "uma resposta por pedido"
+    assert _respostas(tela) == [pergunta, final], "a pergunta e uma resposta"
 
 
 def test_sem_resposta_no_prazo_e_nao_e_a_faixa_some(
@@ -214,16 +218,17 @@ def test_sem_resposta_no_prazo_e_nao_e_a_faixa_some(
     tela.enviarTexto("apaga aquela anotação do café")
     _esperar(aplicativo, 5.0, ate=lambda: _pendente(tela) is not None)
     assert _pendente(tela) is not None
-    nao_fiz = "Jarvis: Vou apagar. Não apaguei."
-    _esperar(aplicativo, 8.0, ate=lambda: nao_fiz in _respostas(tela))
+    pergunta = "Jarvis: Vou apagar. Posso apagar de vez?"
+    _esperar(aplicativo, 8.0, ate=lambda: _pendente(tela) is None)
     _esperar(aplicativo, 0.3)
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
 
     assert _memoria_viva(conversa, alvo), "sem resposta no prazo, não apaga"
     assert _pendente(tela) is None, "pedido vencido continuou na tela"
-    # No turno (ADR-0046), o motor recebe o "não confirmou" e diz que não apagou — uma vez.
-    assert _respostas(tela) == [nao_fiz]
+    # O turno acabou na pergunta (ADR-0048); vencida, ela cai calada — a faixa dizia "sem
+    # resposta, eu não faço", e nada foi feito.
+    assert _respostas(tela) == [pergunta]
 
 
 def test_interromper_com_a_confirmacao_aberta_e_nao(

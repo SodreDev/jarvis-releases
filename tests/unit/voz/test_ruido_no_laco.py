@@ -19,7 +19,7 @@ import pytest
 from jarvis.audio_io.quadro import TAXA_PADRAO
 from jarvis.audio_io.sintese import fala_simulada
 from jarvis.executor.ferramentas import Confirmacao
-from jarvis.voz.app import Aplicativo
+from jarvis.voz.app import Aplicativo, Turno
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.interface import Hipotese, Onde, Sinais, Transcricao
 from tests.unit.voz.test_app import aplicativo_de
@@ -233,15 +233,53 @@ def test_o_sim_sem_certeza_nao_confirma_a_pergunta_pendente(
     assert evento["motivo"] == "sim_incerto"
 
 
-def test_o_sim_com_certeza_responde(tmp_path: Path) -> None:
-    app = aplicativo_de(tmp_path)
+def _respondidos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, texto: str, sinais: Sinais
+) -> tuple[list[str], list[str]]:
+    asr = AsrComSinais((texto, sinais))
+    app, linhas = _app(tmp_path, ModoDeEscuta.PALAVRA, _palavra(250), asr)
     _com_pergunta_pendente(app)
-    assert not app._sim_sem_certeza("Sim.", FORTE)
-    assert app._sim_sem_certeza("Sim.", FRACO)
-    assert not app._sim_sem_certeza("abre o Discord", FRACO), "só o «sim» literal é apertado"
-    assert app._cerebro is not None
-    app._cerebro.pendencias.cancelar()
-    assert not app._sim_sem_certeza("Sim.", FRACO), "sem pergunta pendente, é fala comum"
+    respondidos: list[str] = []
+
+    def responder(_app: Aplicativo, pedido: str, **_extra: object) -> object:
+        respondidos.append(pedido)
+        return Turno(falou=pedido, respondeu="")
+
+    monkeypatch.setattr(Aplicativo, "responder", responder)
+    app.rodar_audio(vad=VadComRajadas((QUADRO_DO_EVENTO, QUADRO_DO_EVENTO + 13)))
+    return respondidos, linhas
+
+
+def test_o_sim_com_certeza_responde_mesmo_sem_a_palavra_de_ativacao(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Com a pergunta aberta, a janela da resposta é um turno próprio (ADR-0048): no modo palavra,
+    "sim" sem o nome é a resposta — e chega ao cérebro como o «sim» literal."""
+    respondidos, _linhas = _respondidos(tmp_path, monkeypatch, "Sim.", FORTE)
+    assert respondidos == ["sim"]
+
+
+def test_o_sim_com_a_palavra_tambem_precisa_de_certeza(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Antes, «Jarvis, sim» escapava da defesa da ADR-0043 (não era o literal); agora o «sim»
+    lido dele cobra os mesmos sinais fortes."""
+    respondidos, linhas = _respondidos(tmp_path, monkeypatch, "Jarvis, sim.", FRACO)
+    assert respondidos == [] and any("não tive certeza" in linha for linha in linhas)
+
+
+def test_sem_pergunta_aberta_o_sim_sem_a_palavra_e_descartado(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asr = AsrComSinais(("Sim.", FORTE))
+    app, _linhas = _app(tmp_path, ModoDeEscuta.PALAVRA, _palavra(250), asr)
+    app.abrir()
+    respondidos: list[str] = []
+    monkeypatch.setattr(
+        Aplicativo, "responder", lambda _a, pedido, **_k: respondidos.append(pedido)
+    )
+    app.rodar_audio(vad=VadComRajadas((QUADRO_DO_EVENTO, QUADRO_DO_EVENTO + 13)))
+    assert respondidos == [], "sem pergunta, «sim» sem o nome é fala que não era com ele"
 
 
 def test_a_vigia_nao_corta_a_fala_pelo_eco_da_dica(tmp_path: Path) -> None:

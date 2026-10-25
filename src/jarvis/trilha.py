@@ -261,6 +261,8 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "sem_chamada",
         "nao_era_comigo",
         "prazo_da_pausa",
+        "resposta_a_pergunta",
+        "so_na_tela",
         # o ruído que não virou pedido (`jarvis.voz.ruido`, ADR-0043)
         "impulso",
         "fundo",
@@ -270,6 +272,7 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "eco_da_dica",
         "incerto_curto",
         "sim_incerto",
+        "eco_da_pergunta",
         # a entrega do fim de uma tarefa (`jarvis.voz.app`, ADR-0046)
         "ja_dito",
         "nova_informacao",

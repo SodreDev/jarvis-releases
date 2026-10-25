@@ -112,7 +112,7 @@ from jarvis.s2.motor_claude_cli import MotorClaudeCli
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.s2.orcamento_da_fala import orcar, quer_detalhe
 from jarvis.s2.persona import sistema_do_jarvis
-from jarvis.s2.portao import PortaoDeAcao, RespostaDoDono, resposta_literal
+from jarvis.s2.portao import PortaoDeAcao
 from jarvis.s2.protocolo import sem_protocolo
 from jarvis.s2.regras import Regras, na_pasta
 from jarvis.s2.regras import padrao as padrao_das_regras
@@ -133,9 +133,11 @@ from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
 from jarvis.voz.interface import MotorDeAsr, MotorDeTts, Onde, Sinais, transcrever_com_sinais
 from jarvis.voz.interrupcao import Acao as AcaoDaVigia
+from jarvis.voz.interrupcao import Motivo as MotivoDaVigia
 from jarvis.voz.interrupcao import VigiaDeInterrupcao, so_ordem_de_parar
 from jarvis.voz.prontidao import o_que_falta
 from jarvis.voz.registro import MotorRecusado, motor_registrado
+from jarvis.voz.resposta import TipoDaResposta, ler_resposta
 from jarvis.voz.ruido import (
     MedidaDoTrecho,
     PoliticaDeRuido,
@@ -513,6 +515,8 @@ class Aplicativo:
     _confirmacoes: dict[str, tuple[threading.Event, list[bool]]] = field(
         default_factory=dict, repr=False
     )
+    _perguntas_na_tela: dict[str, str] = field(default_factory=dict, repr=False)
+    """O texto de cada confirmação que espera o clique (a vigia não corta por um "sim" a ela)."""
     turnos: list[Turno] = field(default_factory=list)
     _asr: MotorDeAsr | None = field(default=None, repr=False)
     _tts: MotorDeTts | None = field(default=None, repr=False)
@@ -669,6 +673,8 @@ class Aplicativo:
         # O pedido que precisa de ferramenta vira tarefa (ADR-0038): o laço fica livre para a
         # próxima fala enquanto ela trabalha.
         self._cerebro.delegar_em_tarefa = True
+        # A confirmação é uma pergunta que a voz responde, com ou sem o portão (ADR-0048).
+        self._cerebro.pendencia_sem_portao = True
         # O caminho rápido (ADR-0045): comando simples vai à ferramenta pela regra, sem esperar o
         # motor — pelo mesmo PDP, Jev e pergunta da proposta do modelo.
         self._cerebro.caminho_rapido = self.configuracao.caminho_rapido
@@ -954,6 +960,7 @@ class Aplicativo:
         cerebro = self._cerebro
         epoch = self.epoch
         self._turno_cancelado = False
+        self._corte_por_resposta = False
         pedacos: list[dict[str, Any]] = []
         resposta = cerebro.avisar(avisos, epoch=epoch, publicar=pedacos.append)
         # A tela mostra a resposta inteira; a voz, o que coube no orçamento da fala.
@@ -974,7 +981,9 @@ class Aplicativo:
             interrompida=turno.cancelado,
             played_ms=int(1000 * tocadas / TAXA_PADRAO),
         )
-        self._avisos_tocados([a.notif_id for a in avisos], cortados=turno.cancelado)
+        # A pergunta cortada pela resposta do dono foi ouvida (ADR-0048): não volta à fila.
+        cortados = turno.cancelado and not self._corte_por_resposta
+        self._avisos_tocados([a.notif_id for a in avisos], cortados=cortados)
         self.escrever_na_tela(f"Jarvis: {texto}")
         self.turnos.append(Turno(falou="", respondeu=texto, amostras_tocadas=tocadas, epoch=epoch))
         self._mudar(self._repouso)
@@ -1497,6 +1506,7 @@ class Aplicativo:
         evento = threading.Event()
         resposta: list[bool] = []
         self._confirmacoes[pergunta.id] = (evento, resposta)
+        self._perguntas_na_tela[pergunta.id] = pergunta.pergunta_falada
         # Enquanto a pergunta está na tela a vez é do dono: o núcleo não diz "falando" à toa.
         # (Pergunta de tarefa não mexe no núcleo: a conversa segue, e a tarefa espera sozinha.)
         if not da_tarefa:
@@ -1517,6 +1527,7 @@ class Aplicativo:
             if not da_tarefa and self.epoch == epoch:
                 self._mudar(Estado.PENSANDO)
             self._confirmacoes.pop(pergunta.id, None)
+            self._perguntas_na_tela.pop(pergunta.id, None)
             if self.ao_fim_da_confirmacao is not None:
                 self.ao_fim_da_confirmacao(pergunta.id)
 
@@ -1584,6 +1595,8 @@ class Aplicativo:
     """O ASR é um só: o turno do laço e a vigia (numa linha à parte) não transcrevem juntos."""
     _encerrar_pedido: bool = False
     """O dono pediu o fim (`jarvis.encerrar`): o laço termina o turno — a despedida toca — e sai."""
+    _corte_por_resposta: bool = False
+    """A última fala foi cortada pela resposta do dono à pergunta que estava no ar (ADR-0048)."""
     _escuta_por_cima: ThreadPoolExecutor | None = field(default=None, repr=False)
     _vigia_montada_aqui: bool = False
     _decisoes_na_trilha: int = 0
@@ -1616,6 +1629,7 @@ class Aplicativo:
 
         epoch = self.epoch
         self._turno_cancelado = False
+        self._corte_por_resposta = False
         cancelado = self.cancelado_de(epoch)
         parar_geracao = threading.Event()
         turn_id = f"t-{uuid7()}"
@@ -1889,13 +1903,19 @@ class Aplicativo:
             epoch=epoch,
         )
 
-    def interromper(self, motivo: str = "barge_in") -> int:
-        """O dono falou por cima (ou apertou a barra): o epoch morre e tudo cai junto."""
+    def interromper(self, motivo: str = "barge_in", *, resposta: bool = False) -> int:
+        """O dono falou por cima (ou apertou a barra): o epoch morre e tudo cai junto.
+
+        `resposta`: ele cortou uma pergunta de confirmação **respondendo** a ela (a vigia leu
+        "sim" ou "não", ADR-0048) — a pergunta foi ouvida e fica de pé para o trecho dele. Sem
+        isso, a pergunta de uma tarefa que ele ainda não ouviu inteira cai (é não, ADR-0038)."""
         self.epoch += 1
         self._turno_cancelado = True
         if self._cerebro is not None:
-            # A pergunta de uma tarefa que o dono ainda não ouviu inteira cai (é não, ADR-0038).
-            self._cerebro.pendencias.interrompida()
+            if resposta:
+                self._cerebro.pendencias.marcar_ouvida_a_aberta()
+            else:
+                self._cerebro.pendencias.interrompida()
         self._mudar(self._repouso)
         self.escrever_na_tela(f"  ⟂ interrompido ({motivo})")
         return self.epoch
@@ -1927,7 +1947,14 @@ class Aplicativo:
         if captura.quadros % QUADROS_POR_PUBLICACAO == 0:
             # O indicador do F1-13 diz o que a fonte faz — e agora ela segue lendo durante a fala.
             self._publicar_estado(captura, aberta=True)
+        # A pergunta de confirmação no ar (ADR-0048): com ela, a resposta do dono corta limpo; a
+        # que só o clique responde não é cortada por um "sim" falado.
+        vigia.pergunta = self._pergunta_aberta()
+        vigia.pergunta_so_na_tela = self._pergunta_so_na_tela()
+        decisoes = len(vigia.decisoes)
         acao = vigia.ouvir(quadro, fala_no_vad=bool(captura.detector.falando))
+        if any(d.motivo is MotivoDaVigia.SO_NA_TELA for d in vigia.decisoes[decisoes:]):
+            self.escrever_na_tela("  (essa confirmação é na tela: toque em sim ou em não)")
         if acao is AcaoDaVigia.PAUSAR:
             fila.pausado = True
         elif acao is AcaoDaVigia.RETOMAR:
@@ -1935,11 +1962,35 @@ class Aplicativo:
         elif acao is AcaoDaVigia.CORTAR:
             fila.pausado = False
             self._fala_por_cima = vigia.audio_do_corte()
+            resposta = bool(vigia.decisoes) and (
+                vigia.decisoes[-1].motivo is MotivoDaVigia.RESPOSTA_A_PERGUNTA
+            )
+            self._corte_por_resposta = resposta
             with self._trava_dos_avisos:
                 self.avisos.dono_falando(True, self.relogio_dos_avisos())
-            self.interromper("voz")
+            self.interromper("voz", resposta=resposta)
         if acao is not AcaoDaVigia.NADA:
             self._trilhar_a_vigia()
+
+    def _pergunta_so_na_tela(self) -> str:
+        """A confirmação aberta que só o clique responde (a do que está sob o clique, a da faixa
+        que bloqueia a linha do cérebro), ou vazio."""
+        if self._perguntas_na_tela:
+            return next(iter(self._perguntas_na_tela.values()))
+        cerebro = self._cerebro
+        pendencia = cerebro.pendencias.valida() if cerebro is not None else None
+        if pendencia is not None and pendencia.espera is not None and pendencia.espera.so_clique:
+            return pendencia.pergunta.pergunta_falada
+        return ""
+
+    def _pergunta_aberta(self) -> str:
+        """O texto da pergunta de confirmação que espera o dono e que a voz pode responder — a do
+        fim de um turno ou a de uma tarefa (não a que só o clique responde) —, ou vazio."""
+        cerebro = self._cerebro
+        pendencia = cerebro.pendencias.valida() if cerebro is not None else None
+        if pendencia is None or (pendencia.espera is not None and pendencia.espera.so_clique):
+            return ""
+        return pendencia.pergunta.pergunta_falada
 
     def _trilhar_a_vigia(self) -> None:
         """Cada decisão da vigia vai para a trilha: o modo, o que fez, o motivo (código) e em
@@ -2328,20 +2379,45 @@ class Aplicativo:
             self._ruido_descartado(veredito.motivo, "texto", medida, transcricao.sinais)
             self._mudar(self._repouso)
             return
-        if self._sim_sem_certeza(veredito.texto, transcricao.sinais):
-            # Um "sim" para a pergunta pendente que o ASR não teve certeza de ter ouvido: não
-            # confirma nada. A pergunta segue de pé — o dono repete, ou responde na tela.
-            self._ruido_descartado(MotivoDoRuido.SIM_INCERTO, "texto", medida, transcricao.sinais)
-            self.escrever_na_tela(
-                "  (não tive certeza de ter ouvido o seu «sim»: repita, ou responda na tela)"
-            )
-            self._mudar(self._repouso)
-            return
         # Os nomes do dono escritos certo (ADR-0044): o apelido que o ASR errou e o nome composto
         # escrito de outro jeito. Daqui em diante — palavra de ativação, pedido, tela — é este.
         hipotese = transcricao.hipotese._replace(
             texto=self._vocabulario_lido.corrigir(veredito.texto)
         )
+        # Uma pergunta de confirmação aberta (ADR-0048): a janela da resposta é um turno próprio.
+        # "Sim"/"não" valem sem a palavra de ativação, com ela ou cortando a pergunta; o eco da
+        # própria pergunta não responde nem a cancela; e "para"/"cancela" são o "não".
+        pergunta = self._pergunta_aberta()
+        leitura = (
+            ler_resposta(hipotese.texto, pergunta, palavra=self.modo_de_escuta.detector)
+            if pergunta
+            else None
+        )
+        if leitura is not None and leitura.tipo is TipoDaResposta.ECO:
+            self._ruido_descartado(
+                MotivoDoRuido.ECO_DA_PERGUNTA, "texto", medida, transcricao.sinais
+            )
+            self._mudar(self._repouso)
+            return
+        if leitura is not None and leitura.tipo in (TipoDaResposta.SIM, TipoDaResposta.NAO):
+            if leitura.tipo is TipoDaResposta.SIM and not sinais_fortes(
+                transcricao.sinais, self.politica_de_ruido
+            ):
+                # Um "sim" que o ASR não teve certeza de ter ouvido não confirma nada (ADR-0043): a
+                # pergunta segue de pé — o dono repete, ou responde na tela.
+                self._ruido_descartado(
+                    MotivoDoRuido.SIM_INCERTO, "texto", medida, transcricao.sinais
+                )
+                self.escrever_na_tela(
+                    "  (não tive certeza de ter ouvido o seu «sim»: repita, ou responda na tela)"
+                )
+                self._mudar(self._repouso)
+                return
+            self.modo_de_escuta.desarmar()
+            self._responder_ao_dono(
+                hipotese.texto, leitura.texto, fila, ouvido_ms=ouvido_ms, asr_ms=asr_ms
+            )
+            return
         if not hipotese.texto.strip():
             if self.modo_de_escuta.modo is ModoDeEscuta.PALAVRA:
                 # Esperando a chamada, ruído que não vira texto é o caso comum: avisar a cada
@@ -2367,7 +2443,20 @@ class Aplicativo:
             self.escrever_na_tela("  (parei)")
             self._mudar(self._repouso)
             return
-        self.escrever_na_tela(f"Você: {pedido}")
+        self._responder_ao_dono(pedido, pedido, fila, ouvido_ms=ouvido_ms, asr_ms=asr_ms)
+
+    def _responder_ao_dono(
+        self,
+        dito: str,
+        pedido: str,
+        fila: FilaDePlayback,
+        *,
+        ouvido_ms: float,
+        asr_ms: float,
+    ) -> None:
+        """O turno do dono: `dito` é o que a tela mostra; `pedido`, o que vai ao cérebro (o
+        «sim» lido de «Jarvis, sim», ADR-0048)."""
+        self.escrever_na_tela(f"Você: {dito}")
         turno = self.responder(pedido, fila=fila, ms_ouvido=ouvido_ms, ms_asr=asr_ms)
         completo = Turno(
             falou=pedido,
@@ -2400,16 +2489,6 @@ class Aplicativo:
         reconhece quando o modelo devolve a própria dica no meio do ruído."""
         dica = getattr(self._asr, "dica", "")
         return palavras_da_dica(dica) if isinstance(dica, str) else frozenset()
-
-    def _sim_sem_certeza(self, texto: str, sinais: Sinais) -> bool:
-        """Um "sim" literal para a pergunta pendente, sem os sinais fortes do ASR? Ruído que vira
-        "Sim." é o pior caso de todos: confirmaria a ação que o dono não autorizou."""
-        cerebro = self._cerebro
-        if cerebro is None or cerebro.pendencias.valida() is None:
-            return False
-        if resposta_literal(texto) is not RespostaDoDono.SIM:
-            return False
-        return not sinais_fortes(sinais, self.politica_de_ruido)
 
     def _ruido_descartado(
         self,

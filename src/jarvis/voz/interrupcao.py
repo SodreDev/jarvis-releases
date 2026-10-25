@@ -21,13 +21,16 @@ decide se o dono falou por cima:
    - na contínua, uma **ordem de parar** curta ("para", "chega", "espera aí", "silêncio");
    - na contínua, o **detector de endereçamento** (Jev, ADR-0029, quando o dono o ligou) diz que a
      fala é com o Jarvis.
+   - com uma **pergunta de confirmação** no ar, a **resposta** do dono — "sim", "pode", "não",
+     "cancela", com ou sem a palavra — corta de forma limpa, nos dois modos: a pergunta foi
+     ouvida e o trecho a responde (ADR-0048); o eco da própria pergunta não corta nem responde.
    Transcrição vazia, igual ao que o Jarvis disse (eco), ou sem nada disso: **não corta** — na
    contínua o Jarvis retoma de onde parou. Na dúvida, não age (o ruído da TV não corta).
 4. **Corte**: o laço mata o epoch (a fila esvazia, o que não foi falado é cancelado, o cérebro para
    de gerar) e o áudio do trecho vira o **começo do turno novo** do dono.
 
-Nada daqui confirma ação: o "sim" dito por cima de uma pergunta não é resposta (a pergunta não foi
-ouvida inteira, ADR-0038) — quem cuida disso é o `interromper` do laço, como no botão.
+Nada daqui confirma ação: a vigia só diz que o trecho era a resposta; quem a lê contra a pendência
+válida (e cobra os sinais do ASR, ADR-0043) é o laço e o cérebro, como em qualquer turno.
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ from typing import Final
 from jarvis.audio_io.quadro import MS_POR_QUADRO, PISO_DB, Quadro, energia_db
 from jarvis.voz.escuta import ModoDeEscuta
 from jarvis.voz.palavra import DetectorDePalavra, palavras_de
+from jarvis.voz.resposta import TipoDaResposta, ler_resposta
 
 # --- o portão de eco ---------------------------------------------------------------------------
 JANELA_DO_ECO_QUADROS: Final = 15
@@ -194,6 +198,11 @@ class Motivo(StrEnum):
     NAO_ERA_COMIGO = "nao_era_comigo"
     PRAZO_DA_PAUSA = "prazo_da_pausa"
     SUSPEITA = "suspeita"
+    RESPOSTA_A_PERGUNTA = "resposta_a_pergunta"
+    """O dono respondeu ("sim", "não") por cima de uma pergunta de confirmação (ADR-0048)."""
+    SO_NA_TELA = "so_na_tela"
+    """Respondeu por voz a uma confirmação que só o clique responde: não corta (cortar seria o
+    "não"); o laço diz para confirmar na tela (ADR-0048)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +266,12 @@ class VigiaDeInterrupcao:
     modo: ModoDeEscuta = ModoDeEscuta.PALAVRA
     decisoes: list[Decisao] = field(default_factory=list)
     """As decisões desta sessão (o laço manda cada uma para a trilha)."""
+    pergunta: str = ""
+    """A pergunta de confirmação que está no ar (o texto que o Jarvis fala), ou vazio: o laço põe
+    a da pendência válida a cada quadro. Com ela, a resposta do dono corta de forma limpa."""
+    pergunta_so_na_tela: str = ""
+    """A confirmação que só o clique responde (o que está sob o clique, ADR-0027): o "sim" falado
+    a ela não corta nada — cortar derrubaria a pergunta, e o dono não conseguiria responder."""
 
     _antes: deque[bytes] = field(
         default_factory=lambda: deque(maxlen=QUADROS_ANTES_DA_FALA), repr=False
@@ -433,6 +448,19 @@ class VigiaDeInterrupcao:
         if not palavras:
             self._sem_corte = Motivo.SEM_FALA
             return None
+        if self.pergunta:
+            # Uma pergunta de confirmação no ar (ADR-0048): a resposta do dono corta de forma limpa
+            # — nada de pausar e retomar a pergunta, que era o laço — e o eco dela não conta.
+            leitura = ler_resposta(texto, self.pergunta, palavra=self.palavra)
+            if leitura.tipo in (TipoDaResposta.SIM, TipoDaResposta.NAO):
+                return self._cortar(Motivo.RESPOSTA_A_PERGUNTA)
+            if leitura.tipo is TipoDaResposta.ECO:
+                self.portao.era_o_eco()
+                return self._descartar(Motivo.ECO_DO_JARVIS)
+        elif self.pergunta_so_na_tela:
+            leitura = ler_resposta(texto, self.pergunta_so_na_tela, palavra=self.palavra)
+            if leitura.tipo in (TipoDaResposta.SIM, TipoDaResposta.NAO):
+                return self._descartar(Motivo.SO_NA_TELA)
         eco = self._eco(palavras)
         achado = self.palavra.achar(texto)
         if achado is not None and not (eco and self._jarvis_disse_a_palavra()):

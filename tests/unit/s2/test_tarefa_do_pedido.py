@@ -479,7 +479,7 @@ def test_a_pergunta_da_tarefa_espera_o_sim_falado_depois_de_tocar(
     assert executor.tarefas.tarefas[tarefa_id].estado is EstadoDaTarefa.ESPERANDO_O_DONO
     pergunta = next(a for a in avisos if a[1] == "precisa_decisao")
     assert pergunta[0] == f"pergunta-{pendencia.id}"
-    assert pergunta[2] == "Preciso do seu sim para abrir exemplo.com.br no seu navegador. Posso?"
+    assert pergunta[2] == "Posso abrir exemplo.com.br no seu navegador?"
 
     antes = cerebro.responder("sim", epoch=1, publicar=lambda _p: None)
     assert antes.motor != "portao", "a pergunta não tocou: o sim não a responde"

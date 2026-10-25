@@ -111,6 +111,9 @@ class Motivo(StrEnum):
     """Uma ou duas palavras com a confiança baixa."""
     SIM_INCERTO = "sim_incerto"
     """Um "sim" para a pergunta pendente, sem sinais fortes: não confirma (`jarvis.voz.app`)."""
+    ECO_DA_PERGUNTA = "eco_da_pergunta"
+    """Só a pergunta de confirmação voltando pelo microfone: não responde nem a cancela
+    (`jarvis.voz.resposta`, ADR-0048)."""
 
 
 @dataclass(frozen=True, slots=True)

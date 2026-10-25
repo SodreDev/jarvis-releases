@@ -215,8 +215,8 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
     # Instalado e fora da lista: pergunta (ADR-0046) — e, com o "não" do dono, nada abre.
     assert _falar(aplicativo, tela, laco, "abre a calculadora", sim=False), "fora da lista pergunta"
     assert maquina.apps_abertos == ["discord", "brave-browser"], "app não marcado abriu"
-    negado = dict(vistos)["abre a calculadora"]
-    assert negado["status"] == "negado", json.dumps(negado, ensure_ascii=False)
+    # O turno acaba na pergunta (ADR-0048), pelo caminho rápido; o "não" do clique a fecha.
+    assert _pendente(tela) is None, "com o não do dono, a faixa some"
 
     assert maquina.sites_abertos == []
     assert not _falar(aplicativo, tela, laco, "abre o exemplo"), "abrir site é livre: sem faixa"

@@ -173,6 +173,10 @@ _NAO_LITERAL: Final = frozenset(
         "esquece",
         "para",
         "espera",
+        "melhor nao",
+        "agora nao",
+        "nao precisa",
+        "deixa quieto",
     }
 )
 
