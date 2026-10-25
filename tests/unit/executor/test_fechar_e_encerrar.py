@@ -250,10 +250,60 @@ def test_fecha_a_janela_e_fecha_esse_ai_sao_a_da_frente() -> None:
     tabela, janelas = _maquina()
     fechador, _ = _fechador(tabela, janelas)
 
-    alvo = fechador.janela()  # sem nome: o modelo não passa nada para "fecha esse aí"
+    alvo = fechador.janela(fala="fecha essa janela")  # sem nome: "fecha esse aí"
 
     assert alvo.janela.id == _id(6) and alvo.nome == "Firefox"
-    assert "navegador" in alvo.exige_o_sim, "a janela do navegador do dono pede o sim"
+    assert alvo.exige_o_sim == "", "a ordem explícita do dono vale sem o sim (ADR-0046)"
+
+
+def test_a_janela_do_navegador_que_o_dono_nao_citou_pede_o_sim() -> None:
+    """O modelo (ou um texto lido) quer fechar o navegador num pedido que não fala dele: aí sim."""
+    tabela, janelas = _maquina()
+    fechador, _ = _fechador(tabela, janelas)
+
+    alvo = fechador.janela("firefox", fala="lê a página e me resume")
+
+    assert "ficou de fora do que você pediu" in alvo.exige_o_sim
+    assert "navegador" in alvo.exige_o_sim
+
+
+@pytest.mark.parametrize("fala", ["fecha meu firefox", "fecha o navegador", "fecha o Firefox."])
+def test_fechar_o_navegador_a_pedido_nao_pergunta(fala: str) -> None:
+    tabela, janelas = _maquina()
+    fechador, _ = _fechador(tabela, janelas)
+    pedido = "navegador" if "navegador" in fala else "meu firefox"
+
+    alvo = fechador.janela(pedido, fala=fala)
+
+    assert alvo.janela.id == _id(6) and alvo.exige_o_sim == ""
+
+
+def test_o_navegador_sem_nome_e_o_da_frente_o_unico_ou_pergunta() -> None:
+    """«Fecha o navegador» (dono, 2026-10-25): o que está em foco; senão o único aberto; senão o
+    da frente de um monitor; dois igualmente plausíveis é pergunta."""
+    tabela, janelas = _maquina()
+    fechador, _ = _fechador(tabela, janelas)
+    assert fechador.janela("navegador").nome == "Firefox", "o único aberto, e em foco"
+
+    # Dois navegadores, nenhum em foco: o da frente de um monitor decide; sem ele, pergunta.
+    tabela.processos[1200] = _p(1200, 1, "brave")
+    janelas.janelas = [
+        replace(j, ativa=False) if j.classe == "firefox" else j for j in janelas.janelas
+    ] + [JanelaDoSistema(_id(12), "YouTube — Brave", "brave-browser", 1200, na_frente=True)]
+    assert fechador.janela("o navegador").janela.id == _id(12)
+    janelas.janelas = [replace(j, na_frente=False) for j in janelas.janelas]
+    with pytest.raises(AlvoRecusado) as erro:
+        fechador.janela("navegador")
+    assert erro.value.causa == "alvo_ambiguo" and "Qual deles?" in str(erro.value)
+
+
+def test_sem_navegador_aberto_diz_isso() -> None:
+    tabela, janelas = _maquina()
+    janelas.janelas = [j for j in janelas.janelas if j.classe != "firefox"]
+    fechador, _ = _fechador(tabela, janelas)
+    with pytest.raises(AlvoRecusado) as erro:
+        fechador.janela("navegador")
+    assert erro.value.causa == "alvo_ausente" and "nenhum navegador" in str(erro.value)
 
 
 def test_varias_janelas_e_nenhuma_na_frente_pergunta_qual() -> None:
@@ -347,18 +397,61 @@ def test_steam_sem_jogo_aberto_nao_pergunta_por_ser_da_categoria_jogo() -> None:
     assert fechador.app("steam").exige_o_sim == ""
 
 
-@pytest.mark.parametrize(
-    ("pedido", "trecho"),
-    [
-        ("kate", "trabalho não salvo"),
-        ("firefox", "navegador"),
-        ("vlc", "2 instâncias"),
-    ],
-)
-def test_o_que_pede_o_sim_ao_encerrar(pedido: str, trecho: str) -> None:
+def test_trabalho_nao_salvo_detectado_no_titulo_pede_o_sim_e_o_salvo_nao() -> None:
+    """O sim é para o trabalho não salvo **detectado** (a marca do título), não para todo editor
+    (dono, 2026-10-25; ADR-0046)."""
     tabela, janelas = _maquina()
     fechador, _ = _fechador(tabela, janelas)
-    assert trecho in fechador.app(pedido).exige_o_sim
+    assert fechador.app("kate", fala="fecha o kate todo").exige_o_sim == ""
+    janelas.janelas = [
+        replace(j, titulo="notas.md * — Kate") if j.classe == "org.kde.kate" else j
+        for j in janelas.janelas
+    ]
+    motivo = fechador.app("kate", fala="fecha o kate todo").exige_o_sim
+    assert "trabalho por salvar" in motivo and "notas.md" in motivo
+
+
+@pytest.mark.parametrize("pedido", ["firefox", "vlc"])
+def test_encerrar_navegador_ou_varias_instancias_a_pedido_nao_pergunta(pedido: str) -> None:
+    tabela, janelas = _maquina()
+    fechador, _ = _fechador(tabela, janelas)
+    assert fechador.app(pedido, fala=f"fecha o {pedido} todo").exige_o_sim == ""
+
+
+def test_app_fora_da_lista_liberada_pede_o_sim() -> None:
+    tabela, janelas = _maquina()
+    fechador, _ = _fechador(tabela, janelas)
+    fechador.liberados = frozenset({"discord", "kate", "steam"})
+    assert fechador.app("discord", fala="mata o discord").exige_o_sim == ""
+    motivo = fechador.app("vlc", fala="mata o vlc").exige_o_sim
+    assert "fora da sua lista" in motivo
+
+
+def test_o_que_o_dono_nao_citou_pede_o_sim() -> None:
+    tabela, janelas = _maquina()
+    fechador, _ = _fechador(tabela, janelas)
+    motivo = fechador.app("discord", fala="libera memória do computador").exige_o_sim
+    assert "o Discord ficou de fora do que você pediu" in motivo
+
+
+def test_as_frases_do_sim_nao_soam_como_resposta() -> None:
+    """A pergunta falada passa pelo eco do alto-falante: nenhuma frase do motivo traz "sim",
+    "pode" ou "não", que o ouvido tomaria por resposta (ADR-0046, item da confirmação)."""
+    tabela, janelas = _maquina()
+    janelas.janelas = [
+        replace(j, titulo="notas.md * — Kate") if j.classe == "org.kde.kate" else j
+        for j in janelas.janelas
+    ]
+    fechador, _ = _fechador(tabela, janelas)
+    fechador.liberados = frozenset()
+    motivos = [
+        fechador.app("steam", fala="x").exige_o_sim,
+        fechador.app("kate", fala="x").exige_o_sim,
+        fechador.janela("firefox", fala="x").exige_o_sim,
+    ]
+    for motivo in motivos:
+        palavras = set(motivo.casefold().replace(",", " ").split())
+        assert motivo and not palavras & {"sim", "pode", "não", "nao"}, motivo
 
 
 @pytest.mark.parametrize(
@@ -420,6 +513,10 @@ def test_app_que_nao_esta_aberto_diz_isso() -> None:
 
 
 # --- pelo executor, com o PDP --------------------------------------------------------------------
+LIBERADOS = ("discord", "steam", "org.kde.kate", "vlc")
+"""Os apps que o dono liberou nestes testes: encerrar fora deles pede o sim (ADR-0046)."""
+
+
 @pytest.fixture
 def executor(tmp_path: Path) -> Iterator[ExecutorDeFerramentas]:
     lar = tmp_path / "casa"
@@ -436,7 +533,9 @@ def executor(tmp_path: Path) -> Iterator[ExecutorDeFerramentas]:
             pdp=pdp,
             lar=lar,
             registro_de_apps=RegistroDeApps(
-                autorizados={}, instalados=frozenset(CATALOGO), catalogo=CATALOGO
+                autorizados={i: CATALOGO[i] for i in LIBERADOS},
+                instalados=frozenset(CATALOGO),
+                catalogo=CATALOGO,
             ),
         )
         executor.preparar()
@@ -485,7 +584,11 @@ def test_executor_encerra_o_discord_e_avisa_em_voz(executor: ExecutorDeFerrament
 
 
 def test_executor_pergunta_antes_de_encerrar_o_editor(executor: ExecutorDeFerramentas) -> None:
-    tabela, _janelas = _ligar(executor)
+    tabela, janelas = _ligar(executor)
+    janelas.janelas = [
+        replace(j, titulo="notas.md * — Kate") if j.classe == "org.kde.kate" else j
+        for j in janelas.janelas
+    ]
     perguntas: list[Confirmacao] = []
 
     def nao(pergunta: Confirmacao) -> bool:
@@ -495,8 +598,8 @@ def test_executor_pergunta_antes_de_encerrar_o_editor(executor: ExecutorDeFerram
     negado = executor.executar("apps.quit", {"app": "Kate"}, cancelado=lambda: False, confirmar=nao)
 
     assert negado.status == "negado" and not tabela.sinais, "sem o sim, nada recebe sinal"
-    assert perguntas and "trabalho não salvo" in perguntas[0].razao_falada
-    assert perguntas[0].pergunta_falada.startswith("Preciso do seu sim para encerrar o «Kate»")
+    assert perguntas and "trabalho por salvar" in perguntas[0].razao_falada
+    assert "encerrar o «Kate»" in perguntas[0].pergunta_falada
 
     sim = executor.executar(
         "apps.quit", {"app": "Kate"}, cancelado=lambda: False, confirmar=lambda _p: True

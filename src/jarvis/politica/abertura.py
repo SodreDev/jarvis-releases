@@ -99,11 +99,16 @@ def decidir_abertura(
     navegador_principal: str = "",
     contaminado: bool = False,
     objetivo: Objetivo | None = None,
+    exige_o_sim: str = "",
 ) -> RegraDeMemoria | None:
     """O que a regra decide antes da matriz comum. `None` = siga o comum (o tier do manifesto)."""
     if tool_id == "apps.launch":
         if nome_de_app(str(args.get("nome", ""))) in apps_autorizados:
             return RegraDeMemoria("allow", "app no registro que o dono autorizou")
+        if exige_o_sim:
+            # Instalado e fora da lista (ADR-0046): quem achou o app foi o código, no catálogo do
+            # sistema; o "sim" do dono (o `exige_o_sim`, logo depois) decide.
+            return None
         return RegraDeMemoria(
             "deny", "fora do registro de aplicativos que o dono autorizou (apps_autorizados)"
         )

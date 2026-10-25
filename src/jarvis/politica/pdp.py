@@ -206,6 +206,7 @@ class Pdp:
                 navegador_principal=self.navegador_principal,
                 contaminado=pedido.contaminado,
                 objetivo=pedido.objetivo,
+                exige_o_sim=pedido.exige_o_sim,
             )
         if regra is None:
             # ADR-0044: gravar um nome no vocabulário do dono pede o turno dele como origem, e o

@@ -384,6 +384,22 @@ class RegistroDeApps:
     def resolver_detalhado(self, nome: str) -> Resolucao:
         return ResolvedorDeApps(self.autorizados.values(), aliases=self.aliases).resolver(nome)
 
+    def resolver_instalado(self, nome: str) -> App | None:
+        """O app **instalado e fora da lista** que o dono chamou por este nome, sem dúvida — só os
+        do menu (`.desktop` que se mostra). É o que deixa abrir um app fora da lista com o "sim"
+        dele, em vez de negar (dono, 2026-10-25; ADR-0046). `None` = não há, ou há dúvida."""
+        visiveis = [
+            a
+            for i, a in self.catalogo.items()
+            if i not in self.autorizados and a.arquivo.suffix == ".desktop" and not a.sem_exibicao
+        ]
+        if not visiveis or not nome.strip():
+            return None
+        resultado = ResolvedorDeApps(visiveis).resolver(nome)
+        if resultado.estado == "encontrado" and isinstance(resultado.app, App):
+            return resultado.app
+        return None
+
     def resolver(self, nome: str) -> App:
         """O app autorizado que o dono chamou por este nome — exato, ou o único que começa
         assim. Fora disso, recusa dizendo os parecidos."""

@@ -139,6 +139,7 @@ _DA_FRENTE: Final = frozenset(
 )  # fmt: skip
 """«Fecha a janela», «fecha esse aí»: a janela da frente (ADR-0042)."""
 _DO_JARVIS: Final = frozenset({"jarvis", "o jarvis", "sistema", "o sistema", "assistente"})
+_NAVEGADOR_SEM_NOME: Final = frozenset({"navegador", "browser", "navegador de internet"})
 _TUDO: Final = frozenset({"tudo", "todas", "todos", "todas as janelas", "tudo isso"})
 _BUSCA_NA_WEB: Final = (
     r"^(?:pesquisa|pesquise|pesquisar|busca|busque|buscar|procura|procure)\s+"
@@ -238,7 +239,9 @@ def _site(nome: str) -> Site | None:
 
 
 def _sem_artigo(texto: str) -> str:
-    return re.sub(r"^(?:o|a|os|as|um|uma|esse|essa|este|esta)\s+", "", texto).strip()
+    """Sem o artigo e sem a posse: «o meu Brave», «minha calculadora» (dono, 2026-10-25)."""
+    sem = re.sub(r"^(?:o|a|os|as|um|uma|esse|essa|este|esta)\s+", "", texto).strip()
+    return re.sub(r"^(?:meu|minha|meus|minhas|seu|sua|nosso|nossa)\s+", "", sem).strip()
 
 
 _DE_CONTEXTO: Final = frozenset(
@@ -292,7 +295,9 @@ def _fechar(limpa: _Fala, fala: str, _contexto: ContextoDoAtalho) -> Atalho | No
         args: dict[str, Any] = {}
         nome = ""
     elif _curto(alvo) and len(alvo) >= 2:
-        args, nome = {"app": alvo}, alvo
+        # «O navegador» sem nome: quem resolve é o código (o em foco, o único aberto); a frase diz
+        # o nome do que ele achou (ADR-0046).
+        args, nome = {"app": alvo}, ("" if alvo in _NAVEGADOR_SEM_NOME else alvo)
     else:
         return None
     if tipo is Fechamento.APP:
@@ -491,7 +496,8 @@ def frase(atalho: Atalho, dados: Mapping[str, Any]) -> str:
                     f"Pedi para fechar o {nome}, mas a janela continua aberta: ele pode estar "
                     "perguntando se salva."
                 )
-            return f"Fechei a janela do {nome}." if atalho.alvo else "Fechei a janela."
+            com_nome = atalho.alvo or atalho.args.get("app")
+            return f"Fechei a janela do {nome}." if com_nome else "Fechei a janela."
         case Regra.ENCERRAR_APP:
             if dados.get("conferido") is False:
                 return "Alguns processos dele não saíram ainda."

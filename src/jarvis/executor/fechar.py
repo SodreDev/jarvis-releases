@@ -24,13 +24,18 @@ D-Bus). E o sinal só vai a um PID que ainda é o mesmo processo (mesmo início,
 reaproveitado não leva sinal. Ambiguidade (dois apps parecidos, várias janelas e nenhuma em primeiro
 plano) é pergunta ao dono, nunca palpite.
 
-O "sim" que o alvo pede é dito aqui (`exige_o_sim`) e decidido pelo PDP: app que pode ter trabalho
-não salvo (editor, documento, jogo), mais de uma instância, o navegador do dono, coisa do sistema.
+O "sim" que o alvo pede é dito aqui (`exige_o_sim`) e decidido pelo PDP — só no que é de fato
+arriscado (dono, 2026-10-25; ADR-0046): trabalho não salvo **detectado** (a marca no título da
+janela), um jogo aberto, app fora da lista que o dono liberou, ou um alvo que o pedido dele não
+citou. A ordem explícita do dono ("fecha meu Brave", "fecha o Discord todo") vale sem o sim, também
+para o navegador. "O navegador" sem nome é o que está em foco, o único aberto ou o da frente; dois
+igualmente plausíveis é pergunta.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import signal
 import time
 import unicodedata
@@ -75,25 +80,34 @@ PROTEGIDOS: Final = frozenset(
     }
 )  # fmt: skip
 """A sessão do desktop: matar um destes derruba a tela, o som ou o login do dono. Nunca é alvo."""
-CATEGORIAS_COM_TRABALHO: Final = frozenset(
-    {
-        "Office", "WordProcessor", "Spreadsheet", "Presentation", "TextEditor", "Development",
-        "IDE", "Graphics", "2DGraphics", "3DGraphics", "RasterGraphics", "VectorGraphics",
-        "Photography", "AudioVideoEditing", "Engineering", "Game", "Science",
-    }
-)  # fmt: skip
-"""Categorias do `.desktop` de app que pode ter trabalho não salvo (editor, documento, jogo)."""
-EXECUTAVEIS_COM_TRABALHO: Final = frozenset(
-    {
-        "code", "codium", "code-oss", "kate", "kwrite", "gedit", "gnome-text-editor", "soffice",
-        "soffice.bin", "libreoffice", "gimp", "inkscape", "krita", "blender", "kdenlive", "obs",
-        "audacity", "godot", "idea", "pycharm", "studio", "eclipse", "emacs", "zed", "okular",
-    }
-)  # fmt: skip
-LANCADORES_DE_JOGOS: Final = frozenset({"steam", "lutris", "heroic", "legendary", "bottles"})
-"""Têm a categoria `Game`, mas são o lançador: o que perde progresso é o jogo aberto por eles, que o
-código procura na árvore de processos (o `reaper` do Steam, a janela `steam_app_<id>`)."""
+MARCAS_DE_NAO_SALVO: Final = (
+    r"^\s*[*●•]",
+    r"\s[*●]\s",
+    r"[*●]\s*$",
+    r"[(\[]\s*(?:modificad[oa]|modified|não salvo|nao salvo|unsaved)\s*[)\]]",
+    r"\b(?:não salvo|nao salvo|unsaved changes|alterações não salvas)\b",
+)
+"""Como o título diz que há trabalho não salvo: o `*` ou o `●` do Kate, do VS Code, do GIMP, do
+Inkscape, do Blender; o "[modificado]" e o "não salvo" de outros (dono, 2026-10-25: o sim só para o
+trabalho não salvo **detectado**, não para todo editor aberto)."""
+EXECUTAVEIS_SEM_MARCA: Final = frozenset({"soffice", "soffice.bin", "libreoffice"})
+"""Apps cujo título não marca o documento alterado (o LibreOffice): com um documento aberto, o
+código não sabe se está salvo — e um SIGTERM nele perde o que não foi salvo. Conta como
+detectado."""
+TITULOS_SEM_DOCUMENTO: Final = frozenset({"libreoffice", "centro inicial do libreoffice"})
 CATEGORIAS_DO_SISTEMA: Final = frozenset({"System", "Settings"})
+GENERICOS_DO_NAVEGADOR: Final = frozenset(
+    {"navegador", "browser", "navegador de internet", "navegador web", "internet"}
+)
+"""Como o dono chama o navegador sem dizer qual («fecha o navegador»)."""
+_POSSE: Final = (
+    r"^(?:(?:o|a|os|as)\s+)?"
+    r"(?:meu|minha|meus|minhas|seu|sua|nosso|nossa|esse|essa|este|esta|aquele|aquela|o|a|os|as)\s+"
+)
+DEITICOS: Final = frozenset(
+    {"janela", "esse", "essa", "isso", "este", "esta", "isto", "aqui", "atual", "frente"}
+)
+"""As palavras de quem fecha "o que está aí" sem dizer o nome: «fecha a janela», «fecha esse aí»."""
 NAVEGADORES_CONHECIDOS: Final = frozenset(
     {
         "firefox", "firefox-bin", "brave", "brave-browser", "chrome", "google-chrome", "chromium",
@@ -109,6 +123,20 @@ def _dobrar(texto: str) -> str:
         c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn"
     )
     return " ".join(sem_acento.casefold().split())
+
+
+def sem_posse(pedido: str) -> str:
+    """«meu Brave» → «Brave», «o meu navegador» → «navegador»: o nome, sem artigo nem posse."""
+    return re.sub(_POSSE, "", pedido.strip(), flags=re.IGNORECASE).strip()
+
+
+def nao_salvo(titulo: str) -> bool:
+    """O título da janela diz que há trabalho não salvo (o `*`, o `●`, o "[modificado]")."""
+    return any(re.search(marca, titulo, flags=re.IGNORECASE) for marca in MARCAS_DE_NAO_SALVO)
+
+
+def _palavras(texto: str) -> str:
+    return " " + " ".join(re.findall(r"\w+", _dobrar(texto))) + " "
 
 
 # --- os processos ---------------------------------------------------------------------------------
@@ -318,6 +346,9 @@ class Fechador:
     relogio: Callable[[], float] = time.monotonic
     jarvis: Jarvis | None = None
     prazo_do_term_s: float = PRAZO_DO_TERM_S
+    liberados: frozenset[str] | None = None
+    """Os apps que o dono liberou (ids e nomes, sem acento nem caixa). Encerrar um app fora daqui
+    pede o sim (ADR-0046); `None` = a lista não é conhecida aqui, e a regra não se aplica."""
 
     def _o_jarvis(self) -> Jarvis:
         if self.jarvis is None:
@@ -338,6 +369,9 @@ class Fechador:
     ) -> Identidade:
         if janela is not None:
             return self._identidade_da_janela(janela)
+        pedido = sem_posse(pedido)  # «meu Brave» é o Brave
+        if _dobrar(pedido) in GENERICOS_DO_NAVEGADOR:
+            return self._o_navegador(lista)
         app = self._do_catalogo(pedido, lista)
         if app is not None:
             return _identidade_do_app(app)
@@ -364,6 +398,61 @@ class Fechador:
                 "alvo_ambiguo",
             )
         return self._identidade_da_janela(achadas[0])
+
+    def _o_navegador(self, lista: list[JanelaDoSistema]) -> Identidade:
+        """«O navegador», sem nome (dono, 2026-10-25): o que está em foco; senão o único aberto;
+        senão o único na frente de um monitor; senão o único visível. Dois igualmente plausíveis é
+        pergunta, nunca palpite."""
+        abertos = [
+            (j, ident) for j in lista if self._navegador(ident := self._identidade_da_janela(j))
+        ]
+        if not abertos:
+            raise AlvoRecusado("nenhum navegador está aberto", "alvo_ausente")
+        criterios: tuple[Callable[[JanelaDoSistema], bool], ...] = (
+            lambda j: j.ativa,
+            lambda _j: True,
+            lambda j: j.na_frente and not j.minimizada,
+            lambda j: j.visivel and not j.minimizada,
+        )
+        for criterio in criterios:
+            achados = {_dobrar(i.nome): i for j, i in abertos if criterio(j)}
+            if len(achados) == 1:
+                return next(iter(achados.values()))
+        nomes = sorted({i.nome for _j, i in abertos})
+        raise AlvoRecusado(
+            f"há mais de um navegador aberto ({' e '.join(nomes)}). Qual deles?", "alvo_ambiguo"
+        )
+
+    def _citado(self, identidade: Identidade, fala: str, *, sem_nome: bool) -> bool:
+        """O pedido do dono cita este alvo: pelo nome (o do app, um apelido, o executável, a classe
+        da janela), por «navegador» quando é um navegador, ou por «essa janela», «esse aí» quando é
+        a da frente. Sem isso, a ordem não foi explícita — veio do modelo, ou de um texto lido."""
+        dita = _palavras(fala)
+        app = identidade.app
+        nomes = {identidade.nome, *identidade.executaveis, *identidade.classes}
+        if app is not None:
+            nomes |= {app.nome, *app.nomes, app.id}
+        candidatos: set[str] = set()
+        for nome in nomes:
+            partes = re.findall(r"\w+", _dobrar(nome.rsplit(".", 1)[-1]))
+            if partes:
+                candidatos.add(" ".join(partes))
+                if len(partes[0]) >= 3:
+                    candidatos.add(partes[0])  # «brave» de «Brave Web Browser»
+        if any(f" {c} " in dita for c in candidatos):
+            return True
+        if self._navegador(identidade) and (" navegador " in dita or " browser " in dita):
+            return True
+        return sem_nome and any(f" {d} " in dita for d in DEITICOS)
+
+    def _liberado(self, identidade: Identidade) -> bool:
+        if self.liberados is None or self._navegador(identidade):
+            return True  # sem a lista, a regra não vale; o navegador configurado é do dono
+        app = identidade.app
+        nomes = {_dobrar(identidade.nome)}
+        if app is not None:
+            nomes |= {_dobrar(app.id), *(_dobrar(n) for n in app.nomes)}
+        return bool(nomes & self.liberados)
 
     def _identidade_da_janela(self, janela: JanelaDoSistema) -> Identidade:
         executaveis: set[str] = set()
@@ -435,8 +524,12 @@ class Fechador:
         )
 
     # --- a janela -------------------------------------------------------------------------------
-    def janela(self, pedido: str = "", janela_id: str = "") -> JanelaAlvo:
-        """A janela que `window.close` fecha: a do id, a do app pelo nome ou a em primeiro plano."""
+    def janela(
+        self, pedido: str = "", janela_id: str = "", *, fala: str | None = None
+    ) -> JanelaAlvo:
+        """A janela que `window.close` fecha: a do id, a do app pelo nome ou a em primeiro plano.
+        `fala` é o pedido do dono: com ela, o código sabe se a ordem foi explícita (ADR-0046);
+        `None` = não se sabe, e vale como explícita."""
         lista = self._janelas()
         if janela_id:
             janela = next((j for j in lista if j.id == janela_id), None)
@@ -448,13 +541,16 @@ class Fechador:
             if not do_app:
                 raise AlvoRecusado(f"o {identidade.nome} não tem janela aberta", "alvo_ausente")
             ativas = [j for j in do_app if j.ativa]
-            if len(do_app) > 1 and not ativas:
+            # Várias janelas e nenhuma em foco: a da frente de um monitor, se for uma só.
+            na_frente = [j for j in do_app if j.na_frente and not j.minimizada]
+            escolhidas = ativas or (na_frente if len(na_frente) == 1 else [])
+            if len(do_app) > 1 and not escolhidas:
                 titulos = "; ".join(f"«{j.titulo[:40]}»" for j in do_app[:4])
                 raise AlvoRecusado(
                     f"o {identidade.nome} tem {len(do_app)} janelas abertas ({titulos}). Qual?",
                     "alvo_ambiguo",
                 )
-            janela = ativas[0] if ativas else do_app[0]
+            janela = escolhidas[0] if escolhidas else do_app[0]
         else:
             janela = next((j for j in lista if j.ativa), None)
             if janela is None:
@@ -466,7 +562,10 @@ class Fechador:
                 "alvo_protegido",
             )
         identidade = self._identidade_da_janela(janela)
-        motivo = self._sim_da_janela(identidade)
+        explicito = fala is None or self._citado(
+            identidade, fala, sem_nome=not (pedido.strip() or janela_id)
+        )
+        motivo = "" if explicito else self._sim_da_janela(identidade)
         return JanelaAlvo(janela, identidade.nome, motivo)
 
     def _janelas_de(
@@ -483,10 +582,16 @@ class Fechador:
         return [j for j in lista if do_app(j)]
 
     def _sim_da_janela(self, identidade: Identidade) -> str:
+        """Fechar a janela é o X: o app pergunta se salva. Só a janela que o dono **não citou** —
+        o modelo decidiu, ou um texto lido sugeriu — pede o sim, e só a do navegador (as abas vão
+        junto) ou a de um programa do sistema."""
         if self._navegador(identidade):
-            return f"o {identidade.nome} é o seu navegador, e a janela fecha com as abas dela"
+            return (
+                f"o {identidade.nome}, o seu navegador, ficou de fora do que você pediu, e a "
+                "janela fecha com as abas dela"
+            )
         if identidade.app is not None and set(identidade.app.categorias) & CATEGORIAS_DO_SISTEMA:
-            return f"o {identidade.nome} é um programa do sistema"
+            return f"o {identidade.nome}, um programa do sistema, ficou de fora do que você pediu"
         return ""
 
     def fechar_janela(self, alvo: JanelaAlvo) -> dict[str, Any]:
@@ -512,8 +617,9 @@ class Fechador:
         }
 
     # --- o app ----------------------------------------------------------------------------------
-    def app(self, pedido: str = "", janela_id: str = "") -> AppAlvo:
-        """O app que `apps.quit` encerra: os processos dele, conferidos e protegidos."""
+    def app(self, pedido: str = "", janela_id: str = "", *, fala: str | None = None) -> AppAlvo:
+        """O app que `apps.quit` encerra: os processos dele, conferidos e protegidos. `fala` é o
+        pedido do dono (a ordem foi explícita?); `None` = não se sabe, e vale como explícita."""
         lista = self._janelas() if self.janelas is not None else []
         if janela_id or not pedido.strip():
             if self.janelas is None:
@@ -569,7 +675,13 @@ class Fechador:
                 f"o {identidade.nome} casou com {len(processos)} processos: não encerro por voz",
                 "alvo_ambiguo",
             )
-        motivo = self._sim_do_app(identidade, tuple(raizes), tuple(processos.values()))
+        explicito = fala is None or self._citado(
+            identidade, fala, sem_nome=not (pedido.strip() or janela_id)
+        )
+        do_app = self._janelas_de(identidade, lista) if lista else list(janelas_do_pid)
+        motivo = self._sim_do_app(
+            identidade, tuple(processos.values()), do_app, explicito=explicito
+        )
         return AppAlvo(
             nome=identidade.nome,
             raizes=tuple(raizes),
@@ -588,27 +700,37 @@ class Fechador:
         return app is not None and "https" in app.esquemas
 
     def _sim_do_app(
-        self, identidade: Identidade, raizes: tuple[Processo, ...], processos: tuple[Processo, ...]
+        self,
+        identidade: Identidade,
+        processos: tuple[Processo, ...],
+        janelas: list[JanelaDoSistema],
+        *,
+        explicito: bool,
     ) -> str:
+        """O sim só no que é de fato arriscado (dono, 2026-10-25; ADR-0046): um jogo aberto (o
+        progresso), trabalho não salvo **detectado** (a marca no título), app fora da lista que o
+        dono liberou, ou um alvo que o pedido dele não citou. A ordem explícita de encerrar o
+        navegador, um app de várias instâncias ou um do sistema vale sem perguntar. As frases não
+        trazem "sim", "pode" nem "não": a pergunta falada não pode soar como resposta no eco."""
         motivos: list[str] = []
-        app = identidade.app
-        categorias = set(app.categorias) if app is not None else set()
+        nome = identidade.nome
         jogo = any(
             "SteamLaunch" in self.tabela.argumentos(p.pid) or p.executavel == "reaper"
             for p in processos
         ) or any(c.startswith("steam_app_") for c in identidade.classes)
-        if self._navegador(identidade):
-            motivos.append(f"o {identidade.nome} é o seu navegador, e as abas abertas fecham junto")
-        elif jogo:
-            motivos.append("o jogo que está aberto pode perder o progresso")
-        elif categorias & CATEGORIAS_DO_SISTEMA:
-            motivos.append(f"o {identidade.nome} é um programa do sistema")
-        elif (
-            categorias - ({"Game"} if identidade.executaveis & LANCADORES_DE_JOGOS else set())
-        ) & CATEGORIAS_COM_TRABALHO or identidade.executaveis & EXECUTAVEIS_COM_TRABALHO:
-            motivos.append(f"o {identidade.nome} pode ter trabalho não salvo")
-        if len(raizes) > 1:
-            motivos.append(f"há {len(raizes)} instâncias dele abertas, e todas fecham")
+        if jogo:
+            motivos.append("o jogo aberto perde o progresso ainda por salvar")
+        sujas = [j for j in janelas if nao_salvo(j.titulo)]
+        if sujas:
+            motivos.append(f"há trabalho por salvar no {nome} («{sujas[0].titulo[:40]}»)")
+        elif identidade.executaveis & EXECUTAVEIS_SEM_MARCA and any(
+            _dobrar(j.titulo) not in TITULOS_SEM_DOCUMENTO for j in janelas
+        ):
+            motivos.append(f"o {nome} está com documento aberto, e ele não mostra se está salvo")
+        if not self._liberado(identidade):
+            motivos.append(f"o {nome} está fora da sua lista de apps liberados")
+        if not explicito:
+            motivos.append(f"o {nome} ficou de fora do que você pediu")
         return "; e ".join(motivos)
 
     def encerrar_app(self, alvo: AppAlvo) -> dict[str, Any]:

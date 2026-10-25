@@ -661,13 +661,16 @@ class ExecutorDeFerramentas:
                 )
             if resolucao.app is not None:
                 argumentos["nome"] = resolucao.app.nome
+            elif instalado := self.registro_de_apps.resolver_instalado(argumentos["nome"]):
+                # Instalado e fora da lista (ADR-0046): abre com o sim do dono, em vez de negar.
+                argumentos["nome"] = instalado.nome
         if tool_id == "browser.launch" and self.navegadores is not None:
             dito = str(argumentos.get("navegador", "")).strip()
             familia = self.navegadores.resolver(dito) if dito else None
             if familia is not None:  # «Brave» → a família configurada, que é o que o PDP conhece
                 argumentos["navegador"] = familia
         try:
-            exige_o_sim = self._exige_o_sim(tool_id, argumentos)
+            exige_o_sim = self._exige_o_sim(tool_id, argumentos, marca)
         except AlvoRecusado as erro:
             # Fechar e encerrar (ADR-0042): não está aberto, é ambíguo ou é protegido — volta ao
             # modelo com o porquê (a pergunta, quando é dúvida), sem chegar ao PDP.
@@ -687,15 +690,26 @@ class ExecutorDeFerramentas:
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
 
-    def _exige_o_sim(self, tool_id: str, _argumentos: Mapping[str, Any]) -> str:
+    def _exige_o_sim(
+        self, tool_id: str, argumentos: Mapping[str, Any], marca: Contaminacao | None = None
+    ) -> str:
         """Por que o alvo desta chamada pede o sim, resolvido pelo código (vazio = o tier decide).
-        Encerrar o Jarvis com tarefa em andamento ou pergunta esperando: o sim (ADR-0041)."""
+        Encerrar o Jarvis com tarefa em andamento ou pergunta esperando: o sim (ADR-0041). Fechar
+        e encerrar: só o arriscado — e o alvo que o pedido do dono não citou (ADR-0046); o pedido
+        é o do objetivo de quem chama (o turno, ou a tarefa com o dela)."""
         if tool_id == FERRAMENTA_DE_ENCERRAR and self.encerramento is not None:
             return self.encerramento.pendente()
+        if tool_id == "apps.launch":
+            nome = str(argumentos.get("nome", ""))
+            autorizado = nome_de_app(nome) in self.pdp.apps_autorizados
+            fora = None if autorizado else self.registro_de_apps.resolver_instalado(nome)
+            return f"o {fora.nome} está fora da sua lista de apps liberados" if fora else ""
+        objetivo = self.objetivo_de(marca)
+        fala = objetivo.pedido if objetivo is not None else None
         if tool_id == "window.close":
-            return self._fechador().janela(*_alvo_de(_argumentos)).exige_o_sim
+            return self._fechador().janela(*_alvo_de(argumentos), fala=fala).exige_o_sim
         if tool_id == "apps.quit":
-            return self._fechador().app(*_alvo_de(_argumentos)).exige_o_sim
+            return self._fechador().app(*_alvo_de(argumentos), fala=fala).exige_o_sim
         return ""
 
     def _fechador(self) -> Fechador:
@@ -717,6 +731,11 @@ class ExecutorDeFerramentas:
             dormir=portas.dormir,
             relogio=portas.relogio,
             jarvis=portas.jarvis,
+            liberados=frozenset(
+                nome_de_app(nome)
+                for app in self.registro_de_apps.autorizados.values()
+                for nome in (app.id, app.nome, *app.nomes)
+            ),
         )
 
     def pergunta_de(
@@ -1284,7 +1303,15 @@ class ExecutorDeFerramentas:
         if tool_id in DE_ARQUIVOS:
             return self._organizar(tool_id, args, grant, caminho, marca, chamada)
         if tool_id == "apps.launch":
-            app = self.registro_de_apps.resolver(str(args["nome"]))
+            nome = str(args["nome"])
+            try:
+                app = self.registro_de_apps.resolver(nome)
+            except AppRecusado:
+                # Fora da lista: só chega aqui com o sim do dono (o PDP confirmou, ADR-0046).
+                instalado = self.registro_de_apps.resolver_instalado(nome)
+                if instalado is None:
+                    raise
+                app = instalado
             familia = familia_de_navegador(app.nome)
             aberto = (
                 self.navegadores.ja_aberto(familia)

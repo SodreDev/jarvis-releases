@@ -211,9 +211,12 @@ def test_o_exec_do_desktop_vira_argv_sem_shell(tmp_path: Path) -> None:
     assert calc is not None and calc.argv == ("kcalc",)
 
 
-def test_app_fora_do_registro_e_negado_e_sugere(
+def test_app_instalado_fora_da_lista_pede_o_sim_e_o_que_nao_existe_e_negado_e_sugere(
     tmp_path: Path, casa: Path, auditoria: LogDeAuditoria
 ) -> None:
+    """Dono, 2026-10-25 (ADR-0046): app fora da lista é o caso de **perguntar**, não de negar —
+    instalado (o `.desktop` do menu), abre com o sim dele; o que nem está instalado é negado, com a
+    sugestão do que está autorizado."""
     apps = tmp_path / "apps"
     apps.mkdir()
     _desktop(apps, "org.kde.kcalc", "kcalc", "KCalc")
@@ -235,12 +238,25 @@ def test_app_fora_do_registro_e_negado_e_sugere(
         lancar_app=lancar,
     )
 
-    fora = executor.executar("apps.launch", {"nome": "Dolphin"}, cancelado=NUNCA)
-    assert fora.status == "negado"
-    assert "KCalc" in fora.motivo, "a recusa sugere o que está autorizado"
+    perguntas: list[Confirmacao] = []
+
+    def nao(pergunta: Confirmacao) -> bool:
+        perguntas.append(pergunta)
+        return False
+
+    fora = executor.executar("apps.launch", {"nome": "Dolphin"}, cancelado=NUNCA, confirmar=nao)
+    assert fora.status == "negado" and lancados == [], "sem o sim, nada abre"
+    assert perguntas and "fora da sua lista de apps liberados" in perguntas[0].razao_falada
+    com_sim = executor.executar(
+        "apps.launch", {"nome": "Dolphin"}, cancelado=NUNCA, confirmar=lambda _p: True
+    )
+    assert com_sim.status == "ok" and [a.argv for a in lancados] == [("dolphin",)]
+    inexistente = executor.executar("apps.launch", {"nome": "Gimp"}, cancelado=NUNCA)
+    assert inexistente.status == "negado"
+    assert "KCalc" in inexistente.motivo, "a recusa sugere o que está autorizado"
     dentro = executor.executar("apps.launch", {"nome": "kcalc"}, cancelado=NUNCA)
     assert dentro.status == "ok"
-    assert [a.argv for a in lancados] == [("kcalc",)]
+    assert [a.argv for a in lancados] == [("dolphin",), ("kcalc",)]
 
 
 def test_app_marcado_chamado_por_nome_parcial_abre_sem_confirmar(

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import signal
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -138,7 +139,11 @@ def test_encerrar_o_editor_pela_regra_ainda_pede_o_sim_e_sem_ele_nada_recebe_sin
 ) -> None:
     """O caminho rápido não atropela a confirmação: o «sim» vem do alvo (ADR-0042) e o PDP o
     cobra igual — aqui o dono diz não, e o motor recebe o resultado para explicar."""
-    tabela, _janelas = _ligar(executor)
+    tabela, janelas = _ligar(executor)
+    janelas.janelas = [
+        replace(j, titulo="notas.md * — Kate") if j.classe == "org.kde.kate" else j
+        for j in janelas.janelas
+    ]
     perguntas: list[Confirmacao] = []
     motor = MotorRoteirizado(resposta="Tudo bem, não encerrei o Kate.")
 
@@ -146,7 +151,7 @@ def test_encerrar_o_editor_pela_regra_ainda_pede_o_sim_e_sem_ele_nada_recebe_sin
         "fecha o kate todo", epoch=1, publicar=lambda _: None
     )
 
-    assert perguntas and "trabalho não salvo" in perguntas[0].razao_falada
+    assert perguntas and "trabalho por salvar" in perguntas[0].razao_falada
     assert tabela.sinais == [], "sem o sim, nada recebe sinal"
     assert resposta.ferramentas[0].status == "negado"
     assert len(motor.pedidos) == 1, "o motor segue, com o resultado na mão"
@@ -205,22 +210,36 @@ def test_desligado_tudo_vai_ao_motor_como_antes(
     assert resposta.atalho == "" and len(vistos) == 1 and lancados == []
 
 
-def test_fechar_a_janela_do_navegador_pela_regra_ainda_pergunta(
+def test_fechar_o_navegador_a_pedido_fecha_sem_perguntar(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    """Fechar a janela do navegador do dono pede o sim (ADR-0042) — pela regra também."""
+    """«Fecha meu Firefox» é ordem explícita do dono: fecha, sem o sim (dono, 2026-10-25 — o
+    «fecha meu brave» pedia permissão; ADR-0046)."""
     _tabela, janelas = _ligar(executor)
     perguntas: list[Confirmacao] = []
-    motor = MotorRoteirizado(resposta="Deixei o Firefox aberto.")
+    motor = MotorRoteirizado(resposta="o motor não devia falar")
 
     resposta = _cerebro(executor, motor, perguntas=perguntas).responder(
-        "fecha o firefox", epoch=1, publicar=lambda _: None
+        "fecha meu firefox", epoch=1, publicar=lambda _: None
     )
 
-    assert resposta.atalho == "fechar_janela"
-    assert perguntas, "o navegador do dono pergunta antes de fechar"
-    assert janelas.fechadas == [], "sem o sim, a janela fica"
-    assert resposta.ferramentas[0].status == "negado"
+    assert resposta.atalho == "fechar_janela" and not perguntas
+    assert janelas.fechadas == [_id(6)] and motor.pedidos == []
+    assert resposta.gerado == "Fechei a janela do Firefox."
+
+
+def test_fechar_o_navegador_sem_nome_resolve_pelo_que_esta_aberto(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    _tabela, janelas = _ligar(executor)
+    motor = MotorRoteirizado(resposta="o motor não devia falar")
+
+    resposta = _cerebro(executor, motor).responder(
+        "Jarvis, fecha o navegador", epoch=1, publicar=lambda _: None
+    )
+
+    assert janelas.fechadas == [_id(6)] and motor.pedidos == []
+    assert resposta.gerado == "Fechei a janela do Firefox."
 
 
 class _SemNavegador:

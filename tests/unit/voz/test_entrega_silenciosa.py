@@ -20,13 +20,14 @@ import pytest
 
 from jarvis.agentd.fila_de_avisos import Entrega
 from jarvis.executor.desfazer import Contaminacao
+from jarvis.executor.lancador import RegistroDeApps
 from jarvis.s2.cerebro import FRASE_AO_DELEGAR
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.tarefas.gestor import EstadoDaTarefa, Tarefa
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.config import Configuracao
-from tests.unit.executor.test_fechar_e_encerrar import _ligar
+from tests.unit.executor.test_fechar_e_encerrar import CATALOGO, _ligar
 
 PRAZO_S = 10.0
 
@@ -145,6 +146,12 @@ def _rodar(app: Aplicativo, final: str, esperado: str) -> tuple[list[str], list[
     app._motor = MotorRoteirizado(resposta=_roteiro(final))
     assert app.ferramentas is not None and app._cerebro is not None
     tabela, _janelas = _ligar(app.ferramentas)
+    # O Discord está na lista que o dono liberou: encerrá-lo a pedido não pede o sim (ADR-0046).
+    app.ferramentas.registro_de_apps = RegistroDeApps(
+        autorizados={"discord": CATALOGO["discord"]},
+        instalados=frozenset(CATALOGO),
+        catalogo=CATALOGO,
+    )
     app._cerebro.passos_no_turno = 1  # o segundo passo já é trabalho longo: vira tarefa
 
     def dono() -> Iterator[str | None]:
