@@ -1,0 +1,117 @@
+desenho,acao,tipo,regra,saida,cache,jev,ms
+antes,ler o console,leitura,jev,-,False,True,524.9257
+antes,ler a rede,leitura,jev,-,False,True,563.9463
+antes,ler o console,leitura,jev,-,False,True,497.5645
+antes,ler o console,leitura,jev,-,False,True,579.2258
+antes,ler o console,leitura,jev,-,False,True,613.4566
+antes,ler a rede,leitura,jev,-,False,True,569.9085
+antes,ler o console,leitura,jev,-,False,True,547.8382
+antes,ler o console,leitura,jev,-,False,True,556.6488
+antes,ler o console,leitura,jev,-,False,True,583.7107
+antes,ler a rede,leitura,jev,-,False,True,470.6084
+antes,ler o console,leitura,jev,-,False,True,582.6315
+antes,ler o console,leitura,jev,-,False,True,498.4528
+antes,ler o console,leitura,jev,-,False,True,532.7532
+antes,ler a rede,leitura,jev,-,False,True,570.9674
+antes,ler o console,leitura,jev,-,False,True,562.5187
+antes,ler o console,leitura,jev,-,False,True,540.3725
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,583.5162
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,563.2937
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,568.9934
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,540.7869
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,580.3129
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,579.1290
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,553.9284
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,535.2829
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,577.6272
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,474.2225
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,528.4620
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,620.7610
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,573.8499
+antes,script que lê o DOM,script_na_pagina,jev,-,False,True,553.0075
+antes,rolar,gesto,jev,-,False,True,626.9258
+antes,clicar na loja,gesto,jev,-,False,True,508.4955
+antes,rolar,gesto,jev,-,False,True,586.4749
+antes,clicar na loja,gesto,jev,-,False,True,539.9912
+antes,rolar,gesto,jev,-,False,True,572.4707
+antes,clicar na loja,gesto,jev,-,False,True,560.5586
+antes,rolar,gesto,jev,-,False,True,602.5580
+antes,clicar na loja,gesto,jev,-,False,True,578.2171
+antes,rolar,gesto,jev,-,False,True,556.5429
+antes,clicar na loja,gesto,jev,-,False,True,564.2030
+antes,rolar,gesto,jev,-,False,True,580.3564
+antes,clicar na loja,gesto,jev,-,False,True,589.3539
+antes,escrita que se repete (marcar),script_na_pagina,jev,-,False,True,523.4598
+antes,escrita que se repete (tirar o bloqueio),script_na_pagina,jev,-,False,True,634.7304
+antes,escrita que se repete (marcar),script_na_pagina,jev,-,False,True,632.8417
+antes,escrita que se repete (tirar o bloqueio),script_na_pagina,jev,-,False,True,548.8688
+antes,escrita que se repete (marcar),script_na_pagina,jev,-,False,True,616.0382
+antes,escrita que se repete (tirar o bloqueio),script_na_pagina,jev,-,False,True,533.2559
+antes,escrita que se repete (marcar),script_na_pagina,jev,-,False,True,534.6153
+antes,escrita que se repete (tirar o bloqueio),script_na_pagina,jev,-,False,True,571.5612
+antes,caixa fechada,script_na_caixa,jev,-,False,True,553.6823
+antes,caixa fechada,script_na_caixa,jev,-,False,True,575.4049
+antes,caixa fechada,script_na_caixa,jev,-,False,True,564.1922
+antes,ler cookies,script_na_pagina,jev,-,False,True,541.3569
+antes,navegar para outro site,script_na_pagina,jev,-,False,True,574.2226
+antes,mandar a página para fora,script_na_pagina,jev,-,False,True,575.3142
+antes,enviar o formulário,script_na_pagina,jev,-,False,True,581.3816
+antes,baixar e executar,script_na_caixa,jev,-,False,True,580.2884
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.4159
+depois,ler a rede,leitura,leitura_pura,permitir,False,False,0.0384
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0198
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0107
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0089
+depois,ler a rede,leitura,leitura_pura,permitir,False,False,0.0081
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0072
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0087
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0082
+depois,ler a rede,leitura,leitura_pura,permitir,False,False,0.0079
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0073
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0079
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0074
+depois,ler a rede,leitura,leitura_pura,permitir,False,False,0.0073
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0079
+depois,ler o console,leitura,leitura_pura,permitir,False,False,0.0077
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.4363
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,1.4415
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.2938
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.1656
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.3181
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.1663
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.3990
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.1362
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.7514
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.1231
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.2762
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.1747
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.3136
+depois,script que lê o DOM,script_na_pagina,so_le_a_pagina,permitir,False,False,0.4496
+depois,rolar,gesto,rolar,permitir,False,False,0.0340
+depois,clicar na loja,gesto,gesto_no_objetivo,permitir,False,False,0.0357
+depois,rolar,gesto,rolar,permitir,False,False,0.0212
+depois,clicar na loja,gesto,gesto_no_objetivo,permitir,False,False,0.0282
+depois,rolar,gesto,rolar,permitir,False,False,0.1585
+depois,clicar na loja,gesto,gesto_no_objetivo,permitir,False,False,0.0390
+depois,rolar,gesto,rolar,permitir,False,False,0.0228
+depois,clicar na loja,gesto,gesto_no_objetivo,permitir,False,False,0.1491
+depois,rolar,gesto,rolar,permitir,False,False,0.0403
+depois,clicar na loja,gesto,gesto_no_objetivo,permitir,False,False,0.0328
+depois,rolar,gesto,rolar,permitir,False,False,0.0204
+depois,clicar na loja,gesto,gesto_no_objetivo,permitir,False,False,0.0264
+depois,escrita que se repete (marcar),script_na_pagina,jev,permitir,False,True,526.3052
+depois,escrita que se repete (tirar o bloqueio),script_na_pagina,jev,permitir,False,True,566.0411
+depois,escrita que se repete (marcar),script_na_pagina,jev,permitir,True,False,0.4042
+depois,escrita que se repete (tirar o bloqueio),script_na_pagina,jev,permitir,False,True,497.8405
+depois,escrita que se repete (marcar),script_na_pagina,jev,permitir,True,False,0.3496
+depois,escrita que se repete (tirar o bloqueio),script_na_pagina,jev,permitir,True,False,0.2155
+depois,escrita que se repete (marcar),script_na_pagina,jev,permitir,True,False,0.1763
+depois,escrita que se repete (tirar o bloqueio),script_na_pagina,jev,permitir,True,False,0.1415
+depois,caixa fechada,script_na_caixa,caixa,permitir,False,False,0.0911
+depois,caixa fechada,script_na_caixa,caixa,permitir,False,False,0.0642
+depois,caixa fechada,script_na_caixa,caixa,permitir,False,False,0.0452
+depois,ler cookies,script_na_pagina,nega:credenciais,barrar,False,False,0.0820
+depois,navegar para outro site,script_na_pagina,nega:navegar_por_script,barrar,False,False,0.0701
+depois,mandar a página para fora,script_na_pagina,nega:exfiltrar,barrar,False,False,0.0904
+depois,enviar o formulário,script_na_pagina,nega:enviar,barrar,False,False,0.0587
+depois,baixar e executar,script_na_caixa,nega:baixar_executar,barrar,False,False,0.0677

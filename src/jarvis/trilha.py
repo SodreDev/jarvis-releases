@@ -87,11 +87,13 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "argumentos": Forma.CHAVES,
     "atalho": Forma.CODIGO,
     "aviso": Forma.CODIGO,
+    "cache": Forma.BOOLEANO,
     "cancelado": Forma.BOOLEANO,
     "caracteres_de_raciocinio": Forma.NUMERO,
     "caracteres_do_pedido": Forma.NUMERO,
     "caracteres_falados": Forma.NUMERO,
     "caracteres_so_na_tela": Forma.NUMERO,
+    "categoria": Forma.CODIGO,
     "codigo": Forma.CODIGO,
     "completo": Forma.BOOLEANO,
     "contraste_db": Forma.NUMERO,
@@ -171,6 +173,9 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
         {"tool_id", "argumentos", "status", "pdp", "ms", "motivo", "codigo", "aviso", "fase"}
     ),
     "portao": frozenset({"tool_id", "pdp", "jev", "decisao", "ms"}),
+    # O guarda de contexto (ADR-0049): a saída, a regra, a categoria, o tempo e se veio do
+    # cache — nunca o script, a URL nem texto de página.
+    "guarda": frozenset({"tool_id", "decisao", "regra", "categoria", "ms", "cache", "jev"}),
     "permissao": frozenset({"tool_id", "origem", "motivo", "resposta"}),
     "metodo": frozenset({"metodo", "motivo", "de_fora"}),
     # O caminho rápido (ADR-0045): que regra achou a ferramenta, qual e como terminou — nunca a
@@ -228,6 +233,9 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "esperando_o_dono",
         "pergunta_ocupada",
         "portao_falhou",
+        # o guarda de contexto (`jarvis.politica.guarda`, ADR-0049)
+        "guarda_barrou",
+        "guarda_pediu",
         # o método do pedido (`jarvis.politica.metodo`)
         "pede_teclado_ou_mouse",
         "pede_terminal",
@@ -544,6 +552,13 @@ def _linha(evento: Mapping[str, Any]) -> str:
         return (
             f"portão {evento.get('tool_id')}: {evento.get('decisao')} "
             f"(PDP {evento.get('pdp')}, {evento.get('jev')}, {_ms(evento.get('ms'))})"
+        )
+    if tipo == "guarda":
+        jev = f", Jev {evento['jev']}" if evento.get("jev") else ""
+        return (
+            f"guarda {evento.get('tool_id')}: {evento.get('decisao')} pela regra "
+            f"{evento.get('regra')} ({evento.get('categoria')}{jev}, {_ms(evento.get('ms'))}"
+            f"{', do cache' if evento.get('cache') else ''})"
         )
     if tipo == "atalho":
         return (

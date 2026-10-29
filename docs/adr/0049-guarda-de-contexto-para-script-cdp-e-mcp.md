@@ -54,7 +54,9 @@ Evento `guarda` na trilha (`jarvis.trilha`, só metadados): `tool_id`, `decisao`
 
 ### 6. Medição
 
-`tools/medir_guarda.py` roda o guarda de verdade sobre um roteiro de ações de uma sessão de depuração (leituras, scripts dentro do objetivo que se repetem, gestos, e os cenários fora do eixo) em dois desenhos: **antes** — o Jev em toda ação, como o portão faz — e **depois** — regras, cache e o Jev só na zona cinza. O Jev é o classificador falso com a latência medida na ADR-0029 (sem chave, sem rede, sem custo); o tempo das regras e do cache é o real. Resultado em `docs/medicoes/guarda-de-contexto.md`, gerado pela ferramenta junto com o CSV das amostras.
+`tools/medir_guarda.py` roda o guarda de verdade sobre um roteiro de ações de uma sessão de depuração (leituras, scripts dentro do objetivo que se repetem, gestos, e os cenários fora do eixo) em dois desenhos: **antes** — o Jev em toda ação, como o portão faz — e **depois** — regras, cache e o Jev só na zona cinza. O Jev é o classificador falso com a latência medida na ADR-0029 (sem chave, sem rede, sem custo); o tempo das regras e do cache é o real. Resultado em `docs/medicoes/guarda-de-contexto.md`, gerado pela ferramenta junto com o CSV das amostras. Na primeira medição (2026-10-29, Ryzen 5 5600G, uma sessão de 58 ações): antes, p50 de 564 ms e p95 de 621 ms por ação, 58 consultas ao Jev e 32,6 s de guarda na sessão; depois, p50 de 0,068 ms e p95 de 1,4 ms, 3 consultas (as formas novas da zona cinza; as repetições vieram do cache) e 1,6 s na sessão; os 5 cenários fora do eixo barrados pela regra, sem consulta.
+
+O prazo é imposto de dois jeitos: o cancelamento que o guarda passa ao classificador corta a leitura da resposta (o cliente HTTP o confere), e uma resposta que chegue depois do prazo, por qualquer caminho, é descartada e vira pedido de sim.
 
 ### 7. As camadas que o guarda protege (cada uma na sua ADR)
 
