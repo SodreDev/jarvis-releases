@@ -24,6 +24,8 @@ from jarvis.provedores.interface import (
 from jarvis.provedores.registro import (
     ARQUIVO,
     CLAUDE_CLI,
+    COMPATIVEL_LOCAL,
+    COMPATIVEL_NUVEM,
     ECO,
     RegraDeCapacidade,
     abrir,
@@ -67,6 +69,8 @@ class Provedores:
     pasta_de_trabalho: Path = field(default_factory=lambda: Path("conversa"))
     """A pasta **vazia** onde as CLIs rodam (ADR-0018, regra 1)."""
     catalogo: Catalogo | None = None
+    bases: Mapping[str, str] = field(default_factory=dict)
+    """Provedor → a base que o dono escreveu (os compatíveis). Ausente = a do registro."""
     arquivo: Path = ARQUIVO
     _regras: tuple[RegraDeCapacidade, ...] | None = field(default=None, repr=False)
 
@@ -89,6 +93,14 @@ class Provedores:
             ambiente=ambiente,
             pasta_de_trabalho=pasta_de_trabalho,
             catalogo=catalogo,
+            bases={
+                identificador: base
+                for identificador, base in (
+                    (COMPATIVEL_LOCAL, configuracao.base_compativel_local),
+                    (COMPATIVEL_NUVEM, configuracao.base_compativel_nuvem),
+                )
+                if base
+            },
         )
 
     def registrados(self) -> tuple[Motor, ...]:
@@ -108,11 +120,13 @@ class Provedores:
         return self._regras
 
     def abrir(self, identificador: str) -> ProvedorDeModelos:
+        base = self.bases.get(identificador)
         return abrir(
             identificador,
             ambiente=self.ambiente,
             pasta_de_trabalho=self.pasta_de_trabalho,
             arquivo=self.arquivo,
+            extras={"base": base} if base else None,
         )
 
     def ligado(self, identificador: str) -> bool:

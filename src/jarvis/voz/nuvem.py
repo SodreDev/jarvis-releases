@@ -438,8 +438,9 @@ class ClienteHttp:
         cabecalho_da_chave: str = "Authorization",
         prefixo_da_chave: str = "Bearer ",
         prazo_s: float | None = None,
+        cabecalhos: Mapping[str, str] | None = None,
     ) -> Resposta:
-        """GET em `base + caminho` — consulta de catálogo (vozes), nunca dado do dono."""
+        """GET em `base + caminho` — consulta de catálogo (vozes, modelos), nunca dado do dono."""
         return self._pedir(
             "GET",
             caminho,
@@ -448,7 +449,7 @@ class ClienteHttp:
             chave=chave,
             cabecalho_da_chave=cabecalho_da_chave,
             prefixo_da_chave=prefixo_da_chave,
-            cabecalhos=None,
+            cabecalhos=cabecalhos,
             cancelado=nunca_cancelado,
             prazo_s=prazo_s,
         )

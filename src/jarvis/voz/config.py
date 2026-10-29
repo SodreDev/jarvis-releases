@@ -74,6 +74,13 @@ FORMA_DA_FAMILIA: Final[re.Pattern[str]] = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}
 """O nome curto de um navegador na configuração (`firefox`, `brave`)."""
 FORMA_DO_APP: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 FORMA_DO_DOMINIO: Final[re.Pattern[str]] = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,63}")
+BASE_LOCAL: Final[re.Pattern[str]] = re.compile(
+    r"https?://(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?(?:/[A-Za-z0-9._~/-]*)?"
+)
+BASE_DE_NUVEM: Final[re.Pattern[str]] = re.compile(
+    r"https://[A-Za-z0-9.-]+\.[A-Za-z]{2,63}(?::\d{1,5})?(?:/[A-Za-z0-9._~/-]*)?"
+)
+"""As bases dos provedores compatíveis (ADR-0056): sem usuário, senha, consulta nem fragmento."""
 
 
 class ConfiguracaoInvalida(ValueError):
@@ -202,6 +209,12 @@ class Configuracao:
     voz_omnivoice: str = ""
     """O nome de uma voz que o dono cadastrou (`tools/instalar_omnivoice.py --cadastrar-voz`),
     com a declaração de que a voz é dele ou de quem deu permissão. Vazio = nenhuma."""
+    base_compativel_local: str = ""
+    """A base do servidor local com a API da OpenAI (`conversa-compativel-local`, ADR-0056): tem
+    de ser desta máquina. Vazio = a do registro (o Ollama, `http://127.0.0.1:11434/v1`)."""
+    base_compativel_nuvem: str = ""
+    """A base `https://` do roteador de nuvem compatível que o dono escolheu
+    (`conversa-compativel-nuvem`). Vazio = o provedor não tem para onde chamar."""
 
     def para_dict(self) -> dict[str, Any]:
         return {
@@ -246,6 +259,8 @@ class Configuracao:
             "caminho_rapido": self.caminho_rapido,
             "omnivoice_uso_pessoal": self.omnivoice_uso_pessoal,
             "voz_omnivoice": self.voz_omnivoice,
+            "base_compativel_local": self.base_compativel_local,
+            "base_compativel_nuvem": self.base_compativel_nuvem,
         }
 
     @property
@@ -383,6 +398,11 @@ caminho_rapido = {"true" if configuracao.caminho_rapido else "false"}
 omnivoice_uso_pessoal = {"true" if configuracao.omnivoice_uso_pessoal else "false"}
 # Uma voz que VOCÊ cadastrou (a sua, ou com permissão do titular): --cadastrar-voz.
 voz_omnivoice = {aspas(configuracao.voz_omnivoice)}
+
+# Provedores de modelo com a API da OpenAI (ADR-0056): o servidor local (Ollama, LM Studio; vazio =
+# http://127.0.0.1:11434/v1) e um roteador de nuvem (https://, com JARVIS_COMPATIVEL_API_KEY).
+base_compativel_local = {aspas(configuracao.base_compativel_local)}
+base_compativel_nuvem = {aspas(configuracao.base_compativel_nuvem)}
 """
 
 
@@ -474,6 +494,20 @@ def validar(configuracao: Configuracao) -> Configuracao:
         raise ConfiguracaoInvalida(
             f"tarefa_motor = {configuracao.tarefa_motor!r} não existe. Os que existem: "
             "direto, agente"
+        )
+    if configuracao.base_compativel_local and not BASE_LOCAL.fullmatch(
+        configuracao.base_compativel_local
+    ):
+        raise ConfiguracaoInvalida(
+            f"base_compativel_local = {configuracao.base_compativel_local!r} não é um endereço "
+            "http(s) desta máquina (localhost, 127.0.0.1 ou [::1], com porta e caminho)"
+        )
+    if configuracao.base_compativel_nuvem and not BASE_DE_NUVEM.fullmatch(
+        configuracao.base_compativel_nuvem
+    ):
+        raise ConfiguracaoInvalida(
+            f"base_compativel_nuvem = {configuracao.base_compativel_nuvem!r} não é um endereço "
+            "https:// (o texto da conversa vai por ele: sem https, não)"
         )
     if configuracao.voz_omnivoice and not FORMA_DO_NOME_DE_VOZ.fullmatch(
         configuracao.voz_omnivoice
@@ -636,6 +670,8 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         caminho_rapido=_logico(dados, "caminho_rapido", padrao=True),
         omnivoice_uso_pessoal=_logico(dados, "omnivoice_uso_pessoal"),
         voz_omnivoice=_texto(dados, "voz_omnivoice", ""),
+        base_compativel_local=_texto(dados, "base_compativel_local", ""),
+        base_compativel_nuvem=_texto(dados, "base_compativel_nuvem", ""),
     )
     return validar(configuracao)
 

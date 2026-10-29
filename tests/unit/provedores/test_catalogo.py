@@ -15,6 +15,7 @@ from jarvis.provedores.interface import (
     Modelo,
 )
 from jarvis.provedores.registro import RegraDeCapacidade
+from jarvis.s2.motor import MotorDeConversa
 from jarvis.voz.interface import Cancelado, Onde, nunca_cancelado
 from jarvis.voz.registro import Motor
 
@@ -49,7 +50,9 @@ class ProvedorFalso:
             raise ListagemIndisponivel(self.erro)
         return self.modelos
 
-    def motor(self, modelo: str, esforco: str = "") -> object:  # pragma: no cover — não usado
+    def motor(  # pragma: no cover — não usado
+        self, modelo: str, esforco: str = "", capacidades: Capacidades | None = None
+    ) -> MotorDeConversa:
         raise AssertionError
 
 

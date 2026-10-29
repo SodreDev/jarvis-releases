@@ -44,6 +44,8 @@ PAPEL: Final = "conversa"
 
 ECO: Final = "conversa-eco"
 CLAUDE_CLI: Final = "conversa-claude-cli"
+COMPATIVEL_LOCAL: Final = "conversa-compativel-local"
+COMPATIVEL_NUVEM: Final = "conversa-compativel-nuvem"
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,9 +135,11 @@ def abrir(
     ambiente: Mapping[str, str] | None = None,
     pasta_de_trabalho: Path,
     arquivo: Path = ARQUIVO,
+    extras: Mapping[str, Any] | None = None,
 ) -> ProvedorDeModelos:
     """O provedor, para **listar** — sem o interruptor da nuvem, porque listar não leva nada do
-    dono. Chamar um modelo passa antes por `exigir`."""
+    dono. Chamar um modelo passa antes por `exigir`. `extras` vai ao construtor (a `base` que o
+    dono escreveu para um compatível)."""
     motor = provedor_registrado(identificador, arquivo=arquivo)
     if motor is None:
         raise MotorRecusado(
@@ -143,7 +147,7 @@ def abrir(
             "verificou não roda (ADR-0012, ADR-0056)"
         )
     provedor = classe_de(motor)(
-        registro=motor, ambiente=ambiente, pasta_de_trabalho=pasta_de_trabalho
+        registro=motor, ambiente=ambiente, pasta_de_trabalho=pasta_de_trabalho, **(extras or {})
     )
     if not isinstance(provedor, ProvedorDeModelos):
         raise MotorRecusado(f"{motor.implementacao} não é um provedor de modelos")
@@ -166,6 +170,8 @@ def exigir(
 __all__ = [
     "ARQUIVO",
     "CLAUDE_CLI",
+    "COMPATIVEL_LOCAL",
+    "COMPATIVEL_NUVEM",
     "ECO",
     "PAPEL",
     "RegraDeCapacidade",

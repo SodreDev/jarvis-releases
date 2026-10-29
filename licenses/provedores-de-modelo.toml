@@ -102,3 +102,214 @@ padrao = "*"
 esforcos = ["low", "medium", "high", "xhigh", "max"]
 fonte = "https://code.claude.com/docs/en/cli-reference"
 data = "2026-10-29"
+
+# --- APIs com Chat Completions (jarvis.provedores.compativel) -------------------------------------
+
+[[motor]]
+id = "conversa-openai"
+papel = "conversa"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.provedores.compativel:ProvedorOpenAI"
+modelo = "gpt-6.1-terra"
+modelos = ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna"]
+fonte_dos_modelos = "https://developers.openai.com/api/docs/guides/latest-model"
+data_dos_modelos = "2026-10-29"
+servico = "OpenAI (API)"
+endereco = "https://api.openai.com/v1"
+variavel_da_chave = "OPENAI_API_KEY"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (http.client e urllib da biblioteca padrão)"
+uso_comercial = "o Services Agreement (v.010126) deixa o cliente montar aplicações próprias para usuários finais (§2.2) e proíbe usar a saída para treinar modelo concorrente (§3.3)"
+retencao_declarada = "registros de abuso por até 30 dias; ZDR só com aprovação da OpenAI"
+treina_com_entrada = "não: dados da API não treinam modelo desde 2023-03-01 (§4.2 do Services Agreement)"
+dono_da_saida = "o cliente (§4.1 do Services Agreement)"
+fonte = "https://developers.openai.com/api/docs/guides/your-data"
+fonte_tecnica = "https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create"
+fonte_retencao = "https://cdn.openai.com/osa/openai-services-agreement.pdf"
+data_de_acesso = "2026-10-29"
+nota = "A listagem (GET /v1/models) só dá o id: visão e esforços vêm das [[capacidade]] abaixo. Embedding, voz e imagem ficam fora da escolha."
+
+[[motor]]
+id = "conversa-openrouter"
+papel = "conversa"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.provedores.compativel:ProvedorOpenRouter"
+modelo = ""
+servico = "OpenRouter (roteador de modelos de vários provedores)"
+endereco = "https://openrouter.ai/api/v1"
+variavel_da_chave = "OPENROUTER_API_KEY"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (http.client e urllib da biblioteca padrão)"
+uso_comercial = "os termos do OpenRouter remetem o uso e a posse da saída aos termos de cada modelo"
+retencao_declarada = "o OpenRouter não guarda prompts nem respostas por padrão (guarda metadados); todo pedido do Jarvis leva provider.data_collection = \"deny\", que só usa provedores que não coletam o que recebem; ZDR por pedido ou na conta"
+treina_com_entrada = "não por padrão (registrar prompts é opção do cliente); com data_collection = \"deny\", só vai a provedor que não coleta"
+dono_da_saida = "o que os termos de cada modelo disserem (os termos do OpenRouter remetem a eles)"
+fonte = "https://openrouter.ai/docs/guides/privacy/data-collection"
+fonte_tecnica = "https://openrouter.ai/docs/api/api-reference/models/get-models"
+fonte_retencao = "https://openrouter.ai/docs/guides/routing/provider-selection"
+data_de_acesso = "2026-10-29"
+nota = "Sem lista estática: são centenas de modelos, e a listagem dá contexto, preço, entrada de imagem e parâmetros aceitos. A chave é a mesma do Jev."
+
+[[motor]]
+id = "conversa-groq"
+papel = "conversa"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.provedores.compativel:ProvedorGroq"
+modelo = "qwen/qwen3.8-27b"
+modelos = ["meta-models/muse-spark-open", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+fonte_dos_modelos = "https://console.groq.com/docs/reasoning"
+data_dos_modelos = "2026-10-29"
+servico = "Groq (API)"
+endereco = "https://api.groq.com/openai/v1"
+variavel_da_chave = "JARVIS_GROQ_API_KEY"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (http.client e urllib da biblioteca padrão)"
+uso_comercial = "o Services Agreement deixa integrar os serviços em aplicações próprias (§3.1)"
+retencao_declarada = "não retém por padrão; registros por até 30 dias para confiabilidade e abuso (dá para desligar); ZDR self-service"
+treina_com_entrada = "não (§4.2 do Services Agreement)"
+dono_da_saida = "o cliente, dono da entrada e da saída (§8.1 do Services Agreement)"
+fonte = "https://console.groq.com/docs/your-data"
+fonte_tecnica = "https://console.groq.com/docs/api-reference"
+fonte_retencao = "https://console.groq.com/docs/legal/services-agreement"
+data_de_acesso = "2026-10-29"
+nota = "A mesma chave do ASR da Groq, outro interruptor: ligar a conversa não liga o ASR, e vice-versa. Visão nos modelos da página de visão (qwen/qwen3.8-27b, até 3 imagens; muse-spark-open em prévia, até 5)."
+
+# --- CLIs com o login do dono (jarvis.provedores.codex, jarvis.provedores.opencode) -------------
+
+[[motor]]
+id = "conversa-codex-cli"
+papel = "conversa"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.provedores.codex:ProvedorCodexCli"
+modelo = ""
+servico = "OpenAI (Codex, a CLI `codex` com o login do dono)"
+endereco = "processo local `codex exec`, que fala com a OpenAI"
+variavel_da_chave = ""
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório, que chama o binário `codex` do dono"
+uso_comercial = "com login do ChatGPT valem os Termos de Uso de consumo: a saída é do dono, e eles proíbem extrair saída de forma automatizada (trecho lido em resultado de busca; página não aberta). O `codex exec` é o modo não interativo que a própria OpenAI documenta. Regra explícita sobre usar o Codex do plano dentro de outro programa: não encontrada"
+retencao_declarada = "segue a configuração de retenção do workspace do ChatGPT do dono; o prazo de consumo não aparece nas páginas lidas"
+treina_com_entrada = "sim por padrão nos planos pessoais: o controle «Melhorar o modelo para todos» da conta também vale para o Codex e pode ser desligado (central de ajuda; trecho de busca, página não aberta)"
+dono_da_saida = "o dono (Termos de Uso de consumo; trecho de busca, página não aberta)"
+fonte = "https://learn.chatgpt.com/docs/auth"
+fonte_tecnica = "https://learn.chatgpt.com/docs/non-interactive-mode"
+fonte_retencao = "https://help.openai.com/en/articles/5722486-how-your-data-is-used-to-improve-model-performance"
+data_de_acesso = "2026-10-29"
+nota = "Sem lista estática: a lista vem de `codex debug models`. Roda sem shell, sem busca e sem sessão gravada (--sandbox read-only, approval_policy never, features.shell_tool=false, web_search disabled, --ephemeral)."
+
+[[motor]]
+id = "conversa-opencode-cli"
+papel = "conversa"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.provedores.opencode:ProvedorOpenCodeCli"
+modelo = ""
+servico = "OpenCode (a CLI `opencode`, com os provedores que o dono configurou nela)"
+endereco = "processo local `opencode run`, que fala com o provedor do modelo escolhido"
+variavel_da_chave = ""
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório, que chama o binário `opencode` do dono"
+uso_comercial = "os Termos do OpenCode (2026-08-15) limitam o uso ao uso interno próprio; os termos do provedor de cada modelo também valem"
+retencao_declarada = "o OpenCode diz não reter o conteúdo; o provedor de cada modelo tem a política dele (no Zen: sem retenção, salvo modelos gratuitos e os da OpenAI e da Anthropic, 30 dias)"
+treina_com_entrada = "o conteúdo de conta não paga pode ser usado para melhorar o serviço (Termos); no Zen, os modelos gratuitos podem treinar"
+dono_da_saida = "o dono (Termos do OpenCode)"
+fonte = "https://opencode.ai/legal/terms-of-service"
+fonte_tecnica = "https://opencode.ai/docs/cli/"
+fonte_retencao = "https://opencode.ai/docs/zen/"
+data_de_acesso = "2026-10-29"
+nota = "Só a linha 1.x: a 2.x (2026-10-29) é reconhecida pela versão e recusada com a frase do que fazer. Sem lista estática: a lista vem de `opencode models`."
+
+# --- Compatíveis com a API da OpenAI, com a base que o dono escreve ------------------------------
+
+[[motor]]
+id = "conversa-compativel-local"
+papel = "conversa"
+onde = "local"
+ligado = false
+implementacao = "jarvis.provedores.compativel:ProvedorCompativelLocal"
+modelo = ""
+servico = "servidor desta máquina com a API da OpenAI (Ollama, LM Studio)"
+endereco = "http://127.0.0.1:11434/v1"
+variavel_da_chave = ""
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (http.client e urllib da biblioteca padrão)"
+fonte = "https://docs.ollama.com/api/openai-compatibility"
+fonte_tecnica = "https://lmstudio.ai/docs/developer/openai-compat"
+data_de_acesso = "2026-10-29"
+nota = "A base tem de ser desta máquina (base_compativel_local; vazio = Ollama). A licença de cada modelo é do dono conferir: o Jarvis não baixa peso nenhum."
+
+[[motor]]
+id = "conversa-compativel-nuvem"
+papel = "conversa"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.provedores.compativel:ProvedorCompativelNuvem"
+modelo = ""
+servico = "roteador de nuvem compatível com a API da OpenAI (a base https:// que o dono escreveu)"
+endereco = ""
+variavel_da_chave = "JARVIS_COMPATIVEL_API_KEY"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (http.client e urllib da biblioteca padrão)"
+uso_comercial = ""
+retencao_declarada = ""
+treina_com_entrada = ""
+dono_da_saida = ""
+fonte = "https://docs.together.ai/docs/openai-api-compatibility"
+fonte_tecnica = "https://docs.deepinfra.com/chat/overview"
+data_de_acesso = "2026-10-29"
+nota = "Os termos dependem do serviço que o dono escolher e não foram lidos: só chama com o id também em nuvem_sem_termos, e o aviso diz isso."
+
+[[capacidade]]
+provedor = "conversa-openai"
+padrao = "gpt-6*"
+visao = true
+fonte = "https://developers.openai.com/api/docs/models"
+data = "2026-10-29"
+
+[[capacidade]]
+provedor = "conversa-openai"
+padrao = "gpt-6.1-terra*"
+esforcos = ["none", "low", "medium", "high", "xhigh", "max"]
+fonte = "https://developers.openai.com/api/docs/guides/latest-model"
+data = "2026-10-29"
+
+[[capacidade]]
+provedor = "conversa-openai"
+padrao = "gpt-6.1-sol*"
+esforcos = ["low", "medium", "high", "xhigh", "max"]
+fonte = "https://developers.openai.com/api/docs/guides/latest-model"
+data = "2026-10-29"
+
+[[capacidade]]
+provedor = "conversa-openai"
+padrao = "gpt-6-astra*"
+esforcos = ["low", "medium", "high", "xhigh", "max"]
+fonte = "https://developers.openai.com/api/docs/guides/latest-model"
+data = "2026-10-29"
+
+[[capacidade]]
+provedor = "conversa-groq"
+padrao = "qwen/qwen3.8-27b"
+visao = true
+esforcos = ["none", "low", "medium", "high"]
+fonte = "https://console.groq.com/docs/vision"
+data = "2026-10-29"
+
+[[capacidade]]
+provedor = "conversa-groq"
+padrao = "meta-models/muse-spark-open"
+visao = true
+esforcos = ["low", "medium", "high", "xhigh"]
+fonte = "https://console.groq.com/docs/reasoning"
+data = "2026-10-29"
+
+[[capacidade]]
+provedor = "conversa-groq"
+padrao = "openai/gpt-oss-*"
+esforcos = ["low", "medium", "high"]
+fonte = "https://console.groq.com/docs/reasoning"
+data = "2026-10-29"

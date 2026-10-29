@@ -144,6 +144,9 @@ def test_as_variaveis_do_dono_sao_as_registradas() -> None:
         VARIAVEL_ELEVENLABS,
         "OPENROUTER_API_KEY",
         "BRAVE_SEARCH_API_KEY",  # a busca na web pela API (ADR-0033)
+        "OPENAI_API_KEY",  # os provedores de modelo (ADR-0056)
+        "ANTHROPIC_API_KEY",
+        "JARVIS_COMPATIVEL_API_KEY",
     )
     assert VARIAVEL_GROQ == "JARVIS_GROQ_API_KEY"
     assert VARIAVEL_ELEVENLABS == "JARVIS_ELEVENLABS_API_KEY"
@@ -301,3 +304,10 @@ escrever_degradacao(raiz, ler_degradacao(raiz))
     # A varredura acha o que está lá: prova de que a ausência acima não é cegueira do método.
     assert any(VARIAVEL_GROQ in pedaco for pedaco in escrito)
     assert any(SEGREDO in pedaco for pedaco in [SEGREDO])
+
+
+def test_chave_com_a_forma_da_openai_tambem_e_recusada() -> None:
+    """`sk-…` (OpenAI, OpenRouter, Anthropic; ADR-0056) tem a mesma recusa por forma."""
+    for chave in ("sk-proj-abcdefghijklmnop", "sk-or-v1-abcdefghijklmnop", "sk-ant-abcdefghijklm"):
+        with pytest.raises(SegredoNaLinhaDeComando):
+            proibir_segredo_em_argv(["jarvis-voz", f"--x={chave}"], ambiente={})

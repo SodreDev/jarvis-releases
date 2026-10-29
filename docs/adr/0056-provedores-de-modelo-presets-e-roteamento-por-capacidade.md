@@ -85,7 +85,7 @@ passa pela forma (id) e pela limpeza (nome sem controle, com teto) na ida e na v
 | `conversa-openrouter` | `GET /api/v1/models` (contexto, preço, `input_modalities`, `supported_parameters`) | Chat Completions em SSE, com `provider.data_collection = "deny"` | `OPENROUTER_API_KEY` (a do Jev) | `reasoning.effort` |
 | `conversa-groq` | `GET /openai/v1/models` (`context_window`) | Chat Completions em SSE | `JARVIS_GROQ_API_KEY` (a do ASR) | visão nos modelos que a página de visão lista; `reasoning_effort` por modelo |
 | `conversa-codex-cli` | `codex debug models` (o catálogo da CLI) | `codex exec --json`, sem shell e sem busca na web | o login do dono (`codex login`) | `model_reasoning_effort`; imagem por `-i` |
-| `conversa-opencode-cli` | `opencode models` (1.x); a 2.x não documenta comando de listar | `opencode run --format json`, com as permissões de shell e edição negadas | os provedores que o dono configurou no OpenCode | `--variant` (1.x) ou `modelo#variante` (2.x) |
+| `conversa-opencode-cli` | `opencode models` (1.x) | `opencode run --format json`, com as permissões da CLI negadas; a 2.x é reconhecida pela versão e recusada com a frase do que fazer | os provedores que o dono configurou no OpenCode | `--variant` |
 | `conversa-compativel-local` | `GET {base}/models` | Chat Completions (Ollama, LM Studio) | — | pelo registro, quando houver |
 | `conversa-compativel-nuvem` | `GET {base}/models` | Chat Completions (Together, DeepInfra e outros) | `JARVIS_COMPATIVEL_API_KEY` | termos desconhecidos: só com `nuvem_sem_termos` |
 
@@ -98,10 +98,12 @@ As duas CLIs novas rodam como a do Claude (ADR-0018): processo avulso por pedido
 vazia, a conversa pelo `stdin`, morto no cancelamento, e o ambiente do filho **sem** as chaves que
 o Jarvis conhece (o login delas é delas). O Codex roda com `--sandbox read-only`,
 `approval_policy="never"`, `features.shell_tool=false`, `web_search="disabled"` e `--ephemeral`. O
-OpenCode roda com as permissões de shell, edição e busca negadas pelo `OPENCODE_CONFIG_CONTENT`
-(1.x) ou pela lista `permissions` (2.x). Se a CLI não está instalada, não tem login ou é de uma
-versão que o Jarvis não sabe ler, o motor responde com a frase do que fazer, sem tentar outra
-coisa.
+OpenCode 1.x roda com as permissões da CLI negadas pelo `OPENCODE_CONFIG_CONTENT` (`*`, `bash`,
+`edit`, `webfetch`, `websearch`); a 2.x trocou permissões, credenciais e a sintaxe do variante
+(`modelo#variante`) sem documentar a saída do `run --format json`, então fica recusada até haver
+leitura confirmada dela. Se a CLI não está instalada, não tem login ou é de uma versão que o Jarvis
+não sabe ler, o motor responde com a frase do que fazer, sem tentar outra coisa. Item de
+ferramenta da própria CLI na saída aborta o pedido.
 
 ### 5. Presets (`jarvis.provedores.presets`)
 

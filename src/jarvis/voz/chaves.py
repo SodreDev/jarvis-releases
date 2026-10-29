@@ -48,11 +48,22 @@ propósito: quem já a exporta para outras ferramentas não precisa guardá-la d
 VARIAVEL_BRAVE: Final = "BRAVE_SEARCH_API_KEY"
 """A chave da API do Brave Search: com ela a busca na web vai pela API, que é a preferida do dono
 (ADR-0033); sem ela, pelo navegador dele. O nome é o do próprio serviço, como o do OpenRouter."""
+VARIAVEL_OPENAI: Final = "OPENAI_API_KEY"
+"""A chave da API da OpenAI, para o provedor de modelo `conversa-openai` (ADR-0056). O nome é o do
+próprio serviço, como o do OpenRouter."""
+VARIAVEL_ANTHROPIC: Final = "ANTHROPIC_API_KEY"
+"""Só para **listar** os modelos da Anthropic (`GET /v1/models`) na escolha da CLI do Claude: a
+conversa continua indo pela CLI, com a assinatura do dono (ADR-0056)."""
+VARIAVEL_COMPATIVEL: Final = "JARVIS_COMPATIVEL_API_KEY"
+"""A chave do roteador de nuvem compatível que o dono escolheu (`conversa-compativel-nuvem`)."""
 VARIAVEIS: Final[tuple[str, ...]] = (
     VARIAVEL_GROQ,
     VARIAVEL_ELEVENLABS,
     VARIAVEL_OPENROUTER,
     VARIAVEL_BRAVE,
+    VARIAVEL_OPENAI,
+    VARIAVEL_ANTHROPIC,
+    VARIAVEL_COMPATIVEL,
 )
 """As variáveis que o produto conhece. O registro de motores aponta para elas pelo nome."""
 
@@ -187,9 +198,10 @@ def redigir_do_ambiente(
 
 
 PARECE_CHAVE: Final[re.Pattern[str]] = re.compile(
-    r"(?:^|[\s=:])(?:gsk_|sk_|xi-)[A-Za-z0-9_\-]{12,}"
+    r"(?:^|[\s=:])(?:gsk_|sk_|sk-|xi-)[A-Za-z0-9_\-]{12,}"
 )
-"""Prefixos públicos de chave dos dois serviços (`gsk_` na Groq, `sk_` no ElevenLabs).
+"""Prefixos públicos de chave (`gsk_` na Groq, `sk_` no ElevenLabs; `sk-` na OpenAI, no OpenRouter
+e na Anthropic, ADR-0056).
 
 Serve para recusar o acidente do dono colando a chave onde ela não deve ir, mesmo quando a
 variável **não** está exportada — aí não há valor para comparar, e o formato é o que resta.

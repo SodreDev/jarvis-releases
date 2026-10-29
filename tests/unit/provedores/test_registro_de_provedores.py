@@ -10,6 +10,7 @@ from jarvis.licencas import Categoria
 from jarvis.provedores.interface import ESFORCOS, ProvedorDeModelos
 from jarvis.provedores.registro import (
     CLAUDE_CLI,
+    COMPATIVEL_NUVEM,
     ECO,
     PAPEL,
     abrir,
@@ -36,7 +37,16 @@ def test_cada_provedor_tem_procedencia_licenca_e_termos(provedor: Motor) -> None
     assert provedor.papel == PAPEL
     assert provedor.id.startswith("conversa-")
     assert provedor.categoria_da_licenca is Categoria.PERMISSIVA
-    assert provedor.campos_vazios == ()  # procedência, termos (nuvem) e a lista com fonte e data
+    if provedor.id == COMPATIVEL_NUVEM:
+        # Os termos dependem do serviço que o dono escolher: vazios de propósito (política 4).
+        assert set(provedor.campos_vazios) == {
+            "uso_comercial",
+            "retencao_declarada",
+            "treina_com_entrada",
+            "dono_da_saida",
+        }
+    else:
+        assert provedor.campos_vazios == ()  # procedência, termos (nuvem), lista com fonte e data
     assert not provedor.ligado, "nuvem nasce desligada; local não precisa do interruptor"
     assert isinstance(classe_de(provedor), type)
 
@@ -79,3 +89,10 @@ def test_a_configuracao_aceita_ligar_provedor_de_modelo_e_recusa_o_local() -> No
 
 def test_ids_nao_colidem_com_os_motores_de_voz() -> None:
     assert not {p.id for p in PROVEDORES} & {m.id for m in ler_motores()}
+
+
+def test_compativel_de_nuvem_so_chama_com_o_aceite_dos_termos() -> None:
+    with pytest.raises(MotorRecusado, match="campo obrigatório vazio"):
+        exigir(COMPATIVEL_NUVEM, ligados=(COMPATIVEL_NUVEM,))
+    motor = exigir(COMPATIVEL_NUVEM, ligados=(COMPATIVEL_NUVEM,), sem_termos=(COMPATIVEL_NUVEM,))
+    assert motor.frase_de_aviso.startswith("ATENÇÃO: este serviço não publica termos")
