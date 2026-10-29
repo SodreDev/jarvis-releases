@@ -14,7 +14,11 @@ O que o código impõe, por cima do julgamento do modelo:
   um por vez. O teto **não** vale para o aviso que vai junto com a mensagem do dono: ali quem
   abriu a conversa foi ele, e esperar 2 min para contar que a tarefa terminou seria esconder;
 - **entregue é o que tocou** (regra 15, P4): o aviso só vira `falado` quando os pedaços que o
-  carregam tocaram inteiros; cortado antes disso, volta para a fila;
+  carregam tocaram inteiros; o que não chegou a tocar por **falha** (o cérebro caiu) volta para a
+  fila;
+- **cortar é cancelar** (dono, 2026-10-29): o aviso que estava na fala que o **dono** cortou não
+  volta à voz — nem no piso livre, nem na frente da mensagem seguinte. Fica no card (a tela já o
+  mostrou). Antes ele voltava para a fila e a resposta velha tocava de novo "do nada";
 - **não perturbe** = só card; **privacidade** = nada sai em voz; e nada some: calado e só-card
   continuam no card.
 """
@@ -206,10 +210,20 @@ class FilaDeAvisos:
         self._ultimo_falado = agora
 
     def cortado(self, notif_ids: Iterable[str]) -> None:
-        """O dono falou por cima antes do aviso tocar: ele volta para a fila (P4)."""
+        """A fala que levava estes avisos não tocou por falha (não pelo dono): voltam para a fila
+        (P4). O corte do dono é `cortado_pelo_dono`."""
         for identificador in notif_ids:
             aviso = self.avisos[identificador]
             if aviso.entrega is Entrega.NA_FILA:
+                aviso.liberado = False
+
+    def cortado_pelo_dono(self, notif_ids: Iterable[str]) -> None:
+        """O dono cortou a fala que levava estes avisos: cortar é cancelar (2026-10-29). Não voltam
+        à voz; ficam no card como só-card — o dono vê, e pergunta se quiser."""
+        for identificador in notif_ids:
+            aviso = self.avisos.get(identificador)
+            if aviso is not None and aviso.entrega is Entrega.NA_FILA:
+                aviso.entrega = Entrega.SO_CARD
                 aviso.liberado = False
 
     # --- o card -------------------------------------------------------------------------

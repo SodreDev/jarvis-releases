@@ -197,6 +197,8 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     ),
     # A entrega do fim de uma tarefa (ADR-0046): falada ou silenciosa, e por quê — nunca o texto.
     "entrega": frozenset({"origem", "decisao", "motivo"}),
+    # O cérebro de um turno cortado que não saiu no prazo (2026-10-29): o turno novo seguiu sem ele.
+    "cerebro_preso": frozenset(),
 }
 """Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
 dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""
@@ -286,6 +288,8 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "prazo_da_pausa",
         "resposta_a_pergunta",
         "so_na_tela",
+        "fala_do_dono",
+        "concordancia",
         # o ruído que não virou pedido (`jarvis.voz.ruido`, ADR-0043)
         "impulso",
         "fundo",
@@ -302,6 +306,8 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "falha",
         "cancelada_pelo_dono",
         "recusada_pelo_dono",
+        # cortar é cancelar (dono, 2026-10-29): o aviso que o dono cortou não volta à voz
+        "cortada_pelo_dono",
     }
 )
 """A allowlist do `motivo`: códigos que o nosso código escolhe pelo caminho que tomou. Código novo

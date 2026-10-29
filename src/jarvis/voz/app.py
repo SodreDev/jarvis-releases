@@ -180,6 +180,14 @@ QUADROS_ANTES_DA_FALA: Final = 20
 piso simples, e está dito no relatório para ninguém publicar isto como SLO-4."""
 MAXIMO_DE_AUDIO_POR_TURNO_S: Final = 30.0
 ESPERA_DO_CEREBRO_S: Final = 2.0
+ESPERA_DO_CEREBRO_CORTADO_S: Final = 0.1
+"""Cortado o turno, o laço espera o cérebro parar só isto e volta a ouvir (dono, 2026-10-29: «não
+escuta pedido novo»). Uma ferramenta em voo pode segurar o cérebro velho por segundos: ele termina
+sozinho, guarda o que o dono ouviu, e o turno seguinte espera por ele **na linha dele**, não no
+laço do microfone."""
+ESPERA_DO_CEREBRO_VELHO_S: Final = 10.0
+"""O turno novo espera o cérebro do turno cortado sair antes de mexer na conversa — os dois nunca
+rodam juntos. Passado isto (uma ferramenta presa), segue mesmo assim e a trilha diz."""
 """Quanto o laço espera a linha do cérebro fechar depois do último pedaço (ou do cancelamento):
 o motor já parou de gerar (regra 9 da ADR-0025, ≤ 50 ms); isto é só o fim da linha."""
 PASTA_DA_TRILHA: Final = "diagnostico"
@@ -965,6 +973,8 @@ class Aplicativo:
         resposta de uma tarefa, a pergunta que ela espera. Devolve se falou."""
         if self._cerebro is None or self._tts is None:
             return False
+        if self._cerebro_em_voo is not None and self._cerebro_em_voo.is_alive():
+            return False  # o cérebro do turno cortado ainda está saindo: o piso não está livre
         with self._trava_dos_avisos:
             avisos = self._liberados(self.avisos.liberar(self.relogio_dos_avisos()))
         if not avisos:
@@ -999,23 +1009,41 @@ class Aplicativo:
             interrompida=turno.cancelado,
             played_ms=int(1000 * tocadas / TAXA_PADRAO),
         )
-        # A pergunta cortada pela resposta do dono foi ouvida (ADR-0048): não volta à fila.
+        # A pergunta cortada pela resposta do dono foi ouvida (ADR-0048): não volta à fila. E o
+        # aviso que ele cortou não volta à voz (cortar é cancelar, 2026-10-29).
         cortados = turno.cancelado and not self._corte_por_resposta
-        self._avisos_tocados([a.notif_id for a in avisos], cortados=cortados)
+        if turno.cancelado:
+            self._turno_cortado = ""  # cortou um aviso: não há turno com tarefa a parar
+        self._avisos_tocados([a.notif_id for a in avisos], cortados=cortados, pelo_dono=cortados)
         self.escrever_na_tela(f"Jarvis: {texto}")
         self.turnos.append(Turno(falou="", respondeu=texto, amostras_tocadas=tocadas, epoch=epoch))
         self._mudar(self._repouso)
 
-    def _avisos_tocados(self, identificadores: list[str], *, cortados: bool) -> None:
-        """Entregue é o que tocou (regra 15): cortado volta para a fila. A pergunta de uma tarefa
-        que tocou inteira passa a aceitar o "sim" falado."""
+    def _avisos_tocados(
+        self, identificadores: list[str], *, cortados: bool, pelo_dono: bool = False
+    ) -> None:
+        """Entregue é o que tocou (regra 15). O que não tocou por falha volta para a fila; o que o
+        **dono** cortou não volta à voz — fica no card (cortar é cancelar, dono, 2026-10-29: antes
+        a resposta velha tocava de novo no piso livre ou ia na frente do pedido seguinte). A
+        pergunta de uma tarefa que tocou inteira passa a aceitar o "sim" falado."""
         if not identificadores:
             return
         with self._trava_dos_avisos:
-            if cortados:
+            if cortados and pelo_dono:
+                self.avisos.cortado_pelo_dono(identificadores)
+            elif cortados:
                 self.avisos.cortado(identificadores)
             else:
                 self.avisos.tocou(identificadores, self.relogio_dos_avisos())
+        if cortados and pelo_dono:
+            for identificador in identificadores:
+                self.trilha.evento(
+                    "entrega",
+                    turno=identificador,
+                    origem="aviso",
+                    decisao="silenciosa",
+                    motivo="cortada_pelo_dono",
+                )
         if not cortados and self._cerebro is not None:
             for identificador in identificadores:
                 if identificador.startswith(PREFIXO_DA_PERGUNTA):
@@ -1663,6 +1691,12 @@ class Aplicativo:
     _escuta_por_cima: ThreadPoolExecutor | None = field(default=None, repr=False)
     _vigia_montada_aqui: bool = False
     _decisoes_na_trilha: int = 0
+    _cerebro_em_voo: threading.Thread | None = field(default=None, repr=False)
+    """A linha do cérebro de um turno cortado que ainda não parou (uma ferramenta em voo): o turno
+    seguinte e os avisos esperam por ela, fora do laço do microfone."""
+    _turno_cortado: str = ""
+    """O `turn_id` do último turno que o dono cortou: o «para» que vem em seguida cancela as tarefas
+    dele (cortar é cancelar tudo daquele turno, dono, 2026-10-29)."""
 
     # --- um turno -----------------------------------------------------------------------
     def responder(
@@ -1686,9 +1720,10 @@ class Aplicativo:
             self.abrir(com_asr=False)
         assert self._tts is not None and self._motor is not None and self._cerebro is not None
         cerebro = self._cerebro
-        cerebro.motor = self._motor
-        self._sincronizar_conversa(cerebro)
-        self._ligar_a_memoria(cerebro)
+        motor = self._motor
+        # O cérebro de um turno cortado que ainda não parou: este turno espera por ele na linha
+        # do cérebro (nunca aqui, no laço do microfone), e só então mexe na conversa.
+        anterior = self._cerebro_em_voo
 
         epoch = self.epoch
         self._turno_cancelado = False
@@ -1740,8 +1775,22 @@ class Aplicativo:
             if self.ao_pedaco is not None and not geracao_cancelada():
                 self.ao_pedaco(texto_da_resposta)
 
+        terminou = threading.Event()
+        trava_do_fim = threading.Lock()
+        depois_do_fim: list[Callable[[], None]] = []
+        """O que roda quando o cérebro sair, se o laço já seguiu sem ele (o turno foi cortado)."""
+
         def gerar() -> None:
             try:
+                if anterior is not None and anterior.is_alive():
+                    anterior.join(timeout=ESPERA_DO_CEREBRO_VELHO_S)
+                    if anterior.is_alive():
+                        self.trilha.evento("cerebro_preso", turno=turn_id)
+                if geracao_cancelada():
+                    return  # cortado ainda esperando o anterior: nada a dizer
+                cerebro.motor = motor
+                self._sincronizar_conversa(cerebro)
+                self._ligar_a_memoria(cerebro)
                 resultado["r"] = cerebro.responder(
                     texto,
                     epoch=epoch,
@@ -1755,6 +1804,12 @@ class Aplicativo:
                 falha.append(f"{type(erro).__name__}: {erro}")
             finally:
                 pedacos.put(None)
+                with trava_do_fim:
+                    terminou.set()
+                    pendentes = list(depois_do_fim)
+                for funcao in pendentes:
+                    with contextlib.suppress(Exception):  # é o fim da linha: nada a quem avisar
+                        funcao()
 
         linha = threading.Thread(target=gerar, name="jarvis-cerebro", daemon=True)
         linha.start()
@@ -1779,10 +1834,37 @@ class Aplicativo:
             )
         finally:
             # Recusa da fila ou erro na síntese também encerram a geração, mesmo sem alteração
-            # do epoch local: o cérebro para de publicar e fecha o motor.
+            # do epoch local: o cérebro para de publicar e fecha o motor. Cortado, o laço não fica
+            # esperando ele parar: volta a ouvir o dono já (dono, 2026-10-29).
             parar_geracao.set()
-            linha.join(timeout=ESPERA_DO_CEREBRO_S)
+            linha.join(
+                timeout=ESPERA_DO_CEREBRO_CORTADO_S if self.epoch > epoch else ESPERA_DO_CEREBRO_S
+            )
         resposta = resultado.get("r")
+        tocadas = turno.amostras_tocadas
+        if turno.cancelado:
+            self._turno_cortado = turn_id
+        with trava_do_fim:
+            em_voo = not terminou.is_set()
+            if em_voo:
+                # O cérebro cortado ainda não saiu (uma ferramenta em voo): o que o dono ouviu da
+                # resposta entra na conversa quando ele sair — na linha dele, antes do turno novo.
+                ouvido = fala.texto_ate(tocadas)
+
+                def guardar_o_ouvido() -> None:
+                    saida = resultado.get("r")
+                    if saida is not None:
+                        cerebro.ouvido(
+                            saida.response_id,
+                            ouvido,
+                            interrompida=True,
+                            played_ms=int(1000 * tocadas / TAXA_PADRAO),
+                        )
+
+                depois_do_fim.append(guardar_o_ouvido)
+        self._cerebro_em_voo = linha if em_voo else None
+        if em_voo:
+            resposta = None  # é dele, não deste laço: quem a fecha é a linha do cérebro
         if falha or (
             resposta is not None and resposta.fim in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO)
         ):
@@ -1792,7 +1874,6 @@ class Aplicativo:
                 "falhou", f"cérebro · {self._motor.nome}", f"sem resposta: {motivo}"
             )
         if resposta is not None:
-            tocadas = turno.amostras_tocadas
             cerebro.ouvido(
                 resposta.response_id,
                 fala.texto_ate(tocadas),
@@ -1800,7 +1881,9 @@ class Aplicativo:
                 played_ms=int(1000 * tocadas / TAXA_PADRAO),
             )
         self._avisos_tocados(
-            [a.notif_id for a in com_a_mensagem], cortados=turno.cancelado or resposta is None
+            [a.notif_id for a in com_a_mensagem],
+            cortados=turno.cancelado or resposta is None,
+            pelo_dono=turno.cancelado,
         )
         if self.conversa is not None:
             self.conversa.indexar_depois()
@@ -1809,7 +1892,9 @@ class Aplicativo:
         self.trilha.evento(
             "turno.fim",
             turno=turn_id,
-            fim=str(resposta.fim) if resposta is not None else "falhou",
+            fim=str(resposta.fim)
+            if resposta is not None
+            else ("cancelado" if em_voo else "falhou"),
             cancelado=cancelado() or turno.cancelado,
             ms_primeiro_token=resposta.ms_ate_primeiro_token if resposta else None,
             ms_primeira_fala=primeiro_texto_ms[0] if primeiro_texto_ms else None,
@@ -2505,10 +2590,27 @@ class Aplicativo:
             return
         if por_cima and so_ordem_de_parar(pedido):
             # "Para", "chega", "Jarvis, silêncio": o corte já foi o pedido; não há o que responder.
+            # E cortar é cancelar tudo daquele turno: a tarefa que ele delegou também para.
+            self._parar_o_turno_cortado()
             self.escrever_na_tela("  (parei)")
             self._mudar(self._repouso)
             return
         self._responder_ao_dono(pedido, pedido, fila, ouvido_ms=ouvido_ms, asr_ms=asr_ms)
+
+    def _parar_o_turno_cortado(self) -> int:
+        """O dono cortou um turno e mandou parar: as tarefas que aquele turno delegou (ADR-0038)
+        são canceladas — o fim delas sai calado (`_resposta_da_tarefa`, cancelada). Devolve
+        quantas."""
+        turno, self._turno_cortado = self._turno_cortado, ""
+        gestor = self.ferramentas.tarefas if self.ferramentas is not None else None
+        if not turno or gestor is None:
+            return 0
+        canceladas = 0
+        for tarefa in list(gestor.tarefas.values()):
+            if tarefa.turno == turno and not tarefa.estado.final:
+                gestor.cancelar(tarefa.id)
+                canceladas += 1
+        return canceladas
 
     def _responder_ao_dono(
         self,

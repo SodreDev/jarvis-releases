@@ -373,3 +373,15 @@ Decisões do diretor de 2026-10-16 (o dono delegou "siga a partir daí"); o dono
   parameters) invalidates the entire cache"; mínimo de 512 tokens nos modelos 5.x; vida de 5 min.
 - Servidor llama.cpp: <https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md>
   — `cache_prompt` ("Re-use KV cache from a previous request if possible"), padrão `true`.
+
+## Emenda de 2026-10-29 — aviso cortado pelo dono não volta à voz (regra 15 e aceite (e))
+
+A regra 15 dizia "se o dono cortar antes de o aviso tocar, ele volta para a fila", e o aceite (e)
+cobrava isso em 100%. Na prática era o "o TTS volta a tocar sozinho do nada" do dono (2026-10-29): a
+resposta de uma tarefa que ele cortou era falada **de novo, inteira**, no piso livre seguinte, ou ia
+na frente da resposta ao pedido novo. **Agora:** cortar é cancelar — o aviso que estava na fala que o
+**dono** cortou (voz ou tecla) vira só-card (`FilaDeAvisos.cortado_pelo_dono`), e a trilha registra
+`entrega silenciosa cortada_pelo_dono`. O que não chegou a tocar por **falha** (o cérebro caiu, sem
+corte do dono) continua voltando para a fila (`cortado`). O aceite (e) passa a ser: "aviso cortado
+pelo dono não volta à voz em 100% dos casos; o não tocado por falha volta em 100%". Detalhes e
+testes na emenda (2) de 2026-10-29 da ADR-0040.

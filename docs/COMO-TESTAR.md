@@ -1713,6 +1713,36 @@ Claude Code quis algo fora das ferramentas do navegador.
 
 ---
 
+### 0.43 Cortar é cancelar: falar por cima corta, e nada da resposta velha volta (2026-10-29, ADR-0040 emenda (2))
+
+O que você relatou — "ele para, depois volta a tocar sozinho, não deixa cortar de novo e não escuta o
+pedido novo" — tinha duas causas, as duas consertadas. **(1) Na escuta contínua** (a sua trilha de
+29/10 estava em `vad`, sem o detector), a sua fala por cima só **pausava**: sem a palavra, sem
+"para" e sem o detector, a vigia não tinha com que decidir, retomava em 2,5 s e tratava o resto da
+sua fala como conversa alheia. Agora, sem o detector, **a sua fala por cima corta e vira o pedido**,
+como já acontecia com o Jarvis calado ("uhum", "tá", "certo" não cortam). **(2) Nos dois modos**, a
+resposta de uma tarefa que você cortava **voltava para a fila** e tocava de novo inteira (ou na frente
+da resposta ao pedido novo). Agora o que você cortou fica só no card.
+
+**Como conferir:** (a) na escuta contínua, peça algo longo ("me conta a história do rádio") e, no
+meio, diga outra coisa sem "Jarvis" ("abre o spotify"): ele deve calar e abrir o Spotify, sem voltar à
+história. (b) Peça algo que vire tarefa ("pesquisa o preço do dólar e me conta"), espere a resposta
+começar e diga "Jarvis, para": ele cala e **não** repete a resposta depois de 2 s de silêncio. (c)
+Corte de novo com "Jarvis, que horas são?": a resposta é só a hora. (d) Diga "Jarvis, para" logo
+depois de ele dizer "Certo, já cuido disso": a tarefa some do card como cancelada. A trilha
+(`jarvis-voz --diagnostico`) mostra `interrupcao cortar fala_do_dono` e `entrega silenciosa
+cortada_pelo_dono`. Testes, sem microfone:
+
+```bash
+TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/voz/test_corte_de_verdade.py tests/unit/voz/test_interromper_por_voz.py
+```
+
+**Não provado:** a sua sala. Na contínua **sem** o detector, a TV alta que passar no portão de eco
+também corta a fala dele (já virava pedido com ele calado) — se acontecer, ligue o detector de
+endereçamento na Configuração; e "uhum" ou "tá" ditos junto com outra palavra cortam.
+
+---
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

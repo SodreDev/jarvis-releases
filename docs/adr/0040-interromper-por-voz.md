@@ -104,3 +104,68 @@ cancelador cobre 400 ms; medido com 30 e 150 ms); distorção não linear de alt
 a Groq no lugar do whisper. **Limitação nova:** na contínua, o resíduo do eco pausou o Jarvis à toa
 em 2 de 8 respostas (uma vez cada, sem corte). **Custo do filtro da ADR-0043 na vigia:** ~600 ms no
 corte (mediana 1,4 s × 0,8 s sem ele) — fica, por segurança; afrouxar é medir com a voz do dono.
+
+## Emenda de 2026-10-29 (2) — cortar é cancelar: na contínua a fala do dono corta, a pausa espera a leitura, e nada do turno cortado volta
+
+**Pedido:** dono, 2026-10-29 — "Quando o dono interrompe falando, o Jarvis para de falar, mas DEPOIS
+o TTS volta a tocar sozinho do nada, não deixa cortar de novo, e o Jarvis não escuta pedido novo até
+a resposta antiga acabar. […] cortar = cancelar de verdade TUDO que ainda pode falar daquele turno
+(fila de TTS, lotes pendentes, stream do LLM, fala agendada), e o laço volta a escutar na hora".
+
+**Causas medidas** (trilha do dono de 29/10, só códigos; reproduzidas em
+`tests/unit/voz/test_corte_de_verdade.py` antes do conserto):
+
+1. **Na contínua sem o detector, a vigia não tinha regra para cortar.** Só cortavam a palavra de
+   ativação, a ordem de parar curta e o detector (desligado, `enderecamento = ""`). A fala do dono
+   pausava o Jarvis (`pausar suspeita`), a leitura não decidia nada e, aos 2,5 s, ele **retomava**
+   (`retomar prazo_da_pausa` — as 4 pausas da trilha de 29/10, nenhum corte): "volta a tocar
+   sozinho".
+2. **O prazo da pausa marcava a fala seguinte como «contida»**: o resto do que o dono dizia não
+   pausava nem era lido de novo — "não deixa cortar de novo" —, e o pedido se perdia: o laço só
+   volta ao microfone quando a fala acaba — "não escuta pedido novo até a resposta antiga acabar".
+3. **A leitura em voo era jogada fora**: com o ASR na nuvem (Groq), o resultado que chegava depois
+   dos 2,5 s encontrava o trecho fechado.
+4. **O aviso cortado voltava para a fila** (regra 15 da ADR-0025): a resposta de uma tarefa cortada
+   era falada de novo inteira no piso livre (o teste mediu 13,5 s de áudio repetido) ou ia **na
+   frente** do pedido seguinte ("Era uma vez… São três e meia.").
+5. **O laço esperava até 2 s pelo cérebro cortado** (`linha.join`) sem ler o microfone — com uma
+   ferramenta em voo, o buffer do PortAudio ("low") estourava e o começo do pedido seguinte se
+   perdia —, e depois o turno novo podia rodar **junto** com o cérebro velho na mesma conversa.
+
+**Decisão:**
+
+1. **Na contínua sem o detector, a fala do dono por cima corta** (`fala_do_dono`): transcrição que
+   não é eco nem só concordância ("uhum", "tá", "certo" — `CONCORDANCIAS`, não corta). É a regra da
+   contínua com o Jarvis calado (toda fala é com ele) valendo também por cima da fala dele. Com o
+   detector ligado, segue como era: ele decide, e a fala que ele julga alheia (a TV, a sala) só pausa e
+   retoma. Isto **revoga** o "sem nada disso: não corta — na contínua o Jarvis retoma" do item 3 da
+   Decisão para quem não ligou o detector.
+2. **A pausa espera a leitura em voo** até `MAXIMO_DA_PAUSA_COM_LEITURA_MS` (6 s); sem leitura em voo,
+   o prazo segue 2,5 s. **O prazo não marca a fala como «contida»** (`_descartar(contida=False)`):
+   contida é só a fala **julgada** alheia (eco, detector, sem a chamada no modo palavra).
+3. **Eco é sequência, não contagem**: além de 60% das palavras no que o Jarvis disse, ao menos duas
+   delas seguidas, na mesma ordem. "Não, para" do dono (as duas palavras soltas no que o Jarvis disse)
+   deixou de ser eco.
+4. **Aviso cortado pelo dono não volta à voz** (`FilaDeAvisos.cortado_pelo_dono` → só-card; trilha
+   `entrega silenciosa cortada_pelo_dono`): nem no piso livre, nem junto com a mensagem seguinte. O
+   que não tocou por **falha** (o cérebro caiu) continua voltando para a fila.
+5. **O laço não espera o cérebro cortado** mais que 100 ms (`ESPERA_DO_CEREBRO_CORTADO_S`): volta ao
+   microfone. O cérebro velho termina sozinho, guarda na conversa o que o dono ouviu (marcado
+   interrompido) e **só então** o turno novo mexe na conversa — a espera é na linha do cérebro, não
+   no laço (`ESPERA_DO_CEREBRO_VELHO_S`, 10 s; passado disso, segue e a trilha diz `cerebro_preso`).
+   Avisos não saem enquanto ele não sai.
+6. **"Para" depois do corte cancela as tarefas daquele turno** (`_parar_o_turno_cortado`): a que o
+   turno cortado delegou (ADR-0038) para; a de outro pedido segue. O fim dela sai calado (só o card).
+   Cortado com um **pedido novo**, a tarefa segue e o fim dela só fala se trouxer algo novo
+   (ADR-0046) — cortar a frase "Certo, já cuido disso" não é desistir do pedido.
+
+**Testes:** `tests/unit/voz/test_corte_de_verdade.py` (7, laço de áudio inteiro: corte no meio de
+resposta longa em lotes; nada volta a tocar — o que saiu no "alto-falante" é exatamente o pedaço
+cortado e a resposta nova; o pedido novo é atendido; cérebro preso 1,5 s não prende o laço nem roda
+junto; estado volta a `ouvindo` e acaba `parado`; "para" cancela só a tarefa do turno cortado) e
+`test_interromper_por_voz.py` (pausa com leitura lenta, concordância, eco por sequência).
+
+**Não provado em máquina real:** a contínua sem o detector agora corta com qualquer fala do dono que
+passe no portão — numa sala com TV alta, que já virava pedido com o Jarvis calado, ela também corta a
+fala dele; o remédio é o detector (ADR-0029). O eco do próprio Jarvis que escapar do cancelador, do
+portão **e** da regra de sequência corta: medido só com voz sintética.

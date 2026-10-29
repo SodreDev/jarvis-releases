@@ -22,12 +22,18 @@ decide se o dono falou por cima:
      não é o trecho (o eco de "eu sou o Jarvis" não corta);
    - na contínua, uma **ordem de parar** curta ("para", "chega", "espera aí", "silêncio");
    - na contínua, o **detector de endereçamento** (Jev, ADR-0029, quando o dono o ligou) diz que a
-     fala é com o Jarvis.
+     fala é com o Jarvis;
+   - na contínua **sem** o detector, a **fala do dono**: transcrição que não é eco nem só
+     concordância ("uhum", "ok"). É a regra da contínua com o Jarvis calado — toda fala é com ele —
+     valendo também por cima da fala dele (dono, 2026-10-29: antes a vigia pausava, não tinha com
+     que decidir, retomava no prazo e o pedido dele sumia).
    - com uma **pergunta de confirmação** no ar, a **resposta** do dono — "sim", "pode", "não",
      "cancela", com ou sem a palavra — corta de forma limpa, nos dois modos: a pergunta foi
      ouvida e o trecho a responde (ADR-0048); o eco da própria pergunta não corta nem responde.
    Transcrição vazia, igual ao que o Jarvis disse (eco), ou sem nada disso: **não corta** — na
-   contínua o Jarvis retoma de onde parou. Na dúvida, não age (o ruído da TV não corta).
+   contínua o Jarvis retoma de onde parou. Na dúvida, não age (o ruído da TV não corta). Com uma
+   leitura ainda em voo (o ASR na nuvem), a pausa espera por ela: retomar no meio da leitura jogava
+   fora o que o dono disse.
 4. **Corte**: o laço mata o epoch (a fila esvazia, o que não foi falado é cancelado, o cérebro para
    de gerar) e o áudio do trecho vira o **começo do turno novo** do dono.
 
@@ -37,6 +43,7 @@ válida (e cobra os sinais do ASR, ADR-0043) é o laço e o cérebro, como em qu
 
 from __future__ import annotations
 
+import itertools
 import unicodedata
 from collections import deque
 from collections.abc import Callable, Sequence
@@ -96,6 +103,10 @@ REFERENCIA_PENDENTE_MAXIMA: Final = 20
 mais que isso, o alinhamento já se perdeu e o mais velho sai."""
 MAXIMO_DA_PAUSA_MS: Final = 2500
 """Na contínua, pausado e sem decisão por tanto tempo, o Jarvis retoma (na dúvida, não age)."""
+MAXIMO_DA_PAUSA_COM_LEITURA_MS: Final = 6000
+"""Pausado com uma leitura em voo (o ASR ou o detector, na nuvem), o Jarvis espera o resultado até
+aqui. Era o `prazo_da_pausa` da trilha do dono (29/10): a leitura voltava depois de 2,5 s, o trecho
+já tinha sido fechado — o pedido dele sumia e a resposta velha voltava a tocar."""
 PALAVRAS_DO_FALADO: Final = 60
 """O que o Jarvis disse por último, para reconhecer o eco dele na transcrição."""
 SEMELHANCA_DE_ECO: Final = 0.6
@@ -107,6 +118,13 @@ ORDENS_DE_PARAR: Final[tuple[str, ...]] = (
 )  # fmt: skip
 """Ordens de parar que valem sem a palavra de ativação na escuta contínua: no começo de um trecho
 curto. Agradecimento e "ok" ficam de fora — a TV diz isso o tempo todo."""
+CONCORDANCIAS: Final[frozenset[str]] = frozenset({
+    "ok", "okay", "uhum", "aham", "ahan", "hum", "hm", "humm", "ah", "eh", "uh", "certo",
+    "ta", "tá", "sei", "entendi", "beleza", "legal", "isso", "sim", "claro", "show", "massa",
+    "pois", "e", "é", "obrigado", "obrigada", "valeu",
+})  # fmt: skip
+"""O que quem escuta diz para mostrar que está ouvindo ("uhum", "tá", "certo"): sozinho, por cima da
+fala na contínua, não é pedido e não corta — o Jarvis segue."""
 
 
 def _dobrar(texto: str) -> str:
@@ -232,6 +250,11 @@ class Motivo(StrEnum):
     SO_NA_TELA = "so_na_tela"
     """Respondeu por voz a uma confirmação que só o clique responde: não corta (cortar seria o
     "não"); o laço diz para confirmar na tela (ADR-0048)."""
+    FALA_DO_DONO = "fala_do_dono"
+    """Na contínua sem o detector, a fala por cima é com o Jarvis, como com ele calado
+    (2026-10-29)."""
+    CONCORDANCIA = "concordancia"
+    """Só "uhum", "tá", "certo": quem escuta mostrando que ouve — não corta."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +293,12 @@ def eh_ordem_de_parar(texto: str) -> bool:
         junto == ordem or junto.startswith(ordem + " ")
         for ordem in {_dobrar(o) for o in ORDENS_DE_PARAR}
     )
+
+
+def so_concordancia(texto: str) -> bool:
+    """O trecho é só quem escuta concordando ("uhum", "tá, tá", "certo"): não é pedido."""
+    palavras = _palavras(texto)
+    return bool(palavras) and all(p in CONCORDANCIAS for p in palavras)
 
 
 def so_ordem_de_parar(texto: str) -> bool:
@@ -476,7 +505,12 @@ class VigiaDeInterrupcao:
         if self._futuro is None and fechando:
             return self._descartar(self._sem_corte)
         if self._pausado and self._ms_da_pausa >= MAXIMO_DA_PAUSA_MS:
-            return self._descartar(Motivo.PRAZO_DA_PAUSA)
+            # Com a leitura em voo, a pausa espera por ela (até o teto): é dela que sai o corte.
+            em_voo = self._futuro is not None
+            if not em_voo or self._ms_da_pausa >= MAXIMO_DA_PAUSA_COM_LEITURA_MS:
+                # O prazo não é um julgamento: a fala que segue não fica «contida» por ele — senão
+                # o dono, ainda falando, não conseguia cortar de novo (2026-10-29).
+                return self._descartar(Motivo.PRAZO_DA_PAUSA, contida=False)
         return Acao.NADA
 
     def _checar(self) -> None:
@@ -535,19 +569,34 @@ class VigiaDeInterrupcao:
             return None  # na palavra, só a chamada corta
         if eh_ordem_de_parar(texto):
             return self._cortar(Motivo.ORDEM_DE_PARAR)
-        if self.enderecada is not None and not self._trecho_contido:
+        if self.enderecada is not None:
+            if self._trecho_contido:
+                return None  # o detector já disse que esta fala não é com ele (a TV, a sala)
             enderecada = self.enderecada
             self._futuro_do_detector = True
             self._futuro = self.enviar(lambda: enderecada(texto))
             return self._resultado()
-        return None
+        if so_concordancia(texto):
+            self._sem_corte = Motivo.CONCORDANCIA
+            return None  # "uhum", "tá": o dono ouvindo; se ele seguir falando, a leitura volta
+        # Sem o detector, toda fala na contínua é com o Jarvis — com ele calado vira pedido, e por
+        # cima da fala dele também (dono, 2026-10-29). Antes: pausava, retomava no prazo, e o
+        # pedido sumia com a resposta velha voltando a tocar.
+        return self._cortar(Motivo.FALA_DO_DONO)
 
     def _eco(self, palavras: list[str]) -> bool:
+        """O trecho é o Jarvis se ouvindo: quase todas as palavras estão no que ele disse **e** ao
+        menos duas delas seguidas, na mesma ordem. Só a contagem fazia a fala curta do dono virar
+        eco ("não, para": as duas palavras ele também tinha dito, soltas) e o corte não saía."""
         uteis = [p for p in palavras if len(p) >= 2]
         if len(uteis) < 2 or not self._falado:
             return False
-        falado = set(self._falado)
-        return sum(p in falado for p in uteis) / len(uteis) >= SEMELHANCA_DE_ECO
+        falado = list(self._falado)
+        conjunto = set(falado)
+        if sum(p in conjunto for p in uteis) / len(uteis) < SEMELHANCA_DE_ECO:
+            return False
+        pares = set(itertools.pairwise(falado))
+        return any(par in pares for par in itertools.pairwise(palavras))
 
     def _jarvis_disse_a_palavra(self) -> bool:
         return self.palavra.achar(" ".join(self._falado)) is not None
@@ -559,12 +608,16 @@ class VigiaDeInterrupcao:
         self._fechar_segmento()
         return Acao.CORTAR
 
-    def _descartar(self, motivo: Motivo) -> Acao:
+    def _descartar(self, motivo: Motivo, *, contida: bool = True) -> Acao:
+        """Fecha o trecho sem cortar. `contida`: a fala foi **julgada** não ser com o Jarvis (eco,
+        o detector, sem a chamada) — o resto dela não pausa nem pergunta de novo. O prazo da pausa
+        não julga nada: passa `False`."""
         pausado = self._pausado
         self._registrar(Acao.RETOMAR if pausado else Acao.NADA, motivo)
         cauda = b""
         if self._silencio_ms < SILENCIO_PARA_FECHAR_MS:
-            self._contida = True  # julgada no meio: o resto dela não pausa nem pergunta de novo
+            # Julgada no meio: o resto dela não pausa nem pergunta de novo.
+            self._contida = self._contida or contida
             if self._segmento is not None:
                 cauda = bytes(self._segmento[-QUADROS_ANTES_DA_FALA * BYTES_POR_QUADRO :])
         self._fechar_segmento()
@@ -596,5 +649,6 @@ __all__ = [
     "VigiaDeInterrupcao",
     "eh_ordem_de_parar",
     "em_linha",
+    "so_concordancia",
     "so_ordem_de_parar",
 ]

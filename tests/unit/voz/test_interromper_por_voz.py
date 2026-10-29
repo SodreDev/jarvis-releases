@@ -27,12 +27,14 @@ from jarvis.voz.config import Configuracao, ler
 from jarvis.voz.escuta import ModoDeEscuta
 from jarvis.voz.interface import Hipotese, Onde
 from jarvis.voz.interrupcao import (
+    MAXIMO_DA_PAUSA_COM_LEITURA_MS,
     Acao,
     Motivo,
     PortaoDeEco,
     VigiaDeInterrupcao,
     eh_ordem_de_parar,
     em_linha,
+    so_concordancia,
     so_ordem_de_parar,
 )
 from jarvis.voz.palavra import DetectorDePalavra
@@ -279,16 +281,43 @@ def test_o_eco_do_proprio_nome_dito_pelo_jarvis_nao_corta() -> None:
     assert perda_antes > 0
 
 
-def test_na_continua_pausa_na_hora_e_sem_o_detector_retoma_quando_nao_e_ordem() -> None:
+def test_na_continua_sem_o_detector_a_fala_do_dono_por_cima_pausa_e_corta() -> None:
+    """Sem o detector, toda fala na contínua é com o Jarvis — por cima da fala dele também (dono,
+    2026-10-29). Antes: pausava, não tinha com que decidir, retomava e o pedido sumia."""
     vigia = _vigia(ModoDeEscuta.CONTINUA, AsrDeTexto("e amanhã como vai ficar o tempo"))
 
     acoes = _rodar(vigia, fala_do_dono_ms=900)
 
-    pausa = acoes.index(Acao.PAUSAR)
-    assert 50 + 7 <= pausa <= 50 + 10, "pausou tarde: o dono falou e o Jarvis seguiu falando"
-    assert Acao.RETOMAR in acoes[pausa:]
+    corte = acoes.index(Acao.CORTAR)
+    assert 50 + 7 <= corte <= 50 + 10, "cortou tarde: o dono falou e o Jarvis seguiu falando"
+    assert Acao.RETOMAR not in acoes
+    motivos = [(d.acao, d.motivo) for d in vigia.decisoes]
+    assert motivos == [(Acao.PAUSAR, Motivo.SUSPEITA), (Acao.CORTAR, Motivo.FALA_DO_DONO)]
+
+
+def test_na_continua_so_concordar_nao_corta_e_o_jarvis_segue() -> None:
+    """ "Uhum", "tá, tá", "certo": quem escuta mostrando que ouve. Não é pedido, não corta."""
+    for concordancia in ("uhum", "tá, tá", "certo", "aham entendi"):
+        vigia = _vigia(ModoDeEscuta.CONTINUA, AsrDeTexto(concordancia))
+        acoes = _rodar(vigia, fala_do_dono_ms=500)
+        assert Acao.CORTAR not in acoes and Acao.RETOMAR in acoes, concordancia
+        assert vigia.decisoes[-1].motivo is Motivo.CONCORDANCIA, concordancia
+    assert so_concordancia("Uhum.") and not so_concordancia("uhum, abre o spotify")
+
+
+def test_o_eco_e_um_trecho_do_que_o_jarvis_disse_e_nao_palavras_soltas() -> None:
+    """A fala curta do dono com palavras que o Jarvis também disse ("não, para") não é eco; um
+    pedaço do que ele disse, na ordem, é."""
+    vigia = _vigia(ModoDeEscuta.CONTINUA, AsrDeTexto("não para"))
+    vigia.falando("Não é para hoje, mas não esqueça de levar o guarda-chuva para a praia.")
+    assert Acao.CORTAR in _rodar(vigia, fala_do_dono_ms=500)
+    assert vigia.decisoes[-1].motivo is Motivo.FALA_DO_DONO
+
+    eco = _vigia(ModoDeEscuta.CONTINUA, AsrDeTexto("levar o guarda-chuva para a praia"))
+    eco.falando("Não é para hoje, mas não esqueça de levar o guarda-chuva para a praia.")
+    acoes = _rodar(eco, fala_do_dono_ms=900)
     assert Acao.CORTAR not in acoes
-    assert vigia.decisoes[-1].motivo is Motivo.SEM_CHAMADA
+    assert any(d.motivo is Motivo.ECO_DO_JARVIS for d in eco.decisoes)
 
 
 def test_na_continua_a_ordem_de_parar_corta_sem_a_palavra() -> None:
@@ -337,18 +366,50 @@ def test_transcricao_vazia_ou_asr_que_falha_nao_corta() -> None:
     assert Acao.CORTAR not in _rodar(falhou, fala_do_dono_ms=800)
 
 
-def test_pausa_sem_resposta_do_asr_retoma_no_prazo() -> None:
+def test_pausa_com_a_leitura_em_voo_espera_por_ela_ate_o_teto() -> None:
+    """O ASR na nuvem que não volta: a pausa espera a leitura (antes retomava aos 2,5 s com ela em
+    voo, e o resultado que chegava depois se perdia). No teto, retoma — e o prazo não marca a fala
+    que segue como «contida»: o dono, ainda falando, consegue cortar de novo."""
+
     def nunca(_funcao: Callable[[], object]) -> Future[object]:
         return Future()  # o ASR em segundo plano que não volta
 
     vigia = _vigia(ModoDeEscuta.CONTINUA, AsrDeTexto("x"), enviar=nunca)
 
-    acoes = _rodar(vigia, fala_do_dono_ms=4000, depois_ms=500)
+    acoes = _rodar(vigia, fala_do_dono_ms=6500, depois_ms=1000)
 
     pausa = acoes.index(Acao.PAUSAR)
     retomada = acoes.index(Acao.RETOMAR)
-    assert (retomada - pausa) * 20 >= 2500, "retomou antes do prazo da pausa"
+    assert (retomada - pausa) * 20 >= MAXIMO_DA_PAUSA_COM_LEITURA_MS, "retomou com a leitura em voo"
     assert any(d.motivo is Motivo.PRAZO_DA_PAUSA for d in vigia.decisoes)
+    assert not vigia._contida, "o prazo da pausa marcou a fala do dono como contida"
+
+
+def test_a_leitura_que_volta_depois_do_prazo_antigo_ainda_corta() -> None:
+    """O ASR leva 3 s (rede ruim): a pausa segura, o resultado chega e corta."""
+    pendentes: list[tuple[Future[object], Callable[[], object]]] = []
+
+    def depois(funcao: Callable[[], object]) -> Future[object]:
+        futuro: Future[object] = Future()
+        pendentes.append((futuro, funcao))
+        return futuro
+
+    vigia = _vigia(ModoDeEscuta.CONTINUA, AsrDeTexto("abre o spotify"), enviar=depois)
+    jarvis = _fala(6000, 1)
+    dono = silencio(1000) + _fala(1200, 7, pico=0.5, f0=180.0) + silencio(3800)
+    acoes = []
+    for indice, (ref, quadro) in enumerate(_junto(jarvis, dono)):
+        if indice == 57 + 150 and pendentes:  # 3 s depois da suspeita
+            futuro, funcao = pendentes.pop(0)
+            futuro.set_result(funcao())
+        vigia.portao.referencia(ref)
+        acoes.append(vigia.ouvir(quadro, fala_no_vad=quadro.energia_db > -45.0))
+        if acoes[-1] is Acao.CORTAR:
+            break
+
+    assert Acao.PAUSAR in acoes and Acao.RETOMAR not in acoes
+    assert acoes[-1] is Acao.CORTAR and len(acoes) - 1 == 57 + 150
+    assert vigia.decisoes[-1].motivo is Motivo.FALA_DO_DONO
 
 
 def test_a_vigia_com_asr_em_segundo_plano_corta_quando_o_resultado_chega() -> None:
@@ -526,8 +587,12 @@ def test_no_laco_jarvis_para_cala_sem_virar_pedido(tmp_path: Path) -> None:
 
 
 def test_na_continua_o_laco_pausa_e_retoma_a_historia_quando_nao_e_com_ele(tmp_path: Path) -> None:
+    """Com o detector ligado, a fala que ele julga não ser com o Jarvis (alguém na sala, a TV) faz
+    só pausar e retomar. Sem o detector, a mesma fala corta (`test_corte_de_verdade`)."""
     asr = AsrDoLaco("me conta uma história", "olha que bonito isso")
     app, _tela = _aplicativo(tmp_path, "vad", asr, [LONGA])
+    assert app.vigia is not None
+    app.vigia.enderecada = lambda _texto: False
 
     app.rodar_audio(limite_de_turnos=1)
 
