@@ -173,6 +173,8 @@ class TrocaDePreset(Protocol):
     def voltar(self, alvo: str) -> None:
         """Desfaz: `alvo` é o `desfazer` que `usar` devolveu."""
         ...
+
+
 FERRAMENTA_DE_ENCERRAR: Final = "jarvis.encerrar"
 """Encerrar o próprio Jarvis (ADR-0041): o corpo é do aplicativo (`Encerramento`), e a tool só
 existe para o modelo quando há um laço que possa ser encerrado."""
