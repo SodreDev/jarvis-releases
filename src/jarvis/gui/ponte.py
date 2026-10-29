@@ -42,6 +42,7 @@ from jarvis.gui.acesso import PonteDeAcesso
 from jarvis.gui.acoes import Acao, Area, Modo, Tipo
 from jarvis.gui.componentes import CATALOGO
 from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
+from jarvis.gui.modelos import PonteDeModelos
 from jarvis.gui.nucleo import SessaoDeVoz
 from jarvis.gui.workspace import Workspace
 from jarvis.navegador.estado import EstadoDaPonte
@@ -309,6 +310,16 @@ class Ponte(QObject):
             parent=self,
             **extras_do_acesso,
         )
+        self._modelos = PonteDeModelos.da_janela(
+            obter=lambda: self._configuracao,
+            raiz=raiz,
+            ambiente=self._ambiente_base,
+            # Com um arquivo de configuração explícito (o teste, `--config`), os presets moram ao
+            # lado dele; sem, na pasta do dono que o laço também lê (ADR-0056).
+            pasta=None if caminho_da_configuracao is None else self._caminho.parent,
+            ligar_nuvem=self.ligarNuvem,
+            parent=self,
+        )
         self._tique = QTimer(self)
         self._tique.setInterval(1000)
         self._tique.timeout.connect(self._bater_o_relogio)
@@ -481,6 +492,12 @@ class Ponte(QObject):
     def acesso(self) -> QObject:
         """Pastas, aplicativos e navegadores (`PonteDeAcesso`): grava na hora."""
         return self._acesso
+
+    @Property(QObject, constant=True)
+    def modelos(self) -> QObject:
+        """Presets de modelo e provedor → modelo → esforço (`PonteDeModelos`, ADR-0056): grava o
+        arquivo de presets na hora."""
+        return self._modelos
 
     def _gravar_acesso(self, nova: Configuracao) -> str:
         """Guarda só os campos de acesso — no arquivo e na conversa aberta — e diz o que fez.
@@ -728,6 +745,8 @@ class Ponte(QObject):
             avisos_dados=self._avisos_dados,
             conversa=self._conversa,
             vocabulario=self._vocabulario,
+            # Os presets que a janela grava são os que o cérebro lê: a mesma fonte (ADR-0056).
+            presets=self._modelos.fonte,
         )
         self._sessao.iniciar(self._aplicativo)
         self.conversaMudou.emit()

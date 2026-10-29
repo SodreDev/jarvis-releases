@@ -144,3 +144,37 @@ def test_troca_por_voz_nao_liga_nuvem_nem_inventa_preset(tmp_path: Path) -> None
     with pytest.raises(ValueError, match="não há preset"):
         voz.usar("turbo máximo")
     assert not (tmp_path / "presets.toml").exists()
+
+
+def test_arquivo_do_dono_que_nao_serve_nao_e_sobrescrito(tmp_path: Path) -> None:
+    """A voz e a janela gravam pela fonte: com o arquivo do dono quebrado, gravar por cima
+    apagaria o que ele escreveu à mão — recusa, dizendo o que fazer."""
+    arquivo = tmp_path / "presets.toml"
+    arquivo.write_text("[[preset]\nnome = 'meu'", encoding="utf-8")
+    voz, fonte = troca(tmp_path, {"conversa-groq"})
+    assert fonte.atuais().avisos  # vale o padrão, com o aviso
+    with pytest.raises(PresetsInvalidos, match="conserte-o"):
+        voz.usar("rápido")
+    assert arquivo.read_text(encoding="utf-8") == "[[preset]\nnome = 'meu'"
+
+
+def test_o_nome_da_configuracao_e_reservado_e_nao_conta_no_teto() -> None:
+    with pytest.raises(PresetsInvalidos, match="reservado"):
+        padrao().com_preset(Preset("Configuracao", "cerebro", "conversa-eco"))
+    cheios = Presets(
+        (
+            *(Preset(f"p{i}", "resumo", "conversa-eco") for i in range(39)),
+            Preset(DA_CONFIGURACAO, "cerebro", "conversa-eco", da_configuracao=True),
+        )
+    )
+    assert len(cheios.com_preset(Preset("mais um", "resumo", "conversa-eco")).presets) == 41
+
+
+def test_segredo_recusado_ao_gravar_nao_manda_apagar_do_arquivo(tmp_path: Path) -> None:
+    com_chave = padrao().com_preset(
+        Preset("x", "cerebro", "conversa-openai", "gpt-6-luna", nota="sk-proj-abcdefghijklmnopq")
+    )
+    with pytest.raises(PresetsInvalidos, match="chave não entra") as erro:
+        gravar(com_chave, tmp_path / "presets.toml")
+    assert "abcdefghijklmnopq" not in str(erro.value)
+    assert not (tmp_path / "presets.toml").exists()

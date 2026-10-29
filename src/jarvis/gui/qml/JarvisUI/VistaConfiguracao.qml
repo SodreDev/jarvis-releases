@@ -363,20 +363,14 @@ Item {
                 }
             }
 
+            // Quem pensa a resposta, por preset (ADR-0056): o ativo de cada papel e um preset novo.
+            // Sem preset de cérebro, vale o da configuração (o `s2` do jarvis-voz.toml).
             Painel {
                 width: parent.width
                 titulo: "resposta"
-                dica: "provisório até a F2"
-                Row {
-                    spacing: 10
-                    Repeater {
-                        model: ponte ? ponte.geradores : []
-                        Botao {
-                            texto: modelData === "eco" ? "eco da transcrição" : modelData
-                            ativo: ponte && ponte.configuracao.s2 === modelData
-                            onApertado: ponte.definirCampo("s2", modelData)
-                        }
-                    }
+                dica: "presets de modelo"
+                PainelDeModelos {
+                    width: parent.width
                 }
             }
 

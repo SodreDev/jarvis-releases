@@ -106,6 +106,10 @@ def conferir(preset: Preset) -> Preset:
             f"nome de preset {preset.nome[:40]!r} fora da forma (letras, números, espaço, . + - "
             "e _, até 40)"
         )
+    if not preset.da_configuracao and normalizar(preset.nome) == normalizar(DA_CONFIGURACAO):
+        raise PresetsInvalidos(
+            f"«{DA_CONFIGURACAO}» é o nome reservado do cérebro do jarvis-voz.toml: escolha outro"
+        )
     if preset.papel not in PAPEIS:
         raise PresetsInvalidos(
             f"o preset «{preset.nome}» tem papel {preset.papel!r}; os que existem: "
@@ -163,7 +167,7 @@ class Presets:
         """Acrescenta, ou troca o de mesmo nome. Trocar o papel de um ativo o desliga."""
         novo = conferir(preset)
         outros = [p for p in self.presets if p.chave != novo.chave]
-        if len(outros) >= MAXIMO_DE_PRESETS:
+        if sum(not p.da_configuracao for p in outros) >= MAXIMO_DE_PRESETS:
             raise PresetsInvalidos(f"já há {MAXIMO_DE_PRESETS} presets: apague um antes")
         ativos = {
             papel: nome
@@ -238,12 +242,13 @@ def _sem_segredo(dados: Mapping[str, Any], arquivo: str) -> None:
                     if isinstance(valor, str) and (
                         PARECE_CHAVE.search(valor) or OUTRAS_CHAVES.search(valor)
                     ):
-                        raise SegredoNaConfiguracao(
-                            f"um preset de {arquivo} tem um valor com a forma de chave de API: "
-                            "apague-o; a chave fica no ambiente ou no chaveiro"
-                        )
-    except SegredoNaConfiguracao as erro:
-        raise PresetsInvalidos(str(erro)) from None
+                        raise SegredoNaConfiguracao("valor com a forma de chave de API")
+    except SegredoNaConfiguracao:
+        # A mensagem é nossa (sem repetir o valor): vale na leitura e antes de gravar.
+        raise PresetsInvalidos(
+            f"{arquivo}: há campo com nome de segredo ou valor com a forma de chave de API — "
+            "chave não entra em presets; ela fica no ambiente ou no chaveiro"
+        ) from None
 
 
 def de_dados(dados: Mapping[str, Any], *, origem: str) -> Presets:
@@ -414,9 +419,20 @@ class FonteDePresets:
         self._presets = None
 
     def gravar(self, presets: Presets) -> Path:
+        """Grava o arquivo do dono — menos quando ele existe e não serve: aí os presets de agora
+        são o padrão, e gravar por cima apagaria o que ele escreveu à mão (vale para a janela e
+        para a voz)."""
         arquivo = self.arquivo
         if arquivo is None:
             raise PresetsInvalidos("este ambiente não tem pasta de configuração para gravar")
+        if arquivo.is_file():
+            try:
+                ler(arquivo)
+            except PresetsInvalidos as erro:
+                raise PresetsInvalidos(
+                    f"o seu {arquivo.name} não serviu ({erro}): conserte-o ou apague-o — gravar "
+                    "agora por cima apagaria o que está nele"
+                ) from None
         caminho = gravar(presets, arquivo)
         self._presets = None
         return caminho

@@ -1837,6 +1837,54 @@ Testes (com o `claude` falso): `TMPDIR=~/.cache/jt uv run --frozen pytest tests/
 
 ---
 
+### 0.48 Provedor, modelo, esforço e presets — e o pedido com imagem indo a quem vê (2026-10-29, ADR-0056)
+
+**O que mudou.** Além do eco e da CLI do Claude, o cérebro pode usar OpenAI, OpenRouter, Groq,
+um servidor local com a API da OpenAI (Ollama, LM Studio), um roteador de nuvem compatível, o
+Codex (`codex`) e o OpenCode 1.x (`opencode`). Você escolhe provedor → modelo (a lista vem do
+próprio provedor, guardada por um dia) → esforço, salva como **preset** com um papel (cérebro,
+Jev, visão, resumo) e escolhe o ativo de cada papel — na janela ou pela voz.
+
+**Nada muda até você escolher:** sem preset de cérebro ativo, vale o `s2`/`modelo_do_s2` de
+sempre. Provedor de nuvem nasce **desligado**: só chama depois de você ler o aviso e ligar.
+
+1. **Chaves** (janela → Configuração → Chaves de API → Guardar; vão para o chaveiro):
+   `OPENAI_API_KEY`, `OPENROUTER_API_KEY` (a mesma do Jev), `JARVIS_GROQ_API_KEY` (a mesma do ASR,
+   interruptor separado), `ANTHROPIC_API_KEY` (só para **listar** os modelos da CLI do Claude) e
+   `JARVIS_COMPATIVEL_API_KEY` (o roteador de nuvem compatível). Codex e OpenCode usam o login
+   deles: `codex login` e `opencode auth login` no terminal.
+2. **Escolher e salvar** (janela → Configuração → painel «resposta»): toque no provedor; se for de
+   nuvem, leia o aviso e toque «li o aviso — ligar» e depois **salvar** a configuração (vale ao
+   reabrir a conversa). «buscar a lista do provedor» traz a lista de agora; a tela diz de onde
+   ela veio (provedor, guardada ou do registro) e quando. Escolha o modelo (veja visão,
+   ferramentas, contexto e preço quando o provedor informa), o esforço (só os que o modelo aceita,
+   quando ele diz), dê nome e papel e salve. O arquivo é `~/.config/jarvis/presets.toml` — dá para
+   editar à mão; chave de API nele recusa o arquivo inteiro.
+3. **Trocar pela voz:** «usa o preset rápido», «troca para o preset claude». O Jarvis diz «Preset
+   rápido ativo.» e vale no pedido seguinte; «desfaz» volta ao anterior. Funciona até com o eco
+   (o código reconhece a frase). Preset de provedor desligado responde onde se liga — a voz nunca
+   liga nuvem.
+4. **Imagem a quem vê:** com um cérebro que não vê (o eco, ou um modelo só de texto) e um preset
+   de **visão** ativo («visão groq» ou «visão claude», já no padrão), peça algo sobre a tela da aba
+   («o que tem nessa página?»): a resposta vem do modelo de visão, e a tela mostra o nome dele.
+   Sem preset de visão que veja, a imagem não vai a ninguém e o pedido segue só com texto.
+5. **Jev:** o preset ativo do papel `jev` escolhe o modelo do detector (padrão `typesafe/jev-1.13`,
+   o calibrado). Trocar muda só o id do modelo.
+6. **Local:** com o Ollama rodando, o provedor «servidor desta máquina» lista e chama sem chave
+   (`base_compativel_local` no `jarvis-voz.toml`; vazio = `http://127.0.0.1:11434/v1`).
+
+Testes (provedores falsos e servidor HTTP local, `CI=1` — nada sai da máquina):
+`TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/provedores tests/unit/executor/test_modelo_preset.py`
+e a janela: `QT_QPA_PLATFORM=offscreen TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/gui/test_modelos_na_janela.py`.
+
+**Não provado (só você pode):** nenhuma chamada a provedor de verdade — listar e conversar com a
+OpenAI, o OpenRouter, a Groq e a API da Anthropic com as suas chaves; o `codex` e o `opencode`
+reais (o formato de `codex debug models` e do `opencode run --format json` não é documentado: os
+leitores são defensivos); a CLI do Claude com `--effort xhigh`/`max`; o pedido com imagem indo ao
+modelo de visão de verdade. O OpenCode **2.x** é reconhecido e recusado com a frase do que fazer.
+**Atenção:** com login do ChatGPT, os termos de consumo da OpenAI (trecho lido em busca) proíbem
+extrair saída de forma automatizada; o aviso do Codex diz isso — a decisão de usar é sua.
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

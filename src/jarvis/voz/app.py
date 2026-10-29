@@ -525,7 +525,9 @@ class Aplicativo:
     produção (a janela, o `jarvis-voz`) passa o repositório."""
     regras: Regras | None = field(default=None, repr=False)
     """As regras de comportamento que valem nesta sessão (ADR-0047), lidas em `abrir`."""
-    _presets: FonteDePresets | None = field(default=None, repr=False)
+    presets: FonteDePresets | None = field(default=None, repr=False)
+    """Os presets de modelo do dono (ADR-0056). `None` = os da pasta do `jarvis-voz.toml` deste
+    ambiente; a janela passa a fonte dela, para o que ela grava ser o que o cérebro lê."""
     _vocabulario_lido: Vocabulario = field(default=VAZIO, repr=False)
     _vocabulario_carregado: bool = field(default=False, repr=False)
     vigia: VigiaDeInterrupcao | None = field(default=None, repr=False)
@@ -1422,9 +1424,9 @@ class Aplicativo:
     def fonte_de_presets(self) -> FonteDePresets:
         """Os presets de modelo do dono (ADR-0056), relidos quando o arquivo muda: a janela e a voz
         gravam, o motor do cérebro lê."""
-        if self._presets is None:
-            self._presets = FonteDePresets(ambiente=self.ambiente, configuracao=self.configuracao)
-        return self._presets
+        if self.presets is None:
+            self.presets = FonteDePresets(ambiente=self.ambiente, configuracao=self.configuracao)
+        return self.presets
 
     def _troca_de_preset(self) -> TrocaPorVoz | None:
         """O corpo da `modelo.preset`. Só com a pasta do dono (a mesma condição do vocabulário): a

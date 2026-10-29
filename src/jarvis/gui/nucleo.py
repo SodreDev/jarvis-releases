@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.microfone import EstadoDaFonte, ler_estado
+from jarvis.provedores.presets import FonteDePresets
 from jarvis.voz.app import Aplicativo, AplicativoIndisponivel, OuvidoIndisponivel
 from jarvis.voz.config import Configuracao
 from jarvis.voz.conversa import ConversaPersistente
@@ -111,6 +112,9 @@ class SessaoDeVoz:
     """A conversa que sobrevive ao reinício (a ponte a abre uma vez e passa a todas as sessões)."""
     vocabulario: RepositorioDoVocabulario | None = None
     """O vocabulário do dono (ADR-0044), que a ponte passa a cada sessão."""
+    presets: FonteDePresets | None = None
+    """Os presets de modelo que a janela grava (ADR-0056): a ponte passa a mesma fonte a cada
+    sessão, e o cérebro lê dela — com `--config`, os presets moram ao lado da configuração."""
     modo_texto: bool = False
     """Começa no modo texto (sem abrir dispositivo). Vira verdadeiro sozinho se o áudio cair."""
 
@@ -144,6 +148,7 @@ class SessaoDeVoz:
             ambiente=self.ambiente,
             conversa=self.conversa,
             vocabulario=self.vocabulario,
+            presets=self.presets,
         )
 
     def _ligar(self, aplicativo: Aplicativo) -> Aplicativo:
