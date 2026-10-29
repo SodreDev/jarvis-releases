@@ -47,11 +47,12 @@ MAXIMO_DE_TAREFAS_AO_MESMO_TEMPO: Final = 2
 MAXIMO_DE_PASSOS: Final = 6
 PRAZO_DA_TAREFA_S: Final = 300.0
 TAREFAS_NO_CARD: Final = 8
-FORA_DA_ALLOWLIST: Final = ("tarefa.", "acao.desfazer", "jarvis.", "vocabulario.")
+FORA_DA_ALLOWLIST: Final = ("tarefa.", "acao.desfazer", "jarvis.", "vocabulario.", "modelo.")
 """Profundidade 1: tarefa não cria tarefa. Desfazer é do dono na conversa, não de uma tarefa. E
 encerrar o Jarvis (`jarvis.encerrar`, ADR-0041) roda no turno em que o dono pediu: uma tarefa em
 segundo plano não desliga o assistente. Aprender um nome (`vocabulario.aprender`, ADR-0044)
-também: é a correção que o dono acabou de fazer, nunca algo que uma tarefa leu por aí."""
+também: é a correção que o dono acabou de fazer, nunca algo que uma tarefa leu por aí. Trocar o
+preset de modelo (`modelo.preset`, ADR-0056) idem: é escolha do dono, no turno dele."""
 MOTORES_DE_TAREFA: Final = ("direto", "agente")
 LEVES: Final = frozenset({"foco"})
 """Motores de tarefa que só acompanham (sem motor de conversa): não contam no teto de tarefas."""

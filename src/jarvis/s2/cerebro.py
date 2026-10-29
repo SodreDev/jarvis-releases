@@ -123,6 +123,7 @@ ACOES_DE_UM_PASSO: Final = frozenset(
         "clipboard.text.write",
         "jarvis.encerrar",
         "media.player.control",
+        "modelo.preset",
         "notify.desktop.send",
         "system.brightness.set",
         "system.volume.set",

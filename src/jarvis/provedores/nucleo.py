@@ -36,7 +36,7 @@ from jarvis.provedores.registro import (
     provedor_registrado,
 )
 from jarvis.s2.motor import MotorDeConversa
-from jarvis.voz.registro import Motor, MotorRecusado
+from jarvis.voz.registro import Motor, MotorRecusado, motor_registrado
 
 if TYPE_CHECKING:
     from jarvis.voz.config import Configuracao
@@ -130,7 +130,13 @@ class Provedores:
         )
 
     def ligado(self, identificador: str) -> bool:
-        motor = self.registro(identificador)
+        """Pode chamar agora: local, ou de nuvem que o dono ligou. Vale também para o Jev, que é
+        do registro de motores (`decisao-jev-openrouter`)."""
+        motor = provedor_registrado(identificador, arquivo=self.arquivo) or motor_registrado(
+            identificador
+        )
+        if motor is None:
+            return False
         return not motor.na_nuvem or motor.ligado or identificador in self.ligados
 
     def listar(self, identificador: str, *, forcar: bool = False) -> Listagem:

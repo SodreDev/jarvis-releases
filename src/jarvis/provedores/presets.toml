@@ -1,0 +1,73 @@
+# Presets de modelo do Jarvis — o PADRÃO do repositório (ADR-0056). O do dono mora em
+# ~/.config/jarvis/presets.toml e vence quando existe; a janela e a voz gravam lá.
+#
+# Sem segredo: as chaves ficam no ambiente e no chaveiro. Escolher um preset não liga nuvem — o
+# provedor de nuvem só chama depois de o dono ligá-lo na janela, com o aviso.
+# Papéis: cerebro, jev, visao, resumo. Esforços: none, minimal, low, medium, high, xhigh, max.
+# Cérebro ativo vazio = o da configuração (s2 e modelo_do_s2 do jarvis-voz.toml).
+
+versao = 1
+
+[ativos]
+cerebro = ""
+jev = "jev"
+visao = ""
+resumo = ""
+
+[[preset]]
+nome = "eco"
+papel = "cerebro"
+provedor = "conversa-eco"
+modelo = "eco"
+esforco = ""
+nota = "repete o que você disse, sem rede"
+
+[[preset]]
+nome = "claude rápido"
+papel = "cerebro"
+provedor = "conversa-claude-cli"
+modelo = "haiku"
+esforco = "low"
+
+[[preset]]
+nome = "claude"
+papel = "cerebro"
+provedor = "conversa-claude-cli"
+modelo = "sonnet"
+esforco = "medium"
+
+[[preset]]
+nome = "rápido"
+papel = "cerebro"
+provedor = "conversa-groq"
+modelo = "openai/gpt-oss-20b"
+esforco = "low"
+
+[[preset]]
+nome = "visão claude"
+papel = "visao"
+provedor = "conversa-claude-cli"
+modelo = "sonnet"
+esforco = "low"
+
+[[preset]]
+nome = "visão groq"
+papel = "visao"
+provedor = "conversa-groq"
+modelo = "qwen/qwen3.8-27b"
+esforco = "low"
+
+[[preset]]
+nome = "resumo"
+papel = "resumo"
+provedor = "conversa-claude-cli"
+modelo = "haiku"
+esforco = "low"
+
+[[preset]]
+nome = "jev"
+papel = "jev"
+provedor = "decisao-jev-openrouter"
+modelo = "typesafe/jev-1.13"
+esforco = ""
+nota = "os limiares do detector foram calibrados neste modelo (ADR-0029)"

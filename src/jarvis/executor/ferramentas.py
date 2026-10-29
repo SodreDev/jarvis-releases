@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import jsonschema
 
@@ -156,6 +156,23 @@ porquê — e de novo no corpo, na hora de agir."""
 FERRAMENTA_DE_VOCABULARIO: Final = "vocabulario.aprender"
 """Aprender um nome do dono (ADR-0044): o corpo é do repositório do vocabulário, e a tool só existe
 para o modelo quando o laço tem um — a suíte e o modo sem pasta de configuração não têm."""
+FERRAMENTA_DE_PRESET: Final = "modelo.preset"
+"""Trocar o preset de modelo ativo (ADR-0056): o corpo é a `TrocaDePreset` do laço (o arquivo de
+presets do dono), e a tool só existe quando o laço tem uma. Não liga nuvem: preset de provedor
+desligado volta como erro, com a frase de onde se liga."""
+
+
+class TrocaDePreset(Protocol):
+    """O que a `modelo.preset` usa (`jarvis.provedores.presets.TrocaPorVoz`)."""
+
+    def usar(self, nome: str) -> dict[str, str]:
+        """Ativa o preset; devolve `preset`, `papel`, `provedor`, `modelo` e `desfazer`.
+        `ValueError` com o porquê quando não dá."""
+        ...
+
+    def voltar(self, alvo: str) -> None:
+        """Desfaz: `alvo` é o `desfazer` que `usar` devolveu."""
+        ...
 FERRAMENTA_DE_ENCERRAR: Final = "jarvis.encerrar"
 """Encerrar o próprio Jarvis (ADR-0041): o corpo é do aplicativo (`Encerramento`), e a tool só
 existe para o modelo quando há um laço que possa ser encerrado."""
@@ -407,6 +424,8 @@ class ExecutorDeFerramentas:
     """Quem encerra o Jarvis (ADR-0041). Sem ele, a `jarvis.encerrar` não existe."""
     vocabulario: RepositorioDoVocabulario | None = None
     """O vocabulário do dono (ADR-0044). Sem ele, a `vocabulario.aprender` não existe."""
+    presets: TrocaDePreset | None = None
+    """Os presets de modelo do dono (ADR-0056). Sem eles, a `modelo.preset` não existe."""
     ao_mudar_vocabulario: Callable[[], None] = field(default=lambda: None)
     """O laço relê o vocabulário (a dica do ASR, a correção, a pronúncia) — depois de aprender e
     depois de desfazer, para a correção valer já."""
@@ -575,6 +594,8 @@ class ExecutorDeFerramentas:
             return self.encerramento is not None
         if tool_id == FERRAMENTA_DE_VOCABULARIO:
             return self.vocabulario is not None
+        if tool_id == FERRAMENTA_DE_PRESET:
+            return self.presets is not None
         if tool_id in FERRAMENTAS_DE_FECHAR:
             return True
         if tool_id == FERRAMENTA_DA_TELA:
@@ -1175,6 +1196,9 @@ class ExecutorDeFerramentas:
             return registro.registrar(
                 tool_id, f"a correção de {dados['escrita']}", "vocabulario", str(dados["termo_id"])
             ).acao_id
+        if tool_id == FERRAMENTA_DE_PRESET:
+            descricao = f"a troca para o preset {dados['preset']}"
+            return registro.registrar(tool_id, descricao, "preset", str(dados["desfazer"])).acao_id
         livro = {
             "memoria.lembrar": ("assertion_id", "a anotação"),
             "memoria.criar_no": ("entity_id", "o registro novo na memória"),
@@ -1454,6 +1478,10 @@ class ExecutorDeFerramentas:
             if self.vocabulario is None or self.vocabulario.esquecer(desfazer.alvo) is None:
                 raise ValueError("essa correção de nome já não está no vocabulário")
             self.ao_mudar_vocabulario()
+        elif desfazer.tipo == "preset":
+            if self.presets is None:
+                raise ValueError("os presets de modelo não estão ligados")
+            self.presets.voltar(desfazer.alvo)
         elif self.memoria is not None:
             self.memoria.livro.retratar(desfazer.alvo)
         else:
@@ -1536,6 +1564,10 @@ class ExecutorDeFerramentas:
                 "ouvido": list(termo.ouvido),
                 "fala": termo.fala,
             }
+        if tool_id == FERRAMENTA_DE_PRESET:
+            assert self.presets is not None  # _ligada filtra antes
+            # Preset que não existe ou de provedor desligado volta como erro, com o porquê.
+            return dict(self.presets.usar(str(args["nome"])))
         if tool_id == "window.close":
             # De novo, na hora de agir: entre a pergunta e o sim a janela pode ter mudado.
             fechador = self._fechador()

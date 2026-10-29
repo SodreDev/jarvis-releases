@@ -108,6 +108,8 @@ from jarvis.politica.modos import Modo as ModoDeAcesso
 from jarvis.politica.modos import Raiz
 from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Pdp
+from jarvis.provedores.nucleo import Provedores
+from jarvis.provedores.presets import FonteDePresets, TrocaPorVoz
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
 from jarvis.s2.avisos import FALAR, AvisoLiberado, decidir_entrega, frase_do_aviso
@@ -514,6 +516,7 @@ class Aplicativo:
     produção (a janela, o `jarvis-voz`) passa o repositório."""
     regras: Regras | None = field(default=None, repr=False)
     """As regras de comportamento que valem nesta sessão (ADR-0047), lidas em `abrir`."""
+    _presets: FonteDePresets | None = field(default=None, repr=False)
     _vocabulario_lido: Vocabulario = field(default=VAZIO, repr=False)
     _vocabulario_carregado: bool = field(default=False, repr=False)
     vigia: VigiaDeInterrupcao | None = field(default=None, repr=False)
@@ -1387,9 +1390,28 @@ class Aplicativo:
             # Aprender um nome do dono (ADR-0044): só com o repositório, e vale já no laço.
             vocabulario=self.vocabulario,
             ao_mudar_vocabulario=self.recarregar_vocabulario,
+            # Trocar o preset de modelo por voz (ADR-0056): com a pasta do dono, como o vocabulário.
+            presets=self._troca_de_preset(),
         )
         executor.preparar()
         return executor
+
+    def fonte_de_presets(self) -> FonteDePresets:
+        """Os presets de modelo do dono (ADR-0056), relidos quando o arquivo muda: a janela e a voz
+        gravam, o motor do cérebro lê."""
+        if self._presets is None:
+            self._presets = FonteDePresets(ambiente=self.ambiente, configuracao=self.configuracao)
+        return self._presets
+
+    def _troca_de_preset(self) -> TrocaPorVoz | None:
+        """O corpo da `modelo.preset`. Só com a pasta do dono (a mesma condição do vocabulário): a
+        suíte e o modo sem pasta de configuração não gravam presets."""
+        if self.vocabulario is None:
+            return None
+        provedores = Provedores.da_configuracao(
+            self.configuracao, pasta_de_trabalho=self.raiz / "conversa", ambiente=self.ambiente
+        )
+        return TrocaPorVoz(self.fonte_de_presets(), ligado=provedores.ligado)
 
     def _classificador_das_ferramentas(self) -> Any:
         """O classificador que o guarda de contexto usa (ADR-0049): o mesmo do endereçamento/portão

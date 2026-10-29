@@ -81,6 +81,9 @@ TIER_ESPERADO: dict[str, str] = {
     # Aprender um nome do dono (dono, 2026-10-21; ADR-0044): moderado — escreve no vocabulário dele,
     # avisa em voz e desfaz; o sim só quando o turno leu conteúdo de fora (`decidir_vocabulario`).
     "vocabulario.aprender": "moderado",
+    # Trocar o preset de modelo (dono, 2026-10-29; ADR-0056): moderado — grava o arquivo de presets
+    # dele, avisa e desfaz; o sim só quando o turno leu conteúdo de fora (`decidir_preset`).
+    "modelo.preset": "moderado",
     "clipboard.text.read": "livre",
     "clipboard.text.write": "moderado",
     "notify.desktop.send": "livre",
@@ -344,6 +347,7 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "vocabulario.aprender": _pedido(
             pdp, "vocabulario.aprender", {"escrita": "Discord", "ouvido": ["discorde"]}
         ),
+        "modelo.preset": _pedido(pdp, "modelo.preset", {"nome": "rápido"}),
         "clipboard.text.read": _pedido(pdp, "clipboard.text.read", {}),
         "clipboard.text.write": _pedido(pdp, "clipboard.text.write", {"texto": "x"}),
         "notify.desktop.send": _pedido(pdp, "notify.desktop.send", {"titulo": "a", "texto": "b"}),

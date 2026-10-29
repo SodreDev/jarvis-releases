@@ -39,6 +39,7 @@ from jarvis.politica.descritor import AberturaRecusada, Identidade, RaizAberta, 
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, decidir_memoria
 from jarvis.politica.modos import Modo, Raiz, motivo_de_negacao, raizes_do_modo
 from jarvis.politica.objetivo import Objetivo
+from jarvis.politica.preset import decidir_preset
 from jarvis.politica.vocabulario import decidir_vocabulario
 
 
@@ -212,6 +213,11 @@ class Pdp:
             # ADR-0044: gravar um nome no vocabulário do dono pede o turno dele como origem, e o
             # sim quando o turno leu conteúdo de fora (a "correção" pode ter vindo de uma página).
             regra = decidir_vocabulario(
+                pedido.tool_id, proveniencia=pedido.proveniencia, contaminado=pedido.contaminado
+            )
+        if regra is None:
+            # ADR-0056: trocar o preset de modelo, idem — o turno do dono, e o sim se leu de fora.
+            regra = decidir_preset(
                 pedido.tool_id, proveniencia=pedido.proveniencia, contaminado=pedido.contaminado
             )
         if regra is not None and regra.veredito == "confirm":

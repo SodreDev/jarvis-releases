@@ -44,6 +44,7 @@ class Regra(StrEnum):
     BUSCAR_NO_SITE = "buscar_no_site"
     PRIMEIRO_PASSO_NO_SITE = "primeiro_passo_no_site"
     BUSCAR_NA_WEB = "buscar_na_web"
+    TROCAR_PRESET = "trocar_preset"
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,12 @@ _ABAS: Final = (
     r"(?:\s+abertas)?(?:\s+do\s+navegador)?)$"
 )
 _FECHAR: Final = r"^(?:fecha|feche|fechar)\s+(?P<alvo>.+)$"
+_PRESET: Final = (
+    r"^(?:usa|use|usar|troca|troque|trocar|muda|mude|mudar|ativa|ative|ativar)"
+    r"(?:\s+(?:para|pra|pro))?\s+(?:o\s+)?preset\s+(?P<nome>.+)$"
+)
+"""Trocar o preset de modelo (ADR-0056): «usa o preset rápido», «troca para o preset claude». O
+nome vai como o dono falou; quem acha o preset (sem acento e sem caixa) é a ferramenta."""
 _ENCERRAR: Final = (
     r"^(?:mata|mate|matar|encerra|encerre|encerrar|finaliza|finalize|finalizar)\s+(?P<alvo>.+)$"
 )
@@ -262,11 +269,19 @@ def achar(fala: str, contexto: ContextoDoAtalho) -> Atalho | None:
     limpa = _limpa(fala)
     if not limpa.texto:
         return None
-    for regra in (_consulta, _fechar, _no_site, _na_web, _focar, _abrir):
+    for regra in (_preset, _consulta, _fechar, _no_site, _na_web, _focar, _abrir):
         achado = regra(limpa, fala, contexto)
         if achado is not None:
             return achado if contexto.disponivel(achado.tool_id) else None
     return None
+
+
+def _preset(limpa: _Fala, _fala: str, _contexto: ContextoDoAtalho) -> Atalho | None:
+    achado = re.fullmatch(_PRESET, limpa.texto)
+    if achado is None:
+        return None
+    nome = achado.group("nome").strip()
+    return Atalho(Regra.TROCAR_PRESET, "modelo.preset", {"nome": nome}, alvo=nome)
 
 
 def _consulta(limpa: _Fala, _fala: str, contexto: ContextoDoAtalho) -> Atalho | None:
@@ -539,6 +554,8 @@ def frase(atalho: Atalho, dados: Mapping[str, Any]) -> str:
             return f"Abri o {atalho.alvo}."
         case Regra.BUSCAR_NA_WEB:
             return ""
+        case Regra.TROCAR_PRESET:
+            return ""  # o aviso da moderada («Preset rápido ativo.») já diz
 
 
 def _frase_do_foco(dados: Mapping[str, Any]) -> str:
