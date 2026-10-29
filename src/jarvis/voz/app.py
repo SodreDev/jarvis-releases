@@ -68,6 +68,7 @@ from jarvis.audio_io.vad import Vad, vad_do_ambiente
 from jarvis.barramento.envelope import Envelope, Trust, uuid7
 from jarvis.caixa import CaixaDeScript
 from jarvis.decisao.enderecamento import DetectorDeEnderecamento, Motivo
+from jarvis.decisao.openrouter import MODELO_PADRAO as MODELO_DO_JEV
 from jarvis.decisao.openrouter import ClassificadorOpenRouter
 from jarvis.delegacao import (
     ConfiguracaoDaDelegacaoInvalida,
@@ -110,6 +111,7 @@ from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Pdp
 from jarvis.provedores.nucleo import Provedores
 from jarvis.provedores.presets import FonteDePresets, TrocaPorVoz
+from jarvis.provedores.roteador import MotorDosPresets
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
 from jarvis.s2.avisos import FALAR, AvisoLiberado, decidir_entrega, frase_do_aviso
@@ -408,20 +410,27 @@ def motor_de_tts(
     return piper
 
 
-def motor_de_conversa(configuracao: Configuracao, *, pasta_de_trabalho: Path) -> MotorDeConversa:
-    """O motor do cérebro que o dono escolheu (ADR-0025; D18 do roteiro da F2).
+def motor_de_conversa(
+    configuracao: Configuracao,
+    *,
+    pasta_de_trabalho: Path,
+    ambiente: Mapping[str, str] | None = None,
+    fonte: FonteDePresets | None = None,
+) -> MotorDeConversa:
+    """O motor do cérebro que o dono escolheu (ADR-0025; D18 do roteiro da F2; ADR-0056).
 
-    `eco` é o **padrão**: repete o que o dono disse, sem rede e sem conta — testa voz,
-    interrupção e tela sem mandar nada para fora. O `claude -p` só roda quando o dono escolhe
-    `s2 = "claude"`, e a tela diz `[nuvem]` ao lado do nome: nunca é padrão silencioso.
-
-    Os dois saem do registro de provedores de modelo (ADR-0056), pelo mesmo portão dos outros.
+    É o roteador dos presets (`MotorDosPresets`): a cada pedido, o preset ativo do cérebro — e,
+    com imagem, o de visão quando o do cérebro não vê. Sem cérebro ativo vale o da configuração:
+    `eco`, o **padrão**, repete o que o dono disse, sem rede e sem conta; o `claude -p` só roda
+    quando o dono escolhe `s2 = "claude"`, e a tela diz `[nuvem]` ao lado do nome: nunca é padrão
+    silencioso. Todos saem do registro de provedores de modelo, pelo mesmo portão.
     """
-    from jarvis.provedores.nucleo import Provedores, escolha_da_configuracao
-
-    provedor, modelo = escolha_da_configuracao(configuracao)
-    provedores = Provedores.da_configuracao(configuracao, pasta_de_trabalho=pasta_de_trabalho)
-    return provedores.motor(provedor, modelo)
+    return MotorDosPresets(
+        fonte=fonte or FonteDePresets(ambiente=ambiente, configuracao=configuracao),
+        provedores=Provedores.da_configuracao(
+            configuracao, pasta_de_trabalho=pasta_de_trabalho, ambiente=ambiente
+        ),
+    )
 
 
 @dataclass(slots=True)
@@ -688,7 +697,10 @@ class Aplicativo:
         _aquecer_em_segundo_plano(self._asr, self._tts)
         if self._motor is None:
             self._motor = motor_de_conversa(
-                self.configuracao, pasta_de_trabalho=self.raiz / "conversa"
+                self.configuracao,
+                pasta_de_trabalho=self.raiz / "conversa",
+                ambiente=self.ambiente,
+                fonte=self.fonte_de_presets(),
             )
         if com_asr and self.detector is None and self.configuracao.enderecamento:
             self.detector = self._abrir_o_detector()
@@ -1187,6 +1199,7 @@ class Aplicativo:
                 return
             try:
                 aberto = ClassificadorOpenRouter(
+                    modelo=self._modelo_do_jev(escolhido),
                     registrado=escolhido,
                     nuvem_ligada=self.configuracao.nuvem_ligada,
                     ambiente=self.ambiente,
@@ -1208,6 +1221,15 @@ class Aplicativo:
         if self.ao_fim_da_confirmacao is not None:
             self.ao_fim_da_confirmacao(identificador)
 
+    def _modelo_do_jev(self, registrado: str) -> str:
+        """O modelo do preset ativo do Jev (ADR-0056), quando ele é deste motor; senão o padrão, em
+        que os limiares foram calibrados (ADR-0029). O preset muda só o id do modelo: o estado que
+        vai ao serviço continua o que o detector monta."""
+        preset = self.fonte_de_presets().atuais().ativo("jev")
+        if preset is not None and preset.provedor == registrado and preset.modelo:
+            return preset.modelo
+        return MODELO_DO_JEV
+
     def _abrir_o_detector(self) -> DetectorDeEnderecamento | None:
         """O detector de endereçamento que o dono escolheu — ou `None`, com a razão na tela.
 
@@ -1219,6 +1241,7 @@ class Aplicativo:
         if not falta:
             try:
                 classificador = ClassificadorOpenRouter(
+                    modelo=self._modelo_do_jev(escolhido),
                     registrado=escolhido,
                     nuvem_ligada=self.configuracao.nuvem_ligada,
                     ambiente=self.ambiente,
