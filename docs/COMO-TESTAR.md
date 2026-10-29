@@ -1472,6 +1472,142 @@ já no começo da sessão. Medido desta rede: cada lote de fala da ElevenLabs ec
 o DNS frio (120–200 ms). Nada muda no que é mandado: o aquecimento só abre o TLS, sem dado nenhum.
 **Não provado:** o efeito somado no seu turno — a trilha nova (§0.29) vai mostrar o 1º áudio.
 
+### 0.33 Uma resposta por pedido (2026-10-25, ADR-0046)
+
+"Abre o Discord" é **uma** frase ("Abrindo o Discord."), e não mais «Certo, já cuido disso.» +
+o passo + "pronto, abri". A primeira ferramenta roda no próprio turno; só o trabalho longo (mais de
+duas ferramentas, ou mais de 12 s) vira tarefa — e o fim dela fala uma vez, só se trouxer algo que
+você ainda não ouviu. Tarefa cancelada ou que você recusou acaba calada, e nunca propõe a mesma ação
+de novo.
+
+**Como conferir:** peça "abre o Discord", "fecha o Steam", "pesquisa gatos no YouTube" e conte as
+frases. A trilha (`~/.local/state/jarvis/voz/diagnostico/turnos.jsonl`) guarda, por turno, as `frases_caladas` (o que foi só para a tela
+por repetir o já dito) e o evento `entrega` das tarefas (falada ou silenciosa, e por quê). **Provado**
+com o cérebro, o executor e o PDP de verdade e motores roteirizados (`tests/unit/s2/test_entrega.py`,
+`tests/unit/s2/test_tarefa_do_pedido.py`). **Não provado:** o `claude -p` de verdade em cada tipo de
+pedido.
+
+### 0.34 Fechar, encerrar, abrir: quando o Jarvis pede o seu sim (2026-10-25, ADR-0046)
+
+- **Sem perguntar:** "fecha o Brave", "fecha meu Brave", "fecha essa janela", "fecha o navegador"
+  (o que está em foco; senão o único aberto); encerrar ("fecha o Discord todo") o que não tem nada a
+  perder — navegador, várias janelas, programa do sistema.
+- **Pergunta:** encerrar o editor com trabalho não salvo **na marca do título** (`*`, `●`,
+  `[modificado]`; o LibreOffice com documento aberto), um jogo aberto, um app fora da sua lista
+  liberada, ou um alvo que você não citou (o modelo decidiu, ou uma página sugeriu); abrir um app
+  instalado que não está na lista.
+- **Nunca:** o sistema (compositor, sessão), o próprio Jarvis e o terminal dele, processo de outro
+  usuário.
+- **Navegador fechado:** "abre um vídeo no YouTube" abre o seu navegador já na página, em vez de
+  pedir que você o abra.
+
+**Como conferir:** abra um editor que marca o não salvo no título (`*` ou `●`) com um arquivo editado
+e diga "fecha o <editor> todo" — ele pergunta; salve e repita — ele fecha. Com o Brave fechado, peça um vídeo do YouTube. **Provado** com a
+máquina falsa dos testes de fechar (`tests/unit/executor/test_fechar_e_encerrar.py`,
+`tests/unit/gui/test_janela_abrir_apps.py`). **Não provado:** a marca de não salvo em cada editor que
+você usa.
+
+### 0.35 As suas regras e um prompt com metade do tamanho (2026-10-25, ADR-0047)
+
+O Jarvis segue regras curtas suas em todo pedido ("conciso", "faça você mesmo", "resolva pelo
+contexto antes de perguntar"…). Para mudar, copie e edite:
+
+```bash
+cp docs/exemplos/regras.toml ~/.config/jarvis/regras.toml
+```
+
+Até 12 regras de até 220 caracteres; `ligada = false` desliga uma sem apagar. Vale na próxima sessão.
+O catálogo de ferramentas que vai ao motor agora é uma linha por ferramenta, com quando usar e
+exemplos: o prompt de cada turno caiu de ~30,5 mil para ~14,5 mil caracteres
+(`docs/medicoes/prompt-do-turno.md`). **Como conferir:** `jarvis-voz --diagnostico` diz de onde vieram
+as regras e quantas são (nunca o texto). **Não provado:** o efeito no jeito de o modelo responder.
+
+### 0.36 Responder pela voz: «Jarvis, sim» por cima da pergunta (2026-10-25, ADR-0048)
+
+Quando o Jarvis pergunta ("Posso encerrar o editor? Ele tem trabalho não salvo."), você responde **pela
+voz** — "sim", "pode", "não", "cancela", com ou sem "Jarvis" na frente, por cima da pergunta ou
+depois dela — ou no clique. Vale mesmo sem o detector de endereçamento ligado (o seu caso). Ele
+confirma **uma vez**: nada de perguntar de novo, nem de a pergunta cortada virar "não". O eco da
+própria pergunta voltando pela caixa de som não responde nem cancela. O "sim" cobra que o ASR o tenha
+ouvido com clareza (ADR-0043); se não, a pergunta continua aberta e o clique resolve. A confirmação
+do que está sob o clique (ADR-0027) só o clique responde — a tela avisa.
+
+**Como conferir:** peça para encerrar um app com trabalho não salvo e diga "Jarvis, sim" no meio da
+pergunta. A trilha mostra `interrupcao … resposta_a_pergunta` e um único `permissao … sim`.
+**Provado** com áudio sintético (`tests/unit/voz/test_confirmacao_por_voz.py`). **Não provado:** a
+sua voz por cima da sua caixa de som, e os sinais da Groq num "sim" curto.
+
+### 0.37 «Jarvis, para» por cima da fala dele (2026-10-29, ADR-0040 emendada)
+
+Até aqui, dizer o nome por cima de uma resposta normal **não cortava** na sua máquina (a sua trilha de
+29/10: toda tentativa acabou em `prazo_da_pausa`). Três defeitos, já consertados: (1) a 7ª, 11ª, 15ª
+e 41ª–47ª transcrição de cada sessão voltavam vazias sem ir à Groq (o número delas colidia com
+pedidos que tinham caído em sessões antigas); (2) o portão de eco aprendia uma perda errada e deixava
+o próprio eco passar, e o trecho por cima crescia sem fim; (3) o teto de 3 s da leitura não valia — o
+seu "Jarvis, para" ia ao ASR afogado em segundos do eco. E, como a sua voz chega ao microfone no mesmo
+nível da caixa de som, a vigia agora **tira o eco** (o cancelador do F1-04) antes de decidir.
+
+**Como conferir:** peça algo de resposta longa ("me conta a história do rádio") e, no meio, diga
+"Jarvis, para" no seu tom normal; depois "Jarvis, que horas são?" por cima de outra resposta. O
+Jarvis deve calar em ~1,5 s e, no segundo, responder a hora. Deixe-o falar uma resposta inteira sem
+dizer nada: ele não pode se cortar sozinho. A trilha mostra `interrupcao cortar
+palavra_de_ativacao` com os milissegundos. Medido com voz sintética e eco com reverberação: corte com
+o nome 31/32, falso corte pelo eco 0/8 (`docs/medicoes/interrupcao-por-cima.md`; reproduza com
+`uv run --frozen python tools/harness_interrupcao.py --so-portao`, segundos, ou `--enxuto`, horas).
+**Não provado:** a sua sala, caixa, microfone e voz; o atraso real do áudio no seu PipeWire; a Groq no
+lugar do whisper. Na escuta contínua o Jarvis ainda pode pausar à toa uma vez numa resposta longa
+(2 em 8 na medição) — diga se notar.
+
+---
+
+### 0.38 O guarda de contexto: toda ação de script, CDP ou MCP é comparada com o que você pediu (2026-10-29, ADR-0049)
+
+Antes de rodar um script, um JavaScript na página ou uma ferramenta de servidor MCP, o Jarvis
+compara a ação com o **objetivo do turno** (o que você pediu, a fase, os passos já feitos) e decide
+**permitir**, **pedir o seu sim** ou **barrar**. Barrou, ele não tenta de novo por outro caminho: o
+motivo volta para ele como instrução ("isso foge do objetivo X, faça Y"). Uma leitura pura (ver o
+console, ver a rede) passa direto; as regras rápidas decidem o óbvio sem nuvem; só a dúvida vai ao
+classificador (o Jev), com prazo curto — e se ele não responder, o Jarvis **pergunta a você**, nunca
+faz na dúvida.
+
+**Como conferir (sem navegador nem nuvem):**
+
+```bash
+TMPDIR=/home/sodre/.cache/jt uv run --frozen pytest tests/unit/politica/test_guarda.py
+# a medição antes/depois (o Jev em toda ação × regras + cache + Jev só na dúvida):
+TMPDIR=/home/sodre/.cache/jt uv run --frozen python tools/medir_guarda.py
+cat docs/medicoes/guarda-de-contexto.md
+```
+
+Os cenários fora do eixo (ler cookies, navegar para outro site, baixar e executar, enviar
+formulário) são **todos barrados** pela regra, sem ir à nuvem, com a instrução de volta. A medição
+de 29/10 (uma sessão de depuração de 58 ações): o desenho antigo gastava ~0,56 s por ação e 58
+consultas; o guarda, p50 **0,068 ms** e **3** consultas (as repetições vieram do cache). **Não
+provado na sua máquina:** a latência do Jev de nuvem de verdade hoje, e a mistura de ações de um
+modelo real (pode ter mais "dúvida" que o roteiro).
+
+### 0.39 A caixa de scripts: uma conta ou lógica sem tocar nos seus arquivos (2026-10-29, ADR-0050)
+
+O Jarvis pode rodar um script curto que ele mesmo escreve (Python ou JavaScript) numa **caixa
+fechada**: sem rede, sem os seus arquivos, numa pasta que some no fim, com tempo, memória e saída
+limitados. O que o script imprime volta como **dado**. Não é um terminal: não roda comando do
+sistema, não instala, não baixa código — o guarda (§0.38) barra o script que tenta sair do eixo
+antes de ele entrar na caixa, e a caixa é a cerca mesmo assim.
+
+**Como conferir** (precisa de `bubblewrap` ou `podman`; sem eles a ferramenta não aparece e o
+Jarvis diz por quê):
+
+```bash
+which bwrap || which podman
+TMPDIR=/home/sodre/.cache/jt uv run --frozen pytest tests/unit/executor/test_scripts.py
+```
+
+Os testes provam, com a caixa de verdade: Python e JS rodam e devolvem a saída; a rede está
+**fechada** (`Network is unreachable`); a sua pasta `/home` **não existe** lá dentro; um laço
+infinito é morto pelo prazo; a saída grande é cortada; e, pela ligação com o guarda, um script que
+abre `~/.ssh` ou chama `subprocess` é **barrado** antes de subir a caixa. **Não provado:** o Windows
+(a caixa é Linux — bwrap/podman; no Windows a ferramenta degrada honesto até haver um backend).
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

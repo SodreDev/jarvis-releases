@@ -65,3 +65,42 @@ com os sinais do ASR e as palavras da dica): o "Jarvis." que o ASR inventa numa 
 próprio eco não corta a fala — a vigia recebe vazio, que é `sem_fala`. O trecho que cortou o Jarvis
 e vira turno (`por_cima`) não passa pelo portão do trecho (a vigia já o julgou com 240 ms de VAD e
 portão de eco), mas passa pelo filtro da transcrição.
+
+## Emenda de 2026-10-29 — o eco sai antes do portão, a perda é pico a pico, o teto de 3 s vale, e a resposta à pergunta corta (ADR-0048)
+
+O teste do dono deu o primeiro caso de "Como invalidar": o nome dito por cima **não cortava** (trilha
+de 29/10: toda suspeita acabou em `prazo_da_pausa`). Medido em `tools/harness_interrupcao.py` (voz
+piper, eco com reverberação calculado do que o alto-falante tocou, whisper small) —
+`docs/medicoes/interrupcao-por-cima.md`:
+
+1. **A perda aprendida é pico contra pico.** Era o pico da referência na janela contra o nível do
+   quadro de agora: nos vales entre as sílabas ela inflava (25,8 dB com 6 dB de verdade) e até 64% dos
+   quadros do próprio eco passavam; o trecho nunca fechava. Agora o maior da referência contra o
+   maior do microfone na mesma janela de 300 ms: o eco não passa (0 a 1%).
+2. **O cancelador de eco do F1-04 entra, só na vigia** (`VigiaDeInterrupcao.cancelador`, PBFDAF de
+   400 ms, que o laço liga). Com o portão honesto, o dono que chega ao microfone no nível do eco não
+   passava (1 corte em 32). A referência é a mesma (`FilaDePlayback.escuta` → `vigia.referencia`),
+   casada quadro a quadro com o microfone; o resíduo vai ao portão, ao ASR do trecho e ao turno do
+   corte. O playback e o turno normal **não** passam por ele, e nada pausa por `aec_ok`: se ele não
+   convergir, o resíduo é o microfone e a vigia fica como era. Corte com o nome 31/32, falso corte
+   pelo eco 0/8. Isto revoga a parte do item 3 do Contexto ("a cadeia fica fora do laço") **só para
+   a vigia**; a cadeia inteira (NR, AGC, `aec_ok`) segue fora.
+3. **O teto de 3 s da leitura vale**: a releitura vinha antes dele e o trecho crescia sem fim (11 s,
+   relido a cada 400 ms, o nome afogado no eco). Agora decide em 3 s, e os últimos 400 ms ficam como
+   o "antes" do trecho seguinte.
+4. **Suspeita em 160 ms** (era 240) e **o portão não aprende com um trecho aberto** (os quadros do
+   dono que não passavam ensinavam "o eco é mais alto" no meio da frase dele).
+5. **O `call_id` dos motores de nuvem é único por motor aberto** (`jarvis.rede.id_da_instancia`): era
+   só o contador da sessão e os descartados da regra 5 ficam no disco — a 7ª, 11ª, 15ª e 41ª–47ª
+   transcrição de toda sessão voltavam vazias sem ir à Groq. A vigia, que transcreve muito, chegava
+   nelas em minutos.
+6. **Com uma pergunta de confirmação no ar**, a resposta («sim», «não», com ou sem a palavra) corta
+   limpo (`resposta_a_pergunta`) e a pergunta fica de pé; na que só o clique responde, não corta
+   (`so_na_tela`) — ADR-0048.
+
+**Custo:** o cancelador leva 0,087 ms por quadro de 20 ms (Ryzen 5 5600G, sem disputa). **Ainda não
+provado:** a sala, o alto-falante, o microfone e a voz do dono; o atraso real do PipeWire (o
+cancelador cobre 400 ms; medido com 30 e 150 ms); distorção não linear de alto-falante de notebook;
+a Groq no lugar do whisper. **Limitação nova:** na contínua, o resíduo do eco pausou o Jarvis à toa
+em 2 de 8 respostas (uma vez cada, sem corte). **Custo do filtro da ADR-0043 na vigia:** ~600 ms no
+corte (mediana 1,4 s × 0,8 s sem ele) — fica, por segurança; afrouxar é medir com a voz do dono.

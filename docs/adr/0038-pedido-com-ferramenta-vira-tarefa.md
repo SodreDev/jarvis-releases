@@ -34,3 +34,11 @@ O que se achou, traçando pedido → objetivo → motor → ferramenta → retor
 ## O que não foi provado
 
 O `claude -p` de verdade seguindo o protocolo e respondendo bem na tarefa; o YouTube de verdade (os testes usam uma extensão falsa, com estado); o motor de conversa usado por duas linhas ao mesmo tempo (a tarefa e o turno) — o `claude -p` é um processo por pedido, mas um motor local futuro terá de aguentar; Windows. O terminal (`jarvis-voz --texto`, que lê o `stdin`) só fala a resposta de uma tarefa junto da próxima mensagem: lá não há tique. Testes: `tests/unit/s2/test_tarefa_do_pedido.py`, `tests/unit/voz/test_tarefa_do_pedido_no_app.py`, `tests/unit/s2/test_protocolo_de_ferramenta.py`, `tests/unit/agentd/test_avisos_do_pedido.py`.
+
+## Emenda de 2026-10-25 — só o trabalho longo vira tarefa (ADR-0046)
+
+A primeira ferramenta roda no turno; vira tarefa o pedido com mais de `passos_no_turno` (2)
+ferramentas ou laço acima de 12 s, e o objetivo que precisa conferir passa à tarefa depois do
+primeiro passo. O fim de uma tarefa é entregue uma vez e só com o que é novo; a tarefa cuja pergunta
+o dono não confirmou acaba ali, sem repropor. A pergunta cortada pela **resposta** do dono conta como
+ouvida (ADR-0048).

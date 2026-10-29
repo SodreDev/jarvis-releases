@@ -51,3 +51,17 @@ Nada com microfone de verdade, voz humana ou ruído real: os ruídos são sinté
 - O dono notar fala curta dele sumindo: a trilha mostra o motivo e os números; os quatro limiares do `jarvis-voz.toml` afrouxam sem código.
 - Ruído virando pedido de novo: a trilha diz se ele passou no portão e com que sinais, e o filtro ganha a frase ou o limiar muda.
 - Medição na Groq turbo com voz e ruído reais que separe diferente: os padrões mudam com o número na mão.
+
+## Emenda de 2026-10-29 — o «sim» por cima, o eco da pergunta, e o custo na vigia
+
+- **«Jarvis, sim» também cobra os sinais fortes** (ADR-0048): o «sim» por cima da pergunta, com ou sem
+  a palavra de ativação, só confirma com `no_speech` < 0,2 e logprob > −0,8 — o pior caso continua
+  sendo o ruído confirmando ação perigosa.
+- **O eco da própria pergunta** («…Posso apagar de vez?» voltando pelo microfone) é descartado com
+  um motivo próprio, `eco_da_pergunta`: não responde nem cancela a pendência. Vai para a trilha
+  `ruido` como os outros (só o código e os números).
+- **Na vigia o filtro custa ~600 ms no corte** (`docs/medicoes/interrupcao-por-cima.md`): a primeira
+  leitura de um «Jarvis, para» por cima é curta, traz só «Jarvis.» com sinais fracos e cai como eco
+  da dica; o corte vem na leitura seguinte (mediana 1,4 s; sem o filtro, 0,8 s, e nenhum falso corte
+  pelo eco em 8 respostas). O filtro fica; se o dono achar o corte lento, o primeiro passo é medir o
+  «Jarvis» curto dele nos sinais da Groq, não desligar o filtro.

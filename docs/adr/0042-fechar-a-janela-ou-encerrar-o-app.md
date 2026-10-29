@@ -46,3 +46,10 @@
 - O teste do dono mostrar a janela fechada matando o app (a suposição do `windowclose` cair): o `window.close` passa a usar outro caminho do KWin.
 - Um app de verdade não ser achado pelos PIDs (o Flatpak, um jogo do Proton) ou um processo de fora do app entrar na lista: a resolução muda antes de qualquer sinal novo.
 - O dono pedir para "fecha o X" encerrar o app, ou para perguntar sempre.
+
+## Emenda de 2026-10-25 — o sim só no que é arriscado (ADR-0046)
+
+A ordem explícita do dono ("fecha o Brave", "fecha essa janela") fecha a janela sem o sim, também a
+do navegador; encerrar o app pede o sim só com trabalho não salvo detectado, jogo aberto, app fora da
+lista liberada ou alvo que o pedido não citou. «O navegador» sem nome é o que está em foco, senão o
+único aberto. A tabela inteira está na ADR-0046.
