@@ -40,6 +40,7 @@ from jarvis.executor.organizar import OrganizacaoRecusada, Organizador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
 from jarvis.imagem import CHAVE_DOS_ANEXOS, Imagem
 from jarvis.manifesto.validador import carregar_catalogo
+from jarvis.mcp.gestor import GestorMcp
 from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
 from jarvis.memoryd.livro import AlvoInexistente
 from jarvis.navegador.estado import EstadoDaPonte
@@ -57,7 +58,15 @@ from jarvis.politica.atalho import Atalho, ContextoDoAtalho
 from jarvis.politica.atalho import achar as achar_atalho
 from jarvis.politica.canonicalizacao import CaminhoRecusado, Sistema, canonicalizar
 from jarvis.politica.descritor import AberturaRecusada, RaizAberta, abrir_raiz
-from jarvis.politica.guarda import Acao, GuardaDeContexto, Julgamento, Saida, Tipo, guardada
+from jarvis.politica.guarda import (
+    PREFIXO_MCP,
+    Acao,
+    GuardaDeContexto,
+    Julgamento,
+    Saida,
+    Tipo,
+    guardada,
+)
 from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.metodo import ContextoDoMetodo, Escolha, escolher_metodo
 from jarvis.politica.objetivo import Objetivo, enderecos_do_resultado
@@ -355,6 +364,9 @@ class ExecutorDeFerramentas:
     guarda: GuardaDeContexto | None = None
     """O guarda de contexto (ADR-0049): julga script, gesto e MCP contra o objetivo, antes do PDP.
     Sem ele, essas ferramentas seguem direto ao PDP (como as outras)."""
+    mcp: GestorMcp | None = None
+    """Os servidores MCP que o dono ligou (ADR-0052). Sem ele, nenhuma `mcp.*` existe. As tools
+    promovidas entram no catálogo e no PDP em `preparar`, com o tier que o dono deu."""
     encerramento: Encerramento | None = None
     """Quem encerra o Jarvis (ADR-0041). Sem ele, a `jarvis.encerrar` não existe."""
     vocabulario: RepositorioDoVocabulario | None = None
@@ -464,8 +476,14 @@ class ExecutorDeFerramentas:
         return self.pdp.pasta_do_jarvis
 
     def preparar(self) -> None:
-        """Cria as pastas de rascunho **antes** de qualquer pedido: é configuração, não efeito."""
+        """Cria as pastas de rascunho **antes** de qualquer pedido: é configuração, não efeito.
+        E promove as tools dos servidores MCP que o dono ligou (ADR-0052) para o catálogo e o PDP,
+        com o tier que o dono deu — depois disso elas existem como qualquer outra tool."""
         (self.pasta_do_jarvis / arquivos.PASTA_DE_AGENDA).mkdir(parents=True, exist_ok=True)
+        if self.mcp is not None:
+            self.mcp.descobrir()
+            self.manifestos.update(self.mcp.manifestos)
+            self.pdp.catalogo.update(self.mcp.capacidades)
 
     def aprender_correcao_de_app(self, fala: str, app_id: str) -> None:
         """Registra o alias que o dono confirmou; não abre aplicativo nem altera permissões."""
@@ -531,6 +549,8 @@ class ExecutorDeFerramentas:
             return self.entrada is not None
         if tool_id == FERRAMENTA_DE_SCRIPT:
             return self.caixa is not None and self.caixa.disponivel()
+        if tool_id.startswith(PREFIXO_MCP):
+            return self.mcp is not None and tool_id in self.manifestos
         if tool_id in PRECISAM_DE_AGENDA:
             return self.portas().agenda is not None
         return tool_id in FERRAMENTAS_LIGADAS or tool_id in CORPOS or tool_id in DE_ARQUIVOS
@@ -780,6 +800,17 @@ class ExecutorDeFerramentas:
             )
         if tool_id == "browser.gesto":
             return Acao(tool_id, Tipo.GESTO, detalhe=str(argumentos.get("gesto", "")))
+        if tool_id.startswith(PREFIXO_MCP):
+            manifesto = self.manifestos.get(tool_id, {})
+            return Acao(
+                tool_id,
+                Tipo.MCP,
+                tier="leitura"
+                if manifesto.get("risk_class") == "leitura"
+                else str(manifesto.get("tier", "")),
+                detalhe=tool_id,
+                destinos=tuple(_urls_dos_args(argumentos)),
+            )
         return Acao(tool_id, Tipo.LEITURA)  # leitura (console/rede) ou sem corpo guardado
 
     def _trilhar_guarda(self, tool_id: str, julgamento: Julgamento) -> None:
@@ -1382,6 +1413,10 @@ class ExecutorDeFerramentas:
         if tool_id == "apps.quit":
             fechador = self._fechador()
             return fechador.encerrar_app(fechador.app(*_alvo_de(args)))
+        if tool_id.startswith(PREFIXO_MCP):
+            assert self.mcp is not None  # _ligada filtra antes
+            # O resultado do servidor é dado de terceiros (ADR-0052): volta como está, nunca ordem.
+            return self.mcp.chamar(tool_id, args)
         if tool_id == FERRAMENTA_DE_SCRIPT:
             assert self.caixa is not None  # _ligada filtra antes
             resultado = self.caixa.rodar(
@@ -1628,6 +1663,20 @@ FALADO_IGUAL_AO_DETALHE: Final = frozenset(
 def _resumo(args: Mapping[str, Any]) -> str:
     """Os argumentos em uma linha para o dono ler na confirmação (texto puro, truncado)."""
     return json.dumps(dict(args), ensure_ascii=False)[:160]
+
+
+def _urls_dos_args(args: Mapping[str, Any]) -> list[str]:
+    """As URLs que aparecem nos valores dos argumentos — o guarda compara o destino de uma chamada
+    MCP com o objetivo (ADR-0049/0052). Só olha os valores de texto, nunca vira instrução. Sem
+    regex de propósito: `re.compile` no pacote `executor` dispara o teste sem-shell (F0-03)."""
+    achados: list[str] = []
+    for valor in args.values():
+        if not isinstance(valor, str):
+            continue
+        for token in valor.replace('"', " ").replace("'", " ").replace("<", " ").split():
+            if token.startswith(("http://", "https://")):
+                achados.append(token.rstrip(".,);>"))
+    return achados[:10]
 
 
 def _alvo_de(args: Mapping[str, Any]) -> tuple[str, str]:

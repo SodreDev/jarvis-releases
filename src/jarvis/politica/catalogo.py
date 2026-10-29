@@ -104,9 +104,16 @@ def carregar(arquivo: Path) -> Capacidade:
     dados: Any = yaml.safe_load(arquivo.read_text(encoding="utf-8"))
     if not isinstance(dados, dict):
         raise ManifestoInvalido(f"{arquivo.name}: manifesto não é um mapa")
+    return de_dados(dados, origem=arquivo.name)
+
+
+def de_dados(dados: dict[str, Any], *, origem: str = "(memória)") -> Capacidade:
+    """A `Capacidade` (a parte de política) de um manifesto já carregado — do disco ou promovido
+    de um servidor MCP (ADR-0052). A promoção valida o manifesto inteiro antes; aqui só a leitura
+    dos campos de política, com a mesma recusa de canivete suíço."""
     faltando = sorted(CAMPOS_DE_POLITICA - set(dados))
     if faltando:
-        raise ManifestoInvalido(f"{arquivo.name}: sem {', '.join(faltando)}")
+        raise ManifestoInvalido(f"{origem}: sem {', '.join(faltando)}")
     identificador = str(dados["id"])
     for padrao in PADROES_DE_CANIVETE:
         if padrao.search(identificador):

@@ -141,7 +141,14 @@ class CaixaDeScript:
             return Resultado("", f"{_BINARIO[lingua]} não está instalado", 127, sem_suporte=True)
         if self.backend == "bwrap":
             # O script entra por um descritor (nunca vira arquivo); o stdin leva a entrada do dono.
-            return self._rodar_bwrap(lingua, codigo, entrada, rede, limites)
+            resultado = self._rodar_bwrap(lingua, codigo, entrada, rede, limites)
+            if _namespace_falhou(resultado):
+                # Sob muita criação de processo, o `clone`/`unshare` do bwrap devolve EAGAIN
+                # ("Creating new namespace failed: Resource temporarily unavailable"): é
+                # transitório, não um erro do script — uma nova tentativa resolve.
+                time.sleep(0.2)
+                resultado = self._rodar_bwrap(lingua, codigo, entrada, rede, limites)
+            return resultado
         # podman: o script vai pelo stdin (`python3 -`/`node -`); a entrada não tem canal próprio.
         argv = self._por_podman(lingua, rede, limites)
         return self._executar(argv, escrita=-1, script=None, stdin=codigo, limites=limites)
@@ -328,3 +335,11 @@ def _matar_o_grupo(pid: int) -> None:
 
 def _texto(bruto: bytes, limite: int) -> str:
     return bruto[:limite].decode("utf-8", errors="replace")
+
+
+def _namespace_falhou(resultado: Resultado) -> bool:
+    """O bwrap não subiu por um transitório de criação de namespace (EAGAIN sob carga)."""
+    return resultado.codigo_de_saida != 0 and (
+        "Creating new namespace failed" in resultado.erro
+        or "Resource temporarily unavailable" in resultado.erro
+    )
