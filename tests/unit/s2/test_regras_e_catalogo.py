@@ -55,7 +55,7 @@ def test_as_regras_padrao_sao_poucas_e_fortes_e_vao_depois_da_persona() -> None:
     assert all(len(r.texto) <= MAXIMO_DO_TEXTO for r in regras.regras)
     bloco = regras.bloco()
     assert bloco.startswith(CABECALHO) and len(bloco) <= 1200
-    for trecho in ("Conciso e direto", "nunca peça ao dono", "pelo contexto", "Uma resposta"):
+    for trecho in ("Curto e direto", "nunca peça ao dono", "pelo contexto", "Uma resposta"):
         assert trecho in bloco, trecho
     sistema = sistema_do_jarvis()
     assert sistema.startswith(prompt_de_sistema()) and sistema.endswith(bloco)

@@ -50,3 +50,35 @@ O dono pedir de volta o acompanhamento passo a passo, ou a trilha mostrar `narra
 
 **Risco aceito:** a lista de pedidos de detalhe é por palavras: um "fala tudo sobre isso" dito de outro jeito não tira o teto, e o dono ouve o resumo e lê o resto. **Não provado:** o `claude -p` de verdade seguindo o parágrafo novo da persona (os testes usam o motor roteirizado). Testes: `tests/unit/s2/test_falar_menos.py` (o orçamento em stream e de uma vez, a quarta que espera, a frase comprida, abreviação, lista, detalhe; o cérebro; a resposta de tarefa; a pergunta que não é cortada; a persona).
 
+
+## Emenda de 2026-10-29 — falar curto do jeito certo: quem encurta é o prompt; o código só segura o monólogo
+
+**Pedido:** dono, 2026-10-29 — "Hoje a regra […] é 'até 4 frases na voz e o resto na tela', e ele
+corta coisas que não precisavam. O dono quer: o PROMPT já produz respostas curtas por natureza (diga
+na persona para responder curto e direto); só se a resposta ficar realmente MUITO grande ele resume
+por voz e PERGUNTA se o dono quer o conteúdo completo montado na tela. Remova o corte mecânico
+agressivo; mantenha só um teto alto de segurança para evitar monólogo de TTS; sem teto quando o dono
+pede detalhe."
+
+Substitui os itens 1 e 5 da emenda de 2026-10-21 (os itens 2, 3 e 4 seguem):
+
+1. **Sem corte mecânico.** O `OrcamentoDaFala` não conta frases nem guarda a "quarta frase": cada
+   frase vai para a voz assim que fecha. O único limite do código é o **teto de segurança contra o
+   monólogo**, `PALAVRAS_NA_VOZ` = 120 palavras (~45 s de fala) — o tamanho de uma resposta é da
+   persona, não dele. Passou do teto, a voz para na última frase **inteira** que coube e **pergunta**
+   (`FECHO` = «Quer que eu monte o resto na tela?»); uma frase só, maior que o teto, é cortada na
+   última vírgula (ou palavra) dentro dele. Seis frases curtas (~40 palavras), que antes viravam três
+   e «O resto está na tela.», agora vão inteiras.
+2. **A persona v16 (VOZ E TELA) faz a resposta curta**: "Responda curto e direto por natureza: o
+   comum cabe em uma a três frases — o que fez, o que achou, o que falta. Só quando a resposta for
+   realmente grande (lista longa, tabela, comparação, texto), diga o essencial em uma ou duas frases
+   e pergunte se ele quer o conteúdo completo montado na tela." A regra padrão `conciso` do
+   `regras.toml` diz o mesmo em uma linha. Persona: 4 580 → 4 710 caracteres (teto do teste, 5 000).
+3. **"Sim" à pergunta é um turno normal**: o que ficou só na tela já está na conversa do modelo
+   ("[só na tela, não falado: …]"), e ele monta o conteúdo na tela (a ferramenta de exibição vem na
+   fatia seguinte, com ADR própria). Sem teto quando o dono pede detalhe, como antes.
+
+**Risco aceito:** o modelo que ignora a persona fala até ~45 s antes do teto — é o preço de não
+cortar o que não precisava. Uma frase muito longa sem pontuação só começa a tocar quando fecha ou
+quando passa do teto (era 60 palavras, agora 120). **Não provado:** o `claude -p` de verdade seguindo
+a v16 (os testes usam o motor roteirizado). Testes: `tests/unit/s2/test_falar_menos.py`.

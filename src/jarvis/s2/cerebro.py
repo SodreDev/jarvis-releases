@@ -20,8 +20,9 @@ para o contrato ser testado inteiro em memória:
   com teto, e volta só para o motor na rodada seguinte; a fala é o resultado, uma pergunta
   necessária e no máximo um aviso curto antes da primeira ferramenta.
 - **Falar menos** (emenda de 2026-10-21 à ADR-0031). O texto do motor vai inteiro para a tela, e
-  para a voz só até o orçamento (`jarvis.s2.orcamento_da_fala`: quatro frases, 60 palavras), com
-  o fecho «O resto está na tela.» — a não ser que o dono tenha pedido detalhe.
+  para a voz inteira até o teto de segurança (`jarvis.s2.orcamento_da_fala`: 120 palavras, ~45 s),
+  que corta numa frase inteira e pergunta «Quer que eu monte o resto na tela?» — a não ser que o
+  dono tenha pedido detalhe. Quem faz a resposta curta é a persona, não o teto (2026-10-29).
 - **Uma resposta por pedido** (dono, 2026-10-25, ADR-0046). O pedido de um passo responde no
   turno: a primeira ferramenta roda aqui, e só o trabalho longo (mais passos, mais tempo) vai para
   uma tarefa. Depois de uma ferramenta, a frase que repete o que o dono já ouviu fica só na tela

@@ -49,3 +49,12 @@ O dono ouvindo "uma resposta só" em todos os tipos de pedido; a marca de não s
 ## Como invalidar esta decisão
 
 Se a trilha mostrar `entrega` silenciosa onde o dono esperava ouvir (perdeu um resultado), ou um `apps.quit` sem sim que perdeu trabalho, a tabela volta a perguntar naquele caso — a linha da tabela muda, não a regra inteira.
+
+## Emenda de 2026-10-29 — a resposta grande pergunta, e a pergunta não é uma segunda resposta
+
+A regra "uma resposta por pedido" (itens 2 e 3) convive com o falar curto novo (emenda de 2026-10-29
+à ADR-0031): a resposta grande de verdade diz o essencial e **termina** perguntando se o dono quer o
+conteúdo completo montado na tela — pela persona, ou pelo fecho do teto de segurança («Quer que eu
+monte o resto na tela?»). Essa pergunta é o fim da mesma resposta, não uma segunda; o "sim" do dono
+é um turno novo, em que o modelo monta a tela com o que já está na conversa. Nada muda na tabela do
+sim (item 5) nesta emenda.

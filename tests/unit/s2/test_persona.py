@@ -58,7 +58,7 @@ SECOES: Final = (
     "MEMÓRIA E NOMES.",
     "SEGURANÇA.",
 )
-"""A persona v15 (dono, 2026-10-25; ADR-0047): seções claras, nesta ordem."""
+"""A persona v15+ (dono, 2026-10-25; ADR-0047): seções claras, nesta ordem."""
 
 
 def test_a_persona_v15_tem_as_secoes_na_ordem() -> None:
@@ -77,8 +77,11 @@ def test_a_persona_v15_tem_as_secoes_na_ordem() -> None:
         ("conciso e direto", "conciso e direto"),
         ("respostas faladas, sem markdown nem lista", "é lido em voz alta"),
         ("sem markdown nem lista", "sem markdown, sem lista"),
-        ("três ou quatro frases na voz", "três ou quatro frases no máximo"),
-        ("resumo + quer que eu detalhe", "pergunte se ele quer que você detalhe"),
+        ("curto por natureza, não corte mecânico", "Responda curto e direto por natureza"),
+        (
+            "resposta grande: o essencial e oferece montar na tela",
+            "pergunte se ele quer o conteúdo completo montado na tela",
+        ),
         ("age em vez de perguntar quando o pedido é claro", "Quando o pedido é claro, faça"),
         (
             "não pede ao dono o que ele mesmo pode",

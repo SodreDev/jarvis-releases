@@ -856,8 +856,9 @@ class Aplicativo:
         if not novo:
             self._entrega_silenciosa(tarefa, "ja_dito", frase)
             return
-        # Falar menos (dono, 2026-10-21): a voz resume a execução em até quatro frases, a não ser
-        # que o pedido peça detalhe; o que passar disso vai só para a tela.
+        # Falar curto (dono, 2026-10-21; 2026-10-29): a resposta vai inteira até o teto de segurança
+        # contra o monólogo, a não ser que o pedido peça detalhe; passou dele, a voz pergunta se
+        # monta o resto na tela.
         falado, _so_na_tela = orcar(novo, livre=quer_detalhe(tarefa.descricao))
         self._aviso_da_tarefa(tarefa, f"tarefa-{tarefa.id}", tipo, falado, na_tela=frase)
         self.trilha.evento(

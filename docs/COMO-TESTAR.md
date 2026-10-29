@@ -1743,6 +1743,28 @@ endereçamento na Configuração; e "uhum" ou "tá" ditos junto com outra palavr
 
 ---
 
+### 0.44 Falar curto do jeito certo: sem corte de quatro frases, e a resposta grande pergunta (2026-10-29, ADR-0031 emendada)
+
+O corte mecânico ("três frases e «O resto está na tela.»") saiu: ele cortava o que não precisava.
+Agora quem faz a resposta curta é a persona (v16): o comum em uma a três frases; só a resposta grande
+de verdade diz o essencial e **pergunta** se você quer o conteúdo completo montado na tela. O código
+só segura o monólogo: passou de ~45 s de fala (120 palavras), ele para numa frase inteira e pergunta
+«Quer que eu monte o resto na tela?». Pedindo detalhe ("explica", "me conta", "lê pra mim"), ele fala
+tudo, como antes.
+
+**Como conferir:** "o que você abriu hoje?" — a resposta vem inteira, sem «o resto está na tela».
+"Compara os três últimos celulares da Samsung" — ele deve resumir e perguntar se monta na tela. A
+trilha mostra `caracteres_so_na_tela` > 0 só quando o teto cortou. Testes, sem microfone:
+
+```bash
+TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/s2/test_falar_menos.py tests/unit/s2/test_persona.py
+```
+
+**Não provado:** o `claude -p` de verdade seguindo a persona v16 — diga se ele ainda falar demais
+(o teto corta em ~45 s) ou de menos.
+
+---
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

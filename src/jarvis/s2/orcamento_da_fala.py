@@ -1,19 +1,22 @@
-"""Falar menos: o que vai para a voz cabe num orçamento, e o resto fica na tela (dono, 2026-10-21).
+"""Falar curto do jeito certo: quem encurta é o prompt; o código só segura o monólogo.
 
-Pedido do dono: "resumir a EXECUÇÃO de ações em 3 a 4 frases curtas, a menos que o dono peça
-para detalhar o que achou/fez; resposta falada curta por padrão, texto longo vai para a tela (não
-para o TTS) quando o dono não pediu detalhe". A persona pede isso ao modelo, e o modelo nem sempre
-obedece — por isso o teto é **do código** (emenda de 2026-10-21 à ADR-0031):
+Pedido do dono de 2026-10-21 (emenda à ADR-0031): resposta falada curta, o longo na tela. A primeira
+versão punha um teto **mecânico** de quatro frases e 60 palavras — e cortava o que não precisava
+(dono, 2026-10-29: "o PROMPT já produz respostas curtas por natureza; só se a resposta ficar
+realmente MUITO grande ele resume por voz e PERGUNTA se o dono quer o conteúdo completo montado na
+tela. Remova o corte mecânico agressivo; mantenha só um teto alto de segurança para evitar monólogo
+de TTS; sem teto quando o dono pede detalhe"). Agora:
 
-- até `FRASES_NA_VOZ` (4) frases e `PALAVRAS_NA_VOZ` (60) palavras vão para o TTS;
-- passou disso, a voz diz as três primeiras e o fecho «O resto está na tela.» — **quatro frases no
-  total, nunca mais**; a quarta frase da resposta espera para saber se vem uma quinta (o lote de
-  fala da terceira ainda está tocando, então a espera não se ouve);
-- uma frase só, comprida demais, é cortada na última vírgula (ou palavra) dentro das 60 palavras;
+- quem faz a resposta curta é a **persona** (v16, VOZ E TELA): o comum em uma a três frases; a
+  resposta grande de verdade diz o essencial e pergunta se ele quer o conteúdo completo na tela;
+- o código **não conta frases**: a resposta vai inteira para a voz até `PALAVRAS_NA_VOZ` (120
+  palavras, ~45 s de fala) — o teto de segurança, para quando o modelo não obedece;
+- passou do teto, a voz para na última frase inteira que coube e **pergunta** (`FECHO`). Uma frase
+  só, comprida demais, é cortada na última vírgula (ou palavra) dentro do teto;
 - a tela recebe **tudo**, como antes (`mostrar`); o que ficou só nela vai junto para a conversa,
-  marcado, para o modelo saber que o dono já viu;
+  marcado, para o modelo saber que o dono viu e não ouviu — e montar na tela se ele disser que sim;
 - com o dono pedindo detalhe ("explica", "detalha", "lê pra mim", "o que você achou/fez", "passo a
-  passo"…) não há teto: ele pediu para ouvir.
+  passo", "me conta"…) não há teto: ele pediu para ouvir.
 
 Pergunta nunca passa por aqui: uma pergunta cortada não pode ser respondida (o "sim" só vale depois
 de ela tocar inteira, ADR-0038). Nem as frases que o código monta (o aviso de uma moderada, a frase
@@ -27,9 +30,10 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Final
 
-FRASES_NA_VOZ: Final = 4
-PALAVRAS_NA_VOZ: Final = 60
-FECHO: Final = "O resto está na tela."
+PALAVRAS_NA_VOZ: Final = 120
+"""O teto de segurança: ~45 s de fala. Não é o tamanho de uma resposta — esse é o da persona."""
+FECHO: Final = "Quer que eu monte o resto na tela?"
+"""O que a voz diz quando o teto corta: a pergunta, não um aviso (dono, 2026-10-29)."""
 FIM_DE_FRASE: Final = (".", "!", "?", "…")
 FECHAMENTOS: Final = "\"'”’»)]"
 """O que pode vir depois do ponto e ainda ser o fim da frase ("ele disse «sim».»", "(pronto.)")."""
@@ -80,9 +84,9 @@ def _fecha_frase(palavra: str) -> bool:
 
 @dataclass(slots=True)
 class OrcamentoDaFala:
-    """Filtro do texto que vai para o TTS, em stream: devolve o que pode ser falado agora."""
+    """Filtro do texto que vai para o TTS, em stream: devolve o que pode ser falado agora. Cada
+    frase sai assim que fecha — o teto não atrasa nada."""
 
-    frases: int = FRASES_NA_VOZ
     palavras: int = PALAVRAS_NA_VOZ
     livre: bool = False
     """O dono pediu detalhe: tudo vai para a voz."""
@@ -97,8 +101,6 @@ class OrcamentoDaFala:
     _palavras_da_frase: list[tuple[int, int]] = field(default_factory=list)
     """(início, fim) de cada palavra completa da frase em curso."""
     _palavras_faladas: int = 0
-    _guardada: tuple[int, int] | None = None
-    """A quarta frase: espera para saber se vem uma quinta (então ela não é dita)."""
     _corte: int = -1
     """Do corte em diante, o texto é só da tela."""
     _fechado: bool = False
@@ -118,8 +120,7 @@ class OrcamentoDaFala:
         return self._varrer(final=False)
 
     def fechar(self) -> str:
-        """Fim da resposta: o que ainda cabe (a quarta frase guardada, a última sem ponto) ou o
-        fecho, se algo ficou de fora."""
+        """Fim da resposta: o que ainda cabe (a última frase, sem ponto) ou o fecho, se não cabe."""
         if self._fechado:
             return ""
         self._fechado = True
@@ -142,11 +143,8 @@ class OrcamentoDaFala:
                 saida.append(self._cortar_frase_comprida())
             if self._ja_cortou():
                 return "".join(saida)
-        if final:
-            if self._palavras_da_frase:  # a última frase, sem pontuação no fim
-                saida.append(self._frase_completa(len(self._texto)))
-            if not self._ja_cortou() and self._guardada is not None:
-                saida.append(self._soltar_a_guardada())
+        if final and self._palavras_da_frase:  # a última frase, sem pontuação no fim
+            saida.append(self._frase_completa(len(self._texto)))
         return "".join(saida)
 
     def _ja_cortou(self) -> bool:
@@ -172,25 +170,17 @@ class OrcamentoDaFala:
         return achadas
 
     def _frase_completa(self, fim: int) -> str:
-        """Uma frase fechou: fala, guarda (a quarta) ou corta (a quinta, ou a que passa do teto de
-        palavras)."""
+        """Uma frase fechou: vai para a voz, ou — se passa do teto — a voz para antes dela."""
         n = len(self._palavras_da_frase)
         inicio = self._inicio_da_frase
         if n == 0:
             self._inicio_da_frase = fim
             return ""
-        if self._guardada is not None:
-            # Uma quinta frase: a resposta passa do orçamento. A quarta fica na tela.
-            self._reiniciar_frase(fim)
-            return self._cortar(self._guardada[0])
         if self._palavras_faladas + n > self.palavras:
             dito = self._cortar_frase_comprida()
             self._reiniciar_frase(fim)
             return dito
         self._reiniciar_frase(fim)
-        if self.frases_faladas + 1 >= self.frases:
-            self._guardada = (inicio, fim)
-            return ""
         self.frases_faladas += 1
         self._palavras_faladas += n
         return self._texto[inicio:fim]
@@ -205,8 +195,8 @@ class OrcamentoDaFala:
     def _cortar_frase_comprida(self) -> str:
         """A frase em curso passou do teto de palavras antes de fechar: se nada foi dito, diz o
         começo dela (até a última vírgula, ou a última palavra que cabe) e corta; senão, corta."""
-        if self.frases_faladas or self._guardada is not None:
-            return self._cortar(self._guardada[0] if self._guardada else self._inicio_da_frase)
+        if self.frases_faladas:
+            return self._cortar(self._inicio_da_frase)
         cabem = self._palavras_da_frase[: self.palavras - self._palavras_faladas]
         fim = cabem[-1][1]
         for _inicio, fim_da_palavra in reversed(cabem[len(cabem) // 2 :]):
@@ -218,17 +208,9 @@ class OrcamentoDaFala:
         self._palavras_faladas += len(cabem)
         return dito + "… " + self._cortar(fim)
 
-    def _soltar_a_guardada(self) -> str:
-        assert self._guardada is not None
-        inicio, fim = self._guardada
-        self._guardada = None
-        self.frases_faladas += 1
-        return self._texto[inicio:fim]
-
     def _cortar(self, desde: int) -> str:
         self.cortou = True
         self._corte = desde
-        self._guardada = None
         self.frases_faladas += 1
         return f" {FECHO}"
 
@@ -242,7 +224,6 @@ def orcar(texto: str, *, livre: bool = False) -> tuple[str, str]:
 
 __all__ = [
     "FECHO",
-    "FRASES_NA_VOZ",
     "PALAVRAS_NA_VOZ",
     "OrcamentoDaFala",
     "orcar",

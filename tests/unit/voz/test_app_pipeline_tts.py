@@ -69,6 +69,9 @@ class MotorLongo(MotorRoteirizado):
     espera_o_cancelamento_depois_de: int = 0
     """> 0: depois de tantos deltas o motor espera o turno ser cancelado (até 2 s) antes de seguir.
     Prova que quem parou a geração foi o cancelamento, e não o texto que acabou."""
+    ponto: str = ""
+    """"." faz de cada delta uma frase inteira: a voz a recebe assim que ela fecha. Sem ponto, a
+    frase de 18 palavras só sai no teto de segurança da fala (120 palavras, 2026-10-29)."""
 
     def gerar(
         self, contexto: Contexto, modo: Modo, cancelado: Cancelado
@@ -82,7 +85,7 @@ class MotorLongo(MotorRoteirizado):
                 if cancelado():
                     return
                 self.geradas += 1
-                yield Texto(" ".join(f"palavra{i}" for i in range(18)) + " ")
+                yield Texto(" ".join(f"palavra{i}" for i in range(18)) + self.ponto + " ")
         finally:
             self.fechou.set()
 
@@ -156,7 +159,7 @@ def test_recusa_por_epoch_da_fila_interrompe_o_pipeline_e_o_turno(tmp_path: Path
     tts = MotorEmEspera()
     tts.liberar.set()
     app = _app(tmp_path, tts, TecladoCondicionado(lambda: False))
-    motor = MotorLongo(espera_o_cancelamento_depois_de=6)
+    motor = MotorLongo(espera_o_cancelamento_depois_de=6, ponto=".")
     app._motor = motor
     saida = SumidouroEmMemoria()
     fila = FilaDePlayback(sumidouro=saida, session_id=app.session_id, epoch_atual=app.epoch + 1)
