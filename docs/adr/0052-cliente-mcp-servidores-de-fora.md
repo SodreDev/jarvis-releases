@@ -1,6 +1,6 @@
 # ADR-0052 — Cliente MCP: o Jarvis consome servidores MCP que o dono listar, cada tool atrás do mesmo PDP e do mesmo guarda
 
-**Data:** 2026-10-29 · **Estado:** proposta · **Decide:** dono (quais servidores, padrão desligado, tier de cada tool), arquiteto (o transporte, a promoção a manifesto, o isolamento, o guarda)
+**Data:** 2026-10-29 · **Estado:** aceita (implementada; pendente da decisão do dono de usar no app) · **Decide:** dono (quais servidores, padrão desligado, tier de cada tool), arquiteto (o transporte, a promoção a manifesto, o isolamento, o guarda)
 **Pedido:** dono, 2026-10-29 — "integrar TAMBÉM servidores MCP (consumir MCPs de fora, como Chrome DevTools MCP e Playwright MCP). […] CLIENTE MCP: o Jarvis consome servidores MCP configurados pelo dono (lista em ~/.config/jarvis/, padrão vazio/desligado), cada tool MCP entra no catálogo com tier no PDP e passa pelo MESMO guarda; conteúdo vindo do MCP é dado, nunca ordem." Camada C da ADR-0049; realiza o lado cliente da ADR-0023 (MCP nos dois sentidos) e segue a ADR-0010 (promoção com política nossa).
 
 ## Contexto
@@ -42,9 +42,11 @@ Cada `mcp.<servidor>.<tool>` passa pelo **PDP** (o tier que o dono deu decide al
 
 O contador de saltos recusa Jarvis→Orchestrator→Jarvis (ADR-0010). O resultado do servidor passa pelo `redigir` antes de qualquer registro; o D20 vale (o que vai a um motor de nuvem é filtrado). Os tetos de catálogo (§4) contam as `mcp.*` promovidas: um servidor com dezenas de tools não estoura o catálogo do turno porque o roteador de método (ADR-0035) só mostra as relevantes ao pedido.
 
-## O que falta provar (não feito nesta ADR)
+## Estado da implementação (2026-10-29)
 
-O transporte stdio JSON-RPC, o `tools/list`, a promoção, o pino de identidade e o isolamento **não estão implementados**: esta ADR é o desenho (o lado cliente da ADR-0023, que também estava só desenhado). O guarda **já** trata `Tipo.MCP` com teste. Falta: `jarvis.mcp.cliente` (o adaptador stdio), o carregador de `mcp.toml`, a promoção a manifesto com os campos nossos, a caixa por servidor, e o teste com um **servidor MCP falso** em processo (sem rede, como os fakes das outras suítes) provando: padrão desligado, promoção com tier nosso, a tool proibida recusada, o resultado como dado, e o guarda barrando a tool que foge do objetivo.
+**Feito e provado com um servidor MCP falso por stdio.** `jarvis.mcp` (fora de `executor`/`policy`, porque abre processo filho): `config.py` lê `~/.config/jarvis/mcp.toml` (padrão vazio/desligado; recusa arquivo com cara de segredo); `cliente.py` é o adaptador stdio JSON-RPC (`initialize` → `notifications/initialized` → `tools/list` → `tools/call`, com prazo e identidade pinada por hash do comando); `promocao.py` promove cada tool a `mcp.<servidor>.<tool>` com a política **nossa** (tier do dono; `risk_class`/`data_egress`/`confirmation` derivados; `trust_input: untrusted`; `input_schema` fechado), recusando as proibidas (ADR-0010); `gestor.py` descobre, promove e roteia. O executor liga em `preparar()`: as tools entram no catálogo e no PDP, `_ligada`/`_corpo` roteiam, e passam pelo guarda (`Tipo.MCP`: leitura passa, perigoso e destino fora do objetivo pedem o sim). **Provas:** `tests/unit/mcp/` com o servidor falso `servidor_falso.py` ponta a ponta pelo executor/PDP/guarda (padrão desligado, promoção com o tier do dono, `shell_exec` recusada, resultado como dado, destino fora do objetivo pedindo o sim).
+
+**Falta (pendente do dono).** Ligar no app real: `voz/app.py._montar_ferramentas` passa a montar o `GestorMcp(carregar_mcp())` e dá ao executor — a coordenação com a CLI que edita `voz/app.py` (ver o handoff). **Não provado em máquina real:** um servidor MCP de verdade (Chrome DevTools MCP, Playwright MCP) com o `npx` do dono — o teste usa um servidor falso em processo, sem rede.
 
 ## Alternativas descartadas
 

@@ -1608,6 +1608,52 @@ infinito é morto pelo prazo; a saída grande é cortada; e, pela ligação com 
 abre `~/.ssh` ou chama `subprocess` é **barrado** antes de subir a caixa. **Não provado:** o Windows
 (a caixa é Linux — bwrap/podman; no Windows a ferramenta degrada honesto até haver um backend).
 
+### 0.40 Estudar e depurar a página: console, rede, rodar JavaScript e gestos (2026-10-29, ADR-0051)
+
+No navegador (Brave/Chromium), o Jarvis pode ver o **console** e a **rede** da aba, **rodar um
+JavaScript** que ele escreve (no mundo isolado por padrão — vê o DOM, não as variáveis da página) e
+fazer um **gesto físico** (clicar, arrastar, digitar, rolar) quando o clique comum não resolve —
+tudo pelo `chrome.debugger` (CDP). Ele **nunca** lê cookie, senha nem armazenamento, e em banco,
+e-mail, pagamento ou gerenciador de senhas **não roda script**. No Firefox não há CDP: rodar
+JavaScript recua para o modo injetado, e console/rede/gesto dizem que ali não dá.
+
+**Como conferir** (em contêiner, sem tocar no seu navegador):
+
+```bash
+node --test tests/unit/navegador/background_cdp.test.mjs   # a lógica do CDP, com o debugger simulado
+uv run --frozen python -m tools.harness_navegador --navegador chromium   # ~1–2 min, navegador real
+uv run --frozen python -m tools.harness_navegador --navegador firefox
+```
+
+O harness em contêiner passou nos dois navegadores reais (Chromium 155 e Firefox 158): o `avaliar`
+roda no mundo isolado por CDP e devolve o valor do DOM; o `gesto` despacha o clique físico; o
+`console` traz o erro que a página registrou; no Firefox tudo recua honesto. **Não provado:** o seu
+Brave/KDE reais (o harness é headless em Xvfb), e o efeito de um clique sintético no DOM headless (o
+contrato do gesto — a sequência de eventos — é provado no teste de node). **Pendente:** ligar isso
+no app (`uv run jarvis`) é uma decisão sua — hoje as tools existem e são testadas, mas o app ainda
+não as monta (o handoff diz as duas linhas).
+
+### 0.41 Ferramentas de servidores MCP de fora (2026-10-29, ADR-0052)
+
+O Jarvis pode usar ferramentas de servidores **MCP** que **você** listar em
+`~/.config/jarvis/mcp.toml` (padrão **vazio/desligado** — sem o arquivo, nada). Cada ferramenta do
+servidor entra no catálogo como `mcp.<servidor>.<tool>` com o **tier que você deu** (a política é
+nossa, nunca do servidor), passa pelo mesmo guarda (ADR-0049) e pelo PDP, e o que o servidor
+responde é **dado**, nunca ordem. Ferramentas de risco (um `shell_exec`) são recusadas.
+
+**Como conferir** (sem rede, com um servidor MCP de mentira):
+
+```bash
+uv run --frozen pytest tests/unit/mcp/
+```
+
+Os testes provam, com um servidor falso por stdio: o padrão desligado; a promoção com o seu tier (e
+nunca o que o servidor pede); a ferramenta proibida recusada; a chamada ponta a ponta pelo
+executor, PDP e guarda; e o guarda pedindo o seu sim quando a chamada vai a um site fora do que você
+pediu. **Não provado:** um servidor MCP de verdade (Chrome DevTools MCP, Playwright MCP) com o
+`npx` da sua máquina — o teste usa um servidor falso em processo. **Pendente:** ligar no app é
+decisão sua (o handoff diz como).
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)

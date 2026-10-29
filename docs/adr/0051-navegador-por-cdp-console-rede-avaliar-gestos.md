@@ -1,6 +1,6 @@
 # ADR-0051 — Navegador por CDP: console, rede, avaliar JavaScript e gestos pelo `chrome.debugger`, com recuo para `chrome.scripting`
 
-**Data:** 2026-10-29 · **Estado:** proposta · **Decide:** dono (as capacidades, mundo isolado, domínios sensíveis bloqueados), arquiteto (CDP × scripting, o recuo, o contrato das tools, o Firefox)
+**Data:** 2026-10-29 · **Estado:** aceita (implementada; pendente da decisão do dono de usar no app) · **Decide:** dono (as capacidades, mundo isolado, domínios sensíveis bloqueados), arquiteto (CDP × scripting, o recuo, o contrato das tools, o Firefox)
 **Pedido:** dono, 2026-10-29 — "NAVEGADOR (Brave/Chromium via a extensão atual): console (logs, erros), rede, DOM, executar JavaScript (Runtime.evaluate / chrome.scripting), clicar, arrastar, digitar, rolar, screenshot, via chrome.debugger (CDP) com fallback para chrome.scripting; Firefox cai para scripts injetados (diga a limitação). Tools novas no catálogo (ex.: browser.console, browser.avaliar, browser.acionar_cdp…) respeitando a regra 4, a faixa 'Jarvis no controle', o botão PARAR, reuso de abas, instância única. JS roda por padrão em mundo isolado; nada de ler cookies/senhas/storage sensível; domínios sensíveis (banco, e-mail, gerenciadores de senha) bloqueados para executar script." Camada A da ADR-0049; o guarda de contexto (ADR-0049) decide cada ação antes do PDP.
 
 ## Contexto
@@ -42,9 +42,11 @@ Tudo pela mesma concessão por objetivo da regra 4 (ADR-0027): anexar o depurado
 
 `browser.avaliar` e `browser.gesto` são **guardadas** (ADR-0049): o guarda compara a ação com o objetivo antes do PDP. Ao Jev (nuvem) vai só o host da aba, o mundo, o esqueleto do script redigido e o objetivo — nunca o conteúdo da página, o resultado do script, cookie ou valor de campo. O resultado de `Runtime.evaluate`, os logs e os pedidos de rede são `trust_input: untrusted`: dado, nunca ordem.
 
-## O que falta provar (não feito nesta ADR)
+## Estado da implementação (2026-10-29)
 
-A implementação na extensão (`chrome.debugger.attach`, os domínios, o recuo) e a prova em navegador real **não estão feitas**: esta ADR é o desenho. O guarda (ADR-0049) **já** classifica `SCRIPT_NA_PAGINA` e `GESTO` e tem teste (`tests/unit/politica/test_guarda.py`); falta o corpo das tools na extensão e no cliente, os manifestos no catálogo e o harness em contêiner (Chromium e Firefox) provando: anexar e desanexar, o mundo isolado, o bloqueio de domínio sensível, o recuo quando não dá para anexar, e a faixa/PARAR desanexando. Enquanto não houver isso, as tools não aparecem (como as `browser.*` sem a extensão, ADR-0027).
+**Feito e provado em navegador real.** As tools `browser.console`, `browser.rede`, `browser.avaliar` e `browser.gesto` estão no catálogo (teto do namespace `browser` 12→16) e no protocolo (`page.console/network/eval/gesture`), no cliente e no `CorposDoNavegador`; passam pelo guarda (ADR-0049: `browser.avaliar`→`SCRIPT_NA_PAGINA`, `browser.gesto`→`GESTO`) e pelo PDP; o corpo bloqueia script em banco/e-mail/senha/pagamento e pede o sim fora do objetivo. A extensão (`extensao/background.js`) anexa o `chrome.debugger`, roda `Runtime.evaluate` num `Page.createIsolatedWorld`, coleta `Log`/`Runtime`/`Network`, despacha `Input.*` (com `mouseMoved`+`buttons`), e desanexa ao soltar o controle/PARAR; sem CDP (Firefox) `browser.avaliar` recua para `chrome.scripting` e console/rede/gesto dizem que não há CDP. **Provas:** `tests/unit/navegador/background_cdp.test.mjs` (node, com o `chrome.debugger` simulado) e o harness em contêiner `tools/harness_navegador.py` **verde nos dois navegadores reais** (Chromium 155: avaliar no mundo isolado por CDP, gesto despacha `Input`, console captura; Firefox 158: recuo honesto).
+
+**Falta (pendente do dono).** Ligar o guarda e as tools no app real: `voz/app.py._montar_ferramentas` já tem o executor com `caixa`/`guarda`/`mcp` como parâmetros opcionais — a ligação (2 linhas: `caixa=CaixaDeScript()`, `guarda=GuardaDeContexto(classificador=...)`) fica para a coordenação com a CLI que edita `voz/app.py` (ver o handoff). **Não provado em máquina real:** o Brave/KWin do dono (o harness é headless em Xvfb); o efeito físico de um clique sintético no DOM em Xvfb (o contrato do gesto — a sequência de `Input.*` — é provado no node).
 
 ## Alternativas descartadas
 
