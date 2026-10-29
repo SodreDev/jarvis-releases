@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.ambiente import ambiente_ou_os
+from jarvis.provedores.registro import ARQUIVO as ARQUIVO_DE_PROVEDORES
 from jarvis.voz.chaves import proibir_segredo_na_configuracao
 from jarvis.voz.escuta import MODOS, CombinacaoInvalida, exigir_combinacao
 from jarvis.voz.interface import Onde
@@ -429,7 +430,8 @@ def _lista(dados: Mapping[str, Any], chave: str) -> tuple[str, ...]:
 
 def validar(configuracao: Configuracao) -> Configuracao:
     """Recusa o que não existe, dizendo o que existe. Chamada na leitura e na gravação."""
-    motores = {m.id: m for m in ler_motores()}
+    # Os provedores de modelo (ADR-0056) também ligam pela `nuvem_ligada`, com o mesmo portão.
+    motores = {m.id: m for m in (*ler_motores(), *ler_motores(ARQUIVO_DE_PROVEDORES))}
 
     def exigir(campo: str, identificador: str, papel: str) -> Motor:
         motor = motores.get(identificador)

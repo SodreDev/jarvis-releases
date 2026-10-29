@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from jarvis.provedores.interface import esforco_do_modo
 from jarvis.s2.motor import (
     INTERVALO_DE_CONSULTA_S,
     Contexto,
@@ -60,6 +61,9 @@ PRAZO_PADRAO_S: Final = 30.0
 ESFORCO_POR_MODO: Final[Mapping[Modo, str]] = {Modo.RAPIDO: "low", Modo.PENSAR: "high"}
 """Medido: o esforço pesa mais que o tamanho do modelo no tempo até a primeira fronteira
 (`sonnet` com `low` ficou perto do `haiku`; o padrão passou de 2 s)."""
+ESFORCOS_DA_CLI: Final[tuple[str, ...]] = ("low", "medium", "high", "xhigh", "max")
+"""Os valores de `--effort` da referência da CLI (code.claude.com/docs/en/cli-reference, lida em
+2026-10-29); nível que o modelo não aceita cai no maior abaixo dele, na própria CLI (ADR-0056)."""
 ESPERA_DO_PROCESSO_MORTO_S: Final = 1.0
 CORTESIA_DEPOIS_DO_FIM_S: Final = 0.5
 """Depois do evento `result` a CLI ainda está saindo sozinha: espera-se um pouco antes de matar.
@@ -193,6 +197,13 @@ class MotorClaudeCli:
     ele mexeu pouco no p50 e piorou o p95 em duas de três rodadas — fica só para medir."""
     extras: Sequence[str] = ()
     """Flags a mais no `argv`, para medição."""
+    esforco: str = ""
+    """O esforço do preset do dono (ADR-0056): vale no modo rápido; o `pensar` sobe para ao menos
+    `high`. Vazio = o de sempre, por modo (`ESFORCO_POR_MODO`)."""
+
+    def esforco_de(self, modo: Modo) -> str:
+        """O `--effort` deste pedido, entre os que a CLI aceita (`ESFORCOS_DA_CLI`)."""
+        return esforco_do_modo(self.esforco, modo, ESFORCOS_DA_CLI) or ESFORCO_POR_MODO[modo]
 
     def argumentos(
         self,
@@ -226,7 +237,7 @@ class MotorClaudeCli:
             "--strict-mcp-config",
             "--disable-slash-commands",
             "--effort",
-            ESFORCO_POR_MODO[modo],
+            self.esforco_de(modo),
         ]
         if com_imagem:
             argumentos += ["--input-format", "stream-json"]

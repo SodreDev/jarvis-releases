@@ -120,8 +120,6 @@ from jarvis.s2.motor import (
     MotorDeConversa,
     aceita_imagem,
 )
-from jarvis.s2.motor_claude_cli import MotorClaudeCli
-from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.s2.orcamento_da_fala import orcar, quer_detalhe
 from jarvis.s2.persona import sistema_do_jarvis
 from jarvis.s2.portao import PortaoDeAcao
@@ -168,7 +166,6 @@ from jarvis.voz.ruido import (
     so_cortesia,
 )
 from jarvis.voz.ruido import Motivo as MotivoDoRuido
-from jarvis.voz.s2_provisorio import RespostaDeEco
 from jarvis.voz.teclado import ESPACO, TECLAS_DE_SAIDA, Teclado, TecladoMudo
 from jarvis.voz.vocabulario import VAZIO, RepositorioDoVocabulario, Vocabulario
 
@@ -415,15 +412,14 @@ def motor_de_conversa(configuracao: Configuracao, *, pasta_de_trabalho: Path) ->
     `eco` é o **padrão**: repete o que o dono disse, sem rede e sem conta — testa voz,
     interrupção e tela sem mandar nada para fora. O `claude -p` só roda quando o dono escolhe
     `s2 = "claude"`, e a tela diz `[nuvem]` ao lado do nome: nunca é padrão silencioso.
+
+    Os dois saem do registro de provedores de modelo (ADR-0056), pelo mesmo portão dos outros.
     """
-    if configuracao.s2 == "eco":
-        eco = RespostaDeEco()
-        return MotorRoteirizado(
-            resposta=lambda contexto: eco.responder(contexto.turno),
-            nome="eco (repete o que você disse)",
-        )
-    pasta_de_trabalho.mkdir(parents=True, exist_ok=True)
-    return MotorClaudeCli(pasta_de_trabalho=pasta_de_trabalho, modelo=configuracao.modelo_do_s2)
+    from jarvis.provedores.nucleo import Provedores, escolha_da_configuracao
+
+    provedor, modelo = escolha_da_configuracao(configuracao)
+    provedores = Provedores.da_configuracao(configuracao, pasta_de_trabalho=pasta_de_trabalho)
+    return provedores.motor(provedor, modelo)
 
 
 @dataclass(slots=True)

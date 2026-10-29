@@ -1,0 +1,104 @@
+# Registro de provedores de modelo de linguagem (ADR-0056): o cérebro, a visão e o resumo.
+#
+# Mesmo formato e mesmas regras de `licenses/motores.toml` (ADR-0017), conferidas pela mesma função
+# (`jarvis.voz.registro.exigir_motor`, chamada por `jarvis.provedores.registro.exigir`):
+#
+#   - provedor não registrado **não chama**;
+#   - `onde = "nuvem"` nasce desligado: só chama com o id em `nuvem_ligada`, que é escolha do dono
+#     na janela (ADR-0017, política 2) — preset escolhido por voz **não** liga nuvem;
+#   - campo de termo vazio barra (política 4), salvo o dono aceitar o provedor em `nuvem_sem_termos`;
+#   - `fonte` e `data_de_acesso` nunca podem faltar; `modelos` exige `fonte_dos_modelos` e
+#     `data_dos_modelos`.
+#
+# O que é deste registro:
+#
+#   - `modelos` é a **lista estática**: o último recurso quando a listagem ao vivo e o cache não
+#     servem (`jarvis.provedores.catalogo`). Ela não limita o que o dono escolhe — a lista viva é a
+#     do provedor;
+#   - `[[capacidade]]` diz o que um grupo de modelos faz (`padrao` no estilo `fnmatch`) quando o
+#     provedor não informa; a primeira regra que diz algo vence, campo a campo, e o que o provedor
+#     informa vence o registro. Toda regra tem `fonte` e `data`.
+#
+# `fonte` é a página oficial do serviço — nunca agregador.
+
+data_da_verificacao = "2026-10-29"
+verificado_por = "opus-provedores"
+
+# --- Local -----------------------------------------------------------------------------------
+
+[[motor]]
+id = "conversa-eco"
+papel = "conversa"
+onde = "local"
+ligado = false
+implementacao = "jarvis.provedores.existentes:ProvedorEco"
+modelo = "eco"
+servico = "eco local (repete o que o dono disse)"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório"
+fonte = "https://github.com/SodreDev/jarvis-releases"
+data_de_acesso = "2026-10-29"
+nota = "O padrão do produto (ADR-0025, D18): testa voz, interrupção e tela sem rede e sem conta."
+
+# --- CLI do Claude (assinatura do dono) ---------------------------------------------------------
+
+[[motor]]
+id = "conversa-claude-cli"
+papel = "conversa"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.provedores.existentes:ProvedorClaudeCli"
+modelo = "default"
+modelos = [
+  "haiku",
+  "sonnet",
+  "opus",
+  "fable",
+  "best",
+  "opusplan",
+  "sonnet[1m]",
+  "opus[1m]",
+  "claude-haiku-5-5",
+  "claude-sonnet-5-5",
+  "claude-opus-5-5",
+  "claude-fable-5-1",
+]
+fonte_dos_modelos = "https://code.claude.com/docs/en/model-config"
+data_dos_modelos = "2026-10-29"
+servico = "Anthropic (Claude Code, a CLI `claude` com a assinatura do dono)"
+endereco = "processo local `claude -p`, que fala com a Anthropic"
+variavel_da_chave = ""
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório, que chama o binário `claude` do dono sem modificá-lo"
+uso_comercial = "os Termos de Consumo atribuem a saída ao dono; acesso por robô ou script só com chave de API, e a página legal do Claude Code diz que o usuário final pode rodar o binário `claude` sem modificação com a própria assinatura — é o uso daqui (o Jarvis do próprio dono). Terceiro não pode encaminhar pedidos de outros usuários pela assinatura de um"
+retencao_declarada = "30 dias com o treino desligado na conta; 5 anos com o treino ligado (configuração de privacidade da conta, Termos de Consumo de 2025)"
+treina_com_entrada = "só se o dono deixar ligado o controle de treino na conta (Free, Pro e Max)"
+dono_da_saida = "o dono (os Termos de Consumo atribuem a ele a saída)"
+fonte = "https://code.claude.com/docs/en/data-usage"
+fonte_tecnica = "https://code.claude.com/docs/en/cli-reference"
+fonte_retencao = "https://code.claude.com/docs/en/legal-and-compliance"
+data_de_acesso = "2026-10-29"
+nota = "Provisório e de teste (ADR-0018, ADR-0025). Sem comando oficial de listar modelos: a lista é a do registro. `s2 = \"claude\"` no jarvis-voz.toml conta como ligado (era a escolha do dono antes da ADR-0056)."
+
+[[capacidade]]
+provedor = "conversa-eco"
+padrao = "*"
+visao = false
+ferramentas = false
+esforcos = []
+fonte = "https://github.com/SodreDev/jarvis-releases"
+data = "2026-10-29"
+
+[[capacidade]]
+provedor = "conversa-claude-cli"
+padrao = "*"
+visao = true
+fonte = "https://platform.claude.com/docs/en/build-with-claude/vision"
+data = "2026-10-29"
+
+[[capacidade]]
+provedor = "conversa-claude-cli"
+padrao = "*"
+esforcos = ["low", "medium", "high", "xhigh", "max"]
+fonte = "https://code.claude.com/docs/en/cli-reference"
+data = "2026-10-29"

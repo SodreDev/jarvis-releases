@@ -167,6 +167,11 @@ class Motor:
             return "o seu áudio"
         if self.papel == "decisao":
             return "o texto de cada fala sua que o microfone transcrever"
+        if self.papel == "conversa":
+            return (
+                "a conversa — o que você diz, o que as ferramentas leem e, com imagem, a tela "
+                "capturada —"
+            )
         return "o texto que o Jarvis vai falar"
 
     @property
