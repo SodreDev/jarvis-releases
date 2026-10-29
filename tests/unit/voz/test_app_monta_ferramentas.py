@@ -73,6 +73,8 @@ def test_mcp_ligado_entra_no_catalogo_do_turno_sem_estourar_o_orcamento(tmp_path
     )
     app = _app(tmp_path, tmp_path / "config")
     ferramentas = app._montar_ferramentas()
+    gestor = ferramentas.mcp
+    assert gestor is not None, "o gestor MCP entra montado"
     try:
         catalogo = ferramentas.catalogo_para_o_modelo()
         ids = {t["id"] for t in catalogo}
@@ -88,4 +90,4 @@ def test_mcp_ligado_entra_no_catalogo_do_turno_sem_estourar_o_orcamento(tmp_path
         # não estoura o orçamento — o prompt inteiro fica bem abaixo do teto.
         assert len(prompt) < 20_000, f"o prompt cresceu demais: {len(prompt)} car."
     finally:
-        ferramentas.mcp.fechar()
+        gestor.fechar()

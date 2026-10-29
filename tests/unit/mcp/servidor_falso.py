@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+from typing import Any
 
 TOOLS = [
     {
@@ -33,7 +34,7 @@ TOOLS = [
 ]
 
 
-def _resposta(pedido: dict) -> dict | None:
+def _resposta(pedido: dict[str, Any]) -> dict[str, Any] | None:
     metodo = pedido.get("method")
     ident = pedido.get("id")
     if metodo == "initialize":
