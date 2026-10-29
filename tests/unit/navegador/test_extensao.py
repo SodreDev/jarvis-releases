@@ -18,6 +18,7 @@ TESTE_RESPOSTAS = Path(__file__).with_name("background_respostas.test.mjs")
 TESTE_NAVEGACAO = Path(__file__).with_name("background_navegacao.test.mjs")
 TESTE_CONTROLE = Path(__file__).with_name("background_controle.test.mjs")
 TESTE_INDICADOR = Path(__file__).with_name("indicador.test.mjs")
+TESTE_CDP = Path(__file__).with_name("background_cdp.test.mjs")
 
 
 def _json(nome: str) -> dict[str, object]:
@@ -37,7 +38,9 @@ def test_manifesto_mv3_pina_ids_e_so_age_em_paginas_http() -> None:
     assert manifesto["manifest_version"] == 3
     assert isinstance(permissoes, list)
     assert isinstance(hosts, list)
-    assert set(permissoes) == {"activeTab", "tabs", "nativeMessaging"}
+    # `debugger` e `scripting` entram pela camada A (CDP: console, rede, avaliar JS, gestos —
+    # ADR-0051); no Firefox o `chrome.debugger` não existe e a extensão recua para o scripting.
+    assert set(permissoes) == {"activeTab", "tabs", "nativeMessaging", "debugger", "scripting"}
     # `<all_urls>` só porque a captura da tela a exige no Chromium (captureVisibleTab) e no
     # Firefox (captureTab) — ADR-0032. O conteúdo roda só em http/https, e o fundo só captura aba
     # http/https; página interna do navegador o Chromium nem deixa capturar com esta permissão.
@@ -136,7 +139,7 @@ def test_so_a_automacao_social_chega_a_criar_janela() -> None:
 
 @pytest.mark.parametrize(
     "roteiro",
-    [TESTE_RECONEXAO, TESTE_RESPOSTAS, TESTE_NAVEGACAO, TESTE_CONTROLE, TESTE_INDICADOR],
+    [TESTE_RECONEXAO, TESTE_RESPOSTAS, TESTE_NAVEGACAO, TESTE_CONTROLE, TESTE_INDICADOR, TESTE_CDP],
     ids=lambda p: p.stem,
 )
 def test_comportamento_do_fundo_com_porta_e_abas_falsas(roteiro: Path) -> None:

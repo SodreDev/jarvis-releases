@@ -43,6 +43,10 @@ const COM_CONTROLE = new Set([
   "page.type",
   "page.act",
   "page.scroll",
+  "page.console",
+  "page.network",
+  "page.eval",
+  "page.gesture",
 ]);
 const OCIOSO_DO_CONTROLE_MS = 30_000;
 const MAX_REVOGADAS = 32;
@@ -190,6 +194,7 @@ function soltarConcessao(concessao) {
     if (dela === concessao) {
       controladas.delete(tabId);
       avisarAba(tabId, false);
+      void desanexarCdp(tabId); // soltar o controle da aba desanexa o depurador (ADR-0051)
       soltas += 1;
     }
   }
@@ -705,6 +710,290 @@ function estadoDoControle() {
   };
 }
 
+// --- navegador por CDP (ADR-0051): console, rede, avaliar JS no mundo isolado e gestos físicos ---
+const CDP_VERSAO = "1.3";
+const MAX_LOGS = 200;
+const MAX_REDE = 200;
+const PRAZO_DO_EVAL_MS = 5_000;
+// tabId → {logs, rede}. Só existe enquanto o Jarvis está anexado; soltar/parar desanexa.
+const cdpPorAba = new Map();
+let cdpOuvindo = false;
+
+function temCdp() {
+  // O Firefox não dá o CDP pela WebExtensions API (ADR-0051): lá `api.debugger` não existe, e
+  // avaliar cai no `chrome.scripting`; console, rede e gesto por CDP não existem.
+  return Boolean(api.debugger && typeof api.debugger.attach === "function");
+}
+
+function textoDosArgs(args) {
+  return (args ?? [])
+    .map((a) => (a && a.value !== undefined ? String(a.value) : String(a?.description ?? "")))
+    .join(" ")
+    .slice(0, 2_000);
+}
+
+function ouvirCdp() {
+  if (cdpOuvindo || !temCdp()) {
+    return;
+  }
+  cdpOuvindo = true;
+  api.debugger.onEvent.addListener((origem, metodo, params) => {
+    const estado = cdpPorAba.get(origem.tabId);
+    if (!estado || !params) {
+      return;
+    }
+    if (metodo === "Runtime.consoleAPICalled") {
+      estado.logs.push({
+        nivel: String(params.type ?? "log"),
+        texto: textoDosArgs(params.args),
+        origem: "console",
+        hora: Math.round(params.timestamp ?? Date.now()),
+      });
+    } else if (metodo === "Log.entryAdded" && params.entry) {
+      estado.logs.push({
+        nivel: String(params.entry.level ?? "info"),
+        texto: String(params.entry.text ?? "").slice(0, 2_000),
+        origem: String(params.entry.source ?? "log"),
+        hora: Math.round(params.entry.timestamp ?? Date.now()),
+      });
+    } else if (metodo === "Runtime.exceptionThrown" && params.exceptionDetails) {
+      const d = params.exceptionDetails;
+      estado.logs.push({
+        nivel: "error",
+        texto: `${d.text ?? ""} ${d.exception?.description ?? ""}`.trim().slice(0, 2_000),
+        origem: "exception",
+        hora: Math.round(params.timestamp ?? Date.now()),
+      });
+    } else if (metodo === "Network.requestWillBeSent" && params.request) {
+      estado.rede.push({
+        requestId: params.requestId,
+        metodo: String(params.request.method ?? ""),
+        url: String(params.request.url ?? "").slice(0, MAX_URL),
+        status: null,
+        tipo: String(params.type ?? ""),
+      });
+    } else if (metodo === "Network.responseReceived" && params.response) {
+      const pedido = estado.rede.find((r) => r.requestId === params.requestId);
+      if (pedido) {
+        pedido.status = params.response.status ?? null;
+        pedido.tipo = String(params.type ?? pedido.tipo);
+      }
+    }
+    if (estado.logs.length > MAX_LOGS) {
+      estado.logs.splice(0, estado.logs.length - MAX_LOGS);
+    }
+    if (estado.rede.length > MAX_REDE) {
+      estado.rede.splice(0, estado.rede.length - MAX_REDE);
+    }
+  });
+  api.debugger.onDetach?.addListener((origem) => cdpPorAba.delete(origem.tabId));
+}
+
+function enviarCdp(tabId, metodo, params = {}) {
+  return api.debugger.sendCommand({ tabId }, metodo, params);
+}
+
+async function anexarCdp(tabId) {
+  if (!temCdp()) {
+    throw erro("sem_cdp", "este navegador não dá o protocolo de depuração (CDP)");
+  }
+  ouvirCdp();
+  if (cdpPorAba.has(tabId)) {
+    return cdpPorAba.get(tabId);
+  }
+  await api.debugger.attach({ tabId }, CDP_VERSAO);
+  const estado = { logs: [], rede: [] };
+  cdpPorAba.set(tabId, estado);
+  for (const dominio of ["Runtime.enable", "Log.enable", "Network.enable", "Page.enable"]) {
+    await enviarCdp(tabId, dominio);
+  }
+  return estado;
+}
+
+async function desanexarCdp(tabId) {
+  if (!cdpPorAba.has(tabId)) {
+    return;
+  }
+  cdpPorAba.delete(tabId);
+  try {
+    await api.debugger.detach({ tabId });
+  } catch (causa) {
+    // A aba fechou ou já se desanexou: nada a fazer.
+    void causa;
+  }
+}
+
+async function consoleDaAba(params) {
+  const tabId = (await abaDoPedido(params)).id;
+  if (!temCdp()) {
+    return { mensagens: [], anexado: false, motivo: "sem_cdp_no_firefox" };
+  }
+  const estado = await anexarCdp(tabId);
+  return { mensagens: estado.logs.slice(-MAX_LOGS), anexado: true };
+}
+
+async function redeDaAba(params) {
+  const tabId = (await abaDoPedido(params)).id;
+  if (!temCdp()) {
+    return { pedidos: [], anexado: false, motivo: "sem_cdp_no_firefox" };
+  }
+  const estado = await anexarCdp(tabId);
+  const pedidos = estado.rede.slice(-MAX_REDE).map(({ requestId: _id, ...resto }) => resto);
+  return { pedidos, anexado: true };
+}
+
+function serializarValor(valor) {
+  if (valor === undefined) {
+    return null;
+  }
+  if (typeof valor === "string") {
+    return valor.slice(0, 10_000);
+  }
+  try {
+    return JSON.stringify(valor).slice(0, 10_000);
+  } catch (causa) {
+    void causa;
+    return String(valor).slice(0, 10_000);
+  }
+}
+
+async function avaliarPorScripting(tabId, codigo, mundo) {
+  if (!api.scripting || typeof api.scripting.executeScript !== "function") {
+    return { valor: null, mundo, cdp: false, recuo: "sem_cdp", erro: "sem CDP e sem chrome.scripting" };
+  }
+  const world = mundo === "principal" ? "MAIN" : "ISOLATED";
+  try {
+    const saida = await api.scripting.executeScript({
+      target: { tabId },
+      world,
+      args: [String(codigo)],
+      func: (src) => {
+        try {
+          // eslint-disable-next-line no-eval
+          return { ok: true, v: (0, eval)(src) };
+        } catch (e) {
+          return { ok: false, e: String(e) };
+        }
+      },
+    });
+    const r = (saida && saida[0] && saida[0].result) || {};
+    if (r.ok) {
+      return { valor: serializarValor(r.v), mundo, cdp: false, recuo: "chrome.scripting" };
+    }
+    return { valor: null, mundo, cdp: false, recuo: "chrome.scripting", erro: String(r.e ?? "erro") };
+  } catch (causa) {
+    return { valor: null, mundo, cdp: false, recuo: "chrome.scripting", erro: detalheDaFalha(causa) };
+  }
+}
+
+async function avaliarNaAba(params) {
+  const tabId = (await abaDoPedido(params)).id;
+  if (typeof tabId !== "number") {
+    throw erro("sem_aba", "a aba escolhida não tem identificador");
+  }
+  const mundo = params.mundo === "principal" ? "principal" : "isolado";
+  if (!temCdp()) {
+    return avaliarPorScripting(tabId, params.codigo, mundo);
+  }
+  try {
+    await anexarCdp(tabId);
+    let contextId;
+    if (mundo === "isolado") {
+      const arvore = await enviarCdp(tabId, "Page.getFrameTree");
+      const frameId = arvore?.frameTree?.frame?.id;
+      const criado = await enviarCdp(tabId, "Page.createIsolatedWorld", {
+        frameId,
+        worldName: "jarvis",
+        grantUniveralAccess: false,
+      });
+      contextId = criado?.executionContextId;
+    }
+    const r = await enviarCdp(tabId, "Runtime.evaluate", {
+      expression: String(params.codigo),
+      ...(contextId != null ? { contextId } : {}),
+      returnByValue: true,
+      awaitPromise: true,
+      timeout: PRAZO_DO_EVAL_MS,
+      userGesture: false,
+    });
+    if (r && r.exceptionDetails) {
+      return { valor: null, mundo, cdp: true, erro: String(r.exceptionDetails.text ?? "erro no script") };
+    }
+    return { valor: serializarValor(r?.result?.value), mundo, cdp: true, recuo: null };
+  } catch (causa) {
+    // Não deu para anexar (política, já há um depurador, versão): recuo honesto.
+    return avaliarPorScripting(tabId, params.codigo, mundo);
+  }
+}
+
+async function centroDoAlvo(tabId, params) {
+  const dados = comoObjeto(
+    await mensagemDaPagina({ tabId, alvo: params.alvo, ref: params.ref }, "inspecionar"),
+  );
+  const centro = dados.centro;
+  if (!Array.isArray(centro) || centro.length !== 2) {
+    throw erro("alvo_ausente", "não achei o elemento para o gesto, ou ele não está à vista");
+  }
+  return { x: centro[0], y: centro[1] };
+}
+
+async function gestoNaAba(params) {
+  const tabId = (await abaDoPedido(params)).id;
+  if (typeof tabId !== "number") {
+    throw erro("sem_aba", "a aba escolhida não tem identificador");
+  }
+  const gesto = params.gesto;
+  if (!temCdp()) {
+    throw erro("sem_cdp_no_firefox", "o gesto físico por CDP não existe neste navegador");
+  }
+  await anexarCdp(tabId);
+  if (gesto === "rolar") {
+    await enviarCdp(tabId, "Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: 10,
+      y: 10,
+      deltaX: 0,
+      deltaY: typeof params.pixels === "number" ? params.pixels : 600,
+    });
+    return { feito: true, gesto };
+  }
+  const { x, y } = await centroDoAlvo(tabId, params);
+  // O ponteiro precisa passar pelo alvo (hover) antes do clique, e cada evento leva o `buttons`
+  // (bitmask): sem o `mouseMoved` e o `buttons`, o Chromium não dispara o `onclick` (harness
+  // 2026-10-29, Chromium 155).
+  const mover = (px, botoes) =>
+    enviarCdp(tabId, "Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: px,
+      y,
+      button: botoes ? "left" : "none",
+      buttons: botoes,
+    });
+  const apertar = (px, type, buttons) =>
+    enviarCdp(tabId, "Input.dispatchMouseEvent", {
+      type,
+      x: px,
+      y,
+      button: "left",
+      buttons,
+      clickCount: 1,
+    });
+  if (gesto === "arrastar") {
+    await mover(x, 0);
+    await apertar(x, "mousePressed", 1);
+    await mover(x + 60, 1);
+    await apertar(x + 60, "mouseReleased", 0);
+    return { feito: true, gesto };
+  }
+  await mover(x, 0);
+  await apertar(x, "mousePressed", 1);
+  await apertar(x, "mouseReleased", 0);
+  if (gesto === "digitar") {
+    await enviarCdp(tabId, "Input.insertText", { text: String(params.texto ?? "") });
+  }
+  return { feito: true, gesto };
+}
+
 async function executar(method, params) {
   if (!COM_CONTROLE.has(method)) {
     return executarSemControle(method, params);
@@ -784,6 +1073,14 @@ async function executarSemControle(method, params, concessao) {
       return mensagemDaPagina(params, "digitar");
     case "page.scroll":
       return mensagemDaPagina(params, "rolar");
+    case "page.console":
+      return consoleDaAba(params);
+    case "page.network":
+      return redeDaAba(params);
+    case "page.eval":
+      return avaliarNaAba(params);
+    case "page.gesture":
+      return gestoNaAba(params);
     default:
       throw erro("metodo_invalido", "método não autorizado para a extensão");
   }

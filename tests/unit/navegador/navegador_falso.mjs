@@ -85,6 +85,26 @@ export class NavegadorFalso {
     this.onMessage = new EventoFalso();
     this.onClicked = new EventoFalso();
     this.selo = { texto: "", cor: "", titulo: "" };
+    // O CDP (ADR-0051): o `chrome.debugger` simulado. `semCdp` imita o Firefox (sem a API).
+    this.semCdp = false;
+    this.anexadas = new Set(); // tabId anexados
+    this.comandosCdp = []; // {tabId, metodo, params}
+    this.onDebuggerEvent = new EventoFalso();
+    this.respostaCdp = (metodo) => {
+      if (metodo === "Page.getFrameTree") {
+        return { frameTree: { frame: { id: "frame-1" } } };
+      }
+      if (metodo === "Page.createIsolatedWorld") {
+        return { executionContextId: 99 };
+      }
+      if (metodo === "Runtime.evaluate") {
+        return { result: { value: this.valorEval } };
+      }
+      return {};
+    };
+    this.valorEval = "ok";
+    this.scriptingMundos = []; // os `world` que o recuo chrome.scripting usou
+    this.resultadoScripting = { ok: true, v: "recuo" };
     for (const janela of janelas) {
       this.janelas.set(janela.id, { id: janela.id, tipo: janela.tipo ?? "normal" });
       for (const [indice, aba] of (janela.abas ?? []).entries()) {
@@ -319,7 +339,35 @@ export class NavegadorFalso {
           return nav.responderDoConteudo(nav.abas.get(id), mensagem);
         },
       },
+      // O `chrome.debugger` (ADR-0051). Com `semCdp`, a API nem existe — é o Firefox.
+      debugger: nav.semCdp
+        ? undefined
+        : {
+            onEvent: nav.onDebuggerEvent,
+            onDetach: new EventoFalso(),
+            async attach({ tabId }, _versao) {
+              nav.anexadas.add(tabId);
+            },
+            async detach({ tabId }) {
+              nav.anexadas.delete(tabId);
+            },
+            async sendCommand({ tabId }, metodo, params = {}) {
+              nav.comandosCdp.push({ tabId, metodo, params: JSON.parse(JSON.stringify(params)) });
+              return nav.respostaCdp(metodo, params);
+            },
+          },
+      scripting: {
+        async executeScript({ world }) {
+          nav.scriptingMundos.push(world);
+          return [{ result: nav.resultadoScripting }];
+        },
+      },
     };
+  }
+
+  /** Emite um evento do CDP para a aba (console, rede): como o navegador faz pelo onEvent. */
+  eventoCdp(tabId, metodo, params) {
+    this.onDebuggerEvent.emitir({ tabId }, metodo, params);
   }
 
   /** O conteúdo de uma aba (o indicador.js) manda uma mensagem ao fundo e espera a resposta. */

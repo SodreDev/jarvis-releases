@@ -123,7 +123,18 @@ function dadosDoElemento(elemento) {
     papel: papelDe(elemento),
     rotulo: rotuloDe(elemento),
     destinoDoLink: ancora ? ancora.href.slice(0, 2_048) : "",
+    // O centro do elemento em pixels de CSS do viewport (ADR-0051): o gesto físico por CDP
+    // (`Input.*`) precisa de coordenada, não de seletor. Vazio quando o elemento não está à vista.
+    centro: centroDoElemento(elemento),
   };
+}
+
+function centroDoElemento(elemento) {
+  const caixa = elemento.getBoundingClientRect();
+  if (caixa.width <= 0 || caixa.height <= 0) {
+    return null;
+  }
+  return [Math.round(caixa.left + caixa.width / 2), Math.round(caixa.top + caixa.height / 2)];
 }
 
 function papelDe(elemento) {

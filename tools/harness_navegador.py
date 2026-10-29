@@ -109,8 +109,8 @@ FIREFOX: Final = "/usr/bin/firefox"
 PAGINA: Final = """<!doctype html><meta charset=utf-8><title>Página de teste do Jarvis</title>
 <h1>Olá, Jarvis</h1>
 <p id=estado>estado inicial</p>
-<button type=button onclick="document.getElementById('estado').textContent='detalhe aberto'">
-Mostrar detalhe</button>
+<button type=button onclick="document.getElementById('estado').textContent='detalhe aberto';
+console.error('clique de teste do jarvis')">Mostrar detalhe</button>
 <form action="/enviado" method=post><label>Comentário <input name=c></label>
 <button>Pronto</button></form>
 <form role=search action="/busca"><label>Busca <input type=search name=q></label></form>
@@ -808,7 +808,7 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
         prompt = sistema_com_ferramentas("Você é o Jarvis.", catalogo)
         relatorio.conferir(
             "o modelo enxerga as browser.* no prompt",
-            esperadas <= ids and "- browser.read:" in prompt and "browser.acao_sensivel" not in ids,
+            esperadas <= ids and "- browser.read(" in prompt and "browser.acao_sensivel" not in ids,
             sorted(i for i in ids if i.startswith("browser.")),
         )
 
@@ -1210,6 +1210,69 @@ def _roteiro(nome: str, relatorio: Relatorio) -> None:
             f"{video.status}: {video.motivo or video.dados}",
         )
         rodar("browser.navigate", {**alvo, "url": url})
+
+        # Navegador por CDP (ADR-0051): console, avaliar JS no mundo isolado e gesto físico.
+        cdp = nome == "chromium"
+        avaliado = rodar(
+            "browser.avaliar",
+            {**alvo, "codigo": "document.getElementById('estado').textContent", "mundo": "isolado"},
+        )
+        if cdp:
+            relatorio.conferir(
+                "browser.avaliar roda no mundo isolado por CDP e devolve o valor do DOM",
+                avaliado.status == "ok"
+                and avaliado.dados.get("valor") == "estado inicial"
+                and avaliado.dados.get("mundo") == "isolado"
+                and avaliado.dados.get("cdp") is True,
+                avaliado.dados or avaliado.motivo,
+            )
+        else:
+            # No Firefox não há CDP: avaliar recua para o chrome.scripting e diz isso honesto (o
+            # `eval` do recuo pode ser barrado pela CSP da extensão — a limitação da ADR-0051).
+            relatorio.conferir(
+                "no Firefox browser.avaliar recua para o chrome.scripting, sem fingir CDP",
+                avaliado.status == "ok"
+                and avaliado.dados.get("cdp") is False
+                and avaliado.dados.get("recuo") == "chrome.scripting",
+                avaliado.dados or avaliado.motivo,
+            )
+        gesto = rodar("browser.gesto", {**alvo, "gesto": "clicar", "alvo": "Mostrar detalhe"})
+        if cdp:
+            relatorio.conferir(
+                "browser.gesto despacha o clique físico por CDP (Input.*) sem erro",
+                gesto.status == "ok" and gesto.dados.get("feito") is True,
+                gesto.dados or gesto.motivo,
+            )
+            # O console por CDP, com um gatilho determinístico: um erro registrado por um script no
+            # mundo principal, depois de anexar. (O efeito no DOM de um clique físico sintético não
+            # é confiável no Xvfb headless; o contrato do gesto — a sequência de Input.* — é provado
+            # no teste de node background_cdp.test.mjs.)
+            rodar(
+                "browser.avaliar",
+                {**alvo, "codigo": "console.error('marca-jarvis-console')", "mundo": "principal"},
+            )
+            console = rodar("browser.console", {**alvo})
+            textos = " ".join(str(m.get("texto", "")) for m in console.dados.get("mensagens", []))
+            relatorio.conferir(
+                "browser.console traz o erro que a página registrou depois de anexar",
+                console.status == "ok"
+                and console.dados.get("anexado") is True
+                and "marca-jarvis-console" in textos,
+                console.dados or console.motivo,
+            )
+        else:
+            relatorio.conferir(
+                "no Firefox o gesto físico por CDP não existe e a tool diz isso",
+                gesto.status in ("erro", "negado") and "cdp" in (gesto.motivo or "").lower(),
+                gesto.motivo or gesto.dados,
+            )
+            console = rodar("browser.console", {**alvo})
+            relatorio.conferir(
+                "no Firefox o console diz que não há CDP, sem inventar dado",
+                console.status == "ok" and console.dados.get("anexado") is False,
+                console.dados or console.motivo,
+            )
+        rodar("browser.navigate", {**alvo, "url": url})  # volta ao estado inicial
 
         # A aba do dono que estava ATRÁS de outra: pedido de ver traz a aba para a frente.
         frente = nova.dados.get("tab_id")
