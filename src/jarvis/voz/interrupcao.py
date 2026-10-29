@@ -10,9 +10,11 @@ decide se o dono falou por cima:
    referência, pelo `escuta` da fila de playback) nos últimos 300 ms, menos a perda do caminho
    alto-falante → microfone, **aprendida** enquanto só o Jarvis fala. Só passa o que é bem mais alto
    que o eco previsto **e** que o ruído do ambiente (a TV ligada antes de o Jarvis falar), e mais
-   alto que um piso de fala perto do microfone. Não é cancelamento de eco (AEC): é o detector de
-   fala dupla por energia, o que dá para fazer sem a referência alinhada amostra a amostra.
-2. **Suspeita**: 240 ms de fala (VAD) que passou no portão. Na escuta contínua o Jarvis **pausa** na
+   alto que um piso de fala perto do microfone. É o detector de fala dupla por energia; a perda é
+   medida pico contra pico. Antes dele, o **cancelador de eco** do F1-04 (`cancelador`, que o laço
+   liga) tira o eco do quadro: sem ele, o dono que chega ao microfone no nível do eco (caixa perto,
+   notebook) não passa — 1 corte em 32 contra 31 com ele (`docs/medicoes/interrupcao-por-cima.md`).
+2. **Suspeita**: 160 ms de fala (VAD) que passou no portão. Na escuta contínua o Jarvis **pausa** na
    hora — é o que um humano faz quando alguém começa a falar — e a fila guarda o resto do lote.
 3. **Conteúdo**: o trecho (com os 400 ms de antes) vai ao ASR numa linha à parte, sem prender o
    áudio, e de novo a cada 400 ms enquanto cresce. Corta quando:
@@ -43,7 +45,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Final
 
-from jarvis.audio_io.quadro import MS_POR_QUADRO, PISO_DB, Quadro, energia_db
+from jarvis.audio_io.dsp import CanceladorDeEco, para_bytes, para_float
+from jarvis.audio_io.quadro import BYTES_POR_QUADRO, MS_POR_QUADRO, PISO_DB, Quadro, energia_db
 from jarvis.voz.escuta import ModoDeEscuta
 from jarvis.voz.palavra import DetectorDePalavra, palavras_de
 from jarvis.voz.resposta import TipoDaResposta, ler_resposta
@@ -74,13 +77,23 @@ QUADROS_DO_AMBIENTE: Final = 250
 PERCENTIL_DO_AMBIENTE: Final = 0.3
 
 # --- a vigia -----------------------------------------------------------------------------------
-FALA_PARA_SUSPEITAR_MS: Final = 240
+FALA_PARA_SUSPEITAR_MS: Final = 160
+"""Fala acima do portão para suspeitar (e ler o trecho). Era 240: por cima do eco só metade dos
+quadros do dono passa, e um «Jarvis» de ~450 ms somava ~220 ms — nunca cortava (medido em
+`tools/harness_interrupcao.py`, 2026-10-25). O eco que passa só custa uma leitura: no modo palavra
+quem corta é o nome no texto."""
 SILENCIO_PARA_FECHAR_MS: Final = 400
 QUADROS_ANTES_DA_FALA: Final = 20
 """400 ms guardados antes da suspeita: o começo da palavra de ativação."""
 INTERVALO_DE_CHECAGEM_MS: Final = 400
 MAXIMO_DA_CHECAGEM_MS: Final = 3000
-"""Depois de 3 s de trecho sem decisão, não se pergunta de novo: decide com o que tem."""
+"""Depois de 3 s de trecho sem decisão, não se pergunta de novo: decide com o que tem, e os
+últimos 400 ms ficam como o começo do trecho seguinte (o nome dito na emenda não se perde). Antes
+a releitura vinha primeiro e o trecho crescia sem fim: com o eco passando, 11 s relidos a cada
+400 ms, e o «Jarvis» do dono afogado no meio deles (2026-10-29)."""
+REFERENCIA_PENDENTE_MAXIMA: Final = 20
+"""Quadros de referência esperando o microfone, no máximo (400 ms, o que o cancelador cobre):
+mais que isso, o alinhamento já se perdeu e o mais velho sai."""
 MAXIMO_DA_PAUSA_MS: Final = 2500
 """Na contínua, pausado e sem decisão por tanto tempo, o Jarvis retoma (na dúvida, não age)."""
 PALAVRAS_DO_FALADO: Final = 60
@@ -123,10 +136,18 @@ class PortaoDeEco:
     margem_do_ambiente_db: float = MARGEM_DO_AMBIENTE_DB
     piso_da_fala_db: float = PISO_DA_FALA_DB
     ambiente_db: float = PISO_DB
+    aprender: bool = True
+    """A vigia desliga com um trecho aberto (alguém pode estar falando por cima): os quadros do
+    dono que não passam ensinavam "o eco é mais alto", o limiar subia no meio da frase dele e ela
+    nunca chegava a cortar — o auto-reforço medido em 2026-10-25."""
     _referencias: deque[float] = field(
         default_factory=lambda: deque(maxlen=JANELA_DO_ECO_QUADROS), repr=False
     )
     _referencia_do_quadro: float = field(default=PISO_DB, repr=False)
+    _microfone: deque[float] = field(
+        default_factory=lambda: deque(maxlen=JANELA_DO_ECO_QUADROS), repr=False
+    )
+    """O nível do microfone na mesma janela da referência: a perda é pico contra pico."""
     _niveis_do_ambiente: deque[float] = field(
         default_factory=lambda: deque(maxlen=QUADROS_DO_AMBIENTE), repr=False
     )
@@ -156,10 +177,18 @@ class PortaoDeEco:
         self._referencias.append(self._referencia_do_quadro)
         self._referencia_do_quadro = PISO_DB
         nivel = quadro.energia_db
+        self._microfone.append(nivel)
         passou = nivel >= self.limiar_db()
         maior = max(self._referencias)
         if maior > REFERENCIA_ATIVA_DB:
-            observada = min(PERDA_MAXIMA_DB, max(PERDA_MINIMA_DB, maior - nivel))
+            if not self.aprender:
+                return passou
+            # Pico contra pico, na mesma janela. Era o pico da referência contra o quadro de
+            # agora: nos vales entre as sílabas o microfone fica muito abaixo do pico, a perda
+            # "observada" inflava (25,8 dB aprendidos com 6 dB de verdade, voz piper) e até 64%
+            # dos quadros do próprio eco passavam — o trecho nunca fechava e o «Jarvis» do dono
+            # ia ao ASR afogado em segundos de eco (`tools/harness_interrupcao.py`, 2026-10-29).
+            observada = min(PERDA_MAXIMA_DB, max(PERDA_MINIMA_DB, maior - max(self._microfone)))
             if not passou:
                 self.perda_db += APRENDIZADO * (observada - self.perda_db)
             elif observada < self.perda_db:
@@ -272,6 +301,13 @@ class VigiaDeInterrupcao:
     pergunta_so_na_tela: str = ""
     """A confirmação que só o clique responde (o que está sob o clique, ADR-0027): o "sim" falado
     a ela não corta nada — cortar derrubaria a pergunta, e o dono não conseguiria responder."""
+    cancelador: CanceladorDeEco | None = None
+    """O cancelador de eco do F1-04 (PBFDAF, referência do nosso playback), só no caminho da vigia:
+    o resíduo é o que vai ao portão, ao ASR do trecho e ao turno do corte. Sem ele, o portão por
+    energia não separa o dono do eco quando os dois chegam ao microfone no mesmo nível (caixa perto,
+    notebook) — o caso do dono (2026-10-29). Não convergiu? O resíduo é o microfone, e a vigia
+    fica como era. `None` = sem cancelador (os testes do portão)."""
+    _referencia_pendente: bytearray = field(default_factory=bytearray, repr=False)
 
     _antes: deque[bytes] = field(
         default_factory=lambda: deque(maxlen=QUADROS_ANTES_DA_FALA), repr=False
@@ -294,7 +330,7 @@ class VigiaDeInterrupcao:
     _contida: bool = False
     """A fala que segue é a mesma que acabou de ser julgada não ser com o Jarvis (a TV, alguém na
     sala): até ela parar, sem pausa e sem perguntar ao detector de novo — senão o Jarvis gaguejaria
-    a cada 240 ms. A palavra de ativação e a ordem de parar continuam cortando."""
+    a cada 160 ms. A palavra de ativação e a ordem de parar continuam cortando."""
     _silencio_corrido_ms: float = 0.0
     _trecho_contido: bool = False
     """O trecho de agora nasceu da fala contida: ele inteiro segue a regra dela, até o fim."""
@@ -315,8 +351,22 @@ class VigiaDeInterrupcao:
         """O lote que acabou de entrar no alto-falante: é com ele que o eco é reconhecido."""
         self._falado.extend(_palavras(texto))
 
+    def referencia(self, amostras: bytes) -> None:
+        """O que acabou de ir para o alto-falante (o `escuta` da fila de playback): a energia vai
+        ao portão e as amostras ao cancelador, que as casa com o próximo quadro do microfone."""
+        self.portao.referencia(amostras)
+        if self.cancelador is None:
+            return
+        self._referencia_pendente.extend(amostras)
+        excesso = len(self._referencia_pendente) - REFERENCIA_PENDENTE_MAXIMA * BYTES_POR_QUADRO
+        if excesso > 0:
+            del self._referencia_pendente[:excesso]
+
     def ouvir(self, quadro: Quadro, *, fala_no_vad: bool) -> Acao:
         """Um quadro de 20 ms do microfone, com o que o VAD diz dele. Devolve o que fazer."""
+        if self.cancelador is not None:
+            quadro = self._sem_o_eco_do_quadro(quadro)
+        self.portao.aprender = self._segmento is None
         passou = self.portao.ver(quadro)
         candidato = fala_no_vad and passou
         self._silencio_corrido_ms = 0.0 if candidato else self._silencio_corrido_ms + MS_POR_QUADRO
@@ -394,17 +444,29 @@ class VigiaDeInterrupcao:
         return " ".join(bruta for bruta, _dobrada in pedacos[corte:]) if corte else texto
 
     # --- por dentro ----------------------------------------------------------------------------
+    def _sem_o_eco_do_quadro(self, quadro: Quadro) -> Quadro:
+        assert self.cancelador is not None
+        referencia = bytes(self._referencia_pendente[:BYTES_POR_QUADRO])
+        del self._referencia_pendente[:BYTES_POR_QUADRO]
+        residuo, _ = self.cancelador.processar(
+            para_float(quadro.amostras),
+            para_float(referencia.ljust(BYTES_POR_QUADRO, b"\x00")),
+        )
+        return Quadro(quadro.indice, para_bytes(residuo), quadro.ts_mono_ns, quadro.taxa)
+
     def _acompanhar(self) -> Acao:
         """Trecho suspeito: confere o conteúdo, decide, e fecha quando o dono para de falar."""
         decisao = self._resultado()
         if decisao is not None:
             return decisao
-        fechando = (
-            self._silencio_ms >= SILENCIO_PARA_FECHAR_MS
-            or self._ms_do_segmento >= MAXIMO_DA_CHECAGEM_MS
-        )
+        longo = self._ms_do_segmento >= MAXIMO_DA_CHECAGEM_MS
+        fechando = self._silencio_ms >= SILENCIO_PARA_FECHAR_MS or longo
         nova = self._fala_ms - self._fala_checada_ms
-        if self._futuro is None and (nova >= INTERVALO_DE_CHECAGEM_MS or (fechando and nova > 0)):
+        if (
+            self._futuro is None
+            and not longo
+            and (nova >= INTERVALO_DE_CHECAGEM_MS or (fechando and nova > 0))
+        ):
             # Fala nova desde a última leitura: lê o trecho inteiro de novo (no fechamento, uma
             # última vez, com tudo o que o dono disse).
             self._checar()
@@ -500,9 +562,15 @@ class VigiaDeInterrupcao:
     def _descartar(self, motivo: Motivo) -> Acao:
         pausado = self._pausado
         self._registrar(Acao.RETOMAR if pausado else Acao.NADA, motivo)
+        cauda = b""
         if self._silencio_ms < SILENCIO_PARA_FECHAR_MS:
             self._contida = True  # julgada no meio: o resto dela não pausa nem pergunta de novo
+            if self._segmento is not None:
+                cauda = bytes(self._segmento[-QUADROS_ANTES_DA_FALA * BYTES_POR_QUADRO :])
         self._fechar_segmento()
+        # A fala segue: os últimos 400 ms são o "antes" do próximo trecho (o nome na emenda).
+        for inicio in range(0, len(cauda) - BYTES_POR_QUADRO + 1, BYTES_POR_QUADRO):
+            self._antes.append(cauda[inicio : inicio + BYTES_POR_QUADRO])
         return Acao.RETOMAR if pausado else Acao.NADA
 
     def _registrar(self, acao: Acao, motivo: Motivo) -> None:

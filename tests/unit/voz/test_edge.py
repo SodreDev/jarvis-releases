@@ -171,6 +171,16 @@ def test_sonda_apagada_declara_degradacao(tmp_path: Path) -> None:
     assert ler_degradacao(tmp_path).ativa
 
 
+def test_o_que_caiu_numa_sessao_nao_cala_a_fala_de_mesmo_numero_da_seguinte(
+    tmp_path: Path,
+) -> None:
+    """Os descartados da regra 5 ficam no disco entre sessões (2026-10-29): a 1ª fala de hoje
+    não pode ser recusada porque a 1ª de ontem caiu."""
+    assert motor(tmp_path, sonda=SondaInjetada(ligada=False)).sintetizar(TEXTO) == b""
+    assert ler_degradacao(tmp_path).descartados
+    assert motor(tmp_path).sintetizar(TEXTO) != b""
+
+
 # --- as duas licenças que este caminho custa ----------------------------------------------
 
 

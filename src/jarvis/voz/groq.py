@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-from jarvis.rede import AdaptadorRemoto, Sonda, SondaInjetada
+from jarvis.rede import AdaptadorRemoto, Sonda, SondaInjetada, id_da_instancia
 from jarvis.voz.chaves import Chave
 from jarvis.voz.interface import Cancelado, Hipotese, Onde, Sinais, Transcricao, nunca_cancelado
 from jarvis.voz.nuvem import (
@@ -84,6 +84,8 @@ class MotorAsrGroq:
     _chave: Chave | None = field(default=None, repr=False)
     _cliente: ClienteHttp | None = field(default=None, repr=False)
     _adaptador: AdaptadorRemoto | None = field(default=None, repr=False)
+    _instancia: str = field(default_factory=id_da_instancia, repr=False)
+    """Prefixo dos `call_id`: o contador recomeça a cada sessão, os descartados ficam no disco."""
 
     def __post_init__(self) -> None:
         if not self.registrado:
@@ -172,8 +174,10 @@ class MotorAsrGroq:
         self.transcricoes += 1
         # `call_id` é contador do motor, não `id()` do objeto: a regra 5 do §3.3 ("pedido que
         # caiu não é refeito") guarda o id dos descartados, e `id()` de um `bytes` liberado é
-        # reaproveitado pelo CPython — dois turnos diferentes acabariam com o mesmo id.
-        call_id = f"asr-groq-{self.transcricoes}"
+        # reaproveitado pelo CPython — dois turnos diferentes acabariam com o mesmo id. O prefixo
+        # da instância separa as sessões: os descartados de ontem não matam a 41ª transcrição de
+        # hoje (`jarvis.rede.id_da_instancia`).
+        call_id = f"asr-groq-{self._instancia}-{self.transcricoes}"
 
         def fazer(prazo: float) -> Transcricao | None:
             resposta = cliente.postar(

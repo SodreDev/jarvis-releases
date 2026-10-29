@@ -59,6 +59,7 @@ from jarvis.apps.resolvedor import RepositorioDeAliases
 from jarvis.audio_io.ambiente import Backend, backend_escolhido
 from jarvis.audio_io.backend import dispositivo_pedido, fonte_do_ambiente, sumidouro_do_ambiente
 from jarvis.audio_io.captura import Captura
+from jarvis.audio_io.dsp import CanceladorDeEco
 from jarvis.audio_io.erros import ErroDeAudio
 from jarvis.audio_io.playback import FilaDePlayback, Pedaco
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
@@ -2046,6 +2047,8 @@ class Aplicativo:
             palavra=self.modo_de_escuta.detector,
             enderecada=enderecada,
             enviar=self._escuta_por_cima.submit,
+            # Sem tirar o eco, o portão não separa o dono do Jarvis no mesmo nível (2026-10-29).
+            cancelador=CanceladorDeEco(),
         )
         self._vigia_montada_aqui = True
         return self.vigia
@@ -2210,7 +2213,7 @@ class Aplicativo:
         vigia = self._montar_a_vigia()
         if vigia is not None:
             # A referência do eco é o que saiu para o alto-falante, fatia a fatia (ADR-0040).
-            fila.escuta = vigia.portao.referencia
+            fila.escuta = vigia.referencia
         self._captura_viva, self._fila_viva, self._fonte_acabou = captura, fila, False
 
         falando = False

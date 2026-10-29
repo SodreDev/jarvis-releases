@@ -182,6 +182,20 @@ def test_servico_fora_declara_degradacao(tmp_path: Path) -> None:
     assert motor.degradado
 
 
+def test_o_que_caiu_numa_sessao_nao_cala_a_fala_de_mesmo_numero_da_seguinte(
+    tmp_path: Path,
+) -> None:
+    """Os descartados da regra 5 ficam no disco entre sessões: o id não pode ser só o contador
+    (2026-10-29), senão a 1ª fala de toda sessão nova sai muda porque a 1ª de ontem caiu."""
+    with ServicoFalso(roteiro=Roteiro(status=503, corpo=b'{"error":"fora"}')) as servico:
+        assert motor_em(servico, tmp_path).sintetizar(TEXTO) == b""
+    assert ler_degradacao(tmp_path).descartados
+
+    with ServicoFalso(roteiro=Roteiro(corpo=pcm(100), tipo="audio/pcm")) as servico:
+        assert motor_em(servico, tmp_path).sintetizar(TEXTO) == pcm(100)
+        assert len(servico.pedidos) == 1
+
+
 def test_sonda_apagada_nem_tenta(tmp_path: Path) -> None:
     with ServicoFalso(roteiro=Roteiro(corpo=pcm(100))) as servico:
         motor = motor_em(servico, tmp_path, sonda=SondaInjetada(ligada=False))

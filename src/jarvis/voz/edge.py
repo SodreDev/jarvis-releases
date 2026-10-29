@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Final
 
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, CANAIS, TAXA_PADRAO
-from jarvis.rede import AdaptadorRemoto, Sonda, SondaInjetada
+from jarvis.rede import AdaptadorRemoto, Sonda, SondaInjetada, id_da_instancia
 from jarvis.voz.interface import Cancelado, Onde, nunca_cancelado
 from jarvis.voz.nuvem import ErroDoServico
 from jarvis.voz.registro import Motor, exigir_motor
@@ -191,6 +191,8 @@ class MotorTtsEdge:
     bytes_descartados: int = 0
     _motor: Motor | None = field(default=None, repr=False)
     _adaptador: AdaptadorRemoto | None = field(default=None, repr=False)
+    _instancia: str = field(default_factory=id_da_instancia, repr=False)
+    """Prefixo dos `call_id`: o contador recomeça a cada sessão, os descartados ficam no disco."""
 
     def abrir(self) -> Motor:
         motor = exigir_motor(
@@ -234,7 +236,7 @@ class MotorTtsEdge:
 
         self.sinteses += 1
         self.caracteres_enviados += len(texto)
-        call_id = f"tts-edge-{self.sinteses}"
+        call_id = f"tts-edge-{self._instancia}-{self.sinteses}"
 
         def fazer(prazo: float) -> bytes | None:
             recebido = bytearray()

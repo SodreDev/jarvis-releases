@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Final
 
 from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
-from jarvis.rede import AdaptadorRemoto, Sonda, SondaInjetada
+from jarvis.rede import AdaptadorRemoto, Sonda, SondaInjetada, id_da_instancia
 from jarvis.voz.chaves import VARIAVEL_ELEVENLABS, Chave
 from jarvis.voz.interface import Cancelado, Onde, nunca_cancelado
 from jarvis.voz.nuvem import ClienteHttp, ServicoRecusou, proibir_nuvem_real_em_ci
@@ -84,6 +84,8 @@ class MotorTtsElevenLabs:
     _chave: Chave | None = field(default=None, repr=False)
     _cliente: ClienteHttp | None = field(default=None, repr=False)
     _adaptador: AdaptadorRemoto | None = field(default=None, repr=False)
+    _instancia: str = field(default_factory=id_da_instancia, repr=False)
+    """Prefixo dos `call_id`: o contador recomeça a cada sessão, os descartados ficam no disco."""
 
     def __post_init__(self) -> None:
         if not self.nome:
@@ -150,7 +152,7 @@ class MotorTtsElevenLabs:
 
         self.sinteses += 1
         self.caracteres_enviados += len(texto)
-        call_id = f"tts-elevenlabs-{self.sinteses}"
+        call_id = f"tts-elevenlabs-{self._instancia}-{self.sinteses}"
         corpo = json.dumps({"text": texto, "model_id": self.modelo}).encode("utf-8")
         consulta = f"?output_format={FORMATO}"
         if self.retencao_zero:

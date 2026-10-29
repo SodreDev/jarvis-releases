@@ -317,6 +317,25 @@ def test_limite_de_taxa_e_degradacao_e_nao_recusa(tmp_path: Path) -> None:
         assert ler_degradacao(tmp_path).ativa
 
 
+def test_o_que_caiu_numa_sessao_nao_mata_o_pedido_de_mesmo_numero_da_seguinte(
+    tmp_path: Path,
+) -> None:
+    """Defeito da máquina do dono (2026-10-29): os descartados da regra 5 ficam no disco entre
+    sessões, e o id era só o contador — a 1ª e a 2ª transcrição de toda sessão nova voltavam
+    vazias sem ir à rede, porque a 1ª e a 2ª de ontem tinham caído."""
+    with ServicoFalso(roteiro=Roteiro(status=503, corpo=b'{"error":"indisponivel"}')) as servico:
+        ontem = motor_em(servico, tmp_path)
+        assert ontem.transcrever(audio_de(1200)) == Hipotese("", 0.0)
+        assert ontem.transcrever(audio_de(1200)) == Hipotese("", 0.0)
+    assert len(ler_degradacao(tmp_path).descartados) == 2
+
+    with ServicoFalso(roteiro=Roteiro(corpo=resposta_boa())) as servico:
+        hoje = motor_em(servico, tmp_path)
+        assert hoje.transcrever(audio_de(1200)).texto == TEXTO
+        assert hoje.transcrever(audio_de(1200)).texto == TEXTO
+        assert len(servico.pedidos) == 2, "o pedido de hoje foi recusado como o de ontem"
+
+
 def test_prazo_nosso_vence_servico_lento(tmp_path: Path) -> None:
     """O prazo é nosso (regra 1 do F1-14): não se espera o `timeout` de ninguém."""
     with ServicoFalso(

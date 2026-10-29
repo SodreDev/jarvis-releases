@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import socket
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -199,6 +200,17 @@ def frase_de_volta(servico: str) -> str:
         f"A conexão com {servico} voltou, e não refiz nada do que ficou pela metade: "
         "pode pedir de novo quando quiser."
     )
+
+
+def id_da_instancia() -> str:
+    """O prefixo dos `call_id` de um motor remoto, único por motor aberto.
+
+    **Correção de um defeito da máquina do dono (2026-10-29).** O id era `asr-groq-{n}`, com o
+    contador recomeçando em 1 a cada sessão, e a lista de descartados da regra 5 **fica no disco
+    entre sessões**: os pedidos 41 a 47 que caíram num dia matavam, em toda sessão seguinte, a 41ª
+    a 47ª transcrição — recusadas sem ir à rede, devolvidas vazias. A vigia do barge-in, que
+    transcreve muito, chegava nelas em minutos e o "Jarvis" falado por cima não cortava mais."""
+    return uuid.uuid4().hex[:12]
 
 
 def escrever_degradacao(raiz: Path, degradacao: Degradacao) -> None:

@@ -16,6 +16,7 @@ from pathlib import Path
 from random import Random
 
 from jarvis.audio_io.aec import quadros_de
+from jarvis.audio_io.dsp import CanceladorDeEco
 from jarvis.audio_io.quadro import BYTES_POR_QUADRO, TAXA_PADRAO, Quadro
 from jarvis.audio_io.sintese import aplicar_ganho_db, eco, fala_simulada, misturar, silencio
 from jarvis.relogio import RelogioFalso
@@ -88,7 +89,9 @@ def test_o_dono_falando_por_cima_do_eco_passa() -> None:
     antes = sum(resultados[:100])  # 0–2 s: só o eco
     durante = sum(resultados[100:175])  # 2–3,5 s: o dono por cima
     assert antes == 0
-    assert durante >= 50, f"só {durante} de 75 quadros do dono passaram"
+    # Sem o cancelador, só os picos do dono passam (a perda é pico contra pico desde 2026-10-29;
+    # antes eram ~50 quadros porque a perda inflava e o eco também passava). A suspeita pede 8.
+    assert durante >= 12, f"só {durante} de 75 quadros do dono passaram"
 
 
 def test_a_tv_ligada_antes_e_durante_a_fala_nao_passa() -> None:
@@ -106,6 +109,75 @@ def test_a_tv_ligada_antes_e_durante_a_fala_nao_passa() -> None:
 
     assert portao.ambiente_db > -60.0  # mediu a TV
     assert passaram == 0, f"{passaram} quadros da TV passaram como o dono"
+
+
+def _silabas(ms: float, semente: int) -> bytes:
+    """Fala com vales fundos entre as sílabas (100 ms de som, 100 ms quase mudo) — como a voz
+    piper: é nos vales que a perda medida contra o quadro inflava."""
+    pedacos = []
+    for i in range(int(ms // 200)):
+        pedacos.append(_fala(100, semente + i))
+        pedacos.append(aplicar_ganho_db(_fala(100, semente + 100 + i), -40))
+    return b"".join(pedacos)
+
+
+def test_a_perda_aprendida_e_a_do_caminho_mesmo_com_vales_entre_as_silabas() -> None:
+    """2026-10-29: a perda era o pico da referência contra o quadro de agora; nos vales ela
+    passava de 25 dB com 6 dB de verdade, e o próprio eco abria trechos sem fim."""
+    jarvis = _silabas(6000, 1)
+    microfone = eco(jarvis, atraso_ms=40, ganho_db=-6)[: len(jarvis)]
+    portao = PortaoDeEco()
+
+    passaram = 0
+    for ref, quadro in _junto(jarvis, microfone):
+        portao.referencia(ref)
+        passaram += portao.ver(quadro)
+
+    assert passaram == 0, f"{passaram} quadros do eco passaram como fala do dono"
+    assert 3.0 < portao.perda_db < 9.0, portao.perda_db
+
+
+def test_com_o_cancelador_o_dono_no_nivel_do_eco_passa_e_o_eco_nao() -> None:
+    """Caixa perto do microfone: o eco chega tão alto quanto o dono. Por energia não dá para
+    separar; com o cancelador do F1-04 no caminho da vigia, o resíduo é o dono."""
+    jarvis = _silabas(6000, 1)
+    o_eco = eco(jarvis, atraso_ms=40, ganho_db=-6)[: len(jarvis)]
+    dono = silencio(4000) + aplicar_ganho_db(_fala(1500, 7, f0=180.0), -6)
+    microfone = misturar(o_eco, dono)[: len(jarvis)]
+
+    def passaram(vigia: VigiaDeInterrupcao) -> tuple[int, int]:
+        resultados = []
+        for ref, quadro in _junto(jarvis, microfone):
+            vigia.referencia(ref)
+            limpo = vigia._sem_o_eco_do_quadro(quadro) if vigia.cancelador else quadro
+            resultados.append(vigia.portao.ver(limpo))
+        return sum(resultados[100:200]), sum(resultados[200:275])  # 2–4 s eco; 4–5,5 s o dono
+
+    so_energia = passaram(VigiaDeInterrupcao(transcrever=lambda _a: ""))
+    com_aec = passaram(VigiaDeInterrupcao(transcrever=lambda _a: "", cancelador=CanceladorDeEco()))
+
+    assert so_energia[0] == 0 and com_aec[0] == 0, (so_energia, com_aec)
+    assert so_energia[1] < 8, so_energia  # o caso do dono: por energia, não corta
+    assert com_aec[1] >= 12, com_aec  # a suspeita pede 8 (160 ms)
+
+
+def test_trecho_que_nao_fecha_decide_em_3_s_e_o_fim_vai_para_o_seguinte() -> None:
+    """A releitura vinha antes do teto: com fala sem parar o trecho crescia e ia inteiro ao ASR
+    a cada 400 ms (11 s de eco, com o nome do dono afogado no meio)."""
+    lidos: list[int] = []
+
+    def asr(amostras: bytes) -> str:
+        lidos.append(len(amostras))
+        return "uma conversa qualquer na sala"
+
+    vigia = _vigia(ModoDeEscuta.PALAVRA, asr)
+
+    acoes = _rodar(vigia, fala_do_dono_ms=7000)
+
+    assert Acao.CORTAR not in acoes
+    teto = (20 + 3000 // 20) * BYTES_POR_QUADRO
+    assert max(lidos) <= teto, f"leu {max(lidos) // BYTES_POR_QUADRO} quadros de uma vez"
+    assert sum(d.motivo is Motivo.SEM_CHAMADA for d in vigia.decisoes) >= 2
 
 
 def test_quando_a_transcricao_diz_que_era_eco_o_portao_fica_mais_exigente() -> None:
@@ -179,9 +251,9 @@ def test_na_palavra_o_nome_dito_por_cima_corta_e_o_trecho_vira_o_comeco_do_turno
     assert Acao.CORTAR in acoes
     assert Acao.PAUSAR not in acoes, "na palavra o Jarvis não pausa à toa: só o nome corta"
     corte = acoes.index(Acao.CORTAR)
-    assert corte == 50 + 11, f"cortou no quadro {corte}: 240 ms depois de o dono começar"
-    # Os 400 ms de antes e os 240 ms de fala: o começo da chamada vai para o turno novo.
-    assert cortes == [cortes[0]] and len(cortes[0]) == (20 + 12) * BYTES_POR_QUADRO
+    assert corte == 50 + 7, f"cortou no quadro {corte}: 160 ms depois de o dono começar"
+    # Os 400 ms de antes e os 160 ms de fala: o começo da chamada vai para o turno novo.
+    assert cortes == [cortes[0]] and len(cortes[0]) == (20 + 8) * BYTES_POR_QUADRO
     assert vigia.decisoes[-1].motivo is Motivo.PALAVRA_DE_ATIVACAO
 
 
@@ -213,7 +285,7 @@ def test_na_continua_pausa_na_hora_e_sem_o_detector_retoma_quando_nao_e_ordem() 
     acoes = _rodar(vigia, fala_do_dono_ms=900)
 
     pausa = acoes.index(Acao.PAUSAR)
-    assert 50 + 11 <= pausa <= 50 + 14, "pausou tarde: o dono falou e o Jarvis seguiu falando"
+    assert 50 + 7 <= pausa <= 50 + 10, "pausou tarde: o dono falou e o Jarvis seguiu falando"
     assert Acao.RETOMAR in acoes[pausa:]
     assert Acao.CORTAR not in acoes
     assert vigia.decisoes[-1].motivo is Motivo.SEM_CHAMADA
