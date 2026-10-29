@@ -69,6 +69,12 @@ from jarvis.barramento.envelope import Envelope, Trust, uuid7
 from jarvis.caixa import CaixaDeScript
 from jarvis.decisao.enderecamento import DetectorDeEnderecamento, Motivo
 from jarvis.decisao.openrouter import ClassificadorOpenRouter
+from jarvis.delegacao import (
+    ConfiguracaoDaDelegacaoInvalida,
+    DelegadorClaudeCode,
+    carregar_delegacao,
+)
+from jarvis.delegacao.config import ARQUIVO as ARQUIVO_DA_DELEGACAO
 from jarvis.entrada.controle import ControleDeEntrada
 from jarvis.entrada.escolha import backend_do_ambiente
 from jarvis.entrada.foco import foco_do_ambiente
@@ -1320,6 +1326,8 @@ class Aplicativo:
             # Os servidores MCP que o dono listou (ADR-0052): sem `mcp.toml`, lista vazia e nada é
             # aberto — nenhum efeito colateral sem configuração.
             mcp=self._gestor_mcp(),
+            # Delegar ao Claude Code do dono (ADR-0054): só com a chave em `delegar.toml`.
+            delegacao=self._delegador(),
             trilha=self.trilha,
             # Aprender um nome do dono (ADR-0044): só com o repositório, e vale já no laço.
             vocabulario=self.vocabulario,
@@ -1332,6 +1340,24 @@ class Aplicativo:
         """O classificador que o guarda de contexto usa (ADR-0049): o mesmo do endereçamento/portão
         quando o dono o ligou; senão `None` (a zona cinza do guarda pergunta ao dono)."""
         return self.detector.classificador if self.detector is not None else None
+
+    def _delegador(self) -> DelegadorClaudeCode | None:
+        """Quem delega ao Claude Code (ADR-0054). Lê `~/.config/jarvis/delegar.toml`; sem o
+        arquivo ou com `ligado = false`, nada (o padrão). Arquivo inválido ou com cara de segredo
+        desliga a delegação com o motivo na tela, sem derrubar o app."""
+        caminho = pasta_de_configuracao(self.ambiente) / ARQUIVO_DA_DELEGACAO
+        try:
+            configuracao = carregar_delegacao(caminho)
+        except ConfiguracaoDaDelegacaoInvalida as erro:
+            self.escrever_na_tela(f"  (delegação ao Claude Code desligada: {erro})")
+            return None
+        if not configuracao.ligado:
+            return None
+        return DelegadorClaudeCode(
+            configuracao=configuracao,
+            ambiente=dict(ambiente_ou_os(self.ambiente)),
+            avisar=lambda frase: self.escrever_na_tela(f"  ({frase})"),
+        )
 
     def _gestor_mcp(self) -> GestorMcp | None:
         """O gestor dos servidores MCP (ADR-0052). Lê `~/.config/jarvis/mcp.toml`; sem o arquivo,

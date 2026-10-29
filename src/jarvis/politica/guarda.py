@@ -65,6 +65,8 @@ class Tipo(StrEnum):
     SCRIPT_NA_CAIXA = "script_na_caixa"
     GESTO = "gesto"
     MCP = "mcp"
+    DELEGACAO = "delegacao"
+    """Uma tarefa de navegador entregue ao Claude Code do dono (ADR-0054)."""
 
 
 class Categoria(StrEnum):
@@ -86,6 +88,7 @@ GUARDADAS: Final[Mapping[str, Tipo]] = {
     "browser.avaliar": Tipo.SCRIPT_NA_PAGINA,
     "browser.gesto": Tipo.GESTO,
     "script.rodar": Tipo.SCRIPT_NA_CAIXA,
+    "delegar.claude_code": Tipo.DELEGACAO,
 }
 """As ferramentas que passam pelo guarda — além de toda `mcp.*` (ADR-0052)."""
 PREFIXO_MCP: Final = "mcp."
@@ -107,6 +110,11 @@ MOTIVOS: Final[Mapping[Categoria, str]] = {
     Categoria.FORA_DO_OBJETIVO: "a ação não serve ao que o dono pediu",
     Categoria.NENHUMA: "a ação não cabe no objetivo",
 }
+MOTIVOS_DA_DELEGACAO: Final[Mapping[Categoria, str]] = {
+    Categoria.CREDENCIAIS: "a tarefa delegada pede senha, código, cartão ou chave",
+    Categoria.DOMINIO_SENSIVEL: "a tarefa delegada vai a banco, senha, e-mail ou pagamento",
+}
+"""O porquê de barrar uma delegação ao Claude Code (ADR-0054), no lugar do texto de script."""
 ALTERNATIVAS: Final[Mapping[Categoria, str]] = {
     Categoria.CREDENCIAIS: (
         "leia o que precisa pelo que está à vista (browser.read, browser.inspecionar), sem "
@@ -135,6 +143,14 @@ ALTERNATIVAS: Final[Mapping[Categoria, str]] = {
     Categoria.FORA_DO_OBJETIVO: "volte ao que o dono pediu",
     Categoria.NENHUMA: "volte ao que o dono pediu",
 }
+ALTERNATIVAS_DA_DELEGACAO: Final[Mapping[Categoria, str]] = {
+    Categoria.CREDENCIAIS: (
+        "senha, código, cartão e chave são do dono: não delegue isso, diga a ele o que falta"
+    ),
+    Categoria.DOMINIO_SENSIVEL: (
+        "banco, senha, e-mail e pagamento não se delegam: diga ao dono o que não deu para fazer"
+    ),
+}
 DESISTIR: Final = "não tente de novo por outro caminho: diga ao dono o que não dá para fazer"
 
 
@@ -158,6 +174,8 @@ class Acao:
     """MCP: o que o dono escreveu na configuração (`leitura`, `livre`, `moderado`, `perigoso`)."""
     destinos: tuple[str, ...] = ()
     """URLs que a chamada leva nos argumentos (MCP que navega, por exemplo)."""
+    tarefa: str = ""
+    """A tarefa de navegador entregue ao Claude Code (`delegar.claude_code`, ADR-0054)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,6 +330,26 @@ _REDE_NA_CAIXA: Final = _padroes(
 )
 _ENVIA_DA_CAIXA: Final = _padroes(r"\bsmtplib\b")
 
+# A tarefa entregue ao Claude Code (ADR-0054) é texto em português, não script: o que ela não pode
+# pedir é credencial (barra), e o que envia, paga ou apaga pede o sim com o porquê.
+_CREDENCIAL_NA_TAREFA: Final = _padroes(
+    r"\bsenhas?\b",
+    r"\bpassword\b",
+    r"\bc[óo]digos?\s+(de\s+)?(verifica[çc][ãa]o|seguran[çc]a|acesso|2fa|sms)\b",
+    r"\b2fa\b",
+    r"\bcvv\b",
+    r"\bn[úu]mero\s+do\s+cart[ãa]o\b",
+    r"\bcookies?\b",
+    r"\btokens?\b",
+    r"\bchaves?\s+(de\s+)?(api|acesso|secreta|privada)\b",
+)
+_ENVIA_NA_TAREFA: Final = _padroes(
+    r"\b(envi|mand|public|post|compr|pag|transfir|transfer|apag|exclu|delet|assin|cancel)"
+    r"(ar|e|a|em|ou|ue|ir|i)\b",
+    r"\bpix\b",
+    r"\bfinaliz\w*\s+(a\s+)?compra\b",
+)
+
 _ESCAPES: Final = re.compile(r"\\x[0-9a-f]{2}|\\u[0-9a-f]{4}|\\u\{[0-9a-f]+\}", re.IGNORECASE)
 _BASE64_LONGO: Final = re.compile(r"[A-Za-z0-9+/]{200,}={0,2}")
 _CODIGO_DE_CARACTERE: Final = re.compile(r"\bfromCharCode\b|\batob\s*\(", re.IGNORECASE)
@@ -392,7 +430,8 @@ PERGUNTAS_DO_GUARDA: Final[dict[str, Pergunta]] = {
     "acao": PerguntaEscolha(
         instrucoes=(
             "O assistente Jarvis quer fazer `acao` (uma ferramenta de script, de gesto no "
-            "navegador ou de um servidor MCP) no computador do dono. `objetivo` diz o que o dono "
+            "navegador, de um servidor MCP ou uma tarefa delegada ao Claude Code) no computador "
+            "do dono. `objetivo` diz o que o dono "
             "pediu, o critério de pronto, a fase e os passos já feitos. A ação serve a esse "
             "objetivo e é segura?"
         ),
@@ -481,6 +520,8 @@ class GuardaDeContexto:
             return self._script_na_caixa(acao)
         if acao.tipo is Tipo.GESTO:
             return self._gesto(acao, objetivo, site)
+        if acao.tipo is Tipo.DELEGACAO:
+            return self._delegacao(acao, objetivo)
         return self._mcp(acao, objetivo, site)
 
     def _script_na_pagina(
@@ -548,6 +589,25 @@ class GuardaDeContexto:
             return _confirmar("a chamada leva a um site fora do objetivo", "sim:mcp_fora")
         return None
 
+    def _delegacao(self, acao: Acao, objetivo: Objetivo | None) -> Julgamento | None:
+        """A tarefa entregue ao Claude Code tem de bater com o objetivo corrente (ADR-0054)."""
+        if any(p.search(acao.tarefa) for p in _CREDENCIAL_NA_TAREFA):
+            return _barrar_delegacao(Categoria.CREDENCIAIS, "nega:delegar_credencial")
+        destinos = [*acao.destinos, *_destinos_do_codigo(acao.tarefa)]
+        if any(categoria_do_site(d) in SITES_SEM_SCRIPT for d in destinos):
+            return _barrar_delegacao(Categoria.DOMINIO_SENSIVEL, "nega:delegar_dominio_sensivel")
+        if objetivo is None:
+            return _confirmar("não há objetivo do dono a comparar", "sim:delegar_sem_objetivo")
+        if any(p.search(acao.tarefa) for p in _ENVIA_NA_TAREFA):
+            return _confirmar(
+                "a tarefa delegada fala em enviar, pagar, publicar ou apagar", "sim:delegar_envia"
+            )
+        if any(not _no_objetivo(objetivo, d) for d in destinos):
+            return _confirmar(
+                "a tarefa delegada leva a um site fora do objetivo", "sim:delegar_fora"
+            )
+        return None  # a zona cinza: o Jev compara a tarefa com o objetivo
+
     # O Jev, só na zona cinza.
 
     def _pelo_jev(self, acao: Acao, objetivo: Objetivo | None, cancelado: Cancelado) -> Julgamento:
@@ -557,7 +617,7 @@ class GuardaDeContexto:
             )
         na_nuvem = getattr(self.classificador, "onde", Onde.NUVEM) is not Onde.LOCAL
         pedido = objetivo.pedido if objetivo is not None else ""
-        if na_nuvem and classe_de_pii(pedido) == SENSIVEL:
+        if na_nuvem and SENSIVEL in (classe_de_pii(pedido), classe_de_pii(acao.tarefa)):
             return _confirmar("o pedido tem conteúdo sensível, que não vai à nuvem", "sim:d20")
         estado = estado_para_o_jev(acao, objetivo, na_nuvem=na_nuvem)
         limite = time.monotonic() + self.prazo_s
@@ -614,10 +674,15 @@ class GuardaDeContexto:
         self._barradas[chave] = vezes
         if len(self._barradas) > self.tamanho_do_cache:
             self._barradas.pop(next(iter(self._barradas)))
+        alternativas = (
+            ALTERNATIVAS_DA_DELEGACAO
+            if julgamento.regra.startswith("nega:delegar_")
+            else ALTERNATIVAS
+        )
         alternativa = (
             DESISTIR
             if vezes >= BARRADAS_ATE_DESISTIR
-            else ALTERNATIVAS.get(julgamento.categoria, ALTERNATIVAS[Categoria.NENHUMA])
+            else alternativas.get(julgamento.categoria, ALTERNATIVAS[Categoria.NENHUMA])
         )
         if objetivo is not None:
             instrucao = (
@@ -633,6 +698,9 @@ def forma(acao: Acao) -> str:
     """A forma da ação: ferramenta, host do alvo, mundo, rede, gesto, tier e o esqueleto do
     código — sem nenhum valor que o modelo escreveu."""
     corpo = esqueleto(acao.codigo)
+    if acao.tarefa:
+        # Texto, não script: a forma é a tarefa normalizada (duas iguais batem no cache).
+        corpo = " ".join(acao.tarefa.lower().split())
     resumo = hashlib.sha256(corpo.encode("utf-8")).hexdigest()[:16] if corpo else "-"
     destinos = ",".join(sorted({host_de(d) for d in acao.destinos}))
     return "|".join(
@@ -663,6 +731,12 @@ def _barrar(categoria: Categoria, regra: str) -> Julgamento:
     return Julgamento(Saida.BARRAR, MOTIVOS[categoria], regra=regra, categoria=categoria)
 
 
+def _barrar_delegacao(categoria: Categoria, regra: str) -> Julgamento:
+    return Julgamento(
+        Saida.BARRAR, MOTIVOS_DA_DELEGACAO[categoria], regra=regra, categoria=categoria
+    )
+
+
 def _confirmar(motivo: str, regra: str) -> Julgamento:
     return Julgamento(Saida.PEDIR_CONFIRMACAO, motivo, regra=regra)
 
@@ -673,11 +747,14 @@ def estado_para_o_jev(acao: Acao, objetivo: Objetivo | None, *, na_nuvem: bool) 
     codigo = redigir(esqueleto(acao.codigo)).texto if acao.codigo else ""
     if len(codigo) > CARACTERES_DO_CODIGO:
         codigo = codigo[:CARACTERES_DO_CODIGO] + "…"
+    tarefa = redigir(" ".join(acao.tarefa.split())).texto if acao.tarefa else ""
+    if len(tarefa) > CARACTERES_DO_CODIGO:
+        tarefa = tarefa[:CARACTERES_DO_CODIGO] + "…"
     contexto: dict[str, Any] = {}
     if objetivo is not None:
         contexto = objetivo.para_o_classificador(na_nuvem=na_nuvem)
         contexto["objetivo"] = objetivo.pedido  # já redigido e curto (`Objetivo.do_pedido`)
-    return {
+    estado: dict[str, Any] = {
         "objetivo": contexto,
         "acao": {
             "ferramenta": acao.tool_id,
@@ -690,3 +767,7 @@ def estado_para_o_jev(acao: Acao, objetivo: Objetivo | None, *, na_nuvem: bool) 
             "codigo": codigo,
         },
     }
+    if tarefa:
+        # A delegação ao Claude Code (ADR-0054): o Jev compara a tarefa com o objetivo.
+        estado["acao"]["tarefa_delegada"] = tarefa
+    return estado

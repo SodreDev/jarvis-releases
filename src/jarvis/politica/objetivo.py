@@ -166,6 +166,9 @@ class Objetivo:
     """O método do pedido é um dos `METODOS_QUE_CONFEREM`."""
     efeitos_tentados: int = 0
     """Passos com efeito (navegar, clicar, abrir, mudar) que foram tentados, deram certo ou não."""
+    delegacoes: int = 0
+    """Tarefas entregues ao Claude Code neste objetivo (ADR-0054): uma só — não se delega de novo
+    a partir do resultado de uma delegação."""
     _efeito_feito: bool = False
     _conferido: bool = False
     """Uma leitura que deu certo veio depois do último efeito que deu certo."""

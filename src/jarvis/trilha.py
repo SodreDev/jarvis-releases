@@ -97,6 +97,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "codigo": Forma.CODIGO,
     "completo": Forma.BOOLEANO,
     "contraste_db": Forma.NUMERO,
+    "cortada": Forma.BOOLEANO,
     "de_fora": Forma.NUMERO,
     "decisao": Forma.CODIGO,
     "epoch": Forma.NUMERO,
@@ -124,6 +125,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "ms_primeiro_token": Forma.NUMERO,
     "ms_total": Forma.NUMERO,
     "narracao_retida": Forma.NUMERO,
+    "negacoes": Forma.NUMERO,
     "objetivo": Forma.CODIGO,
     "origem": Forma.CODIGO,
     "pdp": Forma.ROTULO,
@@ -134,6 +136,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "sem_fala": Forma.NUMERO,
     "status": Forma.CODIGO,
     "tool_id": Forma.CODIGO,
+    "turnos": Forma.NUMERO,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -177,6 +180,9 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     # cache — nunca o script, a URL nem texto de página.
     "guarda": frozenset({"tool_id", "decisao", "regra", "categoria", "ms", "cache", "jev"}),
     "permissao": frozenset({"tool_id", "origem", "motivo", "resposta"}),
+    # A delegação ao Claude Code (ADR-0054): como terminou (código), quanto demorou, quantos
+    # turnos e negações — nunca a tarefa nem o que o Claude Code devolveu.
+    "delegacao": frozenset({"tool_id", "status", "ms", "turnos", "negacoes", "cortada"}),
     "metodo": frozenset({"metodo", "motivo", "de_fora"}),
     # O caminho rápido (ADR-0045): que regra achou a ferramenta, qual e como terminou — nunca a
     # fala nem o argumento.
@@ -236,6 +242,15 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         # o guarda de contexto (`jarvis.politica.guarda`, ADR-0049)
         "guarda_barrou",
         "guarda_pediu",
+        # a delegação ao Claude Code (`jarvis.delegacao`, ADR-0054)
+        "redelegar",
+        "delegar_cedo",
+        "sem_claude_code",
+        "claude_code_sem_login",
+        "claude_code_sem_chrome",
+        "claude_code_prazo",
+        "claude_code_falhou",
+        "claude_code_saida_invalida",
         # o método do pedido (`jarvis.politica.metodo`)
         "pede_teclado_ou_mouse",
         "pede_terminal",
@@ -559,6 +574,12 @@ def _linha(evento: Mapping[str, Any]) -> str:
             f"guarda {evento.get('tool_id')}: {evento.get('decisao')} pela regra "
             f"{evento.get('regra')} ({evento.get('categoria')}{jev}, {_ms(evento.get('ms'))}"
             f"{', do cache' if evento.get('cache') else ''})"
+        )
+    if tipo == "delegacao":
+        return (
+            f"delegação {evento.get('tool_id')}: {evento.get('status')} em {_ms(evento.get('ms'))}"
+            f" ({evento.get('turnos', 0)} turnos, {evento.get('negacoes', 0)} negações"
+            f"{', saída cortada' if evento.get('cortada') else ''})"
         )
     if tipo == "atalho":
         return (

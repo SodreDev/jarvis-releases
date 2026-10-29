@@ -113,6 +113,10 @@ TIER_ESPERADO: dict[str, str] = {
     # Executor de scripts isolado (dono, 2026-10-29; ADR-0050): roda numa caixa sem rede nem os
     # arquivos do dono; moderado, com o guarda julgando antes do PDP.
     "script.rodar": "moderado",
+    # Delegar ao Claude Code do dono (dono, 2026-10-29; ADR-0054): moderado no tier, mas o sim é
+    # pedido pelo código na 1ª (e única) delegação do pedido (`Pedido.exige_o_sim`) e o guarda
+    # compara a tarefa com o objetivo.
+    "delegar.claude_code": "moderado",
     "input.mouse.move": "moderado",
     "input.mouse.click": "moderado",
     "input.key.type": "moderado",
@@ -371,6 +375,9 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         ),
         "browser.gesto": _pedido(pdp, "browser.gesto", {"gesto": "rolar", "pixels": 300}),
         "script.rodar": _pedido(pdp, "script.rodar", {"linguagem": "python", "codigo": "print(1)"}),
+        "delegar.claude_code": _pedido(
+            pdp, "delegar.claude_code", {"tarefa": "traga o horário da página de agenda"}
+        ),
         "browser.acao_sensivel": _pedido(
             pdp, "browser.acao_sensivel", {"acao": "browser.click", "detalhe": "Enviar"}
         ),
