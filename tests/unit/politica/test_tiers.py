@@ -104,6 +104,15 @@ TIER_ESPERADO: dict[str, str] = {
     "browser.acionar": "moderado",
     "browser.tela": "livre",
     "browser.acao_sensivel": "perigoso",
+    # Navegador por CDP (dono, 2026-10-29; ADR-0051): console e rede são leitura; avaliar JS e
+    # gesto físico são moderado e passam pelo guarda de contexto (ADR-0049).
+    "browser.console": "livre",
+    "browser.rede": "livre",
+    "browser.avaliar": "moderado",
+    "browser.gesto": "moderado",
+    # Executor de scripts isolado (dono, 2026-10-29; ADR-0050): roda numa caixa sem rede nem os
+    # arquivos do dono; moderado, com o guarda julgando antes do PDP.
+    "script.rodar": "moderado",
     "input.mouse.move": "moderado",
     "input.mouse.click": "moderado",
     "input.key.type": "moderado",
@@ -215,7 +224,9 @@ def test_so_os_passos_de_navegacao_tem_o_aviso_silencioso() -> None:
     silenciosos = {t for t, m in MANIFESTOS.items() if m.get("aviso_silencioso") is True}
     assert silenciosos == {
         "browser.acionar",
+        "browser.avaliar",
         "browser.click",
+        "browser.gesto",
         "browser.navigate",
         "browser.scroll",
         "browser.type",
@@ -353,6 +364,13 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "browser.acionar": _pedido(
             pdp, "browser.acionar", {"ref": "ab1.1", "acao": "tecla", "tecla": "Enter"}
         ),
+        "browser.console": _pedido(pdp, "browser.console", {}),
+        "browser.rede": _pedido(pdp, "browser.rede", {}),
+        "browser.avaliar": _pedido(
+            pdp, "browser.avaliar", {"codigo": "document.title", "mundo": "isolado"}
+        ),
+        "browser.gesto": _pedido(pdp, "browser.gesto", {"gesto": "rolar", "pixels": 300}),
+        "script.rodar": _pedido(pdp, "script.rodar", {"linguagem": "python", "codigo": "print(1)"}),
         "browser.acao_sensivel": _pedido(
             pdp, "browser.acao_sensivel", {"acao": "browser.click", "detalhe": "Enviar"}
         ),

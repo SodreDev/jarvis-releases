@@ -233,7 +233,7 @@ def test_o_host_revalida_o_vocabulario_mesmo_que_o_cliente_tenha_sido_burlado(
 ) -> None:
     nav = navegador(_ecoa, 5.0)
     transporte = TransporteUnix(nav.pasta)
-    torto = PedidoDaPonte("x1", "page.eval", {"codigo": "1"})  # montado à mão, sem o cliente
+    torto = PedidoDaPonte("x1", "page.exec", {"codigo": "1"})  # método fora do vocabulário
     resposta = transporte.chamar(torto)
     assert resposta["ok"] is False
     assert resposta["error"]["codigo"] == "pedido_invalido"

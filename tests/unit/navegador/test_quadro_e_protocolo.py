@@ -88,7 +88,11 @@ def test_pedidos_do_vocabulario_passam() -> None:
         _pedido("tabs.open"),  # aba nova sem endereço
         _pedido("tabs.open", url="javascript:alert(1)"),
         _pedido("tabs.open", url="https://exemplo.org", reutilizar=True),  # fora do contrato
-        _pedido("page.eval", codigo="1+1"),  # canivete suíço
+        _pedido("page.eval", codigo="1+1", mundo="outro"),  # mundo fora da lista (ADR-0051)
+        _pedido("page.eval"),  # avaliar o quê? falta o código
+        _pedido("page.eval", codigo="x" * 20_001),  # código acima do teto
+        _pedido("page.gesture", gesto="voar"),  # gesto fora da lista
+        _pedido("page.gesture"),  # falta o gesto
         _pedido("page.click", selector="#enviar", alvo="x"),  # seletor CSS não existe
         _pedido("page.click", seletor="#enviar"),  # nem em português
         _pedido("page.click", alvo="Próxima", ref="k3f2.1"),  # texto ou referência, um só

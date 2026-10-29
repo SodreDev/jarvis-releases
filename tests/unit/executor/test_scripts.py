@@ -14,7 +14,7 @@ import pytest
 from jarvis.decisao.fake import ClassificadorFalso
 from jarvis.decisao.interface import RespostaEscolha
 from jarvis.executor.ferramentas import ExecutorDeFerramentas
-from jarvis.executor.scripts import CaixaDeScript, Limites, backend_disponivel
+from jarvis.caixa.scripts import CaixaDeScript, Limites, backend_disponivel
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.guarda import GuardaDeContexto

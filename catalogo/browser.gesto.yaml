@@ -1,0 +1,78 @@
+# Navegador por CDP (ADR-0051): gestos físicos por Input.* quando o clique por ref não faz efeito.
+id: browser.gesto
+title: Fazer um gesto físico na página
+description: >-
+  Faz um gesto físico numa aba pelo depurador (CDP): clicar, arrastar, digitar ou rolar — o evento de mouse ou
+  teclado de verdade, para quando o clique por referência (browser.click/browser.acionar) não faz efeito. Clicar,
+  arrastar e digitar agem num elemento achado por `ref` (do mapa) ou pelo texto em `alvo`; rolar usa `pixels`.
+  Enviar, pagar e apagar continuam pedindo o seu sim, como no clique; banco, e-mail, pagamento, senha e
+  mensageiro pedem o sim para qualquer gesto. O guarda de contexto (ADR-0049) confere o objetivo antes.
+quando: "fazer o gesto físico (clicar/arrastar/digitar/rolar) quando o clique por referência falhou"
+exemplos:
+- "arrasta esse controle para o fim"
+- "clica de verdade nesse ponto"
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - gesto
+  properties:
+    tab_id:
+      type: integer
+      minimum: 0
+    gesto:
+      type: string
+      enum:
+      - clicar
+      - arrastar
+      - digitar
+      - rolar
+    alvo:
+      type: string
+      minLength: 1
+      maxLength: 200
+    ref:
+      type: string
+      pattern: ^[a-z0-9]{1,16}\.[0-9]{1,4}$
+      maxLength: 21
+    texto:
+      type: string
+      maxLength: 10000
+    pixels:
+      type: integer
+output_schema:
+  type: object
+  required:
+  - feito
+  - gesto
+preconditions:
+- a extensão do Jarvis está instalada e o navegador dá CDP
+postcondition: o gesto foi na mesma aba, no elemento inspecionado, e o risco foi avaliado antes
+capability: browser.gesto
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: local
+pii_touch: content
+confirmation: never
+tier: moderado
+aviso_falado: Fiz o gesto na página.
+aviso_silencioso: true  # passo de navegação: só na auditoria (ADR-0031)
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 20000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-navegador
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

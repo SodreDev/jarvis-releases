@@ -55,7 +55,6 @@ pii_touch: content
 confirmation: never
 tier: moderado
 aviso_falado: Rodei o script.
-aviso_silencioso: true  # passo de trabalho: só na auditoria (ADR-0031)
 access_level_min: jarvis
 roots: []
 requires_elevation: false

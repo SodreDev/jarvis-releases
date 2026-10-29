@@ -377,6 +377,42 @@ class ClienteDoNavegador:
     def rolar(self, tab_id: int, pixels: int) -> dict[str, Any]:
         return self.chamar("page.scroll", tabId=tab_id, pixels=pixels)
 
+    def console(self, tab_id: int) -> dict[str, Any]:
+        """Os logs e erros do console da aba desde que o Jarvis anexou o depurador (ADR-0051)."""
+        return self.chamar("page.console", tabId=tab_id)
+
+    def rede(self, tab_id: int) -> dict[str, Any]:
+        """Os pedidos de rede da aba desde que anexou: método, URL, status, tipo, tempo."""
+        return self.chamar("page.network", tabId=tab_id)
+
+    def avaliar(self, tab_id: int, codigo: str, *, mundo: str = "isolado") -> dict[str, Any]:
+        """Roda um JavaScript no mundo isolado (padrão) ou principal e devolve o valor serializado,
+        se der para serializar, mais `cdp` (foi por CDP) ou o recuo para `chrome.scripting`."""
+        return self.chamar("page.eval", tabId=tab_id, codigo=codigo, mundo=mundo)
+
+    def gesto(
+        self,
+        tab_id: int,
+        gesto: str,
+        *,
+        alvo: str | None = None,
+        ref: str | None = None,
+        texto: str | None = None,
+        pixels: int | None = None,
+    ) -> dict[str, Any]:
+        """Um gesto físico por `Input.*` do CDP (clicar, arrastar, digitar, rolar) quando o clique
+        por `ref` não faz efeito (ADR-0051)."""
+        params: dict[str, Any] = {"tabId": tab_id, "gesto": gesto}
+        if alvo is not None:
+            params["alvo"] = alvo
+        if ref is not None:
+            params["ref"] = ref
+        if texto is not None:
+            params["texto"] = texto
+        if pixels is not None:
+            params["pixels"] = pixels
+        return self.chamar("page.gesture", **params)
+
     def navegar(self, tab_id: int, url: str) -> dict[str, Any]:
         """Leva a aba ao endereço e volta **depois** de conferir: `comecou` (a aba saiu do lugar),
         `carregou`, `pagina` (o conteúdo da extensão respondeu na página nova: `{url, titulo}`, ou

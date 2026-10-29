@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Final
 import jsonschema
 
 from jarvis.barramento.envelope import uuid7
+from jarvis.caixa import CaixaDeScript
 from jarvis.entrada.controle import FERRAMENTA_DE_CONFIRMACAO as CONFIRMACAO_DE_ENTRADA
 from jarvis.entrada.controle import FERRAMENTAS_DE_ENTRADA, ControleDeEntrada
 from jarvis.executor import arquivos, desktop
@@ -36,7 +37,6 @@ from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
 from jarvis.executor.nativas import CORPOS, DE_ARQUIVOS, PRECISAM_DE_AGENDA, Nativas
 from jarvis.executor.navegadores import AbridorDeNavegador, familia_de_navegador
 from jarvis.executor.organizar import OrganizacaoRecusada, Organizador
-from jarvis.executor.scripts import CaixaDeScript
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
 from jarvis.imagem import CHAVE_DOS_ANEXOS, Imagem
 from jarvis.manifesto.validador import carregar_catalogo
@@ -769,7 +769,18 @@ class ExecutorDeFerramentas:
                 linguagem=str(argumentos.get("linguagem", "python")),
                 rede=bool(argumentos.get("rede", False)),
             )
-        return Acao(tool_id, Tipo.LEITURA)  # sem corpo guardado ainda: o guarda deixa passar
+        if tool_id == "browser.avaliar":
+            # O guarda julga o código e o mundo; o domínio da aba (que ele não tem aqui) é a cerca
+            # do corpo (`CorposDoNavegador._avaliar`, ADR-0051).
+            return Acao(
+                tool_id,
+                Tipo.SCRIPT_NA_PAGINA,
+                codigo=str(argumentos.get("codigo", "")),
+                mundo=str(argumentos.get("mundo", "isolado")),
+            )
+        if tool_id == "browser.gesto":
+            return Acao(tool_id, Tipo.GESTO, detalhe=str(argumentos.get("gesto", "")))
+        return Acao(tool_id, Tipo.LEITURA)  # leitura (console/rede) ou sem corpo guardado
 
     def _trilhar_guarda(self, tool_id: str, julgamento: Julgamento) -> None:
         if self.trilha is None:

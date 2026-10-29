@@ -43,6 +43,12 @@ PADRAO_DA_REF: Final = re.compile(r"[a-z0-9]{1,16}\.[0-9]{1,4}")
 ACOES: Final = frozenset({"clicar", "focar", "passar_o_mouse", "tecla", "enviar", "selecionar"})
 TECLAS: Final = frozenset({"Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"})
 LIMITE_DO_VALOR: Final = 200
+MUNDOS: Final = frozenset({"isolado", "principal"})
+"""`page.eval` roda no mundo **isolado** (padrão) ou no **principal** da página (ADR-0051)."""
+GESTOS: Final = frozenset({"clicar", "arrastar", "digitar", "rolar"})
+"""Os gestos físicos por CDP (`Input.*`): o clique/arrasto/digitação/rolagem de verdade."""
+LIMITE_DO_CODIGO: Final = 20_000
+"""O JavaScript de `page.eval` (igual ao teto do `script.rodar`, ADR-0050)."""
 MODO_AUTOMACAO_SOCIAL: Final = "automacao_social"
 MODOS: Final = frozenset({MODO_AUTOMACAO_SOCIAL})
 """`tabs.open` e `page.readUrl`: o único caminho para a janela própria do Jarvis (ADR-0036, emenda
@@ -69,6 +75,10 @@ COM_CONTROLE: Final = frozenset(
         "page.type",
         "page.act",
         "page.scroll",
+        "page.console",
+        "page.network",
+        "page.eval",
+        "page.gesture",
     }
 )
 """Pedidos que mexem numa aba (ou a leem): levam a concessão, e a aba mostra o indicador."""
@@ -105,6 +115,19 @@ METODOS: Final[dict[str, dict[str, type]]] = {
         "controle": str,
     },
     "page.scroll": {"tabId": int, "pixels": int, "controle": str},
+    # O navegador por CDP (ADR-0051): console, rede, avaliar JS e gestos físicos.
+    "page.console": {"tabId": int, "controle": str},
+    "page.network": {"tabId": int, "controle": str},
+    "page.eval": {"tabId": int, "codigo": str, "mundo": str, "controle": str},
+    "page.gesture": {
+        "tabId": int,
+        "gesto": str,
+        "alvo": str,
+        "ref": str,
+        "texto": str,
+        "pixels": int,
+        "controle": str,
+    },
     "controle.soltar": {"controle": str},
     "controle.manter": {"controle": str},
     "controle.parar": {},
@@ -120,6 +143,8 @@ OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "page.readUrl": frozenset({"url"}),
     "page.type": frozenset({"texto"}),
     "page.act": frozenset({"acao"}),
+    "page.eval": frozenset({"codigo"}),
+    "page.gesture": frozenset({"gesto"}),
 }
 COM_ALVO: Final = frozenset({"page.inspect", "page.click", "page.type", "page.act"})
 """Métodos que agem num elemento: exatamente um de `alvo` (texto visível) ou `ref` (do mapa)."""
@@ -196,6 +221,14 @@ def validar_pedido(bruto: object) -> PedidoDaPonte:
         _tamanho("valor", params["valor"], LIMITE_DO_VALOR)
     if "modo" in params and params["modo"] not in MODOS:
         raise PedidoInvalido(f"modo fora da lista: {sorted(MODOS)}")
+    if "mundo" in params and params["mundo"] not in MUNDOS:
+        raise PedidoInvalido(f"mundo fora da lista: {sorted(MUNDOS)}")
+    if "gesto" in params and params["gesto"] not in GESTOS:
+        raise PedidoInvalido(f"gesto fora da lista: {sorted(GESTOS)}")
+    if "codigo" in params:
+        _tamanho("codigo", params["codigo"], LIMITE_DO_CODIGO)
+        if "\x00" in params["codigo"]:
+            raise PedidoInvalido("codigo com byte nulo")
     if "controle" in params and not PADRAO_DA_CONCESSAO.fullmatch(params["controle"]):
         raise PedidoInvalido("controle fora do formato da concessão")
     if "texto" in params:

@@ -79,6 +79,16 @@ class PaginaFalsa:
         """Ids de abas que não existem mais (a da busca que fechou, a de outra sessão)."""
         self.extensao_antiga = False
         """Responde a aba que não existe como a extensão de antes do `1565698`: «falha» crua."""
+        self.console_msgs: list[dict[str, Any]] = [
+            {"nivel": "error", "texto": "Uncaught TypeError", "origem": "app.js", "hora": 1}
+        ]
+        self.rede_pedidos: list[dict[str, Any]] = [
+            {"metodo": "GET", "url": "https://loja.example/api", "status": 500, "tipo": "xhr"}
+        ]
+        self.valor_eval = "Loja"
+        """O valor que `page.eval` devolve (serializado); o CDP de verdade mora na extensão."""
+        self.cdp_anexado = True
+        """A extensão conseguiu anexar o `chrome.debugger` (senão recuo/sem CDP)."""
 
     def elemento(self, alvo: str, **dados: Any) -> None:
         base = {"tag": "button", "texto": alvo, "campo": False, "sensivel": False}
@@ -187,6 +197,29 @@ class PaginaFalsa:
                 return ok | {"result": dados | extra}
             case "page.scroll":
                 return ok | {"result": {"deslocamento": p.get("pixels", 600), "y": 600}}
+            case "page.console":
+                return ok | {
+                    "result": {"mensagens": self.console_msgs, "anexado": self.cdp_anexado}
+                }
+            case "page.network":
+                return ok | {"result": {"pedidos": self.rede_pedidos, "anexado": self.cdp_anexado}}
+            case "page.eval":
+                return ok | {
+                    "result": {
+                        "valor": self.valor_eval,
+                        "mundo": p.get("mundo", "isolado"),
+                        "cdp": self.cdp_anexado,
+                        "recuo": None if self.cdp_anexado else "chrome.scripting",
+                    }
+                }
+            case "page.gesture":
+                if p["gesto"] == "rolar":
+                    return ok | {"result": {"feito": True, "gesto": "rolar"}}
+                dados = self._do_alvo(p)
+                if dados is None:
+                    erro = {"codigo": "alvo_ausente", "mensagem": "não achei esse elemento"}
+                    return {"id": pedido.id, "ok": False, "error": erro}
+                return ok | {"result": {"feito": True, "gesto": p["gesto"]}}
             case "tabs.navigate":
                 aba = next(a for a in self.abas if a["id"] == p.get("tabId", 7))
                 return ok | {"result": self._navegou(aba, p["url"])}
@@ -1492,3 +1525,68 @@ def test_sites_open_pela_extensao_reaproveita_e_termina_a_vista(
     pagina.fora_do_ar = True
     with pytest.raises(NavegadorIndisponivel):  # sem extensão: o navegador abre com a URL
         executor.navegador.abrir_site("https://exemplo.org/", objetivo=executor.objetivo)
+
+
+# --- navegador por CDP (ADR-0051) -----------------------------------------------------------
+
+
+def test_console_e_rede_sao_leitura_e_voltam_como_dado(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    console, _ = _rodar(executor, "browser.console", {})
+    rede, _ = _rodar(executor, "browser.rede", {})
+    assert console.status == "ok" and console.dados["mensagens"][0]["nivel"] == "error"
+    assert console.dados["anexado"] is True
+    assert rede.status == "ok" and rede.dados["pedidos"][0]["status"] == 500
+    # Leitura: nenhuma das duas pede o sim nem contamina com efeito.
+    assert ("page.console", {"tabId": 7}) in pagina.chamadas
+
+
+def test_avaliar_roda_no_mundo_isolado_e_devolve_o_valor(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    pagina.valor_eval = "42 itens"
+    feito, perguntas = _rodar(executor, "browser.avaliar", {"codigo": "document.title"})
+    assert feito.status == "ok" and feito.dados["valor"] == "42 itens"
+    assert feito.dados["mundo"] == "isolado" and feito.dados["cdp"] is True
+    assert perguntas == []
+    assert (
+        "page.eval",
+        {"tabId": 7, "codigo": "document.title", "mundo": "isolado"},
+    ) in pagina.chamadas
+
+
+def test_avaliar_num_banco_e_bloqueado_no_corpo(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    pagina.abas[0]["url"] = "https://www.itau.com.br/conta"
+    feito, _ = _rodar(executor, "browser.avaliar", {"codigo": "document.title"})
+    assert feito.status in ("negado", "erro")
+    assert "não rodo script" in feito.motivo
+    # Não chegou a rodar na extensão.
+    assert not any(m == "page.eval" for m, _ in pagina.chamadas)
+
+
+def test_avaliar_fora_do_objetivo_pede_o_sim(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("olha a loja example")
+    pagina.abas[0]["url"] = "https://outro-site.example/pagina"
+    negado, perguntas = _rodar(executor, "browser.avaliar", {"codigo": "1+1"})  # sim=False
+    assert len(perguntas) == 1  # a aba está fora dos sites do objetivo → pede o sim
+    assert negado.status in ("negado", "erro")  # sem o sim, não roda
+    feito, _ = _rodar(executor, "browser.avaliar", {"codigo": "1+1"}, sim=True)
+    assert feito.status == "ok" and feito.dados["valor"] == pagina.valor_eval
+
+
+def test_gesto_rolar_e_livre_e_clicar_sensivel_pede_o_sim(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    rolar, perguntas = _rodar(executor, "browser.gesto", {"gesto": "rolar", "pixels": 300})
+    assert rolar.status == "ok" and rolar.dados["feito"] is True and perguntas == []
+    pagina.abas[0]["url"] = "https://www.nubank.com.br/conta"
+    pagina.elemento("Pagar", noFormulario=True)
+    feito, perguntas = _rodar(
+        executor, "browser.gesto", {"gesto": "clicar", "alvo": "Pagar"}, sim=True
+    )
+    assert len(perguntas) == 1 and feito.status == "ok"

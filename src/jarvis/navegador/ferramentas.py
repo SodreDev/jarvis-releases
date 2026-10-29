@@ -40,6 +40,10 @@ FERRAMENTAS_DO_NAVEGADOR: Final = frozenset(
         "browser.inspecionar",
         "browser.acionar",
         "browser.tela",
+        "browser.console",
+        "browser.rede",
+        "browser.avaliar",
+        "browser.gesto",
     }
 )
 FERRAMENTA_DE_CONFIRMACAO: Final = "browser.acao_sensivel"
@@ -225,6 +229,10 @@ def _assinatura_do(cliente: ClienteDoNavegador) -> Callable[[], Assinatura] | No
     return abrir
 
 
+CATEGORIAS_SEM_SCRIPT: Final = frozenset({"banco", "senha", "email", "pagamento"})
+"""Nessas páginas o Jarvis não roda script nenhum (ADR-0049/0051, decisão do dono)."""
+
+
 class CorposDoNavegador:
     def __init__(
         self, cliente: ClienteDoNavegador, controle: ControleDoNavegador | None = None
@@ -340,6 +348,14 @@ class CorposDoNavegador:
                 resultado = self._tela(args, exigir)
             elif tool_id == "browser.acionar":
                 resultado = self._acionar(args, contaminado, liberados, exigir, cancelado, objetivo)
+            elif tool_id == "browser.console":
+                resultado = self._console(args)
+            elif tool_id == "browser.rede":
+                resultado = self._rede(args)
+            elif tool_id == "browser.avaliar":
+                resultado = self._avaliar(args, exigir, objetivo)
+            elif tool_id == "browser.gesto":
+                resultado = self._gesto(args, contaminado, liberados, exigir, cancelado, objetivo)
             if resultado is not None:
                 if trabalho is not None and isinstance(resultado.get("tab_id"), int):
                     trabalho.aba = resultado["tab_id"]
@@ -855,6 +871,91 @@ class CorposDoNavegador:
         tab_id, _, _ = self._aba(args)
         pixels = int(args.get("pixels", PIXELS_PADRAO))
         return {"tab_id": tab_id, **self.cliente.rolar(tab_id, pixels)}
+
+    # --- depuração por CDP (ADR-0051) ---------------------------------------------------
+    def _console(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        tab_id, _, _ = self._aba(args)
+        return {"tab_id": tab_id, **self.cliente.console(tab_id)}
+
+    def _rede(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        tab_id, _, _ = self._aba(args)
+        return {"tab_id": tab_id, **self.cliente.rede(tab_id)}
+
+    def _avaliar(
+        self, args: Mapping[str, Any], exigir: Exigir, objetivo: Objetivo | None
+    ) -> dict[str, Any]:
+        """Roda JavaScript no mundo isolado (padrão). O guarda (ADR-0049) já barrou o script fora
+        do eixo antes do PDP; aqui fica a cerca que depende da URL da aba, que o guarda não tinha:
+        domínio sensível é **bloqueado**, e a aba fora do objetivo pede o sim."""
+        tab_id, url, _ = self._aba(args)
+        categoria = risco.categoria(url)
+        if categoria in CATEGORIAS_SEM_SCRIPT:
+            rotulo = risco.ROTULO_DAS_CATEGORIAS.get(categoria, categoria)
+            raise ValueError(
+                f"não rodo script em {rotulo} ({dominio(url)}): leia com browser.read ou "
+                "peça ao dono"
+            )
+        if objetivo is not None and not objetivo.dentro(url):
+            exigir(
+                f"rodar um script em {dominio(url)}, fora do objetivo",
+                "a aba está fora dos sites do objetivo",
+                "fora_do_objetivo",
+            )
+        mundo = str(args.get("mundo", "isolado"))
+        feito = self.cliente.avaliar(tab_id, str(args["codigo"]), mundo=mundo)
+        return {
+            "tab_id": tab_id,
+            "mundo": mundo,
+            "valor": _curto(feito.get("valor"), LIMITE_DO_TEXTO),
+            "cdp": bool(feito.get("cdp")),
+            "recuo": feito.get("recuo"),
+        }
+
+    def _gesto(
+        self,
+        args: Mapping[str, Any],
+        contaminado: bool,
+        liberados: frozenset[str],
+        exigir: Exigir,
+        cancelado: Callable[[], bool],
+        objetivo: Objetivo | None = None,
+    ) -> dict[str, Any]:
+        """Um gesto físico por CDP. Rolar é livre; clicar/arrastar/digitar passam pelo mesmo risco
+        do clique (`jarvis.navegador.risco`), que o guarda deixou para o corpo (ADR-0051)."""
+        gesto = str(args["gesto"])
+        tab_id, url, _ = self._aba(args)
+        if gesto == "rolar":
+            feito = self.cliente.gesto(tab_id, gesto, pixels=int(args.get("pixels", PIXELS_PADRAO)))
+            return {"tab_id": tab_id, "gesto": gesto, "feito": bool(feito.get("feito"))}
+        alvo, ref = _alvo_ou_ref(args)
+        dados = self.cliente.inspecionar(tab_id, alvo, ref=ref)
+        nome = _nome(alvo, dados)
+        texto = str(args.get("texto", "")) if gesto == "digitar" else ""
+        if gesto == "digitar":
+            avaliacao = risco.avaliar_digitacao(
+                url, dados, nome, texto, contaminado=contaminado, objetivo=objetivo
+            )
+        else:
+            avaliacao = risco.avaliar_clique(
+                url, dados, nome, contaminado=contaminado, liberados=liberados, objetivo=objetivo
+            )
+        if avaliacao.recusa:
+            raise ValueError(avaliacao.recusa)
+        if avaliacao.confirmar:
+            exigir(
+                f"{gesto} «{_curto(nome, 80)}» em {dominio(url)}",
+                avaliacao.confirmar,
+                avaliacao.causa,
+            )
+        if cancelado():
+            raise AcaoRecusada(f"interrompido antes de {gesto}")
+        feito = self.cliente.gesto(tab_id, gesto, alvo=alvo, ref=ref, texto=texto or None)
+        return {
+            "tab_id": tab_id,
+            "gesto": gesto,
+            "alvo": _curto(nome, 80),
+            "feito": bool(feito.get("feito")),
+        }
 
     def _clicar(
         self,
