@@ -66,6 +66,7 @@ from jarvis.audio_io.quadro import BYTES_POR_AMOSTRA, TAXA_PADRAO
 from jarvis.audio_io.sumidouros import SumidouroDeAudio
 from jarvis.audio_io.vad import Vad, vad_do_ambiente
 from jarvis.barramento.envelope import Envelope, Trust, uuid7
+from jarvis.caixa import CaixaDeScript
 from jarvis.decisao.enderecamento import DetectorDeEnderecamento, Motivo
 from jarvis.decisao.openrouter import ClassificadorOpenRouter
 from jarvis.entrada.controle import ControleDeEntrada
@@ -78,6 +79,9 @@ from jarvis.executor.ferramentas import Confirmacao, Encerramento, ExecutorDeFer
 from jarvis.executor.janelas import focar_o_navegador, janelas_do_ambiente
 from jarvis.executor.lancador import RegistroDeApps
 from jarvis.executor.navegadores import AbridorDeNavegador, navegador_em_execucao, separar
+from jarvis.mcp import ServidorMcp, carregar_mcp
+from jarvis.mcp.config import ConfiguracaoMcpInvalida
+from jarvis.mcp.gestor import GestorMcp
 from jarvis.memoryd.conversa import ConversaPersistente
 from jarvis.memoryd.ferramentas import FerramentasDeMemoria
 from jarvis.microfone import EstadoDaFonte, Modo, escrever_estado
@@ -93,6 +97,7 @@ from jarvis.politica.abertura import nome_de_app
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.canonicalizacao import Sistema, canonicalizar
 from jarvis.politica.catalogo import carregar_catalogo
+from jarvis.politica.guarda import GuardaDeContexto
 from jarvis.politica.modos import Modo as ModoDeAcesso
 from jarvis.politica.modos import Raiz
 from jarvis.politica.objetivo import Objetivo
@@ -128,7 +133,13 @@ from jarvis.tarefas.gestor import (
 from jarvis.tarefas.motores import MotorDeAgente
 from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.chaves import SegredoAusente
-from jarvis.voz.config import ASR_PADRAO, TTS_OMNIVOICE, TTS_PADRAO, Configuracao
+from jarvis.voz.config import (
+    ASR_PADRAO,
+    TTS_OMNIVOICE,
+    TTS_PADRAO,
+    Configuracao,
+    pasta_de_configuracao,
+)
 from jarvis.voz.dica import dica_do_asr
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
 from jarvis.voz.estado import Estado
@@ -1301,6 +1312,14 @@ class Aplicativo:
             # A tela da aba só existe se o motor do chat de agora recebe imagem (ADR-0032).
             motor_ve_imagem=lambda: aceita_imagem(self._motor),
             entrada=self._controle_de_entrada(),
+            # A caixa de scripts (ADR-0050) e o guarda de contexto (ADR-0049): a caixa se
+            # autodetecta (bwrap/podman) e degrada honesto; o guarda usa o MESMO classificador do
+            # portão (o do endereçamento), e sem ele a zona cinza pergunta ao dono.
+            caixa=CaixaDeScript(),
+            guarda=GuardaDeContexto(classificador=self._classificador_das_ferramentas()),
+            # Os servidores MCP que o dono listou (ADR-0052): sem `mcp.toml`, lista vazia e nada é
+            # aberto — nenhum efeito colateral sem configuração.
+            mcp=self._gestor_mcp(),
             trilha=self.trilha,
             # Aprender um nome do dono (ADR-0044): só com o repositório, e vale já no laço.
             vocabulario=self.vocabulario,
@@ -1308,6 +1327,23 @@ class Aplicativo:
         )
         executor.preparar()
         return executor
+
+    def _classificador_das_ferramentas(self) -> Any:
+        """O classificador que o guarda de contexto usa (ADR-0049): o mesmo do endereçamento/portão
+        quando o dono o ligou; senão `None` (a zona cinza do guarda pergunta ao dono)."""
+        return self.detector.classificador if self.detector is not None else None
+
+    def _gestor_mcp(self) -> GestorMcp | None:
+        """O gestor dos servidores MCP (ADR-0052). Lê `~/.config/jarvis/mcp.toml`; sem o arquivo,
+        a lista é vazia e `descobrir` não abre nada. Um arquivo com cara de segredo ou inválido
+        não derruba o app: desliga o MCP com o motivo na tela."""
+        caminho = pasta_de_configuracao(self.ambiente) / "mcp.toml"
+        try:
+            servidores: list[ServidorMcp] = carregar_mcp(caminho)
+        except ConfiguracaoMcpInvalida as erro:
+            self.escrever_na_tela(f"  (servidores MCP desligados: {erro})")
+            return None
+        return GestorMcp(servidores=servidores, aviso=lambda m: self.escrever_na_tela(f"  ({m})"))
 
     def _transporte_do_navegador(self) -> TransporteUnix:
         """O socket do host em `$XDG_RUNTIME_DIR` **deste** ambiente. Antes valia sempre o
