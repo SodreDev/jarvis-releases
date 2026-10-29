@@ -275,7 +275,10 @@ class FluxoDeAcao:
         """A avaliação já foi concluída ou descartada: o grant deixou de ser desta função."""
         try:
             manifesto = executor.manifestos[tool_id]
-            portao = self.portao
+            # O guarda de contexto (ADR-0049) já julgou a ação guardada contra o objetivo, antes do
+            # PDP: aqui não se chama o Jev genérico de novo. `permitir`/`pedir_confirmacao` seguem
+            # o PDP (que já virou `confirm` pelo `exige_o_sim` do guarda).
+            portao = None if avaliacao.guarda is not None else self.portao
             classificacao = (
                 portao.classificar(
                     tool_id=tool_id,

@@ -36,6 +36,7 @@ from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
 from jarvis.executor.nativas import CORPOS, DE_ARQUIVOS, PRECISAM_DE_AGENDA, Nativas
 from jarvis.executor.navegadores import AbridorDeNavegador, familia_de_navegador
 from jarvis.executor.organizar import OrganizacaoRecusada, Organizador
+from jarvis.executor.scripts import CaixaDeScript
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
 from jarvis.imagem import CHAVE_DOS_ANEXOS, Imagem
 from jarvis.manifesto.validador import carregar_catalogo
@@ -56,6 +57,7 @@ from jarvis.politica.atalho import Atalho, ContextoDoAtalho
 from jarvis.politica.atalho import achar as achar_atalho
 from jarvis.politica.canonicalizacao import CaminhoRecusado, Sistema, canonicalizar
 from jarvis.politica.descritor import AberturaRecusada, RaizAberta, abrir_raiz
+from jarvis.politica.guarda import Acao, GuardaDeContexto, Julgamento, Saida, Tipo, guardada
 from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.metodo import ContextoDoMetodo, Escolha, escolher_metodo
 from jarvis.politica.objetivo import Objetivo, enderecos_do_resultado
@@ -146,6 +148,12 @@ teria como chegar ao modelo, e a tool fica desligada com o motivo dito em `brows
 SEM_IMAGEM: Final = (
     "o motor deste chat não recebe imagem: a tela da aba não tem como chegar a ele — use "
     "browser.inspecionar (o mapa da página) ou browser.read (o texto)"
+)
+FERRAMENTA_DE_SCRIPT: Final = "script.rodar"
+"""A caixa de scripts isolada (ADR-0050): só existe com `caixa` e com bwrap/podman no sistema."""
+SEM_CAIXA: Final = (
+    "não há caixa de isolamento neste sistema (nem bubblewrap nem podman): o script não roda — "
+    "faça a conta com as ferramentas ou diga ao dono o que falta"
 )
 
 FONTES_DE_TERCEIROS: Final = frozenset(
@@ -306,6 +314,9 @@ class Avaliacao:
     caminho: str | None
     pedido: Pedido
     decisao: Decisao
+    guarda: Julgamento | None = None
+    """O julgamento do guarda de contexto (ADR-0049), quando a ferramenta é guardada. `permitir`
+    deixa o PDP seguir; o portão (`jarvis.s2.fluxo_de_acao`) o usa no lugar do Jev genérico."""
 
 
 @dataclass(slots=True)
@@ -339,6 +350,11 @@ class ExecutorDeFerramentas:
     para o modelo dizer a verdade em vez de negar a extensão. Sem ele, a tool não aparece."""
     entrada: ControleDeEntrada | None = None
     """Mouse e teclado virtuais (ADR-0027, fatia 4). Sem ele, as `input.*` não existem."""
+    caixa: CaixaDeScript | None = None
+    """A caixa de scripts isolada (ADR-0050). Sem ela, ou sem bwrap/podman, `script.rodar` some."""
+    guarda: GuardaDeContexto | None = None
+    """O guarda de contexto (ADR-0049): julga script, gesto e MCP contra o objetivo, antes do PDP.
+    Sem ele, essas ferramentas seguem direto ao PDP (como as outras)."""
     encerramento: Encerramento | None = None
     """Quem encerra o Jarvis (ADR-0041). Sem ele, a `jarvis.encerrar` não existe."""
     vocabulario: RepositorioDoVocabulario | None = None
@@ -513,6 +529,8 @@ class ExecutorDeFerramentas:
             return self.navegador is not None
         if tool_id in FERRAMENTAS_DE_ENTRADA:
             return self.entrada is not None
+        if tool_id == FERRAMENTA_DE_SCRIPT:
+            return self.caixa is not None and self.caixa.disponivel()
         if tool_id in PRECISAM_DE_AGENDA:
             return self.portas().agenda is not None
         return tool_id in FERRAMENTAS_LIGADAS or tool_id in CORPOS or tool_id in DE_ARQUIVOS
@@ -687,6 +705,23 @@ class ExecutorDeFerramentas:
             return ResultadoDeFerramenta(
                 tool_id, "negado", motivo=str(erro), call_id=chamada, causa=erro.causa
             )
+        julgamento: Julgamento | None = None
+        if self.guarda is not None and guardada(tool_id):
+            # O guarda de contexto (ADR-0049) compara a ação com o objetivo, antes do PDP.
+            acao = self._acao_do_guarda(tool_id, argumentos)
+            julgamento = self.guarda.julgar(acao, self.objetivo_de(marca))
+            self._trilhar_guarda(tool_id, julgamento)
+            if julgamento.saida is Saida.BARRAR:
+                return ResultadoDeFerramenta(
+                    tool_id,
+                    "negado",
+                    motivo=julgamento.instrucao or julgamento.motivo,
+                    call_id=chamada,
+                    causa="guarda_barrou",
+                )
+            if julgamento.saida is Saida.PEDIR_CONFIRMACAO:
+                # Vira o `exige_o_sim` do pedido: o PDP devolve `confirm` e a máquina do sim age.
+                exige_o_sim = exige_o_sim or julgamento.motivo
         pedido = Pedido(
             tool_id=tool_id,
             args=argumentos,
@@ -698,7 +733,7 @@ class ExecutorDeFerramentas:
             objetivo=self.objetivo_de(marca),
             exige_o_sim=exige_o_sim,
         )
-        return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido))
+        return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido), julgamento)
 
     def _exige_o_sim(
         self, tool_id: str, argumentos: Mapping[str, Any], marca: Contaminacao | None = None
@@ -721,6 +756,34 @@ class ExecutorDeFerramentas:
         if tool_id == "apps.quit":
             return self._fechador().app(*_alvo_de(argumentos), fala=fala).exige_o_sim
         return ""
+
+    def _acao_do_guarda(self, tool_id: str, argumentos: Mapping[str, Any]) -> Acao:
+        """A ação que o guarda de contexto (ADR-0049) julga, montada dos argumentos já no
+        contrato. Hoje só `script.rodar`; `browser.avaliar`/`browser.gesto`/`mcp.*` entram nas
+        fatias A e C."""
+        if tool_id == FERRAMENTA_DE_SCRIPT:
+            return Acao(
+                tool_id,
+                Tipo.SCRIPT_NA_CAIXA,
+                codigo=str(argumentos.get("codigo", "")),
+                linguagem=str(argumentos.get("linguagem", "python")),
+                rede=bool(argumentos.get("rede", False)),
+            )
+        return Acao(tool_id, Tipo.LEITURA)  # sem corpo guardado ainda: o guarda deixa passar
+
+    def _trilhar_guarda(self, tool_id: str, julgamento: Julgamento) -> None:
+        if self.trilha is None:
+            return
+        self.trilha.evento(
+            "guarda",
+            tool_id=tool_id,
+            decisao=str(julgamento.saida),
+            regra=julgamento.regra,
+            categoria=str(julgamento.categoria),
+            ms=round(julgamento.ms, 1),
+            cache=julgamento.cache,
+            jev=julgamento.jev,
+        )
 
     def _fechador(self) -> Fechador:
         """As portas de fechar e encerrar (ADR-0042), do jeito desta sessão: a lista de janelas, o
@@ -1308,6 +1371,21 @@ class ExecutorDeFerramentas:
         if tool_id == "apps.quit":
             fechador = self._fechador()
             return fechador.encerrar_app(fechador.app(*_alvo_de(args)))
+        if tool_id == FERRAMENTA_DE_SCRIPT:
+            assert self.caixa is not None  # _ligada filtra antes
+            resultado = self.caixa.rodar(
+                str(args["linguagem"]),
+                str(args["codigo"]),
+                entrada=str(args.get("entrada", "")),
+                rede=bool(args.get("rede", False)),
+            )
+            return {
+                "saida": resultado.saida,
+                "erro": resultado.erro,
+                "codigo_de_saida": resultado.codigo_de_saida,
+                "estouro_de_tempo": resultado.estouro_de_tempo,
+                "saida_cortada": resultado.saida_cortada,
+            }
         if tool_id in CORPOS:
             return CORPOS[tool_id](self.portas(), args)
         if tool_id in DE_ARQUIVOS:
