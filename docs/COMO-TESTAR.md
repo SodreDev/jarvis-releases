@@ -1654,6 +1654,63 @@ pediu. **Não provado:** um servidor MCP de verdade (Chrome DevTools MCP, Playwr
 `npx` da sua máquina — o teste usa um servidor falso em processo. **Pendente:** ligar no app é
 decisão sua (o handoff diz como).
 
+### 0.42 Delegar ao Claude Code o que o Jarvis não deu conta no navegador (2026-10-29, ADR-0054)
+
+Quando o Jarvis tenta no navegador (extensão, CDP, scripts) e **não consegue**, ele pode entregar
+**uma** tarefa de navegador ao **seu** Claude Code, que usa a extensão Claude in Chrome, e receber o
+resultado como **dado**. É **desligado por padrão**.
+
+> **Custo:** cada delegação roda **na sua conta** do Claude e **consome o limite de uso dela,
+> inclusive o semanal** (Pro/Max). Uma tarefa de navegador pode gastar dezenas de turnos com
+> capturas de tela. Por isso o Jarvis pergunta **toda vez** antes de delegar.
+
+**Antes:** Claude Code instalado e **logado na conta** (`claude auth login` — chave de API não
+serve: com ela o Claude Code desliga o Chrome), a extensão **Claude in Chrome** instalada, e
+`claude --chrome` rodado uma vez (ou `/chrome` numa sessão) para conectar.
+
+**Ligar:** crie `~/.config/jarvis/delegar.toml`:
+
+```toml
+[claude_code]
+ligado = true
+# executavel = "/home/voce/.local/bin/claude"   # padrão: o `claude` do PATH
+prazo_s = 300        # 30 a 600
+max_turnos = 30      # teto de turnos do Claude Code por delegação
+# modelo = "sonnet"  # padrão: o da sua conta
+```
+
+Reabra o Jarvis. A ferramenta `delegar.claude_code` aparece no catálogo.
+
+**Como usar:** peça algo no navegador que o Jarvis não consiga (ex.: um site cujo filtro não
+responde aos cliques dele). Depois de tentar, ele pergunta, numa frase: *"pedir ao Claude Code, no
+seu navegador e na cota da sua conta: «…»?"* — e diz o porquê (a cota e o navegador). Diga **sim**
+e a tela mostra *"Delegando ao Claude Code, no seu navegador: «…»"*. No fim, ele conta o que o
+Claude Code fez e viu. **O que ele não faz:** delegar duas vezes no mesmo pedido; delegar antes de
+tentar pela extensão dele; delegar tarefa com senha, código, cartão ou chave, ou em banco, cofre de
+senhas, e-mail ou pagamento. O Claude Code roda com permissões fechadas (`dontAsk`, só as
+ferramentas do navegador, nenhuma tool de terminal ou de arquivo, nenhum outro MCP seu) e é
+instruído a não enviar, comprar, publicar, apagar nem digitar senha.
+
+**Se algo faltar**, a resposta diz o quê: `claude` não instalado, não logado na conta, ou sem a
+integração do Chrome — com o comando para arrumar.
+
+**Como conferir** (sem o Claude Code de verdade, com um `claude` falso):
+
+```bash
+TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/delegacao/
+```
+
+Os testes provam: o argv documentado e fechado (sem `--dangerously-skip-permissions`); a tarefa
+pela entrada padrão, nunca na linha de comando; nenhuma chave do Jarvis no ambiente do processo; a
+pasta temporária apagada; prazo, cancelamento e saída cortada; as três mensagens de "falta"; o
+guarda; a pergunta com a frase; a recusa de re-delegar; e a trilha só com códigos. **Não provado:**
+o Claude Code real com `--chrome` em modo `-p` no seu Brave/Chrome — veja a ADR-0054, "Não provado
+em máquina real". Na primeira vez, olhe `jarvis-voz --diagnostico`: a linha `delegação
+delegar.claude_code: ok em … (N turnos, M negações)` diz como foi; muitas negações indicam que o
+Claude Code quis algo fora das ferramentas do navegador.
+
+**Desligar:** `ligado = false` (ou apague o arquivo).
+
 ---
 
 ## 1. O terminal (`jarvis-voz`)
@@ -1958,6 +2015,9 @@ sudo dnf remove jarvis
     regras e o cérebro rodaram com o PDP de verdade e máquinas falsas; o foco por monitor e o KWin
     trazendo a janela, num KWin 6.7.5 virtual com dois monitores e janelas Qt com a classe do Brave;
     o seu KWin, os seus monitores e o Brave de verdade, não — `tools/diagnostico_foco.py` mostra.
+11. **a delegação ao Claude Code de verdade** (§0.42): os testes usam um `claude` falso; o Claude
+    Code real com `--chrome` em `-p`, o `--strict-mcp-config` mantendo o `claude-in-chrome`, a
+    extensão no seu navegador e o custo real por tarefa na sua conta, não foram exercitados.
 
 ## 4. Como reportar
 

@@ -1,7 +1,18 @@
 # ADR-0053 — Interagir com o Claude in Chrome e outras extensões: viabilidade, o que é permitido e o que depende do dono
 
-**Data:** 2026-10-29 · **Estado:** proposta (só viabilidade e recomendação; nada implementado) · **Decide:** dono (se quer seguir e por qual caminho), arquiteto (a leitura técnica e dos termos)
+**Data:** 2026-10-29 · **Estado:** aceita pelo dono — caminho A (emenda de 2026-10-29 abaixo; implementado na ADR-0054) · **Decide:** dono (se quer seguir e por qual caminho), arquiteto (a leitura técnica e dos termos)
 **Pedido:** dono, 2026-10-29 — "o dono quer que o Jarvis possa interagir com o Claude in Chrome quando ele mesmo não conseguir algo. PESQUISE com cuidado (docs oficiais, cite fontes) se e como isso é viável e permitido: extensões do Chrome não controlam outras extensões diretamente; avalie caminhos (usar o MCP/native messaging que o Claude in Chrome expõe ao Claude Code, side panel, acionar via UI com mouse virtual, ou delegar tarefa ao Claude Code com a integração Chrome) e os termos de uso. NÃO implemente nada que viole termos ou contorne proteções; entregue só viabilidade + recomendação + o que depende do dono. Mesmo princípio para outras extensões."
+
+## Emenda — decisão do dono (2026-10-29)
+
+O dono decidiu **seguir a recomendação**: caminho A, delegar ao Claude Code. Palavras dele: "DECISÃO DO DONO: seguir a recomendação (e manter a licença Apache-2.0 do repo, não mexa em LICENSE)." A implementação está na **ADR-0054** (`delegar.claude_code`), com estas diferenças em relação ao que esta ADR esboçou:
+
+- **tier:** `moderado` (o mínimo que o dono pediu), com o sim pedido pelo código em toda delegação (uma por pedido) — não `perigoso`; o efeito para o dono é o mesmo, e a ADR-0054 diz a troca no manifesto se ele preferir `perigoso`;
+- **sem caminho configurado à mão:** o padrão é o `claude` do PATH; a chave é `~/.config/jarvis/delegar.toml` (`ligado = true`), desligada por padrão;
+- **só o caminho documentado:** `claude -p --chrome --output-format json --permission-mode dontAsk --tools "" --allowedTools "mcp__claude-in-chrome__*"` e o resto que a ADR-0054 lista, com fontes em code.claude.com/docs — as fontes de comunidade desta ADR não foram usadas na implementação;
+- **custo:** cada delegação consome o limite de uso da conta do dono, inclusive o semanal.
+
+A licença do repositório (Apache-2.0, `LICENSE`) não mudou. Os caminhos B, C e D continuam descartados.
 
 ## O fato técnico que decide quase tudo
 
