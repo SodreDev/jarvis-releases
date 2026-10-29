@@ -1794,6 +1794,31 @@ Wayland, na sua escala — diga como ficou.
 
 ---
 
+### 0.46 Menos «posso?»: o que é parte do pedido não pergunta, e o «sim» é dito do seu jeito (2026-10-29, ADR-0057)
+
+**O «sim» natural.** Quando o Jarvis perguntar ("Posso apagar de vez?"), responda como falaria: "sim,
+pode seguir", "pode sim", "vai em frente", "manda bala" — ou "não", "melhor não", "deixa pra lá". Vale
+sem clique e sem o classificador ligado; o «sim» falado ainda precisa ser ouvido com clareza (se o
+reconhecimento não tiver certeza, ele pede para repetir). Uma fala ambígua ("não, pode seguir") não
+autoriza nada. A pergunta de uma tarefa por ação (um formulário a enviar) agora também é dita em voz
+e respondida por voz.
+
+**O escopo do pedido.** "Abre a CNN no Brave" abre a aba nova na CNN sem perguntar; "fecha essa aba"
+fecha a que ele abriu para esse pedido — sem pergunta. Uma aba sua de outro site pergunta. O que é
+risco (apagar, enviar, pagar, instalar, senha, banco, sair do site pedido depois de ler conteúdo de
+fora) pergunta ou é barrado como antes. A tabela inteira está na ADR-0057.
+
+**Recarregue a extensão** (fechar aba é comando novo, versão 0.1.1): em `brave://extensions`, o botão
+de recarregar da extensão do Jarvis. Testes, sem microfone nem navegador:
+
+```bash
+TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/politica/test_escopo.py tests/unit/s2/test_resposta_natural.py tests/unit/voz/test_confirmacao_por_voz.py tests/unit/navegador/test_ferramentas_browser.py
+```
+
+**Não provado:** a sua voz com a Groq dizendo as frases naturais, e o `tabs.close` no seu Brave.
+
+---
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

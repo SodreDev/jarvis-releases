@@ -237,3 +237,28 @@ def test_na_continua_o_sim_por_cima_tambem_confirma(tmp_path: Path) -> None:
     assert app.turnos[0].cancelado and _cortes(app) == ["resposta_a_pergunta"]
     assert not _memoria_viva(conversa, alvo)
     assert _pedidos_ao_motor(app) == 1
+
+
+# --- a confirmação por voz natural (dono, 2026-10-29; ADR-0048 emendada) ------------------------
+@pytest.mark.parametrize(
+    "resposta", ["Sim, pode seguir.", "Vai em frente.", "Pode sim, por favor."]
+)
+def test_sim_dito_de_um_jeito_natural_confirma_uma_vez(tmp_path: Path, resposta: str) -> None:
+    """Sem o Jev (a configuração do dono), o «sim» natural é lido pelo código, sem rede — antes ele
+    virava "outro assunto" e a pergunta era cancelada."""
+    app, conversa, alvo, _tela = _rodar(tmp_path, resposta, por_cima=False)
+
+    assert [t.falou for t in app.turnos][-1] == "sim"
+    assert not _memoria_viva(conversa, alvo), f"«{resposta}» não confirmou"
+    assert _pedidos_ao_motor(app) == 1, "a resposta virou pedido ao motor"
+    assert app._cerebro is not None and app._cerebro.pendencias.valida() is None
+
+
+def test_melhor_nao_cancela_e_a_ambigua_nao_confirma(tmp_path: Path) -> None:
+    app, conversa, alvo, _tela = _rodar(tmp_path, "Melhor não.", por_cima=True)
+    assert _memoria_viva(conversa, alvo)
+    assert app.turnos[-1].respondeu.startswith("Tudo bem, não vou fazer isso")
+
+    ambigua, conversa2, alvo2, _tela2 = _rodar(tmp_path / "b", "Não, pode seguir.", por_cima=False)
+    assert _memoria_viva(conversa2, alvo2), "uma fala ambígua não pode autorizar"
+    assert ambigua._cerebro is not None and ambigua._cerebro.pendencias.valida() is None

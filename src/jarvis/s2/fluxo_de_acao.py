@@ -35,6 +35,7 @@ from jarvis.executor.ferramentas import (
     ResultadoDeFerramenta,
     negar_sempre,
 )
+from jarvis.politica import escopo
 from jarvis.politica.atalho import frase_da_ferramenta
 from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.objetivo import Objetivo
@@ -322,9 +323,14 @@ class FluxoDeAcao:
                     call_id=chamada,
                 )
             if classe is Classe.PEDIR_PERMISSAO and veredito is Veredito.ALLOW:
-                if cabe_no_objetivo(objetivo, tool_id, avaliacao.argumentos):
-                    # Dentro do objetivo do dono, navegar/ler/clicar/digitar/buscar não pergunta:
-                    # o Jev só veta (dono, 2026-10-20). O PDP e o risco dinâmico seguem valendo.
+                if cabe_no_objetivo(
+                    objetivo,
+                    tool_id,
+                    avaliacao.argumentos,
+                    risco=str(manifesto.get("risk_class", "")),
+                ):
+                    # Contida no pedido do dono (o escopo do pedido, ADR-0057): não pergunta — o
+                    # Jev só veta (dono, 2026-10-20 e 2026-10-29). O PDP e o risco dinâmico seguem.
                     classe = Classe.FAZER
                     trilhar("objetivo")
                 elif portao is not None and autorizacoes.consumir(
@@ -568,37 +574,16 @@ def _sim_de_uso_unico(confirmada: Confirmacao) -> Confirmar:
     return responder
 
 
-NAVEGACAO_DO_OBJETIVO: Final = frozenset(
-    {
-        "browser.tabs",
-        "browser.read",
-        "browser.navigate",
-        "browser.click",
-        "browser.type",
-        "browser.scroll",
-        "browser.inspecionar",
-        "browser.acionar",
-        "sites.open",
-        "web.buscar",
-        "web.ler",
-        "web.canal_videos",
-    }
-)
-"""O que um objetivo de navegação faz a cada passo. Fora daqui (apagar, enviar, instalar, mexer em
-arquivo, teclado virtual), o "pedir permissão" do Jev continua virando pergunta."""
-
-
 def cabe_no_objetivo(
-    objetivo: Objetivo | None, tool_id: str, argumentos: Mapping[str, Any]
+    objetivo: Objetivo | None,
+    tool_id: str,
+    argumentos: Mapping[str, Any],
+    *,
+    risco: str = "",
 ) -> bool:
-    """A chamada é um passo de navegação e o endereço dela (se tem) está dentro do objetivo, sem
-    levar dado do dono para site que ele não citou."""
-    if objetivo is None or tool_id not in NAVEGACAO_DO_OBJETIVO:
-        return False
-    url = argumentos.get("url")
-    if isinstance(url, str) and url:
-        return objetivo.dentro(url) and not objetivo.leva_dado_do_dono(url)
-    return True
+    """A chamada está contida no pedido do dono (`jarvis.politica.escopo`, ADR-0057): navegar ao
+    site dele, fechar a aba que o pedido abriu, abrir e focar o que ele pediu, a tela do Jarvis."""
+    return escopo.julgar(tool_id, argumentos, objetivo, risco=risco).contido
 
 
 def _situacao(

@@ -25,6 +25,7 @@ from jarvis.navegador.cliente import (
     NavegadorIndisponivel,
 )
 from jarvis.navegador.controle import PARADO_PELO_DONO, Assinatura, ControleDoNavegador
+from jarvis.politica import escopo
 from jarvis.politica.abertura import UrlRecusada, dominio, validar_url
 from jarvis.politica.metodo import quer_ver
 from jarvis.politica.objetivo import EstadoDoObjetivo, Objetivo
@@ -44,6 +45,7 @@ FERRAMENTAS_DO_NAVEGADOR: Final = frozenset(
         "browser.rede",
         "browser.avaliar",
         "browser.gesto",
+        "browser.fechar_aba",
     }
 )
 FERRAMENTA_DE_CONFIRMACAO: Final = "browser.acao_sensivel"
@@ -327,6 +329,8 @@ class CorposDoNavegador:
         try:
             if tool_id == "browser.tabs":
                 return self._abas()
+            if tool_id == "browser.fechar_aba":
+                return self._fechar_aba(args, exigir, objetivo, trabalho)
             if tool_id == "browser.navigate":
                 navegado = self._navegar(args, contaminado, liberados, exigir, objetivo, trabalho)
                 if concessao is not None:
@@ -405,6 +409,44 @@ class CorposDoNavegador:
             trabalho.aba = None
             return args
         return {**args, "tab_id": trabalho.aba}
+
+    def _fechar_aba(
+        self,
+        args: Mapping[str, Any],
+        exigir: Exigir,
+        objetivo: Objetivo | None,
+        trabalho: Trabalho | None,
+    ) -> dict[str, Any]:
+        """Fecha uma aba (ADR-0057). Sem `tab_id`, a aba em que o Jarvis trabalha neste pedido. A
+        que este pedido abriu, ou a do site que o dono citou, fecha sem pergunta — é parte do
+        pedido; qualquer outra pede o sim dele (a aba dele pode ter coisa que ele não salvou)."""
+        tab_id = args.get("tab_id")
+        if not isinstance(tab_id, int):
+            tab_id = trabalho.aba if trabalho is not None else None
+        if not isinstance(tab_id, int):
+            raise NavegadorFalhou("sem_aba", "não sei qual aba fechar: diga qual (o tab_id)")
+        aba = self.cliente.aba(tab_id)
+        url = str(aba.get("url") or "")
+        titulo = " ".join(str(aba.get("titulo") or "").split())[:80]
+        julgamento = escopo.julgar(
+            "browser.fechar_aba",
+            {"tab_id": tab_id},
+            objetivo,
+            abertas_pelo_pedido=trabalho.abertas if trabalho is not None else (),
+            endereco_da_aba=url,
+        )
+        if not julgamento.contido:
+            exigir(
+                f"fechar a aba «{titulo or dominio(url) or tab_id}»",
+                julgamento.motivo,
+                "fora_do_escopo",
+            )
+        self.cliente.fechar_aba(tab_id)
+        if trabalho is not None:
+            trabalho.abertas.discard(tab_id)
+            if trabalho.aba == tab_id:
+                trabalho.aba = None
+        return {"tab_id": tab_id, "dominio": dominio(url), "titulo": titulo, "fechada": True}
 
     def _abas(self) -> dict[str, Any]:
         """As abas abertas, com a janela e o estado de cada uma: à vista (a ativa da janela da

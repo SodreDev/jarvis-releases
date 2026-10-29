@@ -35,6 +35,7 @@ const COM_CONTROLE = new Set([
   "tabs.navigate",
   "tabs.open",
   "tabs.show",
+  "tabs.close",
   "page.read",
   "page.map",
   "page.capture",
@@ -547,6 +548,18 @@ async function mostrarAba(params) {
   return { aba: resumoDaAba(final), ...(await visibilidade(final)) };
 }
 
+async function fecharAba(params) {
+  // Fecha UMA aba, pelo id que o Jarvis deu (ADR-0057). Quem decide se pode é o Jarvis: a aba que
+  // o pedido abriu, a do site que o dono citou, ou o sim dele. Aqui só se recusa o que não existe.
+  if (typeof params.tabId !== "number") {
+    throw erro("sem_aba", "fechar pede o identificador da aba");
+  }
+  const tab = await api.tabs.get(params.tabId);
+  const resumo = resumoDaAba(tab);
+  await api.tabs.remove(tab.id);
+  return { fechada: true, aba: resumo };
+}
+
 async function focoAtual() {
   // Para provar que o trabalho do Jarvis não mexeu no foco do dono nem abriu janela (e para o
   // diagnóstico): `janelas` conta as janelas normais e popups que o navegador tem agora.
@@ -1047,6 +1060,8 @@ async function executarSemControle(method, params, concessao) {
       return abrirAba(params, concessao);
     case "tabs.show":
       return mostrarAba(params);
+    case "tabs.close":
+      return fecharAba(params);
     case "tabs.navigate": {
       const tab = await abaDoPedido(params);
       if (typeof tab.id !== "number") {

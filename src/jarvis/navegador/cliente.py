@@ -434,6 +434,11 @@ class ClienteDoNavegador:
         para a do dono). `visivel` diz se ficou — o sistema pode negar o foco ao navegador."""
         return self.chamar("tabs.show", tabId=tab_id)
 
+    def fechar_aba(self, tab_id: int) -> dict[str, Any]:
+        """Fecha a aba (ADR-0057). Quem decide se pode é o Jarvis — o escopo do pedido ou o sim do
+        dono —; a extensão só recusa aba que não existe."""
+        return self.chamar("tabs.close", tabId=tab_id)
+
     def janela_em_foco(self) -> dict[str, Any]:
         """A janela em foco e a aba ativa dela (`janelaId`, `abaAtivaId`), e a do Jarvis."""
         return self.chamar("windows.focused")

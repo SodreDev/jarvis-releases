@@ -319,13 +319,72 @@ class PortaoDeAcao:
         return resposta
 
 
+_AFIRMACOES: Final = frozenset(
+    {
+        "sim", "pode", "podes", "confirmo", "confirma", "confirmado", "autorizo", "autorizado",
+        "manda", "segue", "seguir", "siga", "vai", "continua", "continuar", "continue",
+        "prossegue", "prossiga", "prosseguir", "claro", "positivo", "faz", "faca", "fazer",
+        "bora", "ok", "okay", "beleza", "certo", "perfeito", "liberado", "aprovado", "aprovo",
+        "isso", "fechado", "combinado", "quero",
+    }
+)  # fmt: skip
+"""Palavras que, sozinhas ou entre si, dizem "sim" à ação perguntada (dono, 2026-10-29: «sim, pode
+seguir», «pode», «vai em frente», «manda bala»)."""
+_RECHEIO: Final = frozenset(
+    {
+        "jarvis", "por", "favor", "entao", "ai", "la", "em", "frente", "ver", "bala", "ser",
+        "mesmo", "agora", "ja", "logo", "ta", "e", "o", "a", "com", "certeza", "tudo", "bem",
+        "pra", "obrigado", "obrigada", "valeu", "sem", "problema", "problemas", "crer", "nisso",
+        "isso", "ae", "tranquilo", "bom", "pensar", "um", "pouco", "momento",
+    }
+)  # fmt: skip
+"""O que acompanha uma resposta sem mudar o sentido dela ("pode sim, por favor", "vai em
+frente")."""
+_NEGACOES: Final = frozenset(
+    {
+        "nao", "nem", "nunca", "jamais", "negativo", "cancela", "cancelar", "cancele", "para",
+        "pare", "parar", "espera", "espere", "deixa", "deixe", "esquece", "esqueca", "melhor",
+        "nada",
+    }
+)  # fmt: skip
+"""Palavras que dizem "não" (ou "espera") — e que, misturadas com uma afirmação, tornam a fala
+ambígua: «não, pode seguir» não é lido como nada (quem decide é o Jev, se houver, ou o dono de
+novo). "Para" é "pare", não preposição: numa resposta curta, é o que ela é."""
+_SEGUE_DEPOIS_DO_NAO: Final = frozenset(
+    {"segue", "seguir", "siga", "vai", "continua", "continuar", "continue", "prossiga", "manda"}
+)
+"""Depois de um "não", estas fazem a fala virar outra coisa («não, pode seguir»): ambígua."""
+PALAVRAS_DA_RESPOSTA: Final = 8
+"""Uma resposta a "posso?" é curta: mais que isso é outro pedido (ou explicação), e não vale."""
+
+
 def resposta_literal(fala: str) -> RespostaDoDono | None:
-    """ "sim"/"não" curtos, sem rede. `None` = não é literal; quem decide é o Jev."""
+    """ "sim"/"não" ditos de um jeito natural, sem rede. `None` = não é resposta clara; quem decide
+    é o Jev (se houver) ou é outro assunto.
+
+    Os literais curtos de sempre, e mais (dono, 2026-10-29: a confirmação por voz natural): uma
+    fala curta só de afirmações e recheio ("sim, pode seguir", "pode sim, por favor", "vai em
+    frente", "beleza, manda") é sim; uma que começa por negação e não volta atrás ("não, não faz
+    isso", "melhor não", "deixa pra lá") é não. Misturada ("não, pode seguir") não é nenhuma."""
     texto = " ".join(re.sub(r"[^\w\s]", " ", normalizar(fala)).split())
     if texto in _SIM_LITERAL:
         return RespostaDoDono.SIM
     if texto in _NAO_LITERAL:
         return RespostaDoDono.NAO
+    palavras = texto.split()
+    if not palavras or len(palavras) > PALAVRAS_DA_RESPOSTA:
+        return None
+    negacoes = [p for p in palavras if p in _NEGACOES]
+    afirmacoes = [p for p in palavras if p in _AFIRMACOES]
+    conhecidas = all(p in _AFIRMACOES or p in _RECHEIO or p in _NEGACOES for p in palavras)
+    if not conhecidas:
+        return None  # outra palavra no meio: é outro pedido, ou uma condição ("pode, mas…")
+    if not negacoes and afirmacoes:
+        return RespostaDoDono.SIM
+    if negacoes and palavras[0] in _NEGACOES | {"melhor"}:
+        primeira = palavras.index(negacoes[0])
+        if not set(palavras[primeira + 1 :]) & _SEGUE_DEPOIS_DO_NAO:
+            return RespostaDoDono.NAO
     return None
 
 

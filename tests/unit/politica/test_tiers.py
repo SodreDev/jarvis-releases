@@ -104,6 +104,9 @@ TIER_ESPERADO: dict[str, str] = {
     "browser.acionar": "moderado",
     "browser.tela": "livre",
     "browser.acao_sensivel": "perigoso",
+    # Fechar uma aba (dono, 2026-10-29; ADR-0057): moderado; a do pedido (ou do site citado) fecha
+    # direto, a do dono pede o sim pelo escopo do pedido.
+    "browser.fechar_aba": "moderado",
     # Navegador por CDP (dono, 2026-10-29; ADR-0051): console e rede são leitura; avaliar JS e
     # gesto físico são moderado e passam pelo guarda de contexto (ADR-0049).
     "browser.console": "livre",
@@ -352,6 +355,7 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
             pdp, "web.canal_videos", {"canal": "https://www.youtube.com/@exemplo"}
         ),
         "web.ler": _pedido(pdp, "web.ler", {"url": "https://pt.wikipedia.org/wiki/Paris"}),
+        "browser.fechar_aba": _pedido(pdp, "browser.fechar_aba", {"tab_id": 3}),
         "tela.mostrar": _pedido(
             pdp, "tela.mostrar", {"html": "<h1>Compras</h1><ul><li>pão</li></ul>"}
         ),

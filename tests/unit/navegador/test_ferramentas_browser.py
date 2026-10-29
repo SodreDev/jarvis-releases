@@ -243,6 +243,11 @@ class PaginaFalsa:
                 }
                 self.abas.append(nova)
                 return ok | {"result": {"reutilizada": False, **self._navegou(nova, p["url"])}}
+            case "tabs.close":
+                fechada = next(a for a in self.abas if a["id"] == p["tabId"])
+                self.abas.remove(fechada)
+                self.abas_fechadas.add(p["tabId"])
+                return ok | {"result": {"fechada": True, "aba": fechada}}
             case "tabs.show":
                 aba = next(a for a in self.abas if a["id"] == p["tabId"])
                 for outra in self.abas:
@@ -1590,3 +1595,35 @@ def test_gesto_rolar_e_livre_e_clicar_sensivel_pede_o_sim(
         executor, "browser.gesto", {"gesto": "clicar", "alvo": "Pagar"}, sim=True
     )
     assert len(perguntas) == 1 and feito.status == "ok"
+
+
+# --- o escopo do pedido: fechar a aba (dono, 2026-10-29; ADR-0057) ------------------------------
+def test_fechar_a_aba_que_o_pedido_abriu_e_parte_do_pedido_e_a_do_dono_pergunta(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    """«Abre a CNN no Brave»: a guia nova na CNN, e depois «fecha essa aba» — fecha sem pergunta.
+    A aba do dono (a loja, de outro site) não é deste pedido: pede o sim."""
+    executor.novo_turno("abre a cnn no brave e depois fecha a aba")
+    aberta, _ = _rodar(executor, "browser.navigate", {"url": "https://www.cnn.com/"})
+    guia = aberta.dados["tab_id"]
+    assert aberta.status == "ok" and aberta.dados["nova_aba"] is True
+
+    fechada, perguntas = _rodar(executor, "browser.fechar_aba", {})
+    assert fechada.status == "ok" and perguntas == [], "a aba do pedido pediu o sim"
+    assert fechada.dados["tab_id"] == guia and ("tabs.close", {"tabId": guia}) in pagina.chamadas
+
+    da_loja, perguntas = _rodar(executor, "browser.fechar_aba", {"tab_id": 7})
+    assert da_loja.status == "negado" and len(perguntas) == 1, "a aba do dono fechou sem o sim"
+    assert any(a["id"] == 7 for a in pagina.abas), "o não do dono deixou a aba"
+    com_sim, perguntas = _rodar(executor, "browser.fechar_aba", {"tab_id": 7}, sim=True)
+    assert com_sim.status == "ok" and len(perguntas) == 1
+    assert not any(a["id"] == 7 for a in pagina.abas)
+
+
+def test_fechar_a_aba_do_site_que_o_dono_citou_nao_pergunta(
+    executor: ExecutorDeFerramentas, pagina: PaginaFalsa
+) -> None:
+    executor.novo_turno("fecha a aba da loja")
+    fechada, perguntas = _rodar(executor, "browser.fechar_aba", {"tab_id": 7})
+    assert fechada.status == "ok" and perguntas == []
+    assert fechada.dados["dominio"] == "loja.example"

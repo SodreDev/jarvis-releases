@@ -1,0 +1,62 @@
+# Fechar uma aba do navegador do dono (dono, 2026-10-29; ADR-0057: o escopo do pedido).
+id: browser.fechar_aba
+title: Fechar uma aba do navegador
+description: Fecha uma aba do navegador do dono pelo `tab_id` (sem ele, a aba em que você trabalhou neste pedido).
+  A aba que este pedido abriu, ou a do site que o dono citou ("fecha a aba do YouTube"), fecha sem pergunta — é
+  parte do pedido; qualquer outra aba pede o sim dele (pode ter coisa que ele não salvou). Não fecha a janela
+  inteira nem o navegador (isso é window.close/apps.quit).
+quando: "fechar uma aba: a que você abriu neste pedido, ou a do site que o dono citou"
+exemplos:
+- "fecha essa aba"
+- "pode fechar a aba da CNN"
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    tab_id:
+      type: integer
+      minimum: 0
+output_schema:
+  type: object
+  required:
+  - tab_id
+  - fechada
+  properties:
+    tab_id:
+      type: integer
+    dominio:
+      type: string
+    titulo:
+      type: string
+    fechada:
+      type: boolean
+preconditions:
+- a extensão do Jarvis está instalada e tem a versão com `tabs.close`
+postcondition: a aba saiu do navegador; fora do escopo do pedido, só depois do sim do dono
+capability: browser.fechar_aba
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: false
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: moderado
+aviso_falado: Fechei a aba {dominio}.
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 8000
+cancellable: true
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-navegador
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

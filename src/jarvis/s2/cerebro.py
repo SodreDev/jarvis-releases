@@ -943,16 +943,16 @@ class Cerebro:
                 anunciar(pergunta, pergunta.pergunta_falada)
 
             def confirmar_na_janela(pergunta: Confirmacao) -> bool:
-                # A pergunta por ação (o que está sob o clique) e a que nasce sem o portão: a faixa
-                # da janela, só o clique responde (como antes), e a voz avisa que ela está lá.
+                # A pergunta por ação (o que está sob o clique) e a que nasce sem o portão: dita em
+                # voz, e respondida por voz ou pelo clique (dono, 2026-10-29: «o Jarvis pergunta
+                # falando e eu respondo "sim, pode seguir"; vale sem clique»). O "sim" falado passa
+                # pela leitura sem rede (ou o Jev) e pelos sinais de fala real (ADR-0043).
                 resposta = pendencias.esperar(
                     pergunta,
                     contaminado=marca.valor,
                     cancelado=tarefa.cancelada.is_set,
-                    anunciar=lambda p: anunciar(
-                        p, f"Preciso que você confirme na tela: {p.para_ouvir}."
-                    ),
-                    espera=Espera(so_clique=True),
+                    anunciar=na_voz,
+                    espera=Espera(),
                 )
                 return bool(resposta) and not tarefa.cancelada.is_set()
 

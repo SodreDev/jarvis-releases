@@ -33,3 +33,11 @@ A voz do dono respondendo por cima da caixa de som dele (o eco real da pergunta)
 ## Como invalidar esta decisão
 
 Se a trilha mostrar `permissao` com resposta «sim» sem o dono ter dito (o eco ou o ruído confirmando), a leitura volta a exigir a palavra de ativação no «sim» por cima; se mostrar `resposta_a_pergunta` seguida do mesmo `ferramenta.inicio` de novo, o "uma vez" quebrou.
+
+## Emenda de 2026-10-29 — o «sim» dito do jeito natural, e a pergunta de tarefa respondida por voz (ADR-0057)
+
+A resposta deixa de depender do literal curto quando o Jev está desligado: `resposta_literal` lê a fala
+natural sem rede («sim, pode seguir», «vai em frente», «melhor não»), a mesma no laço de voz (onde o
+«sim» ainda cobra os sinais fortes da ADR-0043) e no cérebro; o ambíguo («não, pode seguir») não
+autoriza. A pergunta por ação de uma tarefa (o que está sob o clique) deixa de ser só do clique: é
+dita em voz e respondida por voz ou pelo clique. Detalhes, a tabela e os testes na ADR-0057.

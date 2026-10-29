@@ -244,6 +244,8 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         # o guarda de contexto (`jarvis.politica.guarda`, ADR-0049)
         "guarda_barrou",
         "guarda_pediu",
+        # o escopo do pedido (`jarvis.politica.escopo`, ADR-0057): fechar a aba que não é dele
+        "fora_do_escopo",
         # a delegação ao Claude Code (`jarvis.delegacao`, ADR-0054)
         "redelegar",
         "delegar_cedo",
