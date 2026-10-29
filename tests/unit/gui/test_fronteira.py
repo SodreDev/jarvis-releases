@@ -84,6 +84,7 @@ def test_toda_vista_do_catalogo_tem_arquivo_qml() -> None:
             Vista.CONFIGURACAO: "VistaConfiguracao.qml",
             Vista.DIAGNOSTICO: "VistaDiagnostico.qml",
             Vista.NOTIFICACOES: "VistaNotificacoes.qml",
+            Vista.CONTEUDO: "VistaConteudo.qml",
         }[componente.vista]
         assert (QML / esperado).exists(), f"{componente.id} aponta para {esperado}, que não existe"
 
@@ -97,10 +98,13 @@ def test_nenhum_qml_cria_objeto_a_partir_de_texto() -> None:
 
 
 def test_a_tela_nao_desenha_html() -> None:
-    """Nenhuma vista aceita HTML: `Text.RichText` seria conteúdo virando marcação."""
+    """Nenhuma vista aceita HTML: `Text.RichText` seria conteúdo virando marcação. A exceção medida
+    é a do `conteudo` (ADR-0055), cujo HTML passa pela allowlist e pela negação da fronteira
+    (`test_texto_puro` cobra os detalhes dela)."""
     for arquivo in QML.glob("*.qml"):
         texto = arquivo.read_text(encoding="utf-8")
-        assert "Text.RichText" not in texto, f"{arquivo.name} habilita HTML num Text"
+        if arquivo.name != "VistaConteudo.qml":
+            assert "Text.RichText" not in texto, f"{arquivo.name} habilita HTML num Text"
         assert "WebEngine" not in texto, f"{arquivo.name} traz um navegador para dentro da tela"
 
 

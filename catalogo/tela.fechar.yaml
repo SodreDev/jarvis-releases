@@ -1,0 +1,53 @@
+# Fechar uma exibição da janela (dono, 2026-10-29; ADR-0055).
+id: tela.fechar
+title: Fechar o que está na tela do Jarvis
+description: Fecha uma exibição que você abriu na janela do Jarvis com tela.mostrar — a do `id`, a mais nova (sem
+  id) ou todas. Não fecha a janela do Jarvis nem outro programa.
+quando: "fechar o conteúdo que você mostrou na janela do Jarvis"
+exemplos:
+- "fecha isso da tela"
+- "pode tirar a tabela"
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    id:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,31}$"
+    todas:
+      type: boolean
+output_schema:
+  type: object
+  required:
+  - fechadas
+  properties:
+    fechadas:
+      type: array
+preconditions: []
+postcondition: as exibições pedidas saíram da janela
+capability: tela.fechar
+risk_class: transitorio_reversivel
+side_effect: none
+reversible: true
+idempotent: true
+idempotency: not_required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 500
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-tela
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

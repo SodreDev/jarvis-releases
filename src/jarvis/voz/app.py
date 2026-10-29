@@ -137,6 +137,7 @@ from jarvis.tarefas.gestor import (
     TarefaRecusada,
 )
 from jarvis.tarefas.motores import MotorDeAgente
+from jarvis.tela import Exibicao, PortaDaTela
 from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import (
@@ -497,6 +498,11 @@ class Aplicativo:
     ao_mudar_navegador: Callable[[bool], None] | None = None
     """O Jarvis passou a controlar (ou soltou) alguma aba do navegador (ADR-0027 regra 4): a janela
     mostra o botão de parar. Chamada da linha que agiu ou da vigia do controle: emite e volta."""
+    ao_mostrar_conteudo: Callable[[Exibicao], None] | None = None
+    """O Jarvis montou (ou trocou) uma exibição na tela (`tela.mostrar`, ADR-0055): a janela cria
+    o módulo. Com esta e `ao_fechar_conteudo` ligadas, as `tela.*` existem; sem janela, não.
+    Chamada da linha de quem pediu: emite e volta."""
+    ao_fechar_conteudo: Callable[[str], None] | None = None
 
     detector: DetectorDeEnderecamento | None = field(default=None, repr=False)
     """Diz, na escuta contínua, se a fala transcrita é para o Jarvis (ADR-0029). `None` = desligado
@@ -721,6 +727,16 @@ class Aplicativo:
             # Quem vê e foca as janelas (ADR-0037): o critério da entrada virtual — `kdotool` no
             # KDE, `wmctrl` no X11. Sem ele, as `window.*` seguem pelo `wmctrl`, como antes.
             self.ferramentas.portas().janelas = janelas_do_ambiente(ambiente_ou_os(self.ambiente))
+        portas = self.ferramentas.portas()
+        if (
+            portas.tela is None
+            and self.ao_mostrar_conteudo is not None
+            and self.ao_fechar_conteudo is not None
+        ):
+            # A tela do Jarvis (ADR-0055): as `tela.*` só existem com a janela aberta.
+            portas.tela = PortaDaTela(
+                ao_mostrar=self.ao_mostrar_conteudo, ao_fechar=self.ao_fechar_conteudo
+            )
         self.ferramentas.portas().agenda = agenda_compartilhada(
             self.raiz / "area" / "alarmes.json", self._alarme_disparou
         )
@@ -1103,7 +1119,21 @@ class Aplicativo:
         self.encerrado = True
         self.escrever_na_tela("  ⏻ Jarvis encerrado")
 
+    def conteudo_fechado_pelo_dono(self, identificador: str) -> None:
+        """O dono fechou na janela uma exibição da tela: a porta esquece dela (ADR-0055)."""
+        porta = self.ferramentas.portas().tela if self.ferramentas is not None else None
+        if porta is not None:
+            porta.fechada_pelo_dono(identificador)
+
+    def _fechar_a_tela(self) -> None:
+        """O fim da sessão leva as exibições dela: a próxima sessão não as conhece."""
+        porta = self.ferramentas.portas().tela if self.ferramentas is not None else None
+        if porta is not None:
+            with contextlib.suppress(Exception):  # a janela pode já estar fechando
+                porta.fechar(todas=True)
+
     def _cancelar_tarefas(self) -> None:
+        self._fechar_a_tela()
         if self._cerebro is not None:
             self._cerebro.pendencias.cancelar()
         gestor = self.ferramentas.tarefas if self.ferramentas is not None else None

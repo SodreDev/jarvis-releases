@@ -80,6 +80,7 @@ from jarvis.s2.protocolo import LeitorDoProtocolo
 from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ChamarNaTarefa, Tarefa, TarefaRecusada
+from jarvis.tela.guia import nota_da_tela
 from jarvis.voz.interface import Cancelado, nunca_cancelado
 
 MAXIMO_DE_PASSOS: Final = 12
@@ -125,6 +126,8 @@ ACOES_DE_UM_PASSO: Final = frozenset(
         "notify.desktop.send",
         "system.brightness.set",
         "system.volume.set",
+        "tela.fechar",
+        "tela.mostrar",
         "timer.alarm.cancel",
         "timer.alarm.set",
         "vocabulario.aprender",
@@ -385,6 +388,13 @@ class Cerebro:
         if nota_da_pendencia:
             contexto = Contexto(
                 sistema=f"{contexto.sistema}\n\n{nota_da_pendencia}", mensagens=contexto.mensagens
+            )
+        nota_da_tela = self._nota_da_tela(texto_do_dono, anteriores)
+        if nota_da_tela:
+            # O guia de design só no turno que monta ou muda a tela (ADR-0055): sob demanda, e
+            # nunca o conteúdo da exibição — esse pode ter texto de página e vem pelo tela.ler.
+            contexto = Contexto(
+                sistema=f"{contexto.sistema}\n\n{nota_da_tela}", mensagens=contexto.mensagens
             )
         if self.livro is not None and self.lembrar_a_cada_turno:
             memoria = consultar(
@@ -669,6 +679,16 @@ class Cerebro:
         self.autorizacoes.encerrar()
         self._pendentes[resposta.response_id] = resposta
         return resposta
+
+    def _nota_da_tela(self, texto_do_dono: str, anteriores: Sequence[Mensagem]) -> str:
+        """A nota da tela deste turno (`jarvis.tela.guia`), só quando as `tela.*` existem (a
+        janela está aberta)."""
+        executor = self.ferramentas
+        porta = executor.portas().tela if executor is not None else None
+        if porta is None:
+            return ""
+        ultima = next((m.texto for m in reversed(anteriores) if m.papel == "jarvis"), "")
+        return nota_da_tela(texto_do_dono, ultima, porta.abertas())
 
     def _abrir_o_navegador(
         self,

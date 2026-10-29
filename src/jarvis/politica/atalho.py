@@ -439,10 +439,19 @@ _REGRA_DA_FERRAMENTA: Final[Mapping[str, Regra]] = {
 }
 
 
+FRASES_DA_TELA: Final[dict[str, str]] = {
+    "tela.mostrar": "Pronto, está na tela.",
+    "tela.fechar": "Fechei.",
+}
+"""A ação de um passo na janela do Jarvis (ADR-0055): curta, e o turno acaba nela."""
+
+
 def frase_da_ferramenta(tool_id: str, args: Mapping[str, Any], dados: Mapping[str, Any]) -> str:
     """A frase do código para uma ação de um passo que **o motor** propôs e deu certo — a mesma do
     caminho rápido, para o dono ouvir o resultado já, e uma vez (dono, 2026-10-25). Vazia para o que
     não é ação de um passo (o motor responde) e quando o aviso da ferramenta já diz tudo."""
+    if tool_id in FRASES_DA_TELA:
+        return FRASES_DA_TELA[tool_id] if tool_id != "tela.fechar" or dados.get("fechadas") else ""
     if tool_id == "sites.open":
         endereco = re.match(r"^https?://(?:www\.)?([^/?#:]+)", str(args.get("url", "")))
         if endereco is None:

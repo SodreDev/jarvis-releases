@@ -263,3 +263,15 @@ selo.
 reenviar a lista), a ação ganha uma forma de "acrescentar" — com o mesmo teto de itens do
 componente — por nova emenda.
 
+## Emenda de 2026-10-29 — o componente `conteudo`: HTML, sim, só o que passa pela allowlist (ADR-0055)
+
+O catálogo de componentes dizia "não existe componente genérico que renderiza o que vier", e todo
+`Text` da janela é `PlainText`. A pedido do dono (montar e mostrar listas, tabelas, resumos e
+comparativos em HTML com CSS), entra **um** componente registrado, `conteudo`, com a única vista de
+texto rico (`VistaConteudo.qml`) — e a regra continua de pé para todo o resto, mais estrita:
+`test_texto_puro` passa a recusar texto rico também por `TextEdit`/`TextArea` em qualquer outro
+arquivo. O campo `html` do `conteudo` é de uma forma nova (`HTML_SEGURO`): `validar_dados` o limpa
+de novo pela allowlist de `jarvis.tela.sanitizar` e confere, por uma negação independente
+(`RECURSO`), que nada aponta para fora — o texto rico do Qt busca `<img src>` e `url()` na rede
+(medido). Quem cria o módulo é o código (a porta da tela, pelas `tela.*`), com os dados reais; a
+proposta crua da IA também passa pela mesma fronteira. Desenho, medições e alternativas na ADR-0055.

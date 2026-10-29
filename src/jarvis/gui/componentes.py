@@ -8,7 +8,10 @@ Três regras, e cada uma fecha um buraco conhecido de interface conduzida por mo
 
 1. **Só componente registrado.** A IA escolhe um `id` deste catálogo. Não existe componente
    "genérico que renderiza o que vier" — que é como uma tela acaba executando HTML ou JS
-   escrito por um modelo (P1, P6).
+   escrito por um modelo (P1, P6). A exceção medida é o `conteudo` (ADR-0055): HTML, sim, mas só
+   o que passa pela allowlist de `jarvis.tela.sanitizar` — sanitizado **de novo aqui**, na
+   fronteira, e conferido por uma regra independente (`RECURSO`: nada que o Qt buscaria) —,
+   desenhado pelo texto rico do Qt, que não tem motor de script.
 2. **Só os campos declarados, com a forma declarada.** Cada componente diz que dados aceita;
    o resto é recusado com motivo. Um campo a mais não é tolerado "porque não atrapalha": é
    exatamente por campos tolerados que conteúdo vira instrução.
@@ -20,15 +23,22 @@ Três regras, e cada uma fecha um buraco conhecido de interface conduzida por mo
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Final
 
 from jarvis.gui.acoes import Area
+from jarvis.tela.sanitizar import COR, sanitizar
 
 LIMITE_DE_ITENS: Final = 24
 LIMITE_DE_TEXTO: Final = 1200
+RECURSO: Final = re.compile(
+    r"\b(?:src|href|action|background|poster|srcset|data)\s*=|url\s*\(|@import", re.IGNORECASE
+)
+"""O que faria o texto rico do Qt buscar algo fora (medido: `<img src>` e `url()` no CSS são
+buscados): a segunda regra da fronteira do `conteudo`, independente da allowlist."""
 
 
 class ComponenteNaoAutorizado(ValueError):
@@ -48,6 +58,8 @@ class Vista(StrEnum):
     CONFIGURACAO = "configuracao"
     DIAGNOSTICO = "diagnostico"
     NOTIFICACOES = "notificacoes"
+    CONTEUDO = "conteudo"
+    """O HTML limpo que o Jarvis montou (ADR-0055): a única vista com texto rico."""
 
 
 class Forma(StrEnum):
@@ -58,6 +70,9 @@ class Forma(StrEnum):
     ITENS = "itens"
     MEDIDAS = "medidas"
     AVISOS = "avisos"
+    HTML_SEGURO = "html_seguro"
+    """HTML que só entra depois de passar pela allowlist (`jarvis.tela.sanitizar`)."""
+    COR = "cor"
 
 
 CHAVES_DE_ITEM: Final[frozenset[str]] = frozenset(
@@ -240,6 +255,15 @@ CATALOGO: Final[dict[str, Componente]] = {
             minimo=(4, 2),
         ),
         Componente(
+            id="conteudo",
+            titulo="Na tela",
+            vista=Vista.CONTEUDO,
+            # No centro, onde o dono olha: a lista, a tabela, o comparativo que ele pediu.
+            area_padrao=_area(3, 1, 6, 5),
+            minimo=(3, 2),
+            campos={"html": Forma.HTML_SEGURO, "fundo": Forma.COR},
+        ),
+        Componente(
             id="diagnostico",
             titulo="Diagnóstico",
             vista=Vista.DIAGNOSTICO,
@@ -377,6 +401,21 @@ def validar_dados(alvo: Componente, dados: Mapping[str, Any]) -> dict[str, Any]:
             if not isinstance(bruto, Sequence) or isinstance(bruto, str | bytes):
                 raise ComponenteNaoAutorizado(f"{onde}: esperava uma lista de itens")
             limpos[campo] = [_item(item, onde) for item in bruto[:LIMITE_DE_ITENS]]
+        elif forma is Forma.HTML_SEGURO:
+            if not isinstance(bruto, str):
+                raise ComponenteNaoAutorizado(f"{onde}: esperava HTML (texto)")
+            # De novo, aqui: quem chegar à tela por outro caminho também passa pela allowlist. E
+            # uma segunda regra, de outro jeito (uma negação, não a allowlist), confere que não
+            # sobrou nada que o Qt buscaria na rede — se sobrar, é defeito do sanitizador, e a
+            # tela recusa em vez de desenhar.
+            documento = sanitizar(bruto).documento
+            if RECURSO.search(documento):
+                raise ComponenteNaoAutorizado(f"{onde}: o HTML ainda aponta para fora")
+            limpos[campo] = documento
+        elif forma is Forma.COR:
+            if not isinstance(bruto, str) or (bruto and not COR.match(bruto)):
+                raise ComponenteNaoAutorizado(f"{onde}: esperava uma cor (#rrggbb ou nome)")
+            limpos[campo] = bruto
         elif forma is Forma.AVISOS:
             if not isinstance(bruto, Sequence) or isinstance(bruto, str | bytes):
                 raise ComponenteNaoAutorizado(f"{onde}: esperava uma lista de avisos")

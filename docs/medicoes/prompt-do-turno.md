@@ -54,3 +54,27 @@ O efeito no tempo até o primeiro token **não foi medido** com o `claude -p` de
 chamadas na conta do dono, e a CLI decide sozinha o cache): menos tokens de entrada só podem
 diminuir o pré-processamento, mas quanto isso pesa contra a latência de rede e da própria CLI (~3 s
 no p50, ADR-0045) é o que a trilha do dono vai mostrar (`ms_primeiro_token`).
+
+## 2026-10-29 — persona v16 e a tela do Jarvis (ADR-0055)
+
+Reproduzível com `uv run --frozen python -m tools.medir_prompt` (o executor de medição agora liga a
+porta da tela, como numa sessão com a janela aberta: 68 ferramentas visíveis no modo `padrao`).
+
+| bloco | caracteres | tokens (e5) |
+|---|---:|---:|
+| persona (v16) | 4710 | 1232 |
+| regras do dono | 770 | 203 |
+| catálogo (68 ferramentas) | 10500 | 3238 |
+| total do prompt de sistema | 15982 | 4673 |
+
+A tela do Jarvis:
+
+| bloco | caracteres | tokens (e5) | quando vai |
+|---|---:|---:|---|
+| as 3 linhas `tela.*` do catálogo | 467 | 141 | todo turno, com a janela aberta |
+| guia de design | 1171 | 398 | só no turno que monta ou muda a tela, ou no «sim» à oferta |
+| linha das exibições abertas | 161 | 51 | todo turno com uma exibição aberta |
+
+**Por que o guia é sob demanda:** como bloco fixo, ele somaria 398 tokens (+8,5%) a **todo** turno;
+sob demanda, o turno comum não paga nada e o da tela paga ~400 tokens. O conteúdo de uma exibição
+aberta **não** vai ao prompt (pode ter texto de página: é dado) — o modelo o lê com `tela.ler`.

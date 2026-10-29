@@ -117,6 +117,11 @@ TIER_ESPERADO: dict[str, str] = {
     # pedido pelo código na 1ª (e única) delegação do pedido (`Pedido.exige_o_sim`) e o guarda
     # compara a tarefa com o objetivo.
     "delegar.claude_code": "moderado",
+    # A tela do Jarvis (dono, 2026-10-29; ADR-0055): só mudam o que a janela mostra, sem efeito
+    # persistente e sem rede — livres.
+    "tela.mostrar": "livre",
+    "tela.ler": "livre",
+    "tela.fechar": "livre",
     "input.mouse.move": "moderado",
     "input.mouse.click": "moderado",
     "input.key.type": "moderado",
@@ -347,6 +352,11 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
             pdp, "web.canal_videos", {"canal": "https://www.youtube.com/@exemplo"}
         ),
         "web.ler": _pedido(pdp, "web.ler", {"url": "https://pt.wikipedia.org/wiki/Paris"}),
+        "tela.mostrar": _pedido(
+            pdp, "tela.mostrar", {"html": "<h1>Compras</h1><ul><li>pão</li></ul>"}
+        ),
+        "tela.ler": _pedido(pdp, "tela.ler", {}),
+        "tela.fechar": _pedido(pdp, "tela.fechar", {"todas": True}),
         "files.create_dir": _pedido(
             pdp, "files.create_dir", {"path": "x"}, f"{lar}/Documentos/nova"
         ),

@@ -1765,6 +1765,35 @@ TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/s2/test_falar_menos.py test
 
 ---
 
+### 0.45 O Jarvis monta conteúdo na tela: listas, tabelas, comparativos (2026-10-29, ADR-0055)
+
+Peça por voz: "monta uma tabela comparando o Galaxy A15, o Moto G54 e o Redmi 13" ou "põe na tela a
+lista de compras: arroz, feijão, café". O Jarvis monta um HTML simples e ele aparece num módulo no
+centro da janela (no modo assistente, a janela vai para o modo pesquisa enquanto o conteúdo estiver
+aberto, e volta quando ele fechar). Depois, por voz: "muda a cor do título para verde", "coloca isso
+em tabela", "aumenta a fonte", "tira a coluna de bateria", "fecha isso". O X do módulo também fecha.
+Ele também oferece sozinho, quando uma resposta fica grande demais para a voz: «Quer que eu monte o
+resto na tela?» — diga "sim, pode".
+
+**O que ele não faz, de propósito:** nada de script, imagem, link, formulário nem fonte de fora —
+é exibição, não página. Tudo isso é tirado antes de chegar à tela (e a janela confere de novo); o
+texto rico do Qt buscaria imagem e `url()` na internet se recebesse, e nunca recebe. Sem a janela
+(o terminal), as ferramentas `tela.*` nem existem.
+
+**Como conferir:** o teste da janela grava a captura que eu julguei (offscreen):
+
+```bash
+JARVIS_CAPTURAS_DE_TESTE=/tmp/jarvis-telas/teste TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/gui/test_conteudo_na_tela.py
+TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/tela   # a limpeza (45 vetores de XSS), a porta e o guia
+uv run --frozen python -m tools.sonda_rede_da_tela          # o controle: HTML cru busca 3 coisas; limpo, 0
+```
+
+A captura fica em `/tmp/jarvis-telas/teste/jarvis-conteudo-na-tela.png`. **Não provado:** o
+`claude -p` de verdade montando o HTML (os testes usam o motor roteirizado) e a sua janela no KDE
+Wayland, na sua escala — diga como ficou.
+
+---
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

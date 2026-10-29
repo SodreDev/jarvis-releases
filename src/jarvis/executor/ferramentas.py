@@ -35,7 +35,13 @@ from jarvis.executor.desfazer import LIXEIRA, Contaminacao, RegistroDeDesfazeres
 from jarvis.executor.fechar import AlvoRecusado, Fechador, TabelaDoProc
 from jarvis.executor.janelas import PRAZO_DO_FOCO_S, PistaDoApp
 from jarvis.executor.lancador import App, AppRecusado, RegistroDeApps, lancar
-from jarvis.executor.nativas import CORPOS, DE_ARQUIVOS, PRECISAM_DE_AGENDA, Nativas
+from jarvis.executor.nativas import (
+    CORPOS,
+    DE_ARQUIVOS,
+    PRECISAM_DA_TELA,
+    PRECISAM_DE_AGENDA,
+    Nativas,
+)
 from jarvis.executor.navegadores import AbridorDeNavegador, familia_de_navegador
 from jarvis.executor.organizar import OrganizacaoRecusada, Organizador
 from jarvis.executor.sites import Abridor, UrlRecusada, abrir_pelo_portal, dominio, validar_url
@@ -181,6 +187,8 @@ RECUSA_DE_DELEGAR_CEDO: Final = (
 FONTES_DE_TERCEIROS: Final = frozenset(
     {
         FERRAMENTA_DE_DELEGAR,
+        # O HTML de uma exibição pode ter texto lido na web: relê-lo é como ler a página (ADR-0055).
+        "tela.ler",
         "files.list_dir",
         "files.read_text",
         "files.search_in_roots",
@@ -584,6 +592,8 @@ class ExecutorDeFerramentas:
             return self.mcp is not None and tool_id in self.manifestos
         if tool_id in PRECISAM_DE_AGENDA:
             return self.portas().agenda is not None
+        if tool_id in PRECISAM_DA_TELA:
+            return self.portas().tela is not None  # a janela do Jarvis (ADR-0055)
         return tool_id in FERRAMENTAS_LIGADAS or tool_id in CORPOS or tool_id in DE_ARQUIVOS
 
     def _descricao(self, tool_id: str) -> str:

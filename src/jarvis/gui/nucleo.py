@@ -96,6 +96,10 @@ class SessaoDeVoz:
     ao_mudar_tarefas: Callable[[], None] = lambda: None
     ao_mudar_navegador: Callable[[bool], None] = lambda _ativo: None
     """O Jarvis passou a controlar (ou soltou) uma aba do navegador: a janela mostra o PARAR."""
+    ao_mostrar_conteudo: Callable[[Any], None] | None = None
+    """O Jarvis montou uma exibição (`tela.mostrar`, ADR-0055). Da thread de quem pediu. `None` =
+    sem tela: as `tela.*` não existem para o modelo."""
+    ao_fechar_conteudo: Callable[[str], None] | None = None
     """Uma tarefa em segundo plano mudou (ADR-0022). Chamada da linha **da tarefa**."""
     escuta: Escuta | None = None
     """O modo de escuta vivo, de quem abriu a sessão (a ponte). Trocá-lo vale no próximo tique
@@ -152,6 +156,9 @@ class SessaoDeVoz:
         aplicativo.ao_mudar_tarefas = self.ao_mudar_tarefas
         aplicativo.ao_mudar_navegador = self.ao_mudar_navegador
         aplicativo.ao_pedaco = self.ao_pedaco
+        if self.ao_mostrar_conteudo is not None and self.ao_fechar_conteudo is not None:
+            aplicativo.ao_mostrar_conteudo = self.ao_mostrar_conteudo
+            aplicativo.ao_fechar_conteudo = self.ao_fechar_conteudo
         aplicativo.ao_pedir_confirmacao = self.ao_pedir_confirmacao
         aplicativo.ao_fim_da_confirmacao = self.ao_fim_da_confirmacao
         # A porta do dedo fica **sempre** ligada: o modo troca com a sessão aberta, e quem
@@ -232,6 +239,11 @@ class SessaoDeVoz:
     def parar_tarefa(self, tarefa_id: str) -> bool:
         """O "parar" do card: o dono, com o dedo."""
         return self.aplicativo is not None and self.aplicativo.parar_tarefa(tarefa_id)
+
+    def conteudo_fechado_pelo_dono(self, identificador: str) -> None:
+        """O dono fechou na janela uma exibição que o Jarvis montou (ADR-0055)."""
+        if self.aplicativo is not None:
+            self.aplicativo.conteudo_fechado_pelo_dono(identificador)
 
     def dados_dos_avisos(self) -> dict[str, list[dict[str, str]]]:
         """O card `notificacoes`: a fila do laço, ou vazia antes de haver laço."""

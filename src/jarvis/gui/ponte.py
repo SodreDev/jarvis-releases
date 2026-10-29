@@ -199,6 +199,10 @@ class Ponte(QObject):
     avisosMudaram = Signal()
     tarefasMudaram = Signal()
     navegadorMudou = Signal(bool)
+    conteudoMostrado = Signal(str, str, str, str)
+    """(id, título, documento, fundo) de uma exibição que o Jarvis montou (ADR-0055): vem da linha
+    do cérebro; o Qt entrega aqui, na da janela."""
+    conteudoFechado = Signal(str)
     """O Jarvis passou a controlar (ou soltou) uma aba: vem da linha que agiu; o Qt entrega aqui."""
     controleMudou = Signal()
     respostaParcial = Signal(str)
@@ -260,6 +264,12 @@ class Ponte(QObject):
         self.avisosMudaram.connect(self._ligar_card_de_avisos)
         self.tarefasMudaram.connect(self._ligar_card_de_tarefas)
         self.navegadorMudou.connect(self._navegador_mudou)
+        self.conteudoMostrado.connect(self._mostrar_conteudo)
+        self.conteudoFechado.connect(self._fechar_conteudo)
+        self._exibicoes: dict[str, str] = {}
+        """Exibição da tela (id da porta) → o módulo `conteudo` que a mostra (ADR-0055)."""
+        self._modo_antes_da_tela: Modo | None = None
+        """O modo em que a janela estava quando o conteúdo pediu o centro: volta quando ele sai."""
         self._navegador_no_controle = False
         self._card_de_tarefas = ""
         """O módulo `tarefas` que **este** código criou para as tarefas reais (não o de exemplo)."""
@@ -707,6 +717,10 @@ class Ponte(QObject):
             ao_mudar_avisos=self.avisosMudaram.emit,
             ao_mudar_tarefas=self.tarefasMudaram.emit,
             ao_mudar_navegador=self.navegadorMudou.emit,
+            ao_mostrar_conteudo=lambda e: self.conteudoMostrado.emit(
+                e.id, e.titulo, e.documento, e.fundo
+            ),
+            ao_fechar_conteudo=self.conteudoFechado.emit,
             ao_pedaco=self.respostaParcial.emit,
             ao_pedir_confirmacao=self._pedir_confirmacao,
             ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,
@@ -1228,6 +1242,70 @@ class Ponte(QObject):
         if visto:
             self._historico_visto = len(self._espaco.historico)
 
+    def _mostrar_conteudo(self, exibicao: str, titulo: str, documento: str, fundo: str) -> None:
+        """Uma exibição da tela (ADR-0055): troca o conteúdo do módulo dela, ou cria um no centro.
+        Os dados são do código (a porta limpou; `validar_dados` limpa de novo): sem o selo de
+        demonstração."""
+        dados = {"html": documento, "fundo": fundo}
+        modulo = self._exibicoes.get(exibicao, "")
+        if modulo in self._espaco.widgets:
+            self._espaco.aplicar(
+                Acao(tipo=Tipo.ATUALIZAR, widget=modulo, dados=dados), dados_reais=True
+            )
+            return
+        if self._espaco.modo is Modo.ASSISTENTE:
+            # No assistente o centro é do núcleo, e a tabela ia para um canto. O modo pesquisa é
+            # o desenhado para isto ("o núcleo encolhe; o conteúdo manda"); fechado o conteúdo, o
+            # modo de antes volta. Trocar de modo não fecha nenhum módulo do dono.
+            self._modo_antes_da_tela = self._espaco.modo
+            self._espaco.aplicar(
+                Acao(tipo=Tipo.MODO, modo=Modo.PESQUISA, motivo="o conteúdo pedido vai no centro")
+            )
+        for colunas, linhas in ((6, 5), (5, 4), (4, 3), (3, 2)):
+            criada = self._espaco.aplicar(
+                Acao(
+                    tipo=Tipo.CRIAR,
+                    componente="conteudo",
+                    titulo=titulo,
+                    area=Area(coluna=3, linha=1, colunas=colunas, linhas=linhas),
+                    dados=dados,
+                    motivo="o Jarvis montou isto na tela",
+                ),
+                dados_reais=True,
+            )
+            if criada.aceita:
+                self._exibicoes[exibicao] = criada.widget
+                return
+
+    def _fechar_conteudo(self, exibicao: str) -> None:
+        """A porta fechou uma exibição (`tela.fechar`, ou a quarta empurrou a mais velha)."""
+        modulo = self._exibicoes.pop(exibicao, "")
+        if modulo:
+            self._espaco.fechar_pelo_dono(modulo)
+        self._devolver_o_modo()
+
+    def _devolver_o_modo(self) -> None:
+        """Sem conteúdo na tela, a janela volta ao modo de antes dele — se ninguém o trocou."""
+        modo = self._modo_antes_da_tela
+        if modo is None or self._exibicoes or self._espaco.modo is not Modo.PESQUISA:
+            return
+        self._modo_antes_da_tela = None
+        self._espaco.aplicar(Acao(tipo=Tipo.MODO, modo=modo, motivo="o conteúdo saiu da tela"))
+
+    def _conferir_exibicoes(self) -> None:
+        """Módulo de conteúdo que sumiu da tela (o X do dono, a troca de modo): a porta esquece a
+        exibição — o "fecha" por voz não fala de algo que não está mais lá."""
+        sumiram = False
+        for exibicao, modulo in list(self._exibicoes.items()):
+            if modulo not in self._espaco.widgets:
+                del self._exibicoes[exibicao]
+                sumiram = True
+                if self._sessao is not None:
+                    self._sessao.conteudo_fechado_pelo_dono(exibicao)
+        if sumiram:
+            self._devolver_o_modo()
+
     def _publicar(self) -> None:
+        self._conferir_exibicoes()
         self._modelo.sincronizar(self._espaco.para_dict()["widgets"])
         self.mudou.emit()

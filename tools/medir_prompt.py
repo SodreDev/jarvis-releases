@@ -90,7 +90,36 @@ def executor_completo(pasta: Path) -> Any:
     executor.vocabulario = sentinela
     executor.entrada = sentinela
     executor.portas().agenda = sentinela
+    executor.portas().tela = sentinela  # a janela aberta: as `tela.*` (ADR-0055)
     return executor
+
+
+def blocos_da_tela(executor: Any) -> list[Bloco]:
+    """O custo da tela do Jarvis (ADR-0055): as linhas das `tela.*` no catálogo (em todo turno com a
+    janela aberta), o guia de design (só no turno que monta ou muda a tela) e a linha de estado
+    (com uma exibição aberta)."""
+    from jarvis.s2.motor_claude_cli import linha_da_ferramenta
+    from jarvis.tela import PortaDaTela
+    from jarvis.tela.guia import GUIA_DE_DESIGN, nota_da_tela
+
+    linhas = [
+        linha_da_ferramenta(f)
+        for f in executor.catalogo_para_o_modelo()
+        if str(f["id"]).startswith("tela.")
+    ]
+    porta = PortaDaTela(ao_mostrar=lambda _e: None, ao_fechar=lambda _i: None)
+    porta.mostrar("<p>x</p>", identificador="compras")
+    return [
+        Bloco(
+            f"catálogo: as {len(linhas)} linhas tela.* (todo turno, com a janela)",
+            "\n".join(linhas),
+        ),
+        Bloco("guia de design (só no turno da tela)", GUIA_DE_DESIGN),
+        Bloco(
+            "linha das exibições abertas (com uma aberta)",
+            nota_da_tela("e amanhã?", "", porta.abertas()),
+        ),
+    ]
 
 
 INSTRUCAO_ANTIGA: Final = (
@@ -182,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
             blocos(persona.texto, bloco_padrao(), executor),
             contar,
         )
+        linhas += tabela("a tela do Jarvis (ADR-0055)", blocos_da_tela(executor), contar)
     texto = "\n".join(linhas)
     print(texto)
     if args.saida is not None:

@@ -24,6 +24,7 @@ from jarvis.executor.alarmes import AgendaDeAlarmes, quando_da_fala
 from jarvis.executor.comandos import ComandoIndisponivel, Lancador, executar
 from jarvis.executor.fechar import Jarvis, TabelaDeProcessos
 from jarvis.executor.janelas import Janelas, focar, foco_para_o_modelo, listar_para_o_modelo
+from jarvis.tela import PortaDaTela, TelaIndisponivel
 
 
 @dataclass(slots=True)
@@ -49,6 +50,8 @@ class Nativas:
     """Quem é o próprio Jarvis (nunca alvo). `None` = este processo, lido na hora."""
     anterior_da_area: str = field(default="", repr=False)
     """O texto que a área de transferência tinha antes da última escrita — é o do "desfazer"."""
+    tela: PortaDaTela | None = None
+    """As exibições da janela do Jarvis (ADR-0055). `None` = sem janela: as `tela.*` não existem."""
 
 
 Corpo = Callable[[Nativas, Mapping[str, Any]], dict[str, Any]]
@@ -146,6 +149,35 @@ def _area_write(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
     return desktop.escrever_area(n.lancar, str(a["texto"]), n.ambiente)
 
 
+def _tela(n: Nativas) -> PortaDaTela:
+    if n.tela is None:
+        raise TelaIndisponivel("a tela só existe com a janela do Jarvis aberta")
+    return n.tela
+
+
+def _tela_mostrar(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
+    exibicao = _tela(n).mostrar(
+        str(a["html"]), titulo=str(a.get("titulo", "")), identificador=str(a.get("id", ""))
+    )
+    return {
+        "id": exibicao.id,
+        "titulo": exibicao.titulo,
+        "caracteres": exibicao.caracteres,
+        "removidos": list(exibicao.removidos),
+        "fundo": exibicao.fundo,
+    }
+
+
+def _tela_ler(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
+    exibicao = _tela(n).ler(str(a.get("id", "")))
+    return {"id": exibicao.id, "titulo": exibicao.titulo, "html": exibicao.html}
+
+
+def _tela_fechar(n: Nativas, a: Mapping[str, Any]) -> dict[str, Any]:
+    fechadas = _tela(n).fechar(str(a.get("id", "")), todas=bool(a.get("todas", False)))
+    return {"fechadas": fechadas}
+
+
 CORPOS: Final[dict[str, Corpo]] = {
     "system.clock.now": lambda n, a: sistema.hora_agora(n.agora),
     "system.machine.status": lambda n, a: sistema.estado_da_maquina(
@@ -176,9 +208,14 @@ CORPOS: Final[dict[str, Corpo]] = {
     "web.buscar": lambda n, a: web.buscar(str(a["consulta"]), n.obter, n.ambiente, n.resolver),
     "web.canal_videos": lambda n, a: web.canal_videos(str(a["canal"]), n.obter, n.resolver),
     "web.ler": _web_ler,
+    "tela.mostrar": _tela_mostrar,
+    "tela.ler": _tela_ler,
+    "tela.fechar": _tela_fechar,
 }
-"""`tool_id` → corpo. O que está aqui é "ligado" no executor; `timer.*` só com agenda."""
+"""`tool_id` → corpo. O que está aqui é "ligado" no executor; `timer.*` só com agenda, `tela.*` só
+com a janela."""
 
 PRECISAM_DE_AGENDA: Final = frozenset({"timer.alarm.set", "timer.alarm.list", "timer.alarm.cancel"})
+PRECISAM_DA_TELA: Final = frozenset({"tela.mostrar", "tela.ler", "tela.fechar"})
 DE_ARQUIVOS: Final = frozenset({"files.create_dir", "files.copy", "files.move"})
 """Corpos que precisam do grant e do descritor da raiz: ficam no executor, via `Organizador`."""

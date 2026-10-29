@@ -171,6 +171,7 @@ Item {
             case "conversa": return cConversa
             case "configuracao": return cConfiguracao
             case "diagnostico": return cDiagnostico
+            case "conteudo": return cConteudo
             default: return cTexto
             }
         }
@@ -186,6 +187,7 @@ Item {
     Component { id: cConversa; VistaConversa { dados: modulo.dados } }
     Component { id: cConfiguracao; VistaConfiguracao { dados: modulo.dados } }
     Component { id: cDiagnostico; VistaDiagnostico { dados: modulo.dados } }
+    Component { id: cConteudo; VistaConteudo { dados: modulo.dados } }
 
     property bool componenteCodigo: false
 }
