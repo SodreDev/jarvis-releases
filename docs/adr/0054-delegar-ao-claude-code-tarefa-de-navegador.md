@@ -87,3 +87,28 @@ Se a Anthropic disser que não quer o Claude Code chamado assim por outra ferram
 - Claude Code — referência do CLI: <https://code.claude.com/docs/en/cli-reference> (`--output-format`, `--permission-mode` com `dontAsk`, `--allowedTools`, `--max-turns`, `--chrome`/`--no-chrome`, `--strict-mcp-config`, `--setting-sources`, `--no-session-persistence`, `--disable-slash-commands`, `--bare`).
 - Claude Code — permissões: <https://code.claude.com/docs/en/permissions> (modos `default`/`acceptEdits`/`plan`/`auto`/`dontAsk`/`bypassPermissions`; regra `mcp__<servidor>__*`; "Allow rules accept tool-name globs only after a literal `mcp__<server>__` prefix").
 - `claude --help` e `claude auth status --help` locais, Claude Code 2.1.312 (2026-10-29): `--tools` ("Use \"\" to disable all tools"), `--permission-mode` (choices `acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, `plan`), `auth status --json`. Nenhuma tarefa real foi executada; só `--help` e `auth status --json` (para ver os nomes dos campos `loggedIn`, `authMethod`, `apiProvider`).
+
+## Emenda de 2026-10-29 — várias delegações por objetivo, um «sim» para a delegação inteira
+
+**Pedido:** dono, 2026-10-29 — "(a) NÃO limitar a uma delegação por pedido — o dono quer poder delegar
+várias etapas/pesquisas dentro da mesma tarefa (ex.: mapa mental com várias pesquisas), com teto alto
+de segurança por objetivo (config, ex.: 10) e prazo/saída por chamada; (b) o 'sim' vale para a
+DELEGAÇÃO INTEIRA: uma aprovação por objetivo/tarefa cobre todas as delegações dentro dele, sem
+reaprovar a cada uma; o guarda D (ADR-0049) continua julgando cada delegação contra o objetivo e barra
+a que sair do eixo (nesse caso pede novo sim); nova tarefa/objetivo = nova aprovação."
+
+1. **Teto por objetivo, não "uma só"**: `delegacoes_por_objetivo` no `delegar.toml` (padrão 10, de 1 a
+   50). Passado o teto, a próxima é recusada antes do guarda e do PDP (causa `delegacoes_no_teto`). O
+   "tente antes pelo navegador do Jarvis" (`delegar_cedo`) fica. O prazo, os turnos e o corte da saída
+   continuam **por chamada**.
+2. **Um sim por objetivo** (`Objetivo.delegacao_aprovada`): a primeira delegação do objetivo pede o sim
+   (o custo na cota e a tarefa, como antes); com ele, as seguintes do mesmo objetivo não perguntam. O
+   guarda D continua julgando **cada** delegação: a que sai do eixo (enviar, pagar, apagar, fora do
+   objetivo — ou a zona cinza que o Jev julgar assim) pede o sim de novo, e a que ele barra é barrada.
+   Outro pedido do dono, ou a tarefa de outro pedido, é outro objetivo: aprova de novo.
+3. Nada mais muda na ferramenta (argv, modo de permissão, ambiente, pasta, resultado como dado,
+   contaminação do turno, trilha só com códigos).
+
+Testes (com o `claude` falso): três delegações no mesmo objetivo com um sim só; o teto recusando a
+terceira com `delegacoes_por_objetivo = 2`; a delegação que envia pedindo o sim de novo; o objetivo
+novo aprovando de novo; a chave nova da configuração lida e apertada.

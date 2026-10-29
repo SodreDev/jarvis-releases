@@ -167,8 +167,13 @@ class Objetivo:
     efeitos_tentados: int = 0
     """Passos com efeito (navegar, clicar, abrir, mudar) que foram tentados, deram certo ou não."""
     delegacoes: int = 0
-    """Tarefas entregues ao Claude Code neste objetivo (ADR-0054): uma só — não se delega de novo
-    a partir do resultado de uma delegação."""
+    """Tarefas entregues ao Claude Code neste objetivo (ADR-0054): até o teto da configuração
+    (`delegacoes_por_objetivo`, 10 por padrão) — várias etapas de uma mesma tarefa (emenda de
+    2026-10-29)."""
+    delegacao_aprovada: bool = False
+    """O dono já disse sim a uma delegação deste objetivo: o sim vale para a delegação inteira, e as
+    seguintes não perguntam de novo — a não ser que o guarda (ADR-0049) as julgue fora do eixo.
+    Objetivo novo (outro pedido, outra tarefa) começa sem: aprova de novo."""
     _efeito_feito: bool = False
     _conferido: bool = False
     """Uma leitura que deu certo veio depois do último efeito que deu certo."""

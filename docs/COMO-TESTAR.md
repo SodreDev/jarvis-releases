@@ -1819,6 +1819,24 @@ TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/politica/test_escopo.py tes
 
 ---
 
+### 0.47 Delegar ao Claude Code várias etapas com um «sim» só (2026-10-29, ADR-0054 emendada)
+
+Numa mesma tarefa (um mapa mental com várias pesquisas), o Jarvis pode delegar várias vezes: o «sim»
+da primeira delegação vale para as seguintes do mesmo pedido. Ele pergunta de novo só se uma delas sair
+do eixo (enviar, pagar, apagar, fora do que você pediu) — e um pedido novo começa pedindo o sim de
+novo. O teto de segurança por pedido é 10; para mudar, no `~/.config/jarvis/delegar.toml`:
+
+```toml
+[claude_code]
+ligado = true
+delegacoes_por_objetivo = 10   # de 1 a 50
+```
+
+Testes (com o `claude` falso): `TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/delegacao/`.
+**Não provado:** o Claude Code real fazendo várias etapas seguidas na sua conta (o custo é da cota dela).
+
+---
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

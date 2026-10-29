@@ -29,12 +29,18 @@ PRAZO_MAXIMO_S: Final = 600.0
 """O teto do `timeout_ms` do manifesto (600 s): o dono aperta, nunca passa disso."""
 MAX_TURNOS_PADRAO: Final = 30
 MAX_TURNOS_TETO: Final = 100
+DELEGACOES_POR_OBJETIVO_PADRAO: Final = 10
+"""Quantas delegações um mesmo objetivo (o pedido, ou a tarefa dele) pode fazer (dono, 2026-10-29:
+«várias etapas/pesquisas dentro da mesma tarefa, com teto alto de segurança por objetivo»)."""
+DELEGACOES_POR_OBJETIVO_TETO: Final = 50
 _CARA_DE_SEGREDO: Final = re.compile(
     r"(?i)\b(api[_-]?key|secret|token|senha|password|bearer|authorization)\b|sk-[a-z0-9]{8,}"
 )
 _MODELO: Final = re.compile(r"[A-Za-z0-9._\[\]-]{1,60}")
 _NOME_DE_PROGRAMA: Final = re.compile(r"[A-Za-z0-9._-]{1,60}")
-_CHAVES: Final = frozenset({"ligado", "executavel", "prazo_s", "max_turnos", "modelo"})
+_CHAVES: Final = frozenset(
+    {"ligado", "executavel", "prazo_s", "max_turnos", "modelo", "delegacoes_por_objetivo"}
+)
 
 
 class ConfiguracaoDaDelegacaoInvalida(ValueError):
@@ -50,6 +56,8 @@ class ConfiguracaoDaDelegacao:
     max_turnos: int = MAX_TURNOS_PADRAO
     modelo: str = ""
     """Vazio = o padrão da conta do dono."""
+    delegacoes_por_objetivo: int = DELEGACOES_POR_OBJETIVO_PADRAO
+    """O teto de segurança por objetivo: o sim do dono vale para todas até ele (ADR-0054 emenda)."""
 
 
 def caminho_padrao(pasta: Path | None = None) -> Path:
@@ -84,6 +92,9 @@ def carregar_delegacao(caminho: Path | None = None) -> ConfiguracaoDaDelegacao:
         prazo_s=_prazo(bloco.get("prazo_s", PRAZO_PADRAO_S)),
         max_turnos=_turnos(bloco.get("max_turnos", MAX_TURNOS_PADRAO)),
         modelo=_modelo(bloco.get("modelo", "")),
+        delegacoes_por_objetivo=_delegacoes(
+            bloco.get("delegacoes_por_objetivo", DELEGACOES_POR_OBJETIVO_PADRAO)
+        ),
     )
 
 
@@ -118,6 +129,14 @@ def _turnos(valor: object) -> int:
     if isinstance(valor, bool) or not isinstance(valor, int):
         raise ConfiguracaoDaDelegacaoInvalida("`max_turnos` tem de ser um número inteiro")
     return min(MAX_TURNOS_TETO, max(1, valor))
+
+
+def _delegacoes(valor: object) -> int:
+    if isinstance(valor, bool) or not isinstance(valor, int):
+        raise ConfiguracaoDaDelegacaoInvalida(
+            "`delegacoes_por_objetivo` tem de ser um número inteiro"
+        )
+    return min(DELEGACOES_POR_OBJETIVO_TETO, max(1, valor))
 
 
 def _modelo(valor: object) -> str:

@@ -248,6 +248,7 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "fora_do_escopo",
         # a delegação ao Claude Code (`jarvis.delegacao`, ADR-0054)
         "redelegar",
+        "delegacoes_no_teto",
         "delegar_cedo",
         "sem_claude_code",
         "claude_code_sem_login",

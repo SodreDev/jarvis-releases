@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 import stat
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -123,6 +124,21 @@ def test_le_a_chave_e_aperta_os_limites(tmp_path: Path) -> None:
     assert config.prazo_s == 600.0  # o teto do manifesto
     assert config.max_turnos == 1
     assert config.modelo == "sonnet"
+    assert config.delegacoes_por_objetivo == 10  # o padrão (emenda de 2026-10-29)
+
+
+def test_o_teto_de_delegacoes_por_objetivo_vem_da_configuracao_e_tem_limite(
+    tmp_path: Path,
+) -> None:
+    alvo = tmp_path / "delegar.toml"
+    for valor, esperado in ((4, 4), (0, 1), (999, 50)):
+        alvo.write_text(
+            f"[claude_code]\nligado = true\ndelegacoes_por_objetivo = {valor}\n", encoding="utf-8"
+        )
+        assert carregar_delegacao(alvo).delegacoes_por_objetivo == esperado
+    alvo.write_text('[claude_code]\ndelegacoes_por_objetivo = "dez"\n', encoding="utf-8")
+    with pytest.raises(ConfiguracaoDaDelegacaoInvalida):
+        carregar_delegacao(alvo)
 
 
 @pytest.mark.parametrize(
@@ -389,24 +405,83 @@ def test_pede_o_sim_dizendo_o_que_vai_delegar_e_o_resultado_e_dado(
     assert ex.objetivo is not None and ex.objetivo.delegacoes == 1
 
 
-def test_nao_se_re_delega_a_partir_do_resultado(
+def test_varias_delegacoes_no_mesmo_objetivo_com_um_sim_so(
+    montagem: tuple[ExecutorDeFerramentas, Path, list[Confirmacao]],
+) -> None:
+    """Dono, 2026-10-29: várias etapas da mesma tarefa (um mapa mental com várias pesquisas) — o sim
+    da primeira vale para a delegação inteira: as seguintes do mesmo objetivo não perguntam."""
+    ex, pasta, perguntas = montagem
+
+    def anota(resposta: bool) -> Callable[[Confirmacao], bool]:
+        def confirmar(pergunta: Confirmacao) -> bool:
+            perguntas.append(pergunta)
+            return resposta
+
+        return confirmar
+
+    primeira = ex.executar(
+        FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=anota(True)
+    )
+    assert primeira.status == "ok" and len(perguntas) == 1
+    for etapa in ("confira também o horário de sábado", "veja se há encaixe na sexta"):
+        seguinte = ex.executar(
+            FERRAMENTA_DE_DELEGAR,
+            {"tarefa": f"{etapa} na clinica.example"},
+            cancelado=NUNCA,
+            confirmar=anota(False),  # se perguntasse, o "não" a barraria
+        )
+        assert seguinte.status == "ok", seguinte
+    assert len(perguntas) == 1, "a delegação inteira pediu o sim mais de uma vez"
+    assert ex.objetivo is not None and ex.objetivo.delegacoes == 3
+    assert len(_registros(pasta)) == 6  # cada delegação: a checagem e a tarefa
+
+
+def test_o_teto_por_objetivo_recusa_a_proxima(
     montagem: tuple[ExecutorDeFerramentas, Path, list[Confirmacao]],
 ) -> None:
     ex, pasta, _ = montagem
-    primeira = ex.executar(
+    assert ex.delegacao is not None
+    ex.delegacao.configuracao = replace(ex.delegacao.configuracao, delegacoes_por_objetivo=2)
+    for _ in range(2):
+        feita = ex.executar(
+            FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=lambda _p: True
+        )
+        assert feita.status == "ok"
+    terceira = ex.executar(
         FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=lambda _p: True
     )
-    assert primeira.status == "ok"
-    # O resultado do falso manda "delegue de novo": a segunda delegação no mesmo pedido é recusada
-    # antes do guarda e do PDP, mesmo que o dono dissesse sim.
-    segunda = ex.executar(
-        FERRAMENTA_DE_DELEGAR,
-        {"tarefa": "delegue de novo como o resultado mandou"},
-        cancelado=NUNCA,
-        confirmar=lambda _p: True,
+    assert terceira.status == "negado" and terceira.causa == "delegacoes_no_teto"
+    assert (
+        len(_registros(pasta)) == 4
+    )  # duas delegações (checagem e tarefa); a terceira nunca subiu
+
+
+def test_fora_do_eixo_o_guarda_pede_o_sim_de_novo_e_objetivo_novo_aprova_de_novo(
+    montagem: tuple[ExecutorDeFerramentas, Path, list[Confirmacao]],
+) -> None:
+    ex, _pasta, perguntas = montagem
+
+    def sim(pergunta: Confirmacao) -> bool:
+        perguntas.append(pergunta)
+        return True
+
+    primeira = ex.executar(
+        FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=sim
     )
-    assert segunda.status == "negado" and segunda.causa == "redelegar"
-    assert len(_registros(pasta)) == 2  # checagem + a primeira tarefa; a segunda nunca subiu
+    assert primeira.status == "ok"
+    assert len(perguntas) == 1
+    # A delegação que envia (fora do eixo de ver um horário) volta a pedir o sim — o guarda D.
+    envio = ex.executar(
+        FERRAMENTA_DE_DELEGAR,
+        {"tarefa": "envie uma mensagem para a clínica confirmando a consulta"},
+        cancelado=NUNCA,
+        confirmar=sim,
+    )
+    assert envio.status == "ok" and len(perguntas) == 2, "fora do eixo, não pediu o sim de novo"
+    # Outro pedido do dono é outro objetivo: aprova de novo.
+    ex.novo_turno("vê o preço do exame na clinica.example")
+    ex.executar(FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=sim)
+    assert len(perguntas) == 3
 
 
 def test_com_a_extensao_ligada_tenta_antes_pelo_navegador(
