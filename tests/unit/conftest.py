@@ -7,6 +7,7 @@ HOME e as pastas XDG apontam para um diretório temporário vazio em todo teste.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -21,8 +22,13 @@ _XDG = {
 
 @pytest.fixture(autouse=True)
 def ambiente_do_dono_isolado(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    casa = tmp_path / "home-isolada"
+    # fora do tmp_path: testes que listam o diretório do teste não podem ver a home isolada
+    casa = tmp_path.parent / f"{tmp_path.name}-home"
     casa.mkdir()
+    # o rustup/cargo moram no HOME real; preserva só as variáveis, antes de trocar o HOME
+    real = Path(os.environ.get("HOME", "~")).expanduser()
+    monkeypatch.setenv("RUSTUP_HOME", os.environ.get("RUSTUP_HOME") or str(real / ".rustup"))
+    monkeypatch.setenv("CARGO_HOME", os.environ.get("CARGO_HOME") or str(real / ".cargo"))
     monkeypatch.setenv("HOME", str(casa))
     for variavel, pasta in _XDG.items():
         monkeypatch.setenv(variavel, str(casa / pasta))
