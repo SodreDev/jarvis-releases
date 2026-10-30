@@ -2,6 +2,7 @@
 
 **Data:** 2026-10-30 · **Estado:** aceita (pedido do dono) · **Decide:** dono (o que o Jarvis faz com o tom, o que fica ligado, o que é dado dele), arquiteto (as camadas, o contrato, os limiares e onde moram)
 **Pedido:** dono, 2026-10-30 — o Jarvis entender o TOM DE VOZ do dono — se está gritando, falando baixo, perguntando (entonação de interrogação), dando risada, e afins (suspiro, tosse, pressa, cansaço, irritação, empolgação) — para reagir de forma natural: pergunta com entonação mas sem `?` no texto do ASR vira pergunta; gritando → resposta curta e calma; risada → leve; sussurro → responde baixo e curto. Em fatias: pesquisa e ADR (esta), núcleo, integração, privacidade e configuração, classificadores opcionais. Emenda a ADR-0043 (o portão de ruído decide também o que o tom mede), a ADR-0047 (uma regra nova na persona e uma nota por turno no prompt) e a ADR-0017 (a porta de licença vale para os pesos dos classificadores).
+**Mede:** `tools/harness_tom.py` → `docs/medicoes/tom-de-voz.md`; commit da medição `9231d77` com o núcleo da fatia B na árvore de trabalho (commitado logo depois, sem mudança de comportamento); hardware AMD Ryzen 5 5600G (CPU; o ASR é o whisper small int8 com 4 threads); `n` = 20 sementes × 11 cenas sintéticas e 60 turnos neutros, 35 trechos por duração no custo, 24 trechos da voz piper (12 frases × `?`/`.`) no acerto e no paralelo ao ASR.
 
 ## Contexto
 
@@ -60,6 +61,12 @@ Nenhum modelo de emoção com licença permissiva tem evidência em pt-BR. Latê
 7. **A entonação de pergunta põe o `?`** que o ASR não pôs, no texto que vai à tela e ao cérebro (o caminho rápido já ignora pontuação, `politica.atalho._dobrar_com_mapa`).
 8. **Sussurro → a resposta sai mais baixa** (−9 dB nos pedaços do TTS, qualquer motor), desligável. Ritmo do TTS fica de fora: não há controle comum entre os motores (piper, nuvem, OmniVoice).
 9. **Privacidade.** O rótulo vai à trilha só em códigos (nunca F0, nível ou áudio); ao cérebro vai a linha (texto), e ao Jev/nuvem de endereçamento nada; nenhum áudio sai da máquina por causa do tom. Configuração e documentação na fatia D.
+
+## O que o núcleo mediu (áudio sintético, `docs/medicoes/tom-de-voz.md`)
+
+- **Banco sintético** (contornos de F0 escritos à mão, sussurro, risada, tosse e suspiro gerados de semente): com a base pronta, 20 de 20 em cada cena (pergunta paroxítona e oxítona, afirmação, grito, voz baixa, sussurro, risada, tosse, ritmo rápido e lento), menos o suspiro, 19 de 20; nenhum dos 60 turnos «de sempre» saiu do neutro. Sem base, grito e voz baixa ficam neutros **de propósito** (0 de 20): o nível absoluto não diz nada antes de conhecer o microfone do dono.
+- **Voz piper local** (a mesma frase com `?` e com `.`, e o rótulo recebendo a frase **sem** pontuação): afirmação 12 de 12; pergunta só 4 de 12 — o pico final da voz sintética com `?` tem mediana de 0,7 semitom (p90 7,8): a piper quase não marca a pergunta. O detector é conservador (não inventou pergunta em afirmação nenhuma); quanto ele acerta na voz do dono, só ela diz.
+- **Custo:** a análise leva 2,6 ms para 1 s de fala e 14,4 ms para 6 s (p50, uma linha, numpy). **Em paralelo ao ASR**, a espera do laço depois do ASR foi 0,01 ms no p95 e o ASR ficou no mesmo lugar (1 169 ms sozinho, 1 186 ms com o tom ao lado, p50, dentro da variação entre rodadas): latência extra imperceptível.
 
 ## Alternativas descartadas
 
