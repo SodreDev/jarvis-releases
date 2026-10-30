@@ -45,6 +45,7 @@ from jarvis.voz.palavra import (
 from jarvis.voz.registro import Motor, MotorRecusado, exigir_modelo, ler_motores, motor_registrado
 from jarvis.voz.ruido import FALA_MINIMA_MS, MARGEM_DB, SEM_FALA_MAXIMO, PoliticaDeRuido
 from jarvis.voz.s2_provisorio import nomes_de_gerador
+from jarvis.voz.tom import DIMENSOES as DIMENSOES_DO_TOM
 
 ARQUIVO: Final = "jarvis-voz.toml"
 PASTA: Final = "jarvis"
@@ -145,6 +146,17 @@ class Configuracao:
     sem_fala_maximo: float = SEM_FALA_MAXIMO
     """O `no_speech_prob` do ASR a partir do qual, com a confiança baixa, o trecho "não era
     fala"."""
+    tom_de_voz: bool = True
+    """O tom de voz do dono (ADR-0058): no trecho que o portão aceitou, o Jarvis mede volume,
+    entonação, ritmo, energia e risada/tosse/suspiro (DSP local, sem modelo, sem gravar áudio),
+    contra a média da voz do dono (`tom.json`, só números, na pasta de estado), e manda ao cérebro
+    uma linha curta quando foge do neutro. Desligado = nada é medido nem lido."""
+    tom_dimensoes: tuple[str, ...] = DIMENSOES_DO_TOM
+    """Quais dimensões vão ao cérebro e à janela: volume, entonacao, evento, ritmo, energia."""
+    tom_no_texto: bool = True
+    """A entonação de pergunta põe o «?» que o ASR não pôs (nunca em resposta curta)."""
+    tom_na_voz: bool = True
+    """Com o dono sussurrando, o Jarvis responde 9 dB mais baixo."""
     interromper_por_voz: bool = True
     """Enquanto o Jarvis fala, o microfone segue ouvindo, e o dono o corta pela voz (ADR-0040): com
     a palavra de ativação, nos dois modos que ouvem sozinhos; na contínua, também com uma ordem de
@@ -235,6 +247,10 @@ class Configuracao:
             "atalho_global": self.atalho_global,
             "enderecamento": self.enderecamento,
             "interromper_por_voz": self.interromper_por_voz,
+            "tom_de_voz": self.tom_de_voz,
+            "tom_dimensoes": list(self.tom_dimensoes),
+            "tom_no_texto": self.tom_no_texto,
+            "tom_na_voz": self.tom_na_voz,
             "filtro_de_ruido": self.filtro_de_ruido,
             "fala_minima_ms": self.fala_minima_ms,
             "margem_de_fala_db": self.margem_de_fala_db,
@@ -342,6 +358,14 @@ enderecamento = {aspas(configuracao.enderecamento)}
 # Interromper o Jarvis pela voz enquanto ele fala (ADR-0040): a palavra de ativação corta; na
 # escuta contínua, também "para"/"chega" e, com o detector ligado, a fala dirigida a ele.
 interromper_por_voz = {"true" if configuracao.interromper_por_voz else "false"}
+# O tom de voz (ADR-0058): volume, entonação de pergunta, ritmo, energia e risada/tosse/suspiro,
+# medidos no trecho que vai ao ASR, comparados com a média da sua voz (tom.json, só números, na
+# pasta de estado — apague para recalibrar). Nenhum áudio é gravado; ao cérebro vai uma linha curta
+# só quando foge do neutro; à trilha, só os códigos. O tom nunca confirma nada.
+tom_de_voz = {"true" if configuracao.tom_de_voz else "false"}
+tom_dimensoes = {lista(configuracao.tom_dimensoes)}
+tom_no_texto = {"true" if configuracao.tom_no_texto else "false"}
+tom_na_voz = {"true" if configuracao.tom_na_voz else "false"}
 # Ruído do microfone não vira pedido (ADR-0043). Antes do ASR, o trecho precisa de fala que dure:
 # `fala_minima_ms` seguidos, `margem_de_fala_db` acima do fundo (estalo, tecla e ventilador ficam
 # de fora). Depois, o texto que o ASR inventa no silêncio ("Legendas pela comunidade Amara.org",
@@ -439,6 +463,20 @@ def _logico(dados: Mapping[str, Any], chave: str, *, padrao: bool = False) -> bo
     if not isinstance(valor, bool):
         raise ConfiguracaoInvalida(f"{chave}: esperava true ou false, veio {type(valor).__name__}")
     return valor
+
+
+def _dimensoes_do_tom(dados: Mapping[str, Any]) -> tuple[str, ...]:
+    """Sem a chave, todas; com ela, só as que existem (dimensão desconhecida é erro)."""
+    if "tom_dimensoes" not in dados:
+        return DIMENSOES_DO_TOM
+    pedidas = _lista(dados, "tom_dimensoes")
+    desconhecidas = sorted(set(pedidas) - set(DIMENSOES_DO_TOM))
+    if desconhecidas:
+        raise ConfiguracaoInvalida(
+            f"tom_dimensoes: {', '.join(desconhecidas)} não existe "
+            f"(as dimensões são {', '.join(DIMENSOES_DO_TOM)})"
+        )
+    return tuple(d for d in DIMENSOES_DO_TOM if d in pedidas)
 
 
 def _lista(dados: Mapping[str, Any], chave: str) -> tuple[str, ...]:
@@ -646,6 +684,10 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         atalho_global=_logico(dados, "atalho_global"),
         enderecamento=_texto(dados, "enderecamento", ""),
         interromper_por_voz=_logico(dados, "interromper_por_voz", padrao=True),
+        tom_de_voz=_logico(dados, "tom_de_voz", padrao=True),
+        tom_dimensoes=_dimensoes_do_tom(dados),
+        tom_no_texto=_logico(dados, "tom_no_texto", padrao=True),
+        tom_na_voz=_logico(dados, "tom_na_voz", padrao=True),
         filtro_de_ruido=_logico(dados, "filtro_de_ruido", padrao=True),
         fala_minima_ms=_numero(dados, "fala_minima_ms", FALA_MINIMA_MS),
         margem_de_fala_db=_numero(dados, "margem_de_fala_db", MARGEM_DB),

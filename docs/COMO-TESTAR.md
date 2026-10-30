@@ -1949,6 +1949,38 @@ Testes: `TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/s2/test_selecao_de
 
 **Não provado:** o efeito no `claude -p` de verdade — cole a trilha depois de alguns pedidos.
 
+### 0.52 O tom da sua voz: pergunta, grito, sussurro, risada (2026-10-30, ADR-0058)
+
+**O que mudou.** No trecho que vai ao ASR, o Jarvis mede como você falou — volume contra a média
+da sua voz, entonação de pergunta, ritmo, energia, risada/tosse/suspiro — sem gravar áudio. Fora do
+neutro, o cérebro recebe uma linha curta («[tom da voz do dono: gritando; jeito: curto e calmo]»);
+a pergunta só de entonação ganha o `?`; sussurrando, a resposta sai mais baixa; a janela mostra o
+tom ao lado do estado. O tom nunca confirma nada.
+
+1. **Calibração:** os primeiros 5 turnos ensinam a sua voz de sempre (`jarvis-voz --diagnostico`
+   mostra «linha de base da sua voz: N turno(s)»). Antes disso, grito e voz baixa não aparecem.
+2. **Pergunta sem palavra de pergunta:** «vai chover amanhã», perguntando. A tela deve mostrar
+   «Você: vai chover amanhã?» e a janela «· entonação de pergunta». Diga a mesma frase afirmando:
+   sem `?`.
+3. **Grito:** «para com isso», bem mais alto que o normal → resposta curta e calma; a janela diz
+   «gritando». Só chegar perto do microfone deve dar «voz alta», não «gritando».
+4. **Sussurro:** sussurre um pedido → a resposta sai mais baixa e curta.
+5. **Risada / suspiro / tosse:** ria antes de falar, suspire no fim, tussa no começo — a janela diz
+   «rindo» / «suspirou» / «tossiu» (são os mais fracos; diga se erram).
+6. **O tom não confirma:** com uma pergunta «Posso…?» no ar, um «sim» rindo ou gritando segue as
+   regras de sempre (§0.27/ADR-0048): o tom não muda nada ali.
+7. **Desligar:** `tom_de_voz = false` no `jarvis-voz.toml` (nada é medido nem lido); ou só
+   `tom_no_texto = false`, `tom_na_voz = false`, ou menos dimensões em `tom_dimensoes`.
+8. **Apagar o que ele aprendeu:** apague `~/.local/state/jarvis/voz/tom.json` (só números).
+9. Na trilha (`--diagnostico` ou `turnos.jsonl`), o evento `tom` traz só códigos.
+
+Testes: `TMPDIR=~/.cache/jt .venv/bin/python -m pytest tests/unit/voz/test_tom.py
+tests/unit/voz/test_tom_no_laco.py tests/unit/voz/test_tom_configuracao.py`. Medição (áudio
+sintético e voz piper): `.venv/bin/python tools/harness_tom.py` → `docs/medicoes/tom-de-voz.md`.
+
+**Não provado:** tudo com a sua voz — os limiares nasceram de áudio sintético. Conte o que errou
+(e cole as linhas `tom` da trilha).
+
 ### 0.53 Ligar o Groq num preset sem mistério (2026-10-30, ADR-0056 emendada)
 
 **O que mudou.** Ligar um provedor de nuvem na janela vale **na hora** para a conversa aberta (antes

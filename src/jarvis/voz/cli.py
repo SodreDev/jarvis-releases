@@ -52,6 +52,7 @@ from jarvis.voz.omnivoice import linhas_do_diagnostico
 from jarvis.voz.registro import conferir, ler_motores, motores_de
 from jarvis.voz.teclado import preparado, teclado_do_ambiente
 from jarvis.voz.tela_config import TelaDeConfiguracao
+from jarvis.voz.tom import TURNOS_PARA_A_BASE, RepositorioDaLinhaDeBase
 from jarvis.voz.vocabulario import RepositorioDoVocabulario, Vocabulario
 
 PASTA_DE_SESSAO: Final = "voz"
@@ -95,6 +96,29 @@ def _linhas_do_ruido(configuracao: Configuracao, pasta_da_trilha: Path) -> list[
     detalhe = " · ".join(f"{motivo} {vezes}" for motivo, vezes in contagem.items())
     linhas.append(f"  ruído que não virou pedido: {sum(contagem.values())} trecho(s) — {detalhe}")
     return linhas
+
+
+def _linhas_do_tom(configuracao: Configuracao, raiz: Path) -> list[str]:
+    """O tom de voz (ADR-0058): ligado ou não, o que vai ao cérebro e quantos turnos a base já
+    aprendeu — nunca a média da voz do dono (a tela do diagnóstico pode ser compartilhada)."""
+    if not configuracao.tom_de_voz:
+        return ["  tom de voz: DESLIGADO (nada é medido nem lido)"]
+    base = RepositorioDaLinhaDeBase(raiz).ler()
+    pronta = "pronta" if base.pronta else f"aprendendo (pronta em {TURNOS_PARA_A_BASE})"
+    extras = [
+        nome
+        for nome, ligado in (
+            ("«?» pela entonação", configuracao.tom_no_texto),
+            ("sussurro → resposta baixa", configuracao.tom_na_voz),
+        )
+        if ligado
+    ]
+    return [
+        f"  tom de voz: ligado · ao cérebro: {', '.join(configuracao.tom_dimensoes) or 'nada'}"
+        + (f" · {' · '.join(extras)}" if extras else ""),
+        f"  linha de base da sua voz: {base.turnos} turno(s), {pronta} — "
+        f"{RepositorioDaLinhaDeBase(raiz).caminho} (só números; apague para recalibrar)",
+    ]
 
 
 def _linhas_do_vocabulario(ambiente: Mapping[str, str] | None) -> list[str]:
@@ -184,6 +208,8 @@ def diagnosticar(
     for texto in resumo_do_ultimo_turno(pasta_da_trilha):
         linha(texto)
     for texto in _linhas_do_ruido(configuracao, pasta_da_trilha):
+        linha(texto)
+    for texto in _linhas_do_tom(configuracao, pasta_da_trilha.parent):
         linha(texto)
 
     linha("")

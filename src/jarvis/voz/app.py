@@ -171,7 +171,6 @@ from jarvis.voz.ruido import (
 )
 from jarvis.voz.ruido import Motivo as MotivoDoRuido
 from jarvis.voz.teclado import ESPACO, TECLAS_DE_SAIDA, Teclado, TecladoMudo
-from jarvis.voz.tom import DIMENSOES as DIMENSOES_DO_TOM
 from jarvis.voz.tom import (
     AnalisadorDeTom,
     MedidaDoTom,
@@ -2804,17 +2803,20 @@ class Aplicativo:
     # --- o tom de voz (ADR-0058) ------------------------------------------------------------------
     @property
     def dimensoes_do_tom(self) -> tuple[str, ...]:
-        return DIMENSOES_DO_TOM
+        return self.configuracao.tom_dimensoes
 
     @property
     def tom_no_texto(self) -> bool:
-        return True
+        return self.configuracao.tom_no_texto
 
     @property
     def tom_na_voz(self) -> bool:
-        return True
+        return self.configuracao.tom_na_voz
 
     def _analisador_de_tom(self) -> AnalisadorDeTom | None:
+        """Da configuração viva: desligado, nada é medido e o `tom.json` nem é lido."""
+        if not self.configuracao.tom_de_voz:
+            return None
         if self._tom is None:
             self._tom = AnalisadorDeTom(RepositorioDaLinhaDeBase(self.raiz))
         return self._tom

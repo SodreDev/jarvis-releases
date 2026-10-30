@@ -162,3 +162,12 @@ def test_trocar_a_combinacao_desliga_o_global_guardado(ponte: Ponte) -> None:
     ponte._configuracao = ponte._configuracao.com(atalho_global=True)
     ponte.capturarAtalho(int(Qt.Key.Key_J.value), int(Qt.KeyboardModifier.ControlModifier.value))
     assert ponte._configuracao.atalho_global is False
+
+
+def test_o_tom_da_voz_aparece_ao_lado_do_estado(ponte: Ponte) -> None:
+    """ADR-0058: o laço manda o tom curto do último turno; a janela mostra, e o neutro apaga."""
+    assert lido(ponte, "tomDaVoz") == ""
+    ponte._mudar_tom("entonação de pergunta · voz baixa")
+    assert lido(ponte, "tomDaVoz") == "entonação de pergunta · voz baixa"
+    ponte._mudar_tom("")
+    assert lido(ponte, "tomDaVoz") == ""

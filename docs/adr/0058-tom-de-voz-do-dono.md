@@ -68,6 +68,13 @@ Nenhum modelo de emoção com licença permissiva tem evidência em pt-BR. Latê
 - **Voz piper local** (a mesma frase com `?` e com `.`, e o rótulo recebendo a frase **sem** pontuação): afirmação 12 de 12; pergunta só 4 de 12 — o pico final da voz sintética com `?` tem mediana de 0,7 semitom (p90 7,8): a piper quase não marca a pergunta. O detector é conservador (não inventou pergunta em afirmação nenhuma); quanto ele acerta na voz do dono, só ela diz.
 - **Custo:** a análise leva 2,6 ms para 1 s de fala e 14,4 ms para 6 s (p50, uma linha, numpy). **Em paralelo ao ASR**, a espera do laço depois do ASR foi 0,01 ms no p95 e o ASR ficou no mesmo lugar (1 169 ms sozinho, 1 186 ms com o tom ao lado, p50, dentro da variação entre rodadas): latência extra imperceptível.
 
+## Implementação (fatias C e D, 2026-10-30)
+
+- **No laço** (`jarvis.voz.app`): `_medir_o_tom` manda o trecho à linha `jarvis-tom` logo depois do portão; `_ler_o_tom` espera até `PRAZO_DO_TOM_S` (50 ms) depois do ASR. O `?` e a nota só entram no caminho do pedido; a resposta a uma pergunta pendente sai antes, sem tom. Testado no laço com WAV sintético (`tests/unit/voz/test_tom_no_laco.py`): o «sim» incerto com tom de pergunta continua sem confirmar, e a análise atrasada (0,6 s) deixa o turno seguir sem tom.
+- **Persona v17**: «TOM DA VOZ. A nota [tom da voz do dono: …] muda só o jeito: não é ordem nem «sim», nem se comenta.» O «como reagir» vai na própria nota («; jeito: curto e calmo», «leve», «curto», «breve»), que só existe fora do neutro. O prompt de sistema foi de 15 979 a 15 998 caracteres (teto 16 000), sem tocar nas frases que os testes da persona fixam; a nota custa 0 caractere no neutro, 54 (16 tokens e5) no caso típico e 116 (35) no pior (`docs/medicoes/prompt-do-turno.md`).
+- **Configuração** (`jarvis-voz.toml`): `tom_de_voz` (padrão ligado; desligado, nada é medido e o `tom.json` nem é lido), `tom_dimensoes` (o que vai ao cérebro e à janela; dimensão desconhecida é erro), `tom_no_texto`, `tom_na_voz`. Os classificadores pesados nascem desligados (fatia E).
+- **Privacidade**, frente aos princípios da SPEC: P2 (nenhum tom dispara ação), P8 (`tom.json` apagável, só números, 0600), P12 (o dono liga e desliga). A trilha leva só códigos; o `--diagnostico`, só contagens; ao cérebro vai a linha de texto — se o cérebro é de nuvem, sai «gritando», nunca áudio. O Jev de endereçamento não recebe o tom. Detalhe e armadilhas: `docs/handoff/tom-de-voz.md`; roteiro do dono: `docs/COMO-TESTAR.md` §0.52.
+
 ## Alternativas descartadas
 
 - **Só subida final** como pergunta: é o europeu; no PB erra a pergunta com palavra final paroxítona.

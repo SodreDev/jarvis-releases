@@ -285,6 +285,8 @@ class Ponte(QObject):
         self._modelo = ModeloDeModulos(self)
         self._sessao: SessaoDeVoz | None = None
         self._estado = Estado.PARADO
+        self._tom_da_voz = ""
+        """O tom do último turno (ADR-0058), curto: o indicador ao lado do estado."""
         self._transcricao: list[dict[str, str]] = self._transcricao_salva()
         self._avisos_dados: set[str] = set()  # privacidade já dita: só uma vez por execução
         self._diagnostico = ""
@@ -357,6 +359,11 @@ class Ponte(QObject):
     @Property(str, notify=conversaMudou)
     def estadoFrase(self) -> str:
         return self._estado.frase
+
+    @Property(str, notify=conversaMudou)
+    def tomDaVoz(self) -> str:
+        """«entonação de pergunta · voz baixa» — vazio no neutro (ADR-0058)."""
+        return self._tom_da_voz
 
     @Property(bool, notify=conversaMudou)
     def processando(self) -> bool:
@@ -741,6 +748,7 @@ class Ponte(QObject):
             ao_pedaco=self.respostaParcial.emit,
             ao_pedir_confirmacao=self._pedir_confirmacao,
             ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,
+            ao_tom=self._mudar_tom,
             escuta=self._escuta,
             avisos_dados=self._avisos_dados,
             conversa=self._conversa,
@@ -1122,6 +1130,11 @@ class Ponte(QObject):
     def _mudar_estado(self, estado: Estado) -> None:
         self._estado = estado
         self.conversaMudou.emit()
+
+    def _mudar_tom(self, tom: str) -> None:
+        if tom != self._tom_da_voz:
+            self._tom_da_voz = tom
+            self.conversaMudou.emit()
 
     def _transcricao_salva(self) -> list[dict[str, str]]:
         """A conversa de antes, do histórico persistente, no formato da tela (ADR-0026).

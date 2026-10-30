@@ -99,6 +99,11 @@ Rectangle {
         Rotulo { text: ponte ? ponte.modoFrase : ""; destaque: true }
         Rectangle { width: 1; height: 12; color: Tema.linha; anchors.verticalCenter: parent.verticalCenter }
         Rotulo { text: ponte ? ponte.estadoFrase : "" }
+        // O tom de voz do último turno (ADR-0058): só aparece quando fugiu do neutro.
+        Rotulo {
+            visible: ponte && ponte.tomDaVoz !== ""
+            text: ponte ? "· " + ponte.tomDaVoz : ""
+        }
         // O microfone como a fonte **está** (arquivo do F1-13) e o modo de escuta vivo
         // (ADR-0021). Mora no núcleo quando ele é grande; quando encolhe, sobe para cá —
         // um lugar só de cada vez, para não repetir a mesma frase na tela.
