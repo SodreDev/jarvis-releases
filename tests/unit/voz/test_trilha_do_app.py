@@ -3,16 +3,17 @@ dono disse, do que a ferramenta devolveu, nem dos valores dos argumentos."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 from jarvis.audio_io.playback import FilaDePlayback
 from jarvis.audio_io.sumidouros import SumidouroEmMemoria
-from jarvis.s2.motor import Contexto, PedidoDeTool, Raciocinio
+from jarvis.s2.motor import Contexto, Delta, Fim, Modo, MotivoDoFim, PedidoDeTool, Raciocinio
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.trilha import ARQUIVO, eventos_do_ultimo_turno, resumo_do_ultimo_turno
 from jarvis.voz.app import PASTA_DA_TRILHA, Aplicativo
 from jarvis.voz.config import Configuracao
+from jarvis.voz.interface import Cancelado, Onde
 
 
 def _esperar_as_tarefas(app: Aplicativo) -> None:
@@ -107,3 +108,46 @@ def test_do_raciocinio_a_trilha_guarda_so_o_tamanho(tmp_path: Path) -> None:
     assert any(
         "raciocínio 43 car. (não falado)" in linha for linha in resumo_do_ultimo_turno(pasta)
     )
+
+
+class _MotorQueRecusa:
+    """O preset que não pode rodar (o Groq desligado nesta sessão): o turno acaba em `Fim(ERRO)`."""
+
+    nome = "Groq · openai/gpt-oss-20b"
+    codigo = "conversa-groq/openai/gpt-oss-20b"
+    aceita_imagem = False
+
+    @property
+    def onde(self) -> Onde:
+        return Onde.NUVEM
+
+    def gerar(self, contexto: Contexto, modo: Modo, cancelado: Cancelado) -> Iterator[Delta]:
+        yield Fim(
+            MotivoDoFim.ERRO,
+            "o preset «rápido» não pode rodar: motor 'conversa-groq' é de nuvem e está desligado",
+        )
+
+
+def test_o_motivo_do_motor_que_recusou_fica_na_trilha_com_o_codigo_do_motor(
+    tmp_path: Path,
+) -> None:
+    """Na trilha do dono (2026-10-30) cinco turnos acabaram em `fim: erro` com `erro: ""` e o motor
+    `[fora_da_forma]`: não dava para saber que provedor recusou nem por quê."""
+    app = Aplicativo(
+        configuracao=Configuracao(tts="tts-parametrico", s2="eco"),
+        raiz=tmp_path / "sessao",
+        escrever_na_tela=lambda _: None,
+        ambiente={"CI": "1", "JARVIS_AUDIO_BACKEND": "arquivo"},
+        lar=tmp_path / "casa",
+    )
+    app.abrir(com_asr=False)
+    app._motor = _MotorQueRecusa()  # type: ignore[assignment]
+    fila = FilaDePlayback(sumidouro=SumidouroEmMemoria(), session_id=app.session_id)
+
+    app.responder("oi", fila=fila)
+
+    eventos = {e["evento"]: e for e in eventos_do_ultimo_turno(app.raiz / PASTA_DA_TRILHA)}
+    assert eventos["turno.inicio"]["motor"] == "conversa-groq/openai/gpt-oss-20b"
+    fim = eventos["turno.fim"]
+    assert fim["fim"] == "erro"
+    assert "é de nuvem e está desligado" in fim["erro"]

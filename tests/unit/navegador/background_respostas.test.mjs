@@ -280,3 +280,16 @@ test("página sem o conteúdo da extensão ou sem resposta é indisponível, nã
     assert.equal(resposta.error.codigo, "pagina_indisponivel");
   }
 });
+
+test("ponte.versao diz a versão do contrato e as permissões, sem tocar em aba nem página", async () => {
+  const cenario = carregar(() => {
+    throw new Error("a pergunta de versão não pode chegar à página");
+  });
+
+  const resposta = await pedir(cenario, { id: "j1-9", method: "ponte.versao", params: {} });
+
+  assert.equal(resposta.ok, true);
+  assert.equal(resposta.result.versao, 2);
+  assert.deepEqual(resposta.result.permissoes, { debugger: false, scripting: false });
+  assert.equal(cenario.enviadas.length, 0);
+});

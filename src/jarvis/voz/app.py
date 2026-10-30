@@ -530,6 +530,7 @@ class Aplicativo:
     ambiente; a janela passa a fonte dela, para o que ela grava ser o que o cérebro lê."""
     _vocabulario_lido: Vocabulario = field(default=VAZIO, repr=False)
     _vocabulario_carregado: bool = field(default=False, repr=False)
+    _extensao_conferida: bool = field(default=False, repr=False)
     vigia: VigiaDeInterrupcao | None = field(default=None, repr=False)
     """Ouve o dono enquanto o Jarvis fala, para ele interromper por voz (ADR-0040): na palavra de
     ativação e na escuta contínua. Montada em `rodar_audio` (`interromper_por_voz`, ligado por
@@ -754,6 +755,28 @@ class Aplicativo:
             self.raiz / "area" / "alarmes.json", self._alarme_disparou
         )
         self._aquecer()
+        self._conferir_a_extensao_em_segundo_plano()
+
+    def _conferir_a_extensao_em_segundo_plano(self) -> None:
+        """Uma vez por sessão, fora da linha da voz e da janela: a extensão conectada é da versão
+        deste Jarvis? A cópia de antes (o navegador não a recarregou depois da atualização) fazia
+        as ferramentas novas falharem uma a uma, sem ninguém dizer por quê (dono, 2026-10-30:
+        «o Jarvis não sabe mais usar a extensão»). Aqui o dono lê, na tela e no card, o que
+        fazer."""
+        if self._extensao_conferida or not self.configuracao.navegador_controlado:
+            return
+        self._extensao_conferida = True
+
+        def conferir() -> None:
+            try:
+                estado = self.estado_do_navegador()
+            except Exception:  # conferir é ajuda: nunca derruba a sessão
+                return
+            if estado.conectado and estado.desatualizada:
+                self.escrever_na_tela(f"  (navegador: {estado.desatualizada})")
+                self.registrar_aviso("falhou", "navegador", estado.desatualizada)
+
+        threading.Thread(target=conferir, name="jarvis-versao-da-extensao", daemon=True).start()
 
     def _alarme_disparou(self, alarme: Alarme) -> None:
         """Um lembrete venceu: entra pela fila de avisos (ADR-0025) — o Jarvis decide como dizê-lo,
@@ -1589,6 +1612,7 @@ class Aplicativo:
             navegadores=separar(self.configuracao.navegadores),
             transporte=self._transporte_do_navegador(),
             home=self.lar,
+            conferir_versao=True,
         )
 
     def _controle_de_entrada(self) -> ControleDeEntrada | None:
@@ -1806,7 +1830,10 @@ class Aplicativo:
         parar_geracao = threading.Event()
         turn_id = f"t-{uuid7()}"
         self.trilha.novo_turno(
-            turn_id, motor=self._motor.nome, epoch=epoch, caracteres_do_pedido=len(texto)
+            turn_id,
+            motor=getattr(self._motor, "codigo", "") or type(self._motor).__name__,
+            epoch=epoch,
+            caracteres_do_pedido=len(texto),
         )
 
         def geracao_cancelada() -> bool:
@@ -1984,7 +2011,15 @@ class Aplicativo:
             caracteres_so_na_tela=len(resposta.so_na_tela) if resposta else 0,
             resultados_podados=resposta.resultados_podados if resposta else 0,
             objetivo=resposta.estado_do_objetivo if resposta else "",
-            erro=falha[0] if falha else "",
+            # O motivo do motor que acabou em erro (o preset que não pode rodar, a CLI que saiu
+            # com código): antes ia só à tela e a trilha ficava com `erro: ""` (2026-10-30).
+            erro=falha[0]
+            if falha
+            else (
+                resposta.detalhe
+                if resposta is not None and resposta.fim in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO)
+                else ""
+            ),
             # As etapas da velocidade (ADR-0045): só tempos e códigos.
             ms_ouvido=ms_ouvido,
             ms_asr=ms_asr,

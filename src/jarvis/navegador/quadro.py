@@ -62,7 +62,11 @@ def ler_quadro(fluxo: Leitor, limite: int) -> dict[str, Any] | None:
 
 
 def codificar(objeto: dict[str, Any], limite: int) -> bytes:
-    corpo = json.dumps(objeto, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    # `replace`: o JSON do Firefox traz o surrogate solto (o emoji cortado ao meio pelo `slice` do
+    # texto da página) e o `utf-8` estrito derrubava o quadro inteiro — no host, a conexão fechava
+    # sem resposta; no Jarvis, o `stdin` do motor. O caractere quebrado vira `?`, o resto passa.
+    texto = json.dumps(objeto, ensure_ascii=False, separators=(",", ":"))
+    corpo = texto.encode("utf-8", "replace")
     if len(corpo) > limite:
         raise QuadroInvalido(f"mensagem de {len(corpo)} bytes passa do limite de {limite}")
     return CABECALHO.pack(len(corpo)) + corpo

@@ -33,6 +33,8 @@ from jarvis.navegador.protocolo import (
     LIMITE_DA_RESPOSTA,
     LIMITE_DO_PEDIDO,
     ORIGEM_CHROMIUM,
+    VERSAO_DA_PONTE,
+    VERSAO_DO_HOST,
     PedidoDaPonte,
     PedidoInvalido,
     validar_evento,
@@ -50,6 +52,9 @@ PRAZO_PARA_RESPONDER_S: Final = 2.0
 resposta antes de derrubar a conexão. Normalmente leva milissegundos; o teto só cobre um Jarvis
 que parou de ler."""
 SUBPASTA: Final = Path("jarvis") / "navegador"
+INICIADO_EM: Final = time.time()
+"""Quando este host nasceu (o navegador o lança ao conectar a extensão): o diagnóstico mostra a
+idade — host velho de antes de uma atualização é a primeira suspeita quando o método novo falha."""
 
 
 def pasta_dos_sockets(ambiente: Mapping[str, str], uid: int) -> Path:
@@ -196,7 +201,10 @@ def atender(
                         ao_assinar(conexao)
                     _assinar(conexao, fluxo, pedido, ponte)
                     return
-                resposta = ponte.pedir(pedido)
+                if pedido.method == VERSAO_DO_HOST:
+                    resposta = versao_do_host(pedido.id)
+                else:
+                    resposta = ponte.pedir(pedido)
             except (QuadroInvalido, PedidoInvalido) as erro:
                 resposta = erro_da_ponte(None, "pedido_invalido", str(erro))
             escrever_quadro(fluxo, resposta, LIMITE_DA_RESPOSTA)
@@ -205,6 +213,16 @@ def atender(
     finally:
         with contextlib.suppress(OSError):
             conexao.close()
+
+
+def versao_do_host(identificador: str) -> dict[str, Any]:
+    """`host.versao`: respondida aqui, sem ir à extensão — o contrato que este host conhece, o pid e
+    quando nasceu. Nada do navegador nem da página."""
+    return {
+        "id": identificador,
+        "ok": True,
+        "result": {"versao": VERSAO_DA_PONTE, "pid": os.getpid(), "iniciado_em": INICIADO_EM},
+    }
 
 
 def _assinar(conexao: socket.socket, fluxo: Any, pedido: PedidoDaPonte, ponte: Ponte) -> None:

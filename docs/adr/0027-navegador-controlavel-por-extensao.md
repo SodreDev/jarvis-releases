@@ -326,3 +326,60 @@ desenho todo, a causa e a prova estão na emenda (2) da ADR-0036):
   `nova_aba`) vai por ela, e «abre o navegador» traz a janela do dono para a frente; sem extensão,
   o processo do navegador rodando também conta como aberto. O binário só é executado sem nenhum dos
   dois — antes, o `sites.open` com `nova_aba` o executava com a URL mesmo com o navegador aberto.
+
+## Emenda de 2026-10-30 — a ponte que não prende o Jarvis: versão, prazo por método, cancelamento e diagnóstico
+
+**Pedido:** dono, 2026-10-30, depois de testar os pacotes de 30/10 — «o app trava» e «o Jarvis não
+sabe mais usar a extensão».
+
+**Medido na trilha dele (só códigos, `~/.local/state/jarvis/voz/diagnostico/turnos.jsonl`, 30/10):**
+10 turnos; 5 acabaram em `fim: erro` com `erro: ""` em 38–1226 ms e 0 ferramenta, todos com o motor
+`[fora_da_forma]`; 3 tarefas do navegador acabaram em `entrega: falha` 4–7 s depois de passos que
+tinham dado certo (`browser.navigate` ok, `browser.read` ok); o 1º token do cérebro foi de p50
+8,4 s (p50 2,6 s no dia 29). Nenhuma `ferramenta.inicio` sem fim e nenhum `cerebro_preso`: **não
+houve chamada da ponte pendurada nesse dia**. O que havia: (a) a trilha jogava fora o motivo do erro
+do motor e o nome do motor (a forma `CODIGO` não aceita «Groq · …») — ninguém sabia o que tinha
+recusado; (b) a ponte não tinha como dizer se a extensão carregada era a de antes (o manifesto
+ficou em 0.1.1 depois do CDP da ADR-0051, e a extensão de antes responde `metodo_invalido`, que o
+modelo ouvia como «a página não deixou»); (c) toda chamada esperava até 30 s no socket, sem largar
+quando o dono cortava — risco de prender o laço e a voz com uma extensão travada. As causas dos
+erros do motor e das tarefas que caíram são da ADR-0056 e da ADR-0038 (emendas desta data).
+
+**Decisão:**
+
+1. **Versão da ponte.** `VERSAO_DA_PONTE = 2` em `protocolo.py` e em `background.js` (o teste
+   confere que são iguais); manifesto 0.2.0. `ponte.versao` é respondido pela extensão (versão,
+   manifesto, se tem `debugger`/`scripting`) e `host.versao` pelo próprio host (versão, pid, quando
+   nasceu) — nenhuma aba nem página é tocada. `ClienteDoNavegador.versao()` pergunta as duas;
+   quem é de antes não conhece o método e isso é a resposta. `VersaoDaPonte.o_que_fazer()` dá a
+   frase: extensão de antes → «abra a página de extensões, clique em Recarregar no card do Jarvis»;
+   host de antes → recarregar (o navegador relança o host); sem a permissão do CDP → recarregar e
+   aceitar.
+2. **O estado diz.** `sondar(..., conferir_versao=True)` (o `browser.estado`, o `--diagnostico` e a
+   conferência do app) põe a versão em `para_o_modelo` (`versao_em_dia`) e o «recarregue» em
+   `o_que_fazer`, primeiro da lista. O app confere **uma vez por sessão**, numa linha à parte, e
+   escreve na tela e no card quando está desatualizada. Método novo que a extensão de antes não
+   conhece vira `ExtensaoDesatualizada` (não «a página não deixou»), e a tarefa acaba com a frase de
+   recarregar em vez de gastar tentativas (ADR-0038, emenda desta data).
+3. **Prazo por método e cancelamento.** `prazo_do_metodo`: 8 s para o que só consulta a extensão
+   ou age num elemento já na página (`tabs.list`, `page.read`, `page.click`…), 25 s + 5 de margem
+   para o que espera a página (`tabs.navigate`, `tabs.open`, `page.readUrl`, `page.capture`,
+   `page.gesture`, `page.eval`). A espera é em fatias de 100 ms (`AssinaturaUnix` lê o quadro), e o
+   `cancelado` do turno ou da tarefa — passado por `ClienteDoNavegador.sob(concessao, cancelado)`
+   — larga a espera na hora (`ChamadaCancelada`, que o executor devolve como `cancelado`, nunca
+   como falha). O host mantém o prazo dele.
+4. **Surrogate solto.** O quadro (`quadro.codificar`) e o `stdin` do `claude -p` codificam com
+   `replace`: o emoji cortado ao meio pelo `slice` do texto da página (o Firefox o manda como
+   surrogate solto) derrubava a conexão no host e a rodada do motor, sem dizer por quê.
+5. **Diagnóstico que o dono roda e cola.** `uv run --frozen python tools/diagnostico_navegador.py`
+   mostra a configuração do navegador, a instalação (manifestos, stub, cópia da extensão × a do
+   repositório), os sockets (vivo/morto), os processos de host (pid, idade, quem lançou, zumbi,
+   repetido por família), a versão em cada host vivo com o tempo da pergunta, os últimos turnos da
+   trilha (só códigos) e **o que fazer**, em ordem. Só lê.
+
+**Alternativas descartadas:** subir só o `version` do manifesto (a extensão não se mostra ao host);
+o host recusar a extensão de antes (o dono ficaria sem nada — a de antes ainda navega e lê);
+um prazo único menor (navegar numa página lenta leva mais de 8 s: 7,2 s medidos na trilha dele).
+
+**Não provado:** o Brave do dono com a extensão que está carregada nele (o diagnóstico é para ele
+rodar); o tempo real de `ponte.versao` no Brave (nos testes, milissegundos).

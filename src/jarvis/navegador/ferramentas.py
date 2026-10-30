@@ -20,7 +20,9 @@ from jarvis.imagem import CHAVE_DOS_ANEXOS, ImagemInvalida, da_url_de_dados
 from jarvis.navegador import risco
 from jarvis.navegador.cliente import (
     SEM_ABA,
+    ChamadaCancelada,
     ClienteDoNavegador,
+    ExtensaoDesatualizada,
     NavegadorFalhou,
     NavegadorIndisponivel,
 )
@@ -325,7 +327,7 @@ class CorposDoNavegador:
     ) -> dict[str, Any]:
         trabalho = self.trabalho(objetivo)
         concessao = None if tool_id == "browser.tabs" else self._sob_controle(objetivo, trabalho)
-        self._local.cliente = self._base.sob(concessao)
+        self._local.cliente = self._base.sob(concessao, cancelado)
         try:
             if tool_id == "browser.tabs":
                 return self._abas()
@@ -366,6 +368,9 @@ class CorposDoNavegador:
                 if concessao is not None:
                     self.controle.confirmar(concessao)
                 return resultado
+        except ExtensaoDesatualizada as erro:
+            # A cópia de antes no navegador: tentar de novo dá o mesmo — o dono recarrega.
+            raise ValueError(f"extensão desatualizada ({erro.codigo}): {erro.mensagem}") from None
         except NavegadorFalhou as erro:
             if erro.codigo == PARADO_PELO_DONO and concessao is not None:
                 # O dono apertou PARAR: a extensão recusou e o turno (ou a tarefa) para junto.
@@ -379,6 +384,8 @@ class CorposDoNavegador:
             raise ValueError(
                 f"a página não deixou ({erro.codigo}): {erro.mensagem or erro.codigo}"
             ) from None
+        except ChamadaCancelada:
+            raise  # o executor devolve "cancelado": não é falha da página nem da extensão
         except NavegadorIndisponivel as erro:
             raise ValueError(str(erro)) from None
         finally:

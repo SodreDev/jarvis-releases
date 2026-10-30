@@ -21,18 +21,24 @@ import json
 import os
 import shlex
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
-from jarvis.navegador.cliente import TransporteUnix, familia_do_host
+from jarvis.navegador.cliente import (
+    ClienteDoNavegador,
+    NavegadorIndisponivel,
+    TransporteUnix,
+    VersaoDaPonte,
+    familia_do_host,
+)
 from jarvis.navegador.instalar import (
     STUB_NO_USUARIO,
     Destino,
     destinos_do_sistema,
     destinos_do_usuario,
 )
-from jarvis.navegador.protocolo import NOME_DO_HOST
+from jarvis.navegador.protocolo import NOME_DO_HOST, VERSAO_DA_PONTE
 
 SITUACOES: Final = ("desligado", "sem_conexao", "conectado")
 COMO_LIGAR: Final = (
@@ -126,6 +132,21 @@ class EstadoDaPonte:
     manifestos: tuple[Manifesto, ...]
     em_flatpak: bool = False
     """O principal configurado é um Flatpak (o Native Messaging não sai da caixa de areia)."""
+    versao: VersaoDaPonte | None = None
+    """A versão do host e da extensão no ar (`sondar(..., conferir_versao=True)` com a extensão
+    conectada); `None` = não conferida."""
+    falha_da_versao: str = ""
+    """Conectada, mas a pergunta da versão não voltou (a extensão travou, o host caiu)."""
+
+    @property
+    def desatualizada(self) -> str:
+        """Vazio se a versão está em dia (ou não foi conferida); senão, o que o dono faz."""
+        if self.falha_da_versao:
+            return (
+                f"a extensão está conectada mas não respondeu ({self.falha_da_versao}): recarregue "
+                "a extensão do Jarvis na página de extensões do navegador"
+            )
+        return self.versao.o_que_fazer() if self.versao is not None else ""
 
     @property
     def familia(self) -> str:
@@ -161,6 +182,11 @@ class EstadoDaPonte:
                 "O controle do navegador está desligado na configuração do Jarvis, e nenhuma "
                 "extensão do Jarvis está conectada agora."
             )
+        if self.conectado and self.desatualizada:
+            return (
+                f"A extensão do Jarvis está conectada no {onde}, mas precisa de atenção: "
+                f"{self.desatualizada}."
+            )
         if self.conectado:
             return f"Conectado: a extensão do Jarvis está ativa no {onde} e as browser.* funcionam."
         no_principal = f" no {self.principal}" if self.principal else ""
@@ -175,6 +201,8 @@ class EstadoDaPonte:
         if not self.ligado:
             passos.append(COMO_LIGAR)
         if self.conectado:
+            if self.desatualizada:
+                passos.append(self.desatualizada)
             return tuple(passos)
         if self.em_flatpak:
             passos.append(
@@ -219,6 +247,18 @@ class EstadoDaPonte:
             "navegador_principal": self.principal,
             "frase": self.frase(),
             "o_que_fazer": list(self.o_que_fazer()),
+            **self._versao_para_o_modelo(),
+        }
+
+    def _versao_para_o_modelo(self) -> dict[str, Any]:
+        if self.versao is None and not self.falha_da_versao:
+            return {}
+        versao = self.versao
+        return {
+            "versao_esperada": VERSAO_DA_PONTE,
+            "versao_da_extensao": versao.extensao if versao is not None else None,
+            "versao_do_host": versao.host if versao is not None else None,
+            "versao_em_dia": not self.desatualizada,
         }
 
     def linhas(self) -> list[str]:
@@ -234,11 +274,34 @@ class EstadoDaPonte:
             f"  host nativo instalado para: {', '.join(prontos) or 'nenhum navegador'}"
             + (f"; quebrado em: {', '.join(quebrados)}" if quebrados else ""),
         ]
+        if self.versao is not None or self.falha_da_versao:
+            linhas.append(f"  versão da ponte: {self.linha_da_versao()}")
         passos = self.o_que_fazer()
         if passos:
             linhas.append("  o que fazer:")
             linhas.extend(f"    - {passo}" for passo in passos)
         return linhas
+
+    def linha_da_versao(self) -> str:
+        if self.falha_da_versao:
+            return f"sem resposta ({self.falha_da_versao})"
+        versao = self.versao
+        if versao is None:
+            return "não conferida"
+
+        def numero(valor: int | None) -> str:
+            return str(valor) if valor is not None else "de antes da pergunta de versão"
+
+        texto = (
+            f"esperada {VERSAO_DA_PONTE}; extensão {numero(versao.extensao)}"
+            + (f" (manifesto {versao.manifesto})" if versao.manifesto else "")
+            + f"; host {numero(versao.host)}"
+            + (f" (pid {versao.pid_do_host})" if versao.pid_do_host is not None else "")
+        )
+        faltam = [p for p in ("debugger", "scripting") if versao.permissoes.get(p) is False]
+        if faltam:
+            texto += f"; sem a permissão: {', '.join(faltam)}"
+        return texto + (" — em dia" if not self.desatualizada else "")
 
 
 def sondar(
@@ -249,14 +312,27 @@ def sondar(
     transporte: TransporteUnix | None = None,
     home: Path | None = None,
     raiz_do_sistema: Path = Path("/"),
+    conferir_versao: bool = False,
 ) -> EstadoDaPonte:
     """O estado agora. `navegadores` é a configuração separada (`família → caminho`): é por ela
-    que se sabe se o principal é um Flatpak."""
+    que se sabe se o principal é um Flatpak. `conferir_versao` pergunta ao host e à extensão
+    conectados qual contrato eles conhecem (`host.versao`, `ponte.versao`) — nenhuma aba nem
+    página é tocada, e a pergunta tem o prazo curto do método."""
     entrada = (navegadores or {}).get(principal, "")
-    return EstadoDaPonte(
+    canal = transporte or TransporteUnix()
+    estado = EstadoDaPonte(
         ligado=ligado,
         principal=principal,
-        vivos=(transporte or TransporteUnix()).vivos(),
+        vivos=canal.vivos(),
         manifestos=manifestos(home or Path.home(), raiz_do_sistema),
         em_flatpak="/flatpak/" in entrada or entrada.startswith("flatpak"),
     )
+    if not conferir_versao or not estado.conectado:
+        return estado
+    cliente = ClienteDoNavegador(canal)
+    cliente.navegador = estado.familia
+    try:
+        versao = cliente.versao()
+    except (NavegadorIndisponivel, RuntimeError) as erro:
+        return replace(estado, falha_da_versao=str(erro)[:160] or type(erro).__name__)
+    return replace(estado, versao=versao)

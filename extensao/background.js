@@ -5,6 +5,12 @@
 
 const api = globalThis.browser ?? globalThis.chrome;
 const NATIVE_HOST = "br.com.granafacil.jarvis";
+// A versão da ponte (o contrato de métodos com o Jarvis). Sobe a cada método novo: o Jarvis
+// pergunta `ponte.versao` e, com a extensão de antes (que nem conhece o método, ou devolve um
+// número menor), diz ao dono para recarregá-la — em vez de ver as ferramentas novas falharem
+// uma a uma (dono, 2026-10-30: «o Jarvis não sabe mais usar a extensão»). Igual a
+// `VERSAO_DA_PONTE` em src/jarvis/navegador/protocolo.py (o teste confere).
+const VERSAO_DA_PONTE = 2;
 const MAX_ID = 80;
 const MAX_URL = 2_048;
 const RECONNECT_BASE_MS = 250;
@@ -1007,6 +1013,19 @@ async function gestoNaAba(params) {
   return { feito: true, gesto };
 }
 
+function versaoDaPonte() {
+  // Só o que a própria extensão sabe de si: nenhuma aba, página ou dado do dono.
+  const manifesto = api.runtime.getManifest ? api.runtime.getManifest() : {};
+  return {
+    versao: VERSAO_DA_PONTE,
+    manifesto: typeof manifesto.version === "string" ? manifesto.version : "",
+    permissoes: {
+      debugger: Boolean(api.debugger),
+      scripting: Boolean(api.scripting),
+    },
+  };
+}
+
 async function executar(method, params) {
   if (!COM_CONTROLE.has(method)) {
     return executarSemControle(method, params);
@@ -1043,6 +1062,8 @@ async function executarSemControle(method, params, concessao) {
       return { paradas: revogarTudo() };
     case "controle.estado":
       return estadoDoControle();
+    case "ponte.versao":
+      return versaoDaPonte();
     case "windows.focused":
       return focoAtual();
     case "tabs.list": {

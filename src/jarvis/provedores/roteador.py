@@ -17,6 +17,7 @@ das capacidades conhecidas: não informado não conta.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -100,6 +101,16 @@ class MotorDosPresets:
             return motor.nome
         preset = self.fonte.atuais().ativo(Papel.CEREBRO)
         return f"preset «{preset.nome}» (não pode rodar)" if preset else "nenhum preset ativo"
+
+    @property
+    def codigo(self) -> str:
+        """O preset ativo do cérebro como código para a trilha (`conversa-groq/openai/gpt-oss-20b`):
+        o `nome` é frase de gente («Groq · …»), e a trilha só aceita código — era sempre
+        `[fora_da_forma]`, e não se sabia que provedor tinha rodado (2026-10-30)."""
+        preset = self.fonte.atuais().ativo(Papel.CEREBRO)
+        if preset is None:
+            return "sem_preset"
+        return re.sub(r"[^\w.:/-]", "_", f"{preset.provedor}/{preset.modelo or 'padrao'}")[:64]
 
     @property
     def onde(self) -> Onde:

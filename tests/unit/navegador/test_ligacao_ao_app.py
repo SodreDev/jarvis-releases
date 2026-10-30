@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from jarvis.navegador.cliente import familia_do_host
+from jarvis.navegador.protocolo import VERSAO_DA_PONTE
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.config import Configuracao, escrever, ler
 from tests.unit.navegador.test_host import Navegador
@@ -73,6 +74,9 @@ def test_ligado_as_tools_falam_com_o_host_do_ambiente_do_app_e_nao_com_o_do_dono
         if pedido["method"] == "windows.focused":  # a lista diz qual aba está à vista
             foco = {"janelaId": 1, "abaAtivaId": 5, "janelaDoJarvisId": None, "janelaDoDonoId": 1}
             return {"id": pedido["id"], "ok": True, "result": foco}
+        if pedido["method"] == "ponte.versao":  # o estado da ponte confere a versão (2026-10-30)
+            versao = {"versao": VERSAO_DA_PONTE, "manifesto": "0.2.0", "permissoes": {}}
+            return {"id": pedido["id"], "ok": True, "result": versao}
         assert pedido["method"] == "tabs.list"
         return {"id": pedido["id"], "ok": True, "result": {"abas": [aba]}}
 
@@ -98,7 +102,12 @@ def test_ligado_as_tools_falam_com_o_host_do_ambiente_do_app_e_nao_com_o_do_dono
     assert abas.dados["abas"][0]["dominio"] == "exemplo.org"
     assert estado.dados["situacao"] == "conectado"
     assert abas.dados["abas"][0]["estado"] == "à vista"
-    assert [p["method"] for p in navegador.recebidos] == ["tabs.list", "windows.focused"]
+    assert [p["method"] for p in navegador.recebidos] == [
+        "tabs.list",
+        "windows.focused",
+        "ponte.versao",
+    ]
+    assert estado.dados["versao_da_extensao"] == VERSAO_DA_PONTE
 
 
 def test_o_que_o_dono_grava_volta_igual(tmp_path: Path) -> None:

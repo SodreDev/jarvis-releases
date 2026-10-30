@@ -306,6 +306,10 @@ class MotorClaudeCli:
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
+                # O caractere que o UTF-8 não codifica (o surrogate solto de um nome de arquivo ou
+                # de um emoji cortado ao meio) vira `?`: no estrito, a escrita no `stdin` falhava
+                # calada e a rodada inteira acabava em erro.
+                errors="replace",
                 cwd=self.pasta_de_trabalho,
                 env=self.ambiente_do_filho(),
             )
@@ -353,7 +357,12 @@ class MotorClaudeCli:
             except queue.Empty:
                 continue
             if linha is _FIM_DA_LEITURA:
-                processo.wait(timeout=ESPERA_DO_PROCESSO_MORTO_S)
+                try:
+                    processo.wait(timeout=ESPERA_DO_PROCESSO_MORTO_S)
+                except subprocess.TimeoutExpired:
+                    # A leitura acabou e o processo seguiu vivo (a escrita do `stdin` falhou): o
+                    # `TimeoutExpired` subia como exceção e derrubava o turno ou a tarefa.
+                    processo.kill()
                 detalhe = "".join(erro).strip()[:200] or "saiu sem o evento de fim"
                 yield Fim(MotivoDoFim.ERRO, f"código {processo.returncode}: {detalhe}")
                 return
@@ -429,6 +438,13 @@ def _escrever_e_ler(
     try:
         processo.stdin.write(texto)
         processo.stdin.close()
+    except (OSError, ValueError) as falha:
+        # Não deu para entregar a conversa (processo morto, entrada que não codifica): o motivo
+        # vai no fim da rodada, em vez do "saiu sem o evento de fim" de antes.
+        erro.append(f"não deu para mandar a conversa ao motor ({type(falha).__name__}). ")
+        linhas.put(_FIM_DA_LEITURA)
+        return
+    try:
         for linha in processo.stdout:
             linhas.put(linha)
     except (OSError, ValueError):

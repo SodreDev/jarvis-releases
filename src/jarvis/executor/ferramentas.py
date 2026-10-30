@@ -51,6 +51,7 @@ from jarvis.manifesto.validador import carregar_catalogo
 from jarvis.mcp.gestor import GestorMcp
 from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
 from jarvis.memoryd.livro import AlvoInexistente
+from jarvis.navegador.cliente import ChamadaCancelada
 from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.navegador.ferramentas import (
     FERRAMENTA_DE_CONFIRMACAO as CONFIRMACAO_DO_NAVEGADOR,
@@ -1238,7 +1239,7 @@ class ExecutorDeFerramentas:
                 dados = self._corpo(
                     tool_id, args, decisao.grant, caminho, cancelado, chamada, marca
                 )
-        except arquivos.Cancelada as erro:
+        except (arquivos.Cancelada, ChamadaCancelada) as erro:
             return ResultadoDeFerramenta(
                 tool_id, "cancelado", motivo=str(erro), call_id=chamada, causa="interrompido"
             )

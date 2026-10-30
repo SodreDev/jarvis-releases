@@ -13,7 +13,9 @@ import os
 import select
 import socket
 import stat
+import time
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Protocol
 
@@ -24,13 +26,18 @@ from jarvis.navegador.protocolo import (
     LIMITE_DA_RESPOSTA,
     LIMITE_DO_PEDIDO,
     MODO_AUTOMACAO_SOCIAL,
+    PRAZOS_CURTOS,
+    VERSAO,
+    VERSAO_DA_PONTE,
+    VERSAO_DO_HOST,
     PedidoDaPonte,
     PedidoInvalido,
+    prazo_do_metodo,
     validar_evento,
     validar_pedido,
     validar_resposta,
 )
-from jarvis.navegador.quadro import CABECALHO, QuadroInvalido, escrever_quadro, ler_quadro
+from jarvis.navegador.quadro import CABECALHO, QuadroInvalido, escrever_quadro
 
 
 def familia_do_host(principal: str) -> str:
@@ -44,6 +51,22 @@ def familia_do_host(principal: str) -> str:
 
 class NavegadorIndisponivel(RuntimeError):
     """Não há navegador com a extensão do Jarvis aberto (ou o host não respondeu)."""
+
+
+class ChamadaCancelada(NavegadorIndisponivel):
+    """O turno (ou a tarefa) foi cancelado com o pedido em voo: o Jarvis largou a espera na hora,
+    sem ficar preso no socket até o prazo — o que prendia o laço e a voz (dono, 2026-10-30)."""
+
+
+class SemResposta(NavegadorIndisponivel):
+    """A extensão não respondeu no prazo do método (`protocolo.prazo_do_metodo`)."""
+
+
+MARGEM_DO_HOST_S: Final = 5.0
+"""Nos pedidos longos o host tem o prazo dele (25 s) e responde `tempo_esgotado`: o Jarvis espera um
+pouco mais que ele, para ouvir esse código em vez de desistir junto."""
+FATIA_DA_ESPERA_S: Final = 0.1
+"""De quanto em quanto a espera confere o cancelamento."""
 
 
 SEM_ABA: Final = "sem_aba"
@@ -64,6 +87,90 @@ class NavegadorFalhou(RuntimeError):
         super().__init__(f"{codigo}: {mensagem}" if mensagem else codigo)
         self.codigo = codigo
         self.mensagem = mensagem
+
+
+METODO_DESCONHECIDO: Final = "metodo_invalido"
+"""O código da extensão para método que ela não conhece (`background.js`, `default` do `switch`)."""
+PEDIDO_INVALIDO: Final = "pedido_invalido"
+"""O código do host para pedido fora do vocabulário dele (o host de antes de um método novo)."""
+METODOS_DA_VERSAO_1: Final = frozenset(
+    {
+        "tabs.list",
+        "tabs.current",
+        "tabs.active",
+        "tabs.navigate",
+        "tabs.open",
+        "tabs.show",
+        "tabs.close",
+        "windows.focused",
+        "page.read",
+        "page.map",
+        "page.capture",
+        "page.readUrl",
+        "page.inspect",
+        "page.click",
+        "page.type",
+        "page.act",
+        "page.scroll",
+        "controle.soltar",
+        "controle.manter",
+        "controle.parar",
+        "controle.estado",
+    }
+)
+"""O que a extensão de antes do CDP já sabia: método fora daqui que ela não conhece é sinal de que
+o navegador está com a cópia velha carregada."""
+RECARREGAR: Final = (
+    "a extensão do Jarvis carregada no navegador é de uma versão anterior: abra a página de "
+    "extensões (brave://extensions, chrome://extensions ou about:debugging no Firefox), clique em "
+    "Recarregar no card do Jarvis e tente de novo"
+)
+"""A frase acionável para o dono e para o modelo (que não deve tentar o mesmo método de novo)."""
+
+
+class ExtensaoDesatualizada(NavegadorFalhou):
+    """A extensão no ar não conhece o método pedido: é a cópia de antes, sem recarregar."""
+
+    def __init__(self, metodo: str) -> None:
+        super().__init__("extensao_desatualizada", f"{metodo}: {RECARREGAR}")
+        self.metodo = metodo
+
+
+@dataclass(frozen=True, slots=True)
+class VersaoDaPonte:
+    """O que `ClienteDoNavegador.versao` descobriu: `None` = não respondeu à pergunta de versão
+    (é de antes dela)."""
+
+    host: int | None
+    extensao: int | None
+    manifesto: str = ""
+    pid_do_host: int | None = None
+    host_iniciado_em: float | None = None
+    permissoes: Mapping[str, bool] = field(default_factory=dict)
+    host_conhece: bool = False
+    extensao_conhece: bool = False
+
+    @property
+    def em_dia(self) -> bool:
+        return self.host == VERSAO_DA_PONTE and self.extensao == VERSAO_DA_PONTE
+
+    def o_que_fazer(self) -> str:
+        """Vazio se está tudo em dia; senão, a frase do que o dono faz."""
+        if self.em_dia and all(self.permissoes.get(p, False) for p in ("debugger", "scripting")):
+            return ""
+        if self.extensao is None or self.extensao < VERSAO_DA_PONTE:
+            return RECARREGAR
+        if self.host is None or self.host < VERSAO_DA_PONTE:
+            return (
+                "o host do navegador é de antes da atualização: recarregue a extensão do Jarvis "
+                "(o navegador relança o host) ou feche e abra o navegador"
+            )
+        if self.extensao > VERSAO_DA_PONTE or self.host > VERSAO_DA_PONTE:
+            return "a extensão é mais nova que este Jarvis: atualize o Jarvis e reinicie-o"
+        return (
+            "a extensão está sem a permissão de depuração (CDP): recarregue-a e aceite a permissão "
+            "nova, ou o console, a rede e os gestos ficam desligados"
+        )
 
 
 class Transporte(Protocol):
@@ -136,12 +243,28 @@ class TransporteUnix:
                 familias.append(familia)
         return tuple(familias)
 
-    def chamar(self, pedido: PedidoDaPonte, navegador: str = "") -> dict[str, Any]:
+    def prazo_de(self, metodo: str) -> float:
+        """Quanto esperar a resposta deste método: curto para o que só consulta a extensão, o do
+        host mais a margem para o que espera a página — nunca mais que o teto deste transporte."""
+        prazo = prazo_do_metodo(metodo)
+        if metodo not in PRAZOS_CURTOS:
+            prazo += MARGEM_DO_HOST_S
+        return min(prazo, self._prazo_s)
+
+    def chamar(
+        self,
+        pedido: PedidoDaPonte,
+        navegador: str = "",
+        *,
+        cancelado: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
         for caminho in self._soquetes(navegador):
             try:
-                return self._bater(caminho, pedido)
+                return self._bater(caminho, pedido, cancelado)
             except (ConnectionRefusedError, FileNotFoundError):
                 continue  # host morto que deixou o arquivo: tenta o próximo
+            except NavegadorIndisponivel:
+                raise
             except (OSError, QuadroInvalido, PedidoInvalido) as erro:
                 raise NavegadorIndisponivel(f"o host do navegador falhou: {erro}") from None
         quem = f" ({navegador})" if navegador else ""
@@ -175,16 +298,35 @@ class TransporteUnix:
             return assinatura
         raise NavegadorIndisponivel("nenhum navegador com a extensão do Jarvis está aberto")
 
-    def _bater(self, caminho: Path, pedido: PedidoDaPonte) -> dict[str, Any]:
+    def _bater(
+        self, caminho: Path, pedido: PedidoDaPonte, cancelado: Callable[[], bool] | None = None
+    ) -> dict[str, Any]:
+        """Um pedido, uma conexão. A resposta é esperada em fatias de `FATIA_DA_ESPERA_S`, com o
+        prazo do método e o cancelamento conferidos a cada uma: o laço nunca fica preso no socket
+        por uma extensão travada, e o "para" do dono vale na hora."""
+        prazo = self.prazo_de(pedido.method)
+        limite = time.monotonic() + prazo
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conexao:
-            conexao.settimeout(self._prazo_s)
+            conexao.settimeout(min(prazo, 2.0))
             conexao.connect(str(caminho))
-            with conexao.makefile("rwb") as fluxo:
-                escrever_quadro(fluxo, pedido.como_objeto(), LIMITE_DO_PEDIDO)
-                bruta = ler_quadro(fluxo, LIMITE_DA_RESPOSTA)
-        if bruta is None:
-            raise NavegadorIndisponivel("o host fechou sem responder")
-        return validar_resposta(bruta)
+            conexao.settimeout(min(prazo, 2.0))
+            with conexao.makefile("wb") as saida:
+                escrever_quadro(saida, pedido.como_objeto(), LIMITE_DO_PEDIDO)
+            espera = AssinaturaUnix(conexao)
+            while True:
+                if cancelado is not None and cancelado():
+                    raise ChamadaCancelada(f"{pedido.method}: cancelado com o pedido em voo")
+                falta = limite - time.monotonic()
+                if falta <= 0:
+                    raise SemResposta(
+                        f"a extensão não respondeu a {pedido.method} em {prazo:.0f} s"
+                    )
+                try:
+                    bruta = espera.quadro(min(FATIA_DA_ESPERA_S, falta))
+                except NavegadorIndisponivel as erro:
+                    raise NavegadorIndisponivel(f"o host fechou sem responder ({erro})") from None
+                if bruta is not None:
+                    return validar_resposta(bruta)
 
 
 class AssinaturaUnix:
@@ -263,6 +405,9 @@ class ClienteDoNavegador:
         """Para falar com um só (`firefox` | `chromium`); vazio = o que abriu por último."""
         self.concessao: str | None = None
         """O controle do objetivo que pediu (`sob`): vai em todo pedido que mexe numa aba."""
+        self.cancelado: Callable[[], bool] | None = None
+        """O cancelamento de quem fala por este cliente (o turno, a tarefa): com ele, o pedido em
+        voo é largado na hora em que o dono corta — sem ele, a espera vai até o prazo do método."""
         self.automacao_social = False
         """O gancho da automação de redes sociais, e-mail e agenda (com digitação humanizada, que
         ainda não existe): o **único** caminho para a janela própria do Jarvis (ADR-0036, emenda de
@@ -276,12 +421,16 @@ class ClienteDoNavegador:
     def transporte(self) -> Transporte:
         return self._transporte
 
-    def sob(self, concessao: str | None) -> ClienteDoNavegador:
+    def sob(
+        self, concessao: str | None, cancelado: Callable[[], bool] | None = None
+    ) -> ClienteDoNavegador:
         """O mesmo cliente (transporte, navegador e ids) falando em nome de uma concessão de
-        controle: cada linha (o turno, cada tarefa) usa a sua cópia, sem disputar um atributo."""
+        controle e com o cancelamento de quem pede: cada linha (o turno, cada tarefa) usa a sua
+        cópia, sem disputar um atributo."""
         copia = ClienteDoNavegador(self._transporte, novo_id=self._novo_id)
         copia.navegador = self.navegador
         copia.concessao = concessao
+        copia.cancelado = cancelado or self.cancelado
         copia.automacao_social = self.automacao_social
         return copia
 
@@ -298,7 +447,11 @@ class ClienteDoNavegador:
                 "params": {k: v for k, v in params.items() if v is not None},
             }
         )
-        resposta = self._transporte.chamar(pedido, self.navegador)
+        if self.cancelado is not None and isinstance(self._transporte, TransporteUnix):
+            # Só o transporte de verdade sabe largar a espera; os falsos respondem na hora.
+            resposta = self._transporte.chamar(pedido, self.navegador, cancelado=self.cancelado)
+        else:
+            resposta = self._transporte.chamar(pedido, self.navegador)
         if resposta.get("id") not in (None, pedido.id):
             raise NavegadorIndisponivel("a resposta veio com outro id")
         if not resposta["ok"]:
@@ -308,9 +461,46 @@ class ClienteDoNavegador:
                 # navegador como "falha" crua: é a aba que não existe mais (trilha do dono,
                 # 2026-10-21, 21:13: duas navegações com um id velho, 2–3 ms cada).
                 raise NavegadorFalhou(SEM_ABA, MENSAGEM_SEM_ABA)
+            if erro["codigo"] == METODO_DESCONHECIDO and metodo not in METODOS_DA_VERSAO_1:
+                # A extensão carregada no navegador é de antes deste método (não foi recarregada
+                # depois da atualização): o modelo e o dono ouvem o que fazer, não "falhou".
+                raise ExtensaoDesatualizada(metodo)
             raise NavegadorFalhou(erro["codigo"], erro["mensagem"])
         resultado: dict[str, Any] = resposta["result"]
         return resultado
+
+    def versao(self) -> VersaoDaPonte:
+        """A versão do host e a da extensão que estão no ar, sem tocar em aba nem página:
+        `host.versao` (o host responde sozinho) e `ponte.versao` (a extensão). Quem é de antes
+        responde que não conhece o método — e isso também é a resposta."""
+        host = self._versao_de(VERSAO_DO_HOST)
+        extensao = self._versao_de(VERSAO)
+        return VersaoDaPonte(
+            host=host.get("versao") if isinstance(host.get("versao"), int) else None,
+            extensao=extensao.get("versao") if isinstance(extensao.get("versao"), int) else None,
+            manifesto=str(extensao.get("manifesto", "")),
+            pid_do_host=host.get("pid") if isinstance(host.get("pid"), int) else None,
+            host_iniciado_em=float(host["iniciado_em"])
+            if isinstance(host.get("iniciado_em"), (int, float))
+            else None,
+            permissoes={
+                str(k): bool(v)
+                for k, v in dict(extensao.get("permissoes") or {}).items()
+                if isinstance(k, str)
+            },
+            host_conhece=bool(host),
+            extensao_conhece=bool(extensao),
+        )
+
+    def _versao_de(self, metodo: str) -> dict[str, Any]:
+        try:
+            return self.chamar(metodo)
+        except ExtensaoDesatualizada:
+            return {}
+        except NavegadorFalhou as erro:
+            if erro.codigo in (METODO_DESCONHECIDO, PEDIDO_INVALIDO):
+                return {}  # o host (ou a extensão) de antes: não conhece o método
+            raise
 
     # --- comandos -----------------------------------------------------------------------
     def abas(self) -> list[dict[str, Any]]:

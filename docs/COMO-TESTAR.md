@@ -1885,6 +1885,35 @@ modelo de visão de verdade. O OpenCode **2.x** é reconhecido e recusado com a 
 **Atenção:** com login do ChatGPT, os termos de consumo da OpenAI (trecho lido em busca) proíbem
 extrair saída de forma automatizada; o aviso do Codex diz isso — a decisão de usar é sua.
 
+### 0.49 A extensão desatualizada se anuncia, e a ponte nunca prende o Jarvis (2026-10-30, ADR-0027 emendada)
+
+**O que mudou.** O Jarvis pergunta ao host e à extensão qual versão da ponte eles conhecem (só
+versão e permissões — nenhuma aba). Com a cópia de antes carregada no navegador, a tela e o card
+dizem: «abra a página de extensões, clique em Recarregar no card do Jarvis». Cada chamada ao
+navegador tem prazo (8 s para consultar, 30 s para esperar a página) e larga na hora quando você
+corta o Jarvis.
+
+1. **Atualize a extensão uma vez:** `uv run jarvis-native-host --instalar` (copia a extensão nova)
+   → `brave://extensions` → **Recarregar** no card «Jarvis — navegador controlado» (a versão passa a
+   **0.2.0**; aceite a permissão de depuração se o navegador pedir) → F5 nas abas abertas →
+   reinicie o `uv run jarvis`.
+2. **Rode o diagnóstico e cole o resultado:**
+   `uv run --frozen python tools/diagnostico_navegador.py` — mostra a instalação, os sockets, os
+   hosts (pid, idade, quem lançou), a versão em cada host vivo e o tempo da pergunta, os últimos
+   turnos da trilha (só códigos) e **o que fazer**. `--json` deixa só a linha `RELATORIO {...}`.
+3. **Pergunte «a extensão está funcionando?»**: o `browser.estado` responde com a versão; com a
+   de antes, a resposta manda recarregar.
+4. **Corte no meio:** peça algo no navegador e diga «para» enquanto ele age — a ferramenta larga
+   a espera na hora (antes podia segurar até 30 s).
+
+Testes (host de verdade, extensão falsa numa thread, socket temporário; nenhum navegador seu):
+`TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/navegador/test_ponte_robusta.py
+tests/unit/navegador/test_diagnostico_navegador.py tests/unit/s2/test_motor_robusto.py` e
+`node --test tests/unit/navegador/background_respostas.test.mjs`.
+
+**Não provado (só você pode):** o Brave com a extensão que está carregada nele; o tempo real da
+pergunta de versão.
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

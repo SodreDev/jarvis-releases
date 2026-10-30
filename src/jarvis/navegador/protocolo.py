@@ -60,6 +60,17 @@ EVENTOS: Final = frozenset({"parar"})
 ORIGENS_DA_PARADA: Final = frozenset({"faixa", "barra"})
 """Onde o dono apertou PARAR: na faixa desenhada na página, ou no botão da extensão na barra."""
 MAXIMO_DE_CONCESSOES: Final = 32
+VERSAO_DA_PONTE: Final = 2
+"""O contrato de métodos entre o Jarvis, o host e a extensão. Sobe a cada método novo, junto com
+`VERSAO_DA_PONTE` de extensao/background.js (o teste confere). A 2 é a do CDP (ADR-0051) mais
+`ponte.versao`: a extensão que não responde a ela, ou responde menos, é a de antes — o dono ouve
+para recarregá-la, em vez de ver as ferramentas novas falharem uma a uma (2026-10-30)."""
+VERSAO: Final = "ponte.versao"
+"""Respondido pela extensão: a versão dela, a do manifesto e se tem as permissões do CDP."""
+VERSAO_DO_HOST: Final = "host.versao"
+"""Respondido pelo próprio host, sem ir à extensão: a versão da ponte que o host conhece e o pid.
+Host de antes recusa o método (não está no vocabulário dele): é o host velho de um navegador que
+não relançou a extensão desde a atualização."""
 ASSINAR: Final = "eventos.assinar"
 """Atendido pelo próprio host, que segura a conexão e escreve nela os eventos da extensão."""
 COM_CONTROLE: Final = frozenset(
@@ -134,8 +145,46 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     "controle.manter": {"controle": str},
     "controle.parar": {},
     "controle.estado": {},
+    VERSAO: {},
+    VERSAO_DO_HOST: {},
     ASSINAR: {},
 }
+PRAZO_PADRAO_S: Final = 25.0
+"""O teto de um pedido que espera a página (navegar, abrir, ler um endereço, a tela, um gesto)."""
+PRAZO_CURTO_S: Final = 8.0
+"""O teto de um pedido que só consulta a extensão ou age num elemento já na página: passou disso,
+a extensão travou — esperar 25 s com o dono olhando é o "travou" de 2026-10-30."""
+PRAZOS_CURTOS: Final = frozenset(
+    {
+        "tabs.list",
+        "tabs.current",
+        "tabs.show",
+        "tabs.close",
+        "windows.focused",
+        "page.read",
+        "page.map",
+        "page.inspect",
+        "page.click",
+        "page.type",
+        "page.act",
+        "page.scroll",
+        "page.console",
+        "page.network",
+        "controle.soltar",
+        "controle.manter",
+        "controle.parar",
+        "controle.estado",
+        VERSAO,
+        VERSAO_DO_HOST,
+    }
+)
+
+
+def prazo_do_metodo(metodo: str) -> float:
+    """Quanto o Jarvis espera a resposta deste método antes de desistir dele (o host tem o seu)."""
+    return PRAZO_CURTO_S if metodo in PRAZOS_CURTOS else PRAZO_PADRAO_S
+
+
 OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "tabs.navigate": frozenset({"url"}),
     "tabs.open": frozenset({"url"}),
