@@ -38,8 +38,8 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final
 
@@ -171,6 +171,16 @@ from jarvis.voz.ruido import (
 )
 from jarvis.voz.ruido import Motivo as MotivoDoRuido
 from jarvis.voz.teclado import ESPACO, TECLAS_DE_SAIDA, Teclado, TecladoMudo
+from jarvis.voz.tom import DIMENSOES as DIMENSOES_DO_TOM
+from jarvis.voz.tom import (
+    AnalisadorDeTom,
+    MedidaDoTom,
+    RepositorioDaLinhaDeBase,
+    Tom,
+    aplicar_ganho,
+    com_pergunta,
+    ganho_da_resposta_db,
+)
 from jarvis.voz.vocabulario import VAZIO, RepositorioDoVocabulario, Vocabulario
 
 PASTA_DE_VOZES: Final = Path.home() / ".cache" / "jarvis" / "vozes"
@@ -192,6 +202,9 @@ ESPERA_DO_CEREBRO_VELHO_S: Final = 10.0
 rodam juntos. Passado isto (uma ferramenta presa), segue mesmo assim e a trilha diz."""
 """Quanto o laço espera a linha do cérebro fechar depois do último pedaço (ou do cancelamento):
 o motor já parou de gerar (regra 9 da ADR-0025, ≤ 50 ms); isto é só o fim da linha."""
+PRAZO_DO_TOM_S: Final = 0.05
+"""Quanto o laço espera pela análise do tom **depois** do ASR (ADR-0058). Ela roda ao lado do ASR
+e leva poucos ms; se não chegou neste prazo, o turno segue sem tom: ele nunca atrasa a resposta."""
 PASTA_DA_TRILHA: Final = "diagnostico"
 """Dentro da pasta da sessão: `turnos.jsonl` da trilha de diagnóstico (`jarvis.trilha`)."""
 PREFIXO_DA_PERGUNTA: Final = "pergunta-"
@@ -510,6 +523,9 @@ class Aplicativo:
     o módulo. Com esta e `ao_fechar_conteudo` ligadas, as `tela.*` existem; sem janela, não.
     Chamada da linha de quem pediu: emite e volta."""
     ao_fechar_conteudo: Callable[[str], None] | None = None
+    ao_tom: Callable[[str], None] | None = None
+    """O tom do último turno, curto («entonação de pergunta · voz baixa»; vazio no neutro), para o
+    indicador da janela (ADR-0058). Mesmas regras do `ao_mudar_estado`: emite e volta."""
 
     detector: DetectorDeEnderecamento | None = field(default=None, repr=False)
     """Diz, na escuta contínua, se a fala transcrita é para o Jarvis (ADR-0029). `None` = desligado
@@ -1758,6 +1774,8 @@ class Aplicativo:
         fechar = getattr(self._tts, "fechar", None)
         if callable(fechar):
             fechar()
+        if self._tom is not None:
+            self._tom.fechar()  # a linha de base do tom vai ao disco (ADR-0058)
 
     def _cancelado_do_turno_corrente(self) -> bool:
         """Os motores recebem **esta** função, que olha o epoch do turno em curso.
@@ -1795,6 +1813,11 @@ class Aplicativo:
     _turno_cortado: str = ""
     """O `turn_id` do último turno que o dono cortou: o «para» que vem em seguida cancela as tarefas
     dele (cortar é cancelar tudo daquele turno, dono, 2026-10-29)."""
+    _tom: AnalisadorDeTom | None = field(default=None, repr=False)
+    """O tom de voz do dono (ADR-0058): a análise e a linha de base, montados no primeiro trecho."""
+    _linha_do_tom: ThreadPoolExecutor | None = field(default=None, repr=False)
+    _ganho_da_fala_db: float = 0.0
+    """O ganho da resposta deste turno (o dono sussurrou: o Jarvis responde mais baixo)."""
 
     # --- um turno -----------------------------------------------------------------------
     def responder(
@@ -1804,6 +1827,7 @@ class Aplicativo:
         fila: FilaDePlayback | None = None,
         ms_ouvido: float | None = None,
         ms_asr: float | None = None,
+        tom: Tom | None = None,
     ) -> Turno:
         """Texto → cérebro em stream → áudio no sumidouro, falando enquanto o motor gera.
 
@@ -1835,6 +1859,14 @@ class Aplicativo:
             epoch=epoch,
             caracteres_do_pedido=len(texto),
         )
+
+        linha_do_tom = ""
+        self._ganho_da_fala_db = 0.0
+        if tom is not None:
+            # O tom do turno (ADR-0058), medido na voz: a trilha leva só os códigos.
+            self.trilha.evento("tom", **tom.codigos())
+            linha_do_tom = tom.linha(self.dimensoes_do_tom)
+            self._ganho_da_fala_db = ganho_da_resposta_db(tom) if self.tom_na_voz else 0.0
 
         def geracao_cancelada() -> bool:
             return parar_geracao.is_set() or cancelado()
@@ -1900,6 +1932,7 @@ class Aplicativo:
                     cancelado=geracao_cancelada,
                     avisos=com_a_mensagem,
                     mostrar=mostrar,
+                    tom=linha_do_tom,
                 )
             except Exception as erro:  # o turno degrada e diz; a linha não leva o laço junto
                 falha.append(f"{type(erro).__name__}: {erro}")
@@ -2110,6 +2143,10 @@ class Aplicativo:
                     if self.epoch > epoch:
                         break
                     continue
+                if self._ganho_da_fala_db:
+                    pedaco = replace(
+                        pedaco, amostras=aplicar_ganho(pedaco.amostras, self._ganho_da_fala_db)
+                    )
                 if not fila.enfileirar(pedaco):
                     recusado = True
                     break
@@ -2622,6 +2659,9 @@ class Aplicativo:
             self._ruido_descartado(motivo, "trecho", medida)
             self._mudar(self._repouso)
             return
+        # O tom de voz (ADR-0058) é medido no MESMO trecho, numa linha à parte, enquanto o ASR
+        # transcreve. Por cima, não: o começo do trecho pode ser o eco da fala do Jarvis.
+        medida_do_tom = None if por_cima else self._medir_o_tom(amostras)
         comeco = time.monotonic()
         with self._trava_do_asr:
             transcricao = transcrever_com_sinais(self._asr, amostras)
@@ -2704,7 +2744,11 @@ class Aplicativo:
             self.escrever_na_tela("  (parei)")
             self._mudar(self._repouso)
             return
-        self._responder_ao_dono(pedido, pedido, fila, ouvido_ms=ouvido_ms, asr_ms=asr_ms)
+        tom = self._ler_o_tom(medida_do_tom, pedido)
+        if tom is not None and self.tom_no_texto and not pergunta:
+            # A entonação de pergunta põe o `?` que o ASR não pôs — nunca numa confirmação no ar.
+            pedido = com_pergunta(pedido, tom)
+        self._responder_ao_dono(pedido, pedido, fila, ouvido_ms=ouvido_ms, asr_ms=asr_ms, tom=tom)
 
     def _parar_o_turno_cortado(self) -> int:
         """O dono cortou um turno e mandou parar: as tarefas que aquele turno delegou (ADR-0038)
@@ -2729,11 +2773,13 @@ class Aplicativo:
         *,
         ouvido_ms: float,
         asr_ms: float,
+        tom: Tom | None = None,
     ) -> None:
         """O turno do dono: `dito` é o que a tela mostra; `pedido`, o que vai ao cérebro (o
-        «sim» lido de «Jarvis, sim», ADR-0048)."""
+        «sim» lido de «Jarvis, sim», ADR-0048). `tom` só muda o jeito da resposta (ADR-0058): a
+        resposta a uma confirmação chega aqui sem ele."""
         self.escrever_na_tela(f"Você: {dito}")
-        turno = self.responder(pedido, fila=fila, ms_ouvido=ouvido_ms, ms_asr=asr_ms)
+        turno = self.responder(pedido, fila=fila, ms_ouvido=ouvido_ms, ms_asr=asr_ms, tom=tom)
         completo = Turno(
             falou=pedido,
             respondeu=turno.respondeu,
@@ -2752,6 +2798,50 @@ class Aplicativo:
         if completo.respondeu:
             self.escrever_na_tela(f"Jarvis: {completo.respondeu}")
         self.escrever_na_tela(completo.resumo())
+
+    # --- o tom de voz (ADR-0058) ------------------------------------------------------------------
+    @property
+    def dimensoes_do_tom(self) -> tuple[str, ...]:
+        return DIMENSOES_DO_TOM
+
+    @property
+    def tom_no_texto(self) -> bool:
+        return True
+
+    @property
+    def tom_na_voz(self) -> bool:
+        return True
+
+    def _analisador_de_tom(self) -> AnalisadorDeTom | None:
+        if self._tom is None:
+            self._tom = AnalisadorDeTom(RepositorioDaLinhaDeBase(self.raiz))
+        return self._tom
+
+    def _medir_o_tom(self, amostras: bytes) -> Future[MedidaDoTom] | None:
+        """Manda o trecho à linha do tom e volta na hora: o ASR começa sem esperar por ela."""
+        analisador = self._analisador_de_tom()
+        if analisador is None:
+            return None
+        if self._linha_do_tom is None:
+            self._linha_do_tom = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jarvis-tom")
+        return self._linha_do_tom.submit(analisador.medir, amostras)
+
+    def _ler_o_tom(self, futuro: Future[MedidaDoTom] | None, texto: str) -> Tom | None:
+        """O rótulo do turno, com o texto do ASR — e o turno aceito entra na linha de base. `None`
+        = não medido: desligado, por cima, ou a análise não chegou em `PRAZO_DO_TOM_S` depois do
+        ASR (ou falhou) — o turno segue como se não houvesse tom."""
+        if futuro is None or self._tom is None:
+            return None
+        try:
+            medida = futuro.result(timeout=PRAZO_DO_TOM_S)
+        except Exception:  # prazo ou falha: o tom é ajuda, não requisito
+            futuro.cancel()
+            return None
+        tom = self._tom.rotular(medida, texto)
+        self._tom.aprender(medida, texto)
+        if self.ao_tom is not None:
+            self.ao_tom(tom.resumo(self.dimensoes_do_tom))
+        return tom
 
     # --- ruído não vira pedido (ADR-0043) ------------------------------------------------------
     @property

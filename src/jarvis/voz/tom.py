@@ -153,6 +153,16 @@ _FRASES: Final[Mapping[str, str]] = {
 }
 
 
+_JEITO: Final[Mapping[str, str]] = {
+    "grito": "curto e calmo",
+    "sussurro": "curto",
+    "risada": "leve",
+    "rapido": "breve",
+}
+"""Como reagir, dito na própria nota (a persona só diz que a nota muda o jeito, ADR-0058): custa
+caracteres só no turno em que aparece, e nunca diz o que fazer — só o jeito."""
+
+
 @dataclass(frozen=True, slots=True)
 class Prosodia:
     """O que a análise mediu no trecho. Só números — e nenhum deles sai da máquina."""
@@ -264,7 +274,10 @@ class Tom:
         codigos = self.fora_do_neutro(dimensoes)
         if not codigos:
             return ""
-        return f"[tom da voz do dono: {', '.join(_FRASES[c] for c in codigos)}]"
+        frases = ", ".join(_FRASES[c] for c in codigos)
+        jeitos = list(dict.fromkeys(_JEITO[c] for c in codigos if c in _JEITO))
+        dica = f"; jeito: {', '.join(jeitos)}" if jeitos else ""
+        return f"[tom da voz do dono: {frases}{dica}]"
 
     def resumo(self, dimensoes: Sequence[str] = DIMENSOES) -> str:
         """Curto, para o indicador da janela: «pergunta · voz baixa». Vazio no neutro."""

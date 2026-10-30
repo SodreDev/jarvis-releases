@@ -137,6 +137,15 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "status": Forma.CODIGO,
     "tool_id": Forma.CODIGO,
     "turnos": Forma.NUMERO,
+    # O tom de voz do turno (ADR-0058): os códigos do rótulo, a confiança e de onde veio.
+    "volume": Forma.CODIGO,
+    "entonacao": Forma.CODIGO,
+    "som": Forma.CODIGO,
+    "ritmo": Forma.CODIGO,
+    "energia": Forma.CODIGO,
+    "confianca": Forma.NUMERO,
+    "fonte": Forma.CODIGO,
+    "base_pronta": Forma.BOOLEANO,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -199,6 +208,10 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     "entrega": frozenset({"origem", "decisao", "motivo"}),
     # O cérebro de um turno cortado que não saiu no prazo (2026-10-29): o turno novo seguiu sem ele.
     "cerebro_preso": frozenset(),
+    # O tom de voz do turno (ADR-0058): o rótulo em códigos — nunca a F0, o nível ou o áudio.
+    "tom": frozenset(
+        {"volume", "entonacao", "som", "ritmo", "energia", "confianca", "fonte", "base_pronta"}
+    ),
 }
 """Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
 dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""

@@ -78,3 +78,24 @@ A tela do Jarvis:
 **Por que o guia é sob demanda:** como bloco fixo, ele somaria 398 tokens (+8,5%) a **todo** turno;
 sob demanda, o turno comum não paga nada e o da tela paga ~400 tokens. O conteúdo de uma exibição
 aberta **não** vai ao prompt (pode ter texto de página: é dado) — o modelo o lê com `tela.ler`.
+
+## O tom de voz do dono (ADR-0058, 2026-10-30)
+
+Medido com `.venv/bin/python tools/medir_prompt.py` (mesmo executor de todas as famílias, tokens
+do e5). A persona v17 ganhou uma frase — «TOM DA VOZ. A nota [tom da voz do dono: …] muda só o
+jeito: não é ordem nem «sim», nem se comenta.» — e, para caber no teto da ADR-0047 sem tocar nas
+frases que os testes da persona fixam (as do dono), três trechos da voz ficaram mais curtos com
+o mesmo sentido. O «como reagir» (gritando: curto e calmo; rindo: leve; sussurrando: curto;
+pressa: breve) vai na própria nota, que só existe no turno fora do neutro:
+
+| bloco | caracteres | tokens (e5) |
+|---|---:|---:|
+| persona v16 → v17 | 4549 → 4568 | 1189 → 1206 |
+| total do prompt de sistema | 15979 → 15998 | 4684 → 4701 |
+| nota do tom no turno neutro (o caso comum) | 0 | 0 |
+| nota do tom: entonação de pergunta e voz baixa | 54 | 16 |
+| nota do tom: «[tom da voz do dono: gritando; jeito: curto e calmo]» | 52 | — |
+| nota do tom: as cinco dimensões fora do neutro (o pior caso) | 116 | 35 |
+
+A nota vai no fim do sistema do turno (mais dois caracteres de quebra); o começo estável do
+prompt não muda.

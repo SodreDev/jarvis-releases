@@ -139,6 +139,25 @@ INSTRUCAO_ANTIGA: Final = (
 """A instrução do catálogo antes da ADR-0047 (commit 016c0a6), copiada só para medir o antes."""
 
 
+def blocos_do_tom() -> list[Bloco]:
+    """A nota do tom de voz (ADR-0058): só existe no turno fora do neutro — o comum é nenhuma."""
+    from jarvis.voz.tom import Energia, Entonacao, Evento, Ritmo, Tom, Volume
+
+    pergunta = Tom(entonacao=Entonacao.PERGUNTA, volume=Volume.BAIXO)
+    tudo = Tom(
+        volume=Volume.SUSSURRO,
+        entonacao=Entonacao.PERGUNTA,
+        evento=Evento.RISADA,
+        ritmo=Ritmo.RAPIDO,
+        energia=Energia.ALTA,
+    )
+    return [
+        Bloco("nota do tom no turno neutro (o caso comum)", Tom().linha()),
+        Bloco("nota do tom: entonação de pergunta e voz baixa", pergunta.linha()),
+        Bloco("nota do tom: as cinco dimensões fora do neutro (o pior caso)", tudo.linha()),
+    ]
+
+
 def sistema_antigo(sistema: str, ferramentas: Any) -> str:
     """O catálogo antes da ADR-0047: a descrição curta e o esquema JSON de cada argumento."""
     import json
@@ -212,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
             contar,
         )
         linhas += tabela("a tela do Jarvis (ADR-0055)", blocos_da_tela(executor), contar)
+        linhas += tabela("o tom de voz do dono (ADR-0058)", blocos_do_tom(), contar)
     texto = "\n".join(linhas)
     print(texto)
     if args.saida is not None:

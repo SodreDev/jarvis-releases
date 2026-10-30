@@ -190,7 +190,7 @@ def test_a_linha_e_curta_e_so_aparece_fora_do_neutro() -> None:
     assert linha.startswith("[tom da voz do dono: ") and linha.endswith("]")
     assert len(linha) <= 120
     assert cheio.linha(("volume", "entonacao")) == (
-        "[tom da voz do dono: sussurrando, entonação de pergunta]"
+        "[tom da voz do dono: sussurrando, entonação de pergunta; jeito: curto]"
     )
     assert cheio.resumo(("evento",)) == "rindo"
     # A trilha recebe códigos, nunca números da voz.

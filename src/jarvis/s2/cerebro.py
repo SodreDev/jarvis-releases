@@ -334,12 +334,18 @@ class Cerebro:
         trust: str = "user_voice",
         avisos: Sequence[AvisoLiberado] = (),
         mostrar: Mostrar | None = None,
+        tom: str = "",
     ) -> Resposta:
         """Responde a um turno estável do dono, publicando os pedaços enquanto o motor gera.
 
         `avisos` são os que a fila liberou junto com esta mensagem e que o `s2` decidiu falar
         (ADR-0025, regra 13, decisão do dono): vão **antes** da resposta, em pedaços marcados
         com `notif_ids`, e o motor fica sabendo que já foram ditos — informa, depois responde.
+
+        `tom` é a linha do tom de voz do turno (`jarvis.voz.tom.Tom.linha`, ADR-0058), vazia no
+        neutro: vai no fim do sistema, como as outras notas do turno, e só muda o jeito da
+        resposta — nunca é pedido, nem «sim» a uma pergunta pendente (a leitura da resposta,
+        abaixo, nem a recebe).
         """
         comeco = time.monotonic()
         # Resposta anterior sem `ouvido`: ninguém confirmou que tocou, então não existe (P4).
@@ -412,6 +418,10 @@ class Cerebro:
                     sistema=f"{contexto.sistema}\n\n{memoria.bloco()}",
                     mensagens=contexto.mensagens,
                 )
+        if tom:
+            contexto = Contexto(
+                sistema=f"{contexto.sistema}\n\n{tom}", mensagens=contexto.mensagens
+            )
         if avisos:
             ditos = " ".join(frase_do_aviso(a) for a in avisos)
             contexto = Contexto(
