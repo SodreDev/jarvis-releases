@@ -1949,6 +1949,26 @@ Testes: `TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/s2/test_selecao_de
 
 **Não provado:** o efeito no `claude -p` de verdade — cole a trilha depois de alguns pedidos.
 
+### 0.53 Ligar o Groq num preset sem mistério (2026-10-30, ADR-0056 emendada)
+
+**O que mudou.** Ligar um provedor de nuvem na janela vale **na hora** para a conversa aberta (antes
+só depois de reabrir — era isso que «não deixava»). Cada bloqueio diz o que bloqueou, por quê e como
+destravar; a voz diz a frase curta. O painel «resposta» mostra um assistente com cada passo ✓/✗.
+
+1. Configuração → painel «resposta» → toque em **Groq**. O assistente mostra: provedor ✓, chave
+   (✓ «JARVIS_GROQ_API_KEY: guardada» ou ✗ com onde guardar), nuvem ✗ «leia o aviso…».
+2. Leia o aviso e toque **«li o aviso — ligar Groq»**: a nuvem fica ✓ e a frase diz «vale já, nesta
+   conversa». **Salvar configuração** guarda para as próximas.
+3. Escolha o modelo (para visão: `qwen/qwen3.8-27b`), o esforço, o papel, dê um nome, **salvar
+   preset** e **ativar** no papel — sem reabrir a conversa.
+4. Prova do bloqueio: desligue o Groq e peça algo com o preset dele ativo — a voz diz «O Groq está
+   desligado: ligue em Configuração, resposta…», e a tela mostra o quê, o porquê e o como.
+
+Testes: `QT_QPA_PLATFORM=offscreen TMPDIR=~/.cache/jt uv run --frozen pytest
+tests/unit/gui/test_assistente_de_preset.py tests/unit/provedores`.
+
+**Não provado:** o Groq de verdade com a sua chave.
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

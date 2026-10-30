@@ -120,6 +120,8 @@ def test_preset_que_nao_pode_rodar_diz_por_que_e_nao_troca_de_provedor(tmp_path:
 
     falado, fim = texto(motor, pedido())
 
-    assert falado == ""
+    # O motivo curto vai à voz e o inteiro (o quê, por quê, como) à tela (dono, 2026-10-30).
+    assert "desligado" in falado and "Configuração" in falado
     assert fim.motivo is MotivoDoFim.ERRO
     assert "rápido" in fim.detalhe and "desligado" in fim.detalhe
+    assert "Como destravar:" in fim.detalhe

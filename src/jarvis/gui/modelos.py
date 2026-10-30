@@ -29,7 +29,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from jarvis.provedores.catalogo import Listagem, Origem
 from jarvis.provedores.interface import ESFORCOS, PAPEIS, Capacidades, Modelo, Papel, id_valido
-from jarvis.provedores.nucleo import Provedores
+from jarvis.provedores.nucleo import Provedores, ligados_da_configuracao
 from jarvis.provedores.presets import (
     DA_CONFIGURACAO,
     OUTRAS_CHAVES,
@@ -244,8 +244,15 @@ class PonteDeModelos(QObject):
         """Como a janela monta: os presets do arquivo do dono (`pasta`; `None` = a do
         `jarvis-voz.toml` deste ambiente, a mesma que o laço lê) e os provedores da configuração
         viva, com as CLIs na pasta de conversa do laço (`raiz/conversa`, ADR-0018)."""
+
+        def nuvem() -> tuple[frozenset[str], frozenset[str]]:
+            atual = obter()
+            return ligados_da_configuracao(atual), frozenset(atual.nuvem_sem_termos)
+
         return cls(
-            fonte=FonteDePresets(ambiente=ambiente, configuracao=obter(), pasta=pasta),
+            # A nuvem viva: o cérebro da conversa aberta lê daqui a cada pedido — ligar o Groq na
+            # janela vale já (dono, 2026-10-30), e não só depois de reabrir a conversa.
+            fonte=FonteDePresets(ambiente=ambiente, configuracao=obter(), pasta=pasta, nuvem=nuvem),
             provedores=lambda: Provedores.da_configuracao(
                 obter(), pasta_de_trabalho=raiz / "conversa", ambiente=ambiente
             ),
@@ -657,6 +664,90 @@ class PonteDeModelos(QObject):
             )
         return self._avisar(frase)
 
+    @Slot(str, str, str, str, str, int, result=list)
+    def conferir(
+        self, provedor: str, modelo: str, esforco: str, papel: str, nome: str, _revisao: int = 0
+    ) -> list[dict[str, Any]]:
+        """O assistente curto (dono, 2026-10-30): provedor → chave → nuvem → modelo → esforço →
+        papel → salvar, cada passo com ✓ ou o que falta e **como** destravar. Não lê chave nem abre
+        rede: a chave vem da sondagem que já rodou numa thread (`abrirProvedor`). `_revisao` é só
+        para o QML refazer a conta quando a ponte muda."""
+        motor = self._motor(provedor) if provedor else None
+        if motor is None:
+            return [_passo("provedor", ok=False, frase="escolha um provedor na lista acima")]
+        nome_do_provedor = nome_curto(motor)
+        passos = [_passo("provedor", ok=True, frase=f"{nome_do_provedor} ({motor.onde})")]
+        if motor.variavel_da_chave:
+            if provedor != self._aberto:
+                passos.append(_passo("chave", ok=False, frase="toque no provedor para conferir"))
+            elif self._falta:
+                passos.append(_passo("chave", ok=False, frase=self._falta))
+            else:
+                passos.append(
+                    _passo("chave", ok=True, frase=f"{motor.variavel_da_chave}: guardada")
+                )
+        if motor.na_nuvem:
+            ligado = esta_ligado(motor, self._provedores())
+            passos.append(
+                _passo(
+                    "nuvem",
+                    ok=ligado,
+                    frase=f"{nome_do_provedor} ligado nesta conversa"
+                    if ligado
+                    else f"desligado: leia o aviso abaixo e toque «li o aviso — ligar "
+                    f"{nome_do_provedor}» — vale na hora",
+                )
+            )
+        if modelo and not id_valido(modelo):
+            passos.append(
+                _passo("modelo", ok=False, frase=f"«{modelo[:40]}» não é um id de modelo")
+            )
+        else:
+            passos.append(
+                _passo("modelo", ok=True, frase=modelo or f"padrão do provedor ({motor.modelo})")
+            )
+        aceitos = self.esforcosDe(provedor, modelo) if esforco else []
+        passos.append(
+            _passo(
+                "esforço",
+                ok=not esforco or esforco in aceitos,
+                frase=esforco or "o padrão do modelo"
+                if not esforco or esforco in aceitos
+                else f"«{esforco}» não vale para este modelo: {', '.join(aceitos)}",
+            )
+        )
+        if not papel:
+            passos.append(_passo("papel", ok=False, frase="escolha o papel (cérebro, visão…)"))
+        elif papel not in papeis_de(motor):
+            passos.append(_passo("papel", ok=False, frase=f"{nome_do_provedor} não faz {papel}"))
+        elif papel == Papel.VISAO and not self._ve(motor, modelo):
+            passos.append(
+                _passo(
+                    "papel",
+                    ok=False,
+                    frase="este modelo não vê imagem: escolha um com visão da lista",
+                )
+            )
+        else:
+            passos.append(_passo("papel", ok=True, frase=NOME_DO_PAPEL.get(papel, papel)))
+        passos.append(
+            _passo(
+                "salvar",
+                ok=bool(nome.strip()),
+                frase="dê um nome e toque «salvar preset»; depois «ativar»"
+                if not nome.strip()
+                else f"«{nome.strip()[:40]}» pronto para salvar",
+            )
+        )
+        return passos
+
+    def _ve(self, motor: Motor, modelo: str) -> bool:
+        try:
+            capacidades = self._provedores().capacidades(motor.id, modelo or motor.modelo)
+        except (MotorRecusado, OSError, ValueError):
+            return False
+        return bool(capacidades.visao)
+
     @Slot(str, bool)
     def ligarProvedor(self, identificador: str, ligado: bool) -> None:
         """O botão depois do aviso (ADR-0017, política 2): liga ou desliga a nuvem deste provedor
@@ -671,13 +762,20 @@ class PonteDeModelos(QObject):
             return
         self._ligar_nuvem(motor.id, ligado)
         if ligado:
-            self._avisar(f"{nome} ligado nesta sessão — «salvar configuração» guarda no arquivo")
+            self._avisar(
+                f"{nome} ligado — vale já, nesta conversa; «salvar configuração» guarda para as "
+                "próximas"
+            )
         elif esta_ligado(motor, self._provedores()):
             self._avisar(
                 f'{nome} continua ligado pela configuração (s2 = "claude" conta como ligado)'
             )
         else:
             self._avisar(f"{nome} desligado — «salvar configuração» guarda no arquivo")
+
+
+def _passo(passo: str, *, ok: bool, frase: str) -> dict[str, Any]:
+    return {"passo": passo, "ok": ok, "frase": frase}
 
 
 __all__ = [

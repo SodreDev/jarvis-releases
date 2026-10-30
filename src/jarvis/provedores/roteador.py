@@ -23,6 +23,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from jarvis.provedores.bloqueio import bloqueio_do_preset
 from jarvis.provedores.interface import Papel, ProvedorIndisponivel
 from jarvis.provedores.nucleo import Provedores
 from jarvis.provedores.presets import FonteDePresets, Preset
@@ -33,6 +34,7 @@ from jarvis.s2.motor import (
     Modo,
     MotivoDoFim,
     MotorDeConversa,
+    Texto,
     aceita_imagem,
 )
 from jarvis.voz.chaves import SegredoAusente
@@ -71,8 +73,23 @@ class MotorDosPresets:
             ),
         )
 
+    def acompanhar_a_nuvem(self) -> None:
+        """A nuvem ligada **agora** (a janela acabou de ligar ou desligar um provedor): vale já
+        neste pedido. O motor de um provedor que foi desligado sai do cache — não chama mais."""
+        if self.fonte.nuvem is None:
+            return
+        ligados, sem_termos = self.fonte.nuvem()
+        antes = frozenset(self.provedores.ligados)
+        if ligados == antes and sem_termos == frozenset(self.provedores.sem_termos):
+            return
+        self.provedores.ligados = ligados
+        self.provedores.sem_termos = sem_termos
+        for chave in [c for c in self._motores if c[0] in antes - ligados]:
+            del self._motores[chave]
+
     def motor_do_preset(self, preset: Preset) -> MotorDeConversa:
         """O motor de um preset — montado uma vez por (provedor, modelo, esforço)."""
+        self.acompanhar_a_nuvem()
         chave = (preset.provedor, preset.modelo, preset.esforco)
         motor = self._motores.get(chave)
         if motor is None:
@@ -135,7 +152,11 @@ class MotorDosPresets:
         try:
             motor = self.motor_do_preset(preset)
         except RECUSAS as erro:
-            yield Fim(MotivoDoFim.ERRO, f"o preset «{preset.nome}» não pode rodar: {erro}")
+            # O que bloqueou, por quê e como destravar — dito curto em voz e inteiro na tela
+            # (ADR-0056 §7; dono, 2026-10-30: «não deixou por causa de outros modos»).
+            bloqueio = bloqueio_do_preset(preset, erro, self.provedores)
+            yield Texto(bloqueio.curta())
+            yield Fim(MotivoDoFim.ERRO, bloqueio.frase())
             return
         if contexto.imagens and not aceita_imagem(motor):
             visao = self.motor_do_papel(Papel.VISAO)

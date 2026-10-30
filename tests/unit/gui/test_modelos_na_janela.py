@@ -312,7 +312,7 @@ def test_ligar_o_provedor_e_o_interruptor_da_janela_e_salvar_guarda(
     assert _do(modelos.provedores, ECO)["ligado"], "local não tem interruptor"
 
     modelos.ligarProvedor(GROQ, True)
-    assert modelos.aviso.startswith("Groq ligado nesta sessão")
+    assert modelos.aviso.startswith("Groq ligado — vale já, nesta conversa")
     assert _do(modelos.provedores, GROQ)["ligado"]
     assert GROQ in tela.configuracao["nuvem_ligada"]
     tela.salvarConfiguracao()

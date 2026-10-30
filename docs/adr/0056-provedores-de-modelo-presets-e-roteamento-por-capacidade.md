@@ -258,3 +258,43 @@ ferramenta nativa atrás da mesma proposta ao PDP.
 - Compatíveis: <https://docs.together.ai/docs/openai-api-compatibility>,
   <https://docs.deepinfra.com/chat/overview>, <https://docs.ollama.com/api/openai-compatibility>,
   <https://lmstudio.ai/docs/developer/openai-compat>.
+
+## Emenda de 2026-10-30 — ligar na janela vale na hora, e cada bloqueio diz o quê, por quê e como
+
+**Pedido:** dono, 2026-10-30 — tentou ligar o Groq num preset e o app «não deixou por causa de
+outros modos», sem explicar.
+
+**Causa medida** (trilha dele, 30/10 10:55–10:58: 5 turnos em `fim: erro`, 0 ferramenta, 38–1226
+ms; `jarvis-voz.toml` com `conversa-groq` em `nuvem_ligada` gravado às 10:56, a conversa aberta
+às 10:55): a janela liga a nuvem **só para ela** (`Ponte.ligarNuvem` muda a configuração da janela),
+e a conversa aberta montou os `Provedores` com a `nuvem_ligada` do começo e nunca mais releu —
+enquanto os presets são relidos a cada pedido. O preset do Groq passava a ser o ativo e o portão o
+recusava («motor 'conversa-groq' é de nuvem e está desligado … (ADR-0017 …)»), embora a janela
+mostrasse o Groq ligado. A frase ia só para a tela (a ADR dizia «em voz e na tela»).
+
+**Decisão:**
+
+1. **Nuvem viva.** `FonteDePresets.nuvem` devolve `(ligados, sem_termos)` da configuração **viva**
+   da janela; a janela a passa à conversa junto com a fonte de presets. O roteador
+   (`MotorDosPresets.acompanhar_a_nuvem`) lê a cada pedido: ligar vale no pedido seguinte, sem
+   reabrir; desligar tira do cache o motor do provedor. A troca pela voz (`TrocaPorVoz`) lê o mesmo.
+   Sem janela (terminal), vale o que a conversa leu ao abrir. Continua: **nunca troca de provedor
+   sozinho** e a voz nunca liga nuvem.
+2. **Bloqueio em português** (`jarvis.provedores.bloqueio`): cada recusa do portão (nuvem
+   desligada, falta de chave, licença, modelo ou esforço inválido, provedor indisponível) vira
+   **o que** bloqueou, **por que** a trava existe e **como** destravar (o caminho na janela ou a
+   frase «usa o preset claude»), sem citar ADR; a versão curta vai à voz e a inteira à tela e ao
+   card. A chave é dita pelo nome da variável, nunca pelo valor.
+3. **Assistente curto na janela** (`PonteDeModelos.conferir`, no painel «resposta»): provedor →
+   chave (da sondagem que já roda numa thread: existe/não existe) → nuvem ligada nesta conversa →
+   modelo → esforço que o modelo aceita → papel (visão só com modelo que vê) → salvar, cada passo
+   com ✓ ou o que falta. O Groq com visão (`qwen/qwen3.8-27b`) entra num preset de visão em seis
+   toques: Groq → li o aviso — ligar → modelo → papel visão → nome → salvar → ativar.
+
+**Testes:** `tests/unit/gui/test_assistente_de_preset.py` (janela offscreen: cada passo e a frase
+dele; ligar na janela com a conversa aberta muda o roteador na hora, e desligar também; os seis
+bloqueios com o quê/por quê/como; o painel desenha o passo da nuvem ✗ → ✓) e
+`tests/unit/provedores/test_roteador.py` (a recusa fala curto e mostra inteiro).
+
+**Não provado:** o Groq de verdade com a chave do dono (nenhuma chamada saiu nos testes) e o painel
+na tela dele.

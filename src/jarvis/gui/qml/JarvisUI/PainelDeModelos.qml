@@ -593,6 +593,29 @@ Column {
                                                             painel.esforco)
                 }
             }
+            // O assistente curto (dono, 2026-10-30): provedor → chave → nuvem → modelo → esforço →
+            // papel → salvar, cada passo com ✓ ou o que falta e como destravar.
+            Column {
+                objectName: "assistenteDoPreset"
+                width: parent.width
+                spacing: 2
+                Repeater {
+                    model: painel.modelos
+                           ? painel.modelos.conferir(painel.aberto, painel.modelo, painel.esforco,
+                                                     painel.papel, campoNome.text,
+                                                     (painel.modelos.falta + painel.modelos.aviso).length
+                                                     + painel.provedores.length)
+                           : []
+                    delegate: Nota {
+                        required property var modelData
+                        objectName: "passo-" + modelData.passo
+                        width: parent ? parent.width : 0
+                        text: (modelData.ok ? "✓ " : "✗ ") + modelData.passo + ": " + modelData.frase
+                        alerta: !modelData.ok
+                        color: modelData.ok ? Tema.texto : Tema.alerta
+                    }
+                }
+            }
             Nota {
                 width: parent.width
                 text: "vai salvar: " + (painel.provedor.apelido || "") + " · "

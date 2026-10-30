@@ -392,6 +392,13 @@ class FonteDePresets:
     configuracao: Configuracao | None = None
     pasta: Path | None = None
     """A pasta do arquivo do dono. `None` = a do `jarvis-voz.toml` deste ambiente."""
+    nuvem: Callable[[], tuple[frozenset[str], frozenset[str]]] | None = field(
+        default=None, repr=False
+    )
+    """A nuvem que o dono ligou **agora** — `(ligados, sem_termos)` da configuração viva da janela.
+    O cérebro e a troca pela voz leem daqui a cada pedido: antes, ligar o Groq na janela valia só
+    para a janela, e a conversa aberta seguia recusando com «está desligado» (dono, 2026-10-30).
+    `None` = sem janela (o terminal): vale o que a conversa leu ao abrir."""
     _marca: tuple[int, int] | None = field(default=None, repr=False)
     _presets: Presets | None = field(default=None, repr=False)
 
@@ -456,7 +463,8 @@ class TrocaPorVoz:
             raise ValueError(
                 f"não há preset chamado «{nome}». Os de cérebro: {nomes_para_falar(de_cerebro)}"
             )
-        if not self.ligado(preset.provedor):
+        ligado_agora = self.fonte.nuvem is not None and preset.provedor in self.fonte.nuvem()[0]
+        if not ligado_agora and not self.ligado(preset.provedor):
             raise ValueError(
                 f"o preset «{preset.nome}» usa {preset.provedor}, que é de nuvem e está desligado: "
                 "ligue o provedor na janela (Configuração → resposta), onde está o aviso do que sai"
