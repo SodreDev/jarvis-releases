@@ -1933,6 +1933,22 @@ Testes: `TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/s2/test_recuperaca
 
 **Não provado:** o `claude -p` de verdade seguindo a nota de replanejar.
 
+### 0.51 Receitas das ferramentas: o Jarvis sabe por onde começar (2026-10-30, ADR-0047 emendada)
+
+**O que mudou.** No turno de um assunto com ferramenta (navegador, web, apps, memória, sistema,
+script, presets, vocabulário, delegar), o prompt ganha a receita curta daquela família: quando usar,
+em que ordem tentar e um exemplo de pedido → sequência. Conversa comum não ganha nada.
+
+1. «abre o canal do Thiago Nigro no YouTube e toca o último vídeo»: a primeira ferramenta deve ser
+   do navegador (não memória nem busca genérica). Na trilha: `metodo: navegador` e a 1ª
+   `ferramenta.inicio` = `browser.navigate`.
+2. «clica no botão de inscrever» com a página aberta: inspecionar → clicar pela ref → ler.
+3. Medição: `uv run --frozen python -m tools.medir_receitas` (o custo por pedido-tipo).
+
+Testes: `TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/s2/test_selecao_de_ferramentas.py`.
+
+**Não provado:** o efeito no `claude -p` de verdade — cole a trilha depois de alguns pedidos.
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

@@ -32,3 +32,33 @@ O efeito no comportamento do modelo com o dono (conciso, faz em vez de pedir) �
 ## Como invalidar esta decisão
 
 Se o motor passar a chamar a ferramenta errada ou com argumento torto com frequência maior que antes (a trilha conta `argumento_recusado`), o catálogo de uma linha perdeu informação: volte o campo que faltou ao formato da linha, não o esquema inteiro.
+
+## Emenda de 2026-10-30 — ensinar as ferramentas: receitas por família, só no turno do assunto
+
+**Pedido:** dono, 2026-10-30 — o Jarvis «não sabe mais usar a extensão» (na trilha de 30/10, um
+pedido de navegador começou por `memoria.buscar_historico` e levou 12 s até a 1ª ferramenta). O
+catálogo diz **o que** cada ferramenta faz; faltava **quando** usar cada família, em que ordem e
+como encadear.
+
+**Decisão** (`jarvis.s2.receitas`): uma receita curta por família — navegador (abrir, achar e
+clicar, buscar no site, estudar com console/rede/avaliar, um exemplo do YouTube), web, apps e
+janelas, mouse e teclado, memória, sistema, script, delegar, presets, vocabulário, MCP — e a linha
+de recuperar de falha (ADR-0038, emenda desta data). Vai ao prompt **só no turno daquele assunto**:
+o roteador de método (ADR-0035, as regras locais de sempre) e palavras do pedido escolhem até duas
+famílias; linha que cita ferramenta desligada sai. O turno de conversa custa o mesmo de antes, e o
+prompt-base (persona + regras + catálogo, 15 971 caracteres em 30/10) não muda — o teto da emenda
+anterior continua valendo para ele. `Cerebro.classificador_de_receitas` aceita um classificador de
+decisão (ADR-0024/0029) para o pedido com verbo de ação que as regras não reconhecem; o app **não**
+o liga por padrão (uma pergunta ao Jev de nuvem custa ~0,5 s no turno — ligar depois de medir).
+
+**Medido** (`tools/medir_receitas.py` → `docs/medicoes/receitas-sob-demanda.md`): +74 a +269 tokens
+(e5) nos turnos com receita, média 161; 0 na conversa; escolher e montar ≤ 0,2 ms. A persona não
+foi mexida (outra CLI trabalhava nela).
+
+**Testes:** `tests/unit/s2/test_selecao_de_ferramentas.py` (16 pedidos-tipo → família, receita e
+ferramentas que existem no catálogo; conversa sem receita; linha desligada sai; classificador falso
+escolhe, inseguro e quebrado não; a receita chega ao prompt do turno certo). O Jev de verdade é
+remoto e sem cache local: o teste dele é pulado com o motivo.
+
+**Não provado:** que o `claude -p` de verdade escolhe melhor com as receitas (o efeito no modelo só
+a trilha do dono vai mostrar: `ms_primeira_ferramenta` e a 1ª ferramenta dos pedidos de navegador).

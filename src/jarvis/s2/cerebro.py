@@ -38,6 +38,7 @@ from typing import Any, Final
 
 from jarvis.barramento.contrato import prioridade_canonica, validar
 from jarvis.barramento.envelope import Envelope, Tipo, Trust, uuid7
+from jarvis.decisao.interface import ClassificadorDeDecisao
 from jarvis.executor.desfazer import Contaminacao
 from jarvis.executor.ferramentas import (
     Confirmacao,
@@ -53,6 +54,7 @@ from jarvis.navegador.cliente import SEM_NAVEGADOR_ABERTO
 from jarvis.politica.atalho import Atalho, fala_simples, frase_da_ferramenta
 from jarvis.politica.atalho import frase as frase_do_atalho
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
+from jarvis.politica.metodo import Escolha
 from jarvis.politica.objetivo import EstadoDoObjetivo
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
 from jarvis.s2.entrega import FiltroDoJaDito, traz_algo_novo
@@ -78,6 +80,7 @@ from jarvis.s2.persona import sistema_do_jarvis
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
 from jarvis.s2.protocolo import LeitorDoProtocolo
 from jarvis.s2.rascunho import textos_no_contexto
+from jarvis.s2.receitas import receitas_do_turno
 from jarvis.s2.recuperacao import nota_do_turno
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ChamarNaTarefa, Tarefa, TarefaRecusada
@@ -256,6 +259,9 @@ class Cerebro:
     """Teto configurável, em segundos, para o encadeamento inteiro."""
     ao_status: AvisarStatus | None = None
     """Porta para a fila de avisos: status nunca é publicado por cima da fala em curso."""
+    classificador_de_receitas: ClassificadorDeDecisao | None = None
+    """Quem escolhe a família das receitas quando as regras não reconhecem o assunto e o pedido tem
+    verbo de ação (o Jev, ADR-0029; ADR-0047, emenda de 2026-10-30). `None` = só as regras."""
     ao_raciocinio: Callable[[str], None] | None = None
     """O canal de raciocínio na tela (ADR-0031): a linha de cada replanejamento da tarefa quando
     um passo falha (emenda de 2026-10-30 à ADR-0038). Só tela — nunca a voz nem a fila de avisos."""
@@ -395,6 +401,13 @@ class Cerebro:
             # O roteador de método (ADR-0035): o caminho direto para este pedido, dito ao modelo.
             contexto = Contexto(
                 sistema=f"{contexto.sistema}\n\n{metodo.nota()}", mensagens=contexto.mensagens
+            )
+        receitas = self._receitas(texto_do_dono, metodo)
+        if receitas:
+            # Ensinar as ferramentas (ADR-0047, emenda de 2026-10-30): a receita da família do
+            # assunto deste pedido, só neste turno — o de conversa custa o mesmo de antes.
+            contexto = Contexto(
+                sistema=f"{contexto.sistema}\n\n{receitas}", mensagens=contexto.mensagens
             )
         if nota_da_pendencia:
             contexto = Contexto(
@@ -769,6 +782,19 @@ class Cerebro:
                 return False
             time.sleep(INTERVALO_DA_EXTENSAO_S)
         return False
+
+    def _receitas(self, texto_do_dono: str, metodo: Escolha | None) -> str:
+        """As receitas do assunto deste pedido, com as ferramentas que estão ligadas agora."""
+        executor = self.ferramentas
+        if executor is None or not texto_do_dono.strip():
+            return ""
+        try:
+            ligadas = [str(f["id"]) for f in executor.catalogo_para_o_modelo()]
+        except Exception:  # sem catálogo, sem receita: o turno segue como antes
+            return ""
+        return receitas_do_turno(
+            texto_do_dono, metodo, ligadas, classificador=self.classificador_de_receitas
+        )
 
     def _ids_das_ferramentas(self) -> frozenset[str]:
         return (
