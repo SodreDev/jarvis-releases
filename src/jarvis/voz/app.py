@@ -742,6 +742,8 @@ class Aplicativo:
         self._cerebro.caminho_rapido = self.configuracao.caminho_rapido
         self._cerebro.confirmar = self._confirmar
         self._cerebro.ao_status = self._status_do_laco
+        # O replanejamento da tarefa quando um passo falha: na tela, nunca na voz (ADR-0031).
+        self._cerebro.ao_raciocinio = lambda linha: self.escrever_na_tela(f"  ↻ {linha}")
         self._cerebro.maximo_de_passos = self.configuracao.laco_max_passos
         self._cerebro.prazo_do_laco_de_ferramentas_s = self.configuracao.laco_prazo_s
         self.ferramentas.prazo_do_foco_s = self.configuracao.prazo_do_foco_s

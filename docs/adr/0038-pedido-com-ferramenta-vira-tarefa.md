@@ -42,3 +42,45 @@ ferramentas ou laço acima de 12 s, e o objetivo que precisa conferir passa à t
 primeiro passo. O fim de uma tarefa é entregue uma vez e só com o que é novo; a tarefa cuja pergunta
 o dono não confirmou acaba ali, sem repropor. A pergunta cortada pela **resposta** do dono conta como
 ouvida (ADR-0048).
+
+## Emenda de 2026-10-30 — recuperar de falha em vez de desistir
+
+**Pedido:** dono, 2026-10-30 — «não consegui executar o passo» e a tarefa parava: qualquer erro
+virava desistência. Na trilha dele (30/10), três tarefas do navegador acabaram em falha 4–7 s
+depois de passos que deram certo: a rodada seguinte do motor caiu (`Fim(ERRO)`) e a tarefa morreu
+na primeira (`ErroDeTarefa`, «o motor da conversa não respondeu a tempo para o próximo passo»).
+
+**Decisão** (`jarvis.s2.recuperacao`, usado por `MotorDoObjetivo` e pela rodada do turno):
+
+1. **Erro estruturado e replanejar.** O passo que falhou (erro, negado, prazo — ou `ok` vazio: a
+   busca sem resultado, a página sem texto) volta ao motor numa nota: ferramenta, `causa` (o código
+   do executor, ou o da extensão entre parênteses no motivo), motivo curto, tentativa N de 4, o que
+   já foi tentado e **outros caminhos** daquela família que existem nesta sessão (aba por CDP que
+   falhou → `sites.open` → `browser.launch` → `web.buscar`; elemento não achado →
+   `browser.inspecionar` e a `ref` do mapa → `browser.acionar` → `browser.gesto`; página vazia →
+   rolar e ler de novo), com a instrução de pensar no bloco de raciocínio e tentar outro caminho.
+2. **Orçamento.** 4 falhas seguidas (`TENTATIVAS_POR_PASSO`) ou 8 na tarefa (`FALHAS_POR_TAREFA`),
+   dentro do teto de passos e do prazo de sempre; até 4 rodadas do motor por passo.
+3. **Sem repetir a ação idêntica.** A mesma ferramenta com os mesmos argumentos que já falhou, sem
+   nenhum passo que tenha dado certo depois, **não roda**: volta ao motor como recusa (`repetida`),
+   sem chegar ao PDP nem à extensão. A falha passageira (`tempo_esgotado`, `ocupado`,
+   `sem_resposta`, `navegador_fechado`) tem uma segunda chance idêntica.
+4. **A rodada do motor que cai** é tentada de novo (até 2 vezes, com respiro curto e cancelável).
+   Se cair de novo com o objetivo já feito e conferido, o código diz o resultado («Pronto: «título»
+   está aberto.») em vez de jogar fora o que deu certo.
+5. **Sem saída agora** (o dono disse não, mandou parar, a extensão precisa ser recarregada): a
+   tarefa acaba com a frase do código, sem gastar tentativa.
+6. **Desistir com honestidade.** Esgotado o orçamento, a resposta é do código, em frase de gente,
+   com até três caminhos tentados e por que não deram («Não consegui. Tentei ler a página (…);
+   rolar a página (…) — e nenhum caminho deu certo.») — nunca id de ferramenta, JSON nem «abri».
+7. **Na tela, não na voz.** Cada replanejamento é uma linha `↻ …` na tela (o canal de raciocínio da
+   ADR-0031, `Cerebro.ao_raciocinio`); a voz continua só com o resultado ou a pergunta.
+8. **O PDP e o guarda D valem em cada tentativa:** a recuperação só decide o que **propor**; cada
+   tentativa passa pelo portão de sempre (`fluxo_de_acao`), e a auditoria tem uma decisão por
+   tentativa que rodou.
+
+**Testes:** `tests/unit/s2/test_recuperacao_de_falha.py` (extensão falsa que falha de propósito:
+passageira, permanente, vazia, prazo em tudo, motor que cai; o PDP contado na auditoria).
+
+**Não provado:** o `claude -p` real seguindo a nota de replanejar (o motor dos testes é roteirizado);
+o custo real em tokens de uma tarefa que gasta as 4 tentativas.

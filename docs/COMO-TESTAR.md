@@ -1914,6 +1914,25 @@ tests/unit/navegador/test_diagnostico_navegador.py tests/unit/s2/test_motor_robu
 **Não provado (só você pode):** o Brave com a extensão que está carregada nele; o tempo real da
 pergunta de versão.
 
+### 0.50 Recuperar de falha: o Jarvis tenta outro caminho antes de desistir (2026-10-30, ADR-0038 emendada)
+
+**O que mudou.** Quando um passo falha (a aba não abriu, o botão não foi achado, a página veio
+vazia, a extensão não respondeu, o motor caiu numa rodada), o Jarvis recebe o erro com a causa e o
+que já tentou, e tenta **outro caminho** — até 4 falhas seguidas (8 na tarefa). A mesma ação
+idêntica que já falhou não roda de novo (a falha passageira, uma vez). Na tela aparece `↻ …` a
+cada replanejamento; na voz, só o resultado. Se esgotar, ele diz o que tentou e por que não deu.
+
+1. Peça algo que costuma tropeçar: «abre o canal X no YouTube e toca o vídeo mais recente».
+2. Olhe a tela: se um passo falhar, aparece `↻ browser.click não deu (alvo_ausente…); tentando
+   outro caminho — 3 tentativa(s) restante(s)` e ele segue (inspecionar a página, clicar pela
+   referência, rolar…).
+3. Para ver a desistência honesta: com o navegador **fechado** e sem como abrir, peça para ler uma
+   página — a resposta diz o que foi tentado, sem «abri».
+
+Testes: `TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/s2/test_recuperacao_de_falha.py`.
+
+**Não provado:** o `claude -p` de verdade seguindo a nota de replanejar.
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

@@ -78,6 +78,7 @@ from jarvis.s2.persona import sistema_do_jarvis
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
 from jarvis.s2.protocolo import LeitorDoProtocolo
 from jarvis.s2.rascunho import textos_no_contexto
+from jarvis.s2.recuperacao import nota_do_turno
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ChamarNaTarefa, Tarefa, TarefaRecusada
 from jarvis.tela.guia import nota_da_tela
@@ -255,6 +256,9 @@ class Cerebro:
     """Teto configurável, em segundos, para o encadeamento inteiro."""
     ao_status: AvisarStatus | None = None
     """Porta para a fila de avisos: status nunca é publicado por cima da fala em curso."""
+    ao_raciocinio: Callable[[str], None] | None = None
+    """O canal de raciocínio na tela (ADR-0031): a linha de cada replanejamento da tarefa quando
+    um passo falha (emenda de 2026-10-30 à ADR-0038). Só tela — nunca a voz nem a fila de avisos."""
     relogio: Callable[[], float] = time.monotonic
     """Relógio injetável para medir o prazo do laço sem tornar o teste lento."""
     portao: PortaoDeAcao | None = None
@@ -543,8 +547,15 @@ class Cerebro:
             # inteiros enquanto couberem no orçamento e, depois, podados.
             textos, podados = textos_no_contexto(resposta.ferramentas)
             resposta.resultados_podados = max(resposta.resultados_podados, podados)
+            # O passo do turno que falhou volta ao motor como erro estruturado, com a instrução de
+            # replanejar por outro caminho (emenda de 2026-10-30 à ADR-0038).
+            replanejar = (
+                nota_do_turno(resposta.ferramentas[-1], (str(f["id"]) for f in catalogo))
+                if resposta.ferramentas
+                else ""
+            )
             da_vez = Contexto(
-                sistema=contexto.sistema,
+                sistema=f"{contexto.sistema}\n\n{replanejar}" if replanejar else contexto.sistema,
                 mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
                 ferramentas=catalogo,
                 raciocinio=resposta.raciocinio,
@@ -890,6 +901,7 @@ class Cerebro:
             ja_dito=f"{resposta.gerado} {frase}".strip()[-LIMITE_DO_JA_DITO:],
             ids=frozenset(executor.manifestos),
             limite_do_raciocinio=LIMITE_DO_RACIOCINIO,
+            na_tela=self.ao_raciocinio,
         )
         try:
             tarefa = executor.tarefas.iniciar_objetivo(

@@ -24,8 +24,9 @@ O que vale aqui, por cima do modelo:
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
 from jarvis.imagem import Imagem
@@ -43,6 +44,7 @@ from jarvis.s2.motor import (
 )
 from jarvis.s2.protocolo import LeitorDoProtocolo, sem_protocolo
 from jarvis.s2.rascunho import textos_no_contexto
+from jarvis.s2.recuperacao import Recuperacao, Tentativa, assinatura
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ErroDeTarefa, FimDaTarefa, Passo, Tarefa
 from jarvis.voz.interface import Onde
 
@@ -73,6 +75,20 @@ CAUSAS_DE_DENTRO: Final = frozenset(
     {"fora_do_contrato", "ferramenta_desligada", "argumento_recusado", "metodo_de_fora"}
 )
 """Falhas que são do caminho interno (contrato, catálogo, método): o dono ouve a frase geral."""
+RODADAS_POR_PASSO: Final = 4
+"""Rodadas do motor dentro de um mesmo passo (cobrar a conferência, recusar a ação repetida,
+tentar de novo a rodada que caiu): o teto de custo de um passo."""
+PAUSA_DEPOIS_DO_ERRO_S: Final = 0.5
+"""Antes de tentar de novo a rodada do motor que caiu (a CLI que saiu com código, o serviço que
+respondeu 5xx): um respiro curto, cancelável."""
+FRASES_SEM_SAIDA: Final[Mapping[str, str]] = {
+    "extensao_desatualizada": (
+        "A extensão do Jarvis no navegador é de uma versão anterior: abra a página de extensões, "
+        "clique em Recarregar no card do Jarvis e me peça de novo."
+    ),
+    "parado_pelo_dono": "Parei, como você mandou.",
+}
+"""As falhas sem outro caminho agora (`recuperacao.SEM_SAIDA`): a frase é do código."""
 _FRASE: Final = r"(?<=[.!?…])\s+"
 _CODIGO_ENTRE_PARENTESES: Final = r"\s*\([a-z][a-z_]{2,40}\)"
 
@@ -102,6 +118,14 @@ class MotorDoObjetivo:
     nome: str = "objetivo"
     raciocinio_descartado: int = 0
     cobrou_conferencia: bool = False
+    recuperacao: Recuperacao = field(default_factory=Recuperacao)
+    """As falhas desta tarefa e o orçamento de tentativas (recuperação de falha, emenda de
+    2026-10-30 à ADR-0038)."""
+    na_tela: Callable[[str], None] | None = None
+    """O canal de raciocínio na tela (ADR-0031): a linha de cada replanejamento — nunca a voz."""
+    pausa_depois_do_erro_s: float = PAUSA_DEPOIS_DO_ERRO_S
+    _propostos: list[str] = field(default_factory=list)
+    """A assinatura (ferramenta + argumentos) de cada passo proposto, na ordem dos `feitos`."""
 
     @property
     def na_nuvem(self) -> bool:
@@ -111,27 +135,103 @@ class MotorDoObjetivo:
         self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
     ) -> Passo:
         if not feitos and self.primeiro is not None:
-            return self.primeiro
+            return self._propor(self.primeiro)
         if feitos and feitos[-1].causa == "dono_nao_confirmou":
             # O dono disse não (ou cortou a pergunta, ou ela venceu): a tarefa acaba aqui. Chamar o
             # motor de novo era a mesma ação proposta outra vez — a pergunta em laço da trilha do
             # dono (2026-10-24: três perguntas seguidas para o mesmo apps.quit).
             return _recusado(feitos[-1])
+        recuperacao = self.recuperacao
+        recuperacao.observar(feitos, self._propostos)
+        sem_saida = recuperacao.sem_saida()
+        if sem_saida is not None:
+            frase = FRASES_SEM_SAIDA.get(sem_saida.codigo, "Não deu para seguir.")
+            return FimDaTarefa(sem_saida.em_frase(), resposta=frase, falhou=True)
+        if recuperacao.esgotou():
+            return self._desistir(tarefa, feitos)
+        if recuperacao.ultima() is not None:
+            self._mostrar(recuperacao.linha_na_tela())
         objetivo = tarefa.contaminacao.objetivo
         catalogo = tuple(
             f for f in self.catalogo() if not str(f["id"]).startswith(FORA_DA_ALLOWLIST)
         )
-        while True:
+        disponiveis = [str(f["id"]) for f in catalogo]
+        for _rodada in range(RODADAS_POR_PASSO):
             cobrar = self.cobrou_conferencia
-            pedido, texto = self._rodada(tarefa, feitos, catalogo, cancelado, conferir=cobrar)
+            try:
+                pedido, texto = self._rodada(
+                    tarefa,
+                    feitos,
+                    catalogo,
+                    cancelado,
+                    conferir=cobrar,
+                    recuperar=recuperacao.nota(disponiveis),
+                )
+            except MotorFalhou as erro:
+                recuperacao.motor_falhou += 1
+                if recuperacao.motor_falhou > recuperacao.erros_do_motor or cancelado():
+                    return self._sem_motor(tarefa, feitos, erro)
+                self._mostrar(f"o motor não respondeu a esta rodada ({erro.detalhe[:80]}); de novo")
+                _esperar(self.pausa_depois_do_erro_s * recuperacao.motor_falhou, cancelado)
+                continue
             if pedido is not None:
-                return pedido
-            ids = self.ids | {str(f["id"]) for f in catalogo}
-            pode_ler = any(str(f["id"]) in FERRAMENTAS_DE_LEITURA for f in catalogo)
+                repetida = recuperacao.repetida(pedido)
+                if repetida is None:
+                    return self._propor(pedido)
+                # A mesma ação que já falhou: não roda de novo — volta ao motor como recusa.
+                recuperacao.registrar_falha(
+                    Tentativa(
+                        pedido.tool_id,
+                        assinatura(pedido.tool_id, pedido.args),
+                        "repetida",
+                        f"igual à que já falhou ({repetida.codigo})",
+                    )
+                )
+                if recuperacao.esgotou():
+                    return self._desistir(tarefa, feitos)
+                self._mostrar(recuperacao.linha_na_tela())
+                continue
+            ids = self.ids | set(disponiveis)
+            pode_ler = any(i in FERRAMENTAS_DE_LEITURA for i in disponiveis)
             if objetivo is not None and objetivo.falta_conferir and pode_ler and not cobrar:
                 self.cobrou_conferencia = True  # uma vez: o motor lê, ou a resposta diz que não
                 continue
             return self._fim(tarefa, feitos, texto, ids)
+        return self._desistir(tarefa, feitos)
+
+    def _propor(self, pedido: PedidoDeTool) -> PedidoDeTool:
+        self._propostos.append(assinatura(pedido.tool_id, pedido.args))
+        return pedido
+
+    def _mostrar(self, linha: str) -> None:
+        if linha and self.na_tela is not None:
+            self.na_tela(linha)
+
+    def _desistir(self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta]) -> FimDaTarefa:
+        """O orçamento acabou: a resposta é do código — o que foi tentado, nunca "abri"."""
+        todos = (*self.feitos_antes, *feitos)
+        ids = self.ids | {r.tool_id for r in todos}
+        frase = explicacao_para_ouvir(self.recuperacao, ids)
+        resumo = f"desisti depois de {self.recuperacao.total} falha(s)"
+        self._mostrar(resumo)
+        return FimDaTarefa(resumo, resposta=frase, falhou=True)
+
+    def _sem_motor(
+        self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], erro: MotorFalhou
+    ) -> FimDaTarefa:
+        """O motor caiu de novo depois das tentativas. Se o objetivo já está feito e conferido, o
+        código diz o resultado (o dono não perde o que deu certo por uma rodada que caiu); senão a
+        tarefa acaba com o motivo do motor."""
+        objetivo = tarefa.contaminacao.objetivo
+        conferido = objetivo is not None and objetivo.efeito_feito and not objetivo.falta_conferir
+        if conferido and any(r.status == "ok" for r in feitos):
+            titulo = _titulo_lido(feitos)
+            frase = f"Pronto: {titulo} está aberto." if titulo else "Pronto, está feito."
+            return FimDaTarefa(frase, resposta=frase)
+        raise ErroDeTarefa(
+            "o motor da conversa falhou "
+            f"{self.recuperacao.motor_falhou} vez(es) seguidas no próximo passo: {erro.detalhe}"
+        )
 
     def _rodada(
         self,
@@ -141,6 +241,7 @@ class MotorDoObjetivo:
         cancelado: Callable[[], bool],
         *,
         conferir: bool,
+        recuperar: str = "",
     ) -> tuple[PedidoDeTool | None, str]:
         todos = (*self.feitos_antes, *feitos)
         textos, _podados = textos_no_contexto(todos)
@@ -156,6 +257,8 @@ class MotorDoObjetivo:
             )
         if conferir:
             notas.append(NOTA_DE_CONFERIR)
+        if recuperar:
+            notas.append(recuperar)
         contexto = Contexto(
             sistema=f"{self.contexto.sistema}\n\n" + " ".join(notas),
             mensagens=(*self.contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
@@ -174,9 +277,7 @@ class MotorDoObjetivo:
             for delta in deltas:
                 if isinstance(delta, Fim):
                     if delta.motivo in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO):
-                        raise ErroDeTarefa(
-                            "o motor da conversa não respondeu a tempo para o próximo passo"
-                        )
+                        raise MotorFalhou(delta.detalhe or str(delta.motivo))
                     break
                 partes = (
                     list(leitor.alimentar(delta.texto)) if isinstance(delta, Texto) else [delta]
@@ -231,11 +332,83 @@ class MotorDoObjetivo:
             if ultimo.causa == "dono_nao_confirmou" or ultimo.motivo == "o dono disse não":
                 return FimDaTarefa(ultimo.motivo, resposta=NAO_CONFIRMADO, falhou=True)
             motivo = motivo_para_ouvir(ultimo, ids)
+            if len(self.recuperacao.historico) > 1:
+                # Mais de um caminho tentado: o dono ouve o que foi tentado, não só o último erro.
+                return FimDaTarefa(
+                    motivo, resposta=explicacao_para_ouvir(self.recuperacao, ids), falhou=True
+                )
             return FimDaTarefa(motivo, resposta=f"Não consegui: {motivo}.", falhou=True)
         resposta = sem_etapas_internas(texto, ids) or "Terminei o que você pediu."
         if objetivo is not None and objetivo.falta_conferir:
             resposta = f"{resposta} {SEM_CONFERIR}"
         return FimDaTarefa(resposta, resposta=resposta)
+
+
+class MotorFalhou(ErroDeTarefa):
+    """A rodada do motor acabou em erro ou prazo: a tarefa tenta de novo antes de desistir."""
+
+    def __init__(self, detalhe: str) -> None:
+        super().__init__(f"o motor da conversa não respondeu ao próximo passo: {detalhe}")
+        self.detalhe = detalhe
+
+
+NOMES_DE_GENTE: Final[Mapping[str, str]] = {
+    "browser.navigate": "abrir a página na aba",
+    "browser.tabs": "ver as abas",
+    "browser.click": "clicar no elemento",
+    "browser.type": "digitar no campo",
+    "browser.acionar": "acionar o elemento",
+    "browser.read": "ler a página",
+    "browser.inspecionar": "inspecionar a página",
+    "browser.gesto": "o clique físico",
+    "browser.avaliar": "o script na página",
+    "browser.scroll": "rolar a página",
+    "browser.launch": "abrir o navegador",
+    "sites.open": "abrir o site direto",
+    "web.buscar": "procurar na web",
+    "web.ler": "ler o endereço",
+    "apps.launch": "abrir o aplicativo",
+    "window.focus_app": "trazer a janela para a frente",
+    "files.search_in_roots": "procurar o arquivo",
+    "files.read_text": "ler o arquivo",
+}
+"""Como cada ferramenta aparece na frase da desistência: a voz não cita id de ferramenta."""
+
+
+def explicacao_para_ouvir(recuperacao: Recuperacao, ids: frozenset[str]) -> str:
+    """O que foi tentado e por que não deu, em frase de gente: no máximo três caminhos."""
+    partes: list[str] = []
+    for tentativa in recuperacao.historico:
+        if tentativa.codigo == "repetida":
+            continue
+        nome = NOMES_DE_GENTE.get(tentativa.tool_id, "outro caminho")
+        motivo = re.sub(_CODIGO_ENTRE_PARENTESES, "", sem_protocolo(tentativa.motivo)).strip()
+        motivo = motivo.rstrip(".!?…").strip()
+        if not motivo or _cita_ferramenta(motivo, ids) or "{" in motivo:
+            motivo = ""
+        parte = f"{nome} ({motivo})" if motivo else nome
+        if parte not in partes:
+            partes.append(parte)
+    if not partes:
+        return f"Não consegui: {SEM_JEITO}."
+    tentei = "; ".join(partes[-3:])
+    return f"Não consegui. Tentei {tentei} — e nenhum caminho deu certo."
+
+
+def _titulo_lido(feitos: Sequence[ResultadoDeFerramenta]) -> str:
+    """O título da página da última leitura que deu certo (para a frase do código)."""
+    for resultado in reversed(feitos):
+        if resultado.status == "ok":
+            titulo = resultado.dados.get("titulo") or resultado.dados.get("title")
+            if isinstance(titulo, str) and titulo.strip():
+                return f"«{titulo.strip()[:80]}»"
+    return ""
+
+
+def _esperar(segundos: float, cancelado: Callable[[], bool]) -> None:
+    limite = time.monotonic() + max(0.0, segundos)
+    while time.monotonic() < limite and not cancelado():
+        time.sleep(min(0.05, max(0.0, limite - time.monotonic())))
 
 
 def _recusado(resultado: ResultadoDeFerramenta) -> FimDaTarefa:
