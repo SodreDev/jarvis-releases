@@ -264,3 +264,16 @@ mínima da ADR-0025 (o turno do Jarvis só existe com o tocado quando o stream e
   alcance próprio.
 - Custo da cifra no caminho de gravação passa do orçamento do worker: muda a forma da cifra, não a
   regra de cifrar antes de gravar.
+
+## Emenda de 2026-10-30 — auditoria: o caminho quente é instantâneo; o que falta é o «natural»
+
+Auditoria do código real contra esta ADR e as 0005/0008/0011/0013/0024/0029
+(`docs/medicoes/memoria-auditoria.md`). **Ligado e medido:** e5 local + LanceDB + FTS5 + RRF, a
+memória de todo turno em p50 15 / p95 18 ms com 3 612 itens sintéticos (`tools/medir_memoria.py`).
+**Não ligado:** reranker (não há código), grafo no caminho da voz (só o braço C), consolidação que
+crie arestas, os parâmetros calibrados (o limiar como está faria o braço B se abster indevidamente em
+50%) e o histórico para o modelo de nuvem (`historico_na_nuvem` vazio sem tela que o preencha: com o
+Claude, `memoria.buscar_historico` sempre volta vazia). **Feito agora, por ser trivial e seguro:** o
+e5 abre ao lado quando o livro abre (`EmbedderE5.aquecer_em_segundo_plano`, com trava) — a 1ª
+consulta da sessão caiu de 764 ms para 5 ms. O resto é o plano M1–M7 da auditoria, para o dono
+aprovar; a regra 1 (o Jev não vê memória) continua valendo até ele decidir a M6.

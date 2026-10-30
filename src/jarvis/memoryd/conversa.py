@@ -157,7 +157,10 @@ def _indice_do_dono(raiz: Path) -> MemoryIndex:
 
         pasta = raiz / PASTA_DA_MEMORIA / "indice"
         pasta.mkdir(parents=True, exist_ok=True)
-        return IndiceLance(pasta=pasta, embedder=EmbedderE5())
+        embedder = EmbedderE5()
+        # O modelo abre ao lado (auditoria de 2026-10-30): o 1º turno não paga os ~0,8 s.
+        embedder.aquecer_em_segundo_plano()
+        return IndiceLance(pasta=pasta, embedder=embedder)
     except Exception:  # lancedb ou pyarrow ausentes: o grupo opcional não foi instalado
         return IndiceEmMemoria()
 

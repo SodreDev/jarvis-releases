@@ -2001,6 +2001,22 @@ tests/unit/gui/test_assistente_de_preset.py tests/unit/provedores`.
 
 **Não provado:** o Groq de verdade com a sua chave.
 
+### 0.54 A memória: quanto ela custa e o 1º turno sem espera (2026-10-30, ADR-0026 emendada)
+
+**O que mudou.** O modelo de embedding da memória abre ao lado quando o Jarvis abre a conversa: o
+1º pedido da sessão não espera mais ~0,8 s. A auditoria completa (o que existe, o que está ligado,
+o que falta e o plano) está em `docs/medicoes/memoria-auditoria.md` — leia e diga quais fatias
+aprovar (M1–M7), em especial a M2 (deixar o histórico ir ao Claude) e a M6 (o Jev escolhendo).
+
+1. Medir na sua máquina (dados sintéticos, nada seu): `uv run --frozen python -m
+   tools.medir_memoria` — a linha da memória do turno deve ficar perto de 15–20 ms.
+2. No app: abra a conversa e peça logo algo que use memória («o que você lembra de mim?»): a 1ª
+   resposta não tem a pausa extra do modelo abrindo.
+
+Testes: `TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/memoria`.
+
+**Não provado:** a latência na sua máquina com voz, ASR e TTS dividindo a CPU.
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

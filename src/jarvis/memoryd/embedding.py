@@ -15,9 +15,11 @@ para provar o contrato, **não** para medir acerto.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import re
+import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -76,10 +78,30 @@ class EmbedderE5:
     dimensao: int = DIMENSAO
     _sessao: object = field(default=None, repr=False)
     _tokenizador: object = field(default=None, repr=False)
+    _trava: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    """Abrir uma vez só, mesmo com o aquecimento em segundo plano e a 1ª consulta ao mesmo tempo."""
+
+    def aquecer_em_segundo_plano(self) -> threading.Thread:
+        """Abre o modelo numa linha à parte (auditoria da memória, 2026-10-30): a 1ª consulta da
+        sessão pagava ~0,8 s abrindo o ONNX antes do 1º turno; aquecido, paga só a busca. Falha
+        aqui não derruba nada — a consulta abre de novo quando precisar."""
+
+        def abrir_calado() -> None:
+            with contextlib.suppress(Exception):
+                self.abrir()
+
+        linha = threading.Thread(target=abrir_calado, name="jarvis-aquecer-e5", daemon=True)
+        linha.start()
+        return linha
 
     def abrir(self) -> None:
         if self._sessao is not None:
             return
+        with self._trava:
+            if self._sessao is None:
+                self._abrir()
+
+    def _abrir(self) -> None:
         import onnxruntime
         from tokenizers import Tokenizer
 
