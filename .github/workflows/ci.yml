@@ -21,8 +21,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    env:
+      # Os testes da janela desenham em memória (ADR-0019); sem isto o Qt procura um display.
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
+
+      # O runner Ubuntu não traz as bibliotecas de sistema que o PySide6 carrega ao importar
+      # QtGui (libEGL, libGL, xkbcommon, fontconfig, dbus): sem elas a coleta de
+      # tests/unit/gui cai com `ImportError: libEGL.so.1`.
+      - name: bibliotecas de sistema do Qt (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            libegl1 libgl1 libopengl0 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0t64
 
       - name: instalar uv
         uses: astral-sh/setup-uv@v5
