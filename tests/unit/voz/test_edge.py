@@ -63,6 +63,7 @@ def test_barrado_por_padrao_mesmo_com_a_nuvem_ligada(tmp_path: Path) -> None:
     assert "uso_comercial" in str(erro.value)
 
 
+@sem_ffmpeg
 def test_so_a_aceitacao_explicita_do_dono_abre(tmp_path: Path) -> None:
     aberto = motor(tmp_path).abrir()
     assert aberto.id == REGISTRADO
@@ -116,6 +117,7 @@ def test_satisfaz_a_interface_unica(tmp_path: Path) -> None:
     assert isinstance(motor(tmp_path), MotorDeTts)
 
 
+@sem_ffmpeg
 def test_sintetiza_juntando_os_pedacos_e_decodificando(tmp_path: Path) -> None:
     edge = motor(tmp_path)
     amostras = edge.sintetizar(TEXTO)
@@ -124,6 +126,7 @@ def test_sintetiza_juntando_os_pedacos_e_decodificando(tmp_path: Path) -> None:
     assert edge.caracteres_enviados == len(TEXTO)
 
 
+@sem_ffmpeg
 def test_epoch_morto_nao_manda_o_texto(tmp_path: Path) -> None:
     pedidos: list[str] = []
 
@@ -137,6 +140,7 @@ def test_epoch_morto_nao_manda_o_texto(tmp_path: Path) -> None:
     assert edge.caracteres_enviados == 0
 
 
+@sem_ffmpeg
 def test_cancelamento_no_meio_descarta_o_que_chegou(tmp_path: Path) -> None:
     chamadas = {"n": 0}
 
@@ -160,17 +164,20 @@ def test_cancelamento_no_meio_descarta_o_que_chegou(tmp_path: Path) -> None:
     assert edge.bytes_descartados > 0
 
 
+@sem_ffmpeg
 def test_servico_mudo_nao_vira_audio(tmp_path: Path) -> None:
     edge = motor(tmp_path, fluxo=fluxo_falso(pedacos=0))
     assert edge.sintetizar(TEXTO) == b""
 
 
+@sem_ffmpeg
 def test_sonda_apagada_declara_degradacao(tmp_path: Path) -> None:
     edge = motor(tmp_path, sonda=SondaInjetada(ligada=False))
     assert edge.sintetizar(TEXTO) == b""
     assert ler_degradacao(tmp_path).ativa
 
 
+@sem_ffmpeg
 def test_o_que_caiu_numa_sessao_nao_cala_a_fala_de_mesmo_numero_da_seguinte(
     tmp_path: Path,
 ) -> None:

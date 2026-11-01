@@ -24,6 +24,10 @@ from jarvis.politica.pdp import Pdp
 NUNCA = lambda: False  # noqa: E731
 TEM_CAIXA = backend_disponivel() is not None
 precisa_de_caixa = pytest.mark.skipif(not TEM_CAIXA, reason="sem bubblewrap nem podman")
+precisa_do_bwrap = pytest.mark.skipif(
+    backend_disponivel() != "bwrap",
+    reason="só o bwrap tem canal próprio para a entrada do dono; no podman o stdin leva o script",
+)
 
 
 def _jev(escolha: str = "permitir", p: float = 0.9) -> ClassificadorFalso:
@@ -63,7 +67,7 @@ def _rodar(executor: ExecutorDeFerramentas, **args: Any) -> Any:
 # A caixa, direto.
 
 
-@precisa_de_caixa
+@precisa_do_bwrap
 def test_a_caixa_roda_python_e_devolve_a_saida() -> None:
     r = CaixaDeScript().rodar(
         "python", "print(sum(int(x) for x in input().split()))", entrada="3 4 5"
