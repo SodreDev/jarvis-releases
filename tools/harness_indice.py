@@ -26,7 +26,6 @@ import argparse
 import csv
 import json
 import math
-import resource
 import statistics
 import subprocess
 import sys
@@ -39,6 +38,9 @@ from pathlib import Path
 from typing import Any, Final
 
 import numpy as np
+
+if sys.platform != "win32":  # `resource` não existe no Windows (ver `_cpu`)
+    import resource
 
 from jarvis.medicao import hardware, percentil
 from jarvis.memoryd.embedding import Embedder, EmbedderE5

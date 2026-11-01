@@ -19,7 +19,6 @@ Limite conhecido: `uinput` só move **relativo** (REL_X/REL_Y), como o portal ne
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import os
 import struct
 import sys
@@ -27,6 +26,9 @@ import threading
 import time
 from collections.abc import Callable
 from typing import Final
+
+if sys.platform != "win32":  # o uinput é do kernel Linux; no Windows o módulo só recusa
+    import fcntl
 
 from jarvis.entrada import teclas
 from jarvis.entrada.porta import BOTOES, EntradaIndisponivel
