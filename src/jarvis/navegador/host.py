@@ -42,6 +42,7 @@ from jarvis.navegador.protocolo import (
     validar_resposta,
 )
 from jarvis.navegador.quadro import Escritor, Leitor, QuadroInvalido, escrever_quadro, ler_quadro
+from jarvis.posix import soquete_unix, uid_atual
 
 PRAZO_S: Final = 25.0
 MAXIMO_EM_VOO: Final = 8
@@ -266,7 +267,7 @@ class Servidor:
         self._assinaturas: set[socket.socket] = set()
         """As conexões que esperam eventos: só elas ficam presas no `recv` quando o navegador
         sai."""
-        self._soquete = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._soquete = soquete_unix()
         antes = os.umask(0o177)
         try:
             self._soquete.bind(str(caminho))
@@ -358,7 +359,7 @@ def principal(
     if familia is None:
         print("jarvis-native-host: origem que não é a extensão do Jarvis", file=sys.stderr)
         return 2
-    dono = os.getuid() if uid is None else uid
+    dono = uid_atual() if uid is None else uid
     ponte = Ponte(saida, prazo_s=prazo_s)
     caminho = pasta_dos_sockets(ambiente, dono) / f"{familia}-{os.getpid()}.sock"
     try:

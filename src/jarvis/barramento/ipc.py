@@ -30,6 +30,16 @@ from multiprocessing.connection import Client, Connection, Listener
 from pathlib import Path
 from typing import Any, Final, Self
 
+from jarvis.posix import uid_atual
+
+if sys.platform == "win32":
+    from multiprocessing.connection import PipeConnection
+
+    # No Windows o `Pipe()` devolve `PipeConnection`, irmã (não filha) da `Connection`.
+    type Conexao = Connection | PipeConnection
+else:
+    type Conexao = Connection
+
 ARQUIVO_CHAVE: Final = "authkey"
 ARQUIVO_SOCKET: Final = "barramento.sock"
 ARQUIVO_ENDERECO: Final = "endereco-do-barramento.txt"
@@ -63,6 +73,11 @@ def endereco(raiz: Path) -> tuple[str, str]:
     """
     if sys.platform == "win32":
         return rf"\\.\pipe\jarvis-{_digest(raiz)}", "AF_PIPE"
+    else:
+        return _endereco_posix(raiz)
+
+
+def _endereco_posix(raiz: Path) -> tuple[str, str]:
     caminho = raiz / ARQUIVO_SOCKET
     if len(str(caminho)) <= LIMITE_SUN_PATH:
         return str(caminho), "AF_UNIX"
@@ -97,6 +112,11 @@ def criar_endereco(raiz: Path) -> tuple[str, str]:
     """
     if sys.platform == "win32":  # pragma: no cover - named pipe não tem caminho de arquivo
         return endereco(raiz)
+    else:
+        return _criar_endereco_posix(raiz)
+
+
+def _criar_endereco_posix(raiz: Path) -> tuple[str, str]:
     caminho = raiz / ARQUIVO_SOCKET
     if len(str(caminho)) <= LIMITE_SUN_PATH:
         return str(caminho), "AF_UNIX"
@@ -136,7 +156,7 @@ def _pasta_privada_reutilizavel(ponteiro: Path) -> Path | None:
         info = pasta.stat()
     except OSError:
         return None
-    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+    if info.st_uid != uid_atual() or stat.S_IMODE(info.st_mode) != 0o700:
         return None
     return anotado
 
@@ -185,7 +205,7 @@ def ler_chave(raiz: Path) -> bytes:
 class Canal:
     """Um lado da conversa. Só troca JSON."""
 
-    conexao: Connection
+    conexao: Conexao
     nome: str = "?"
 
     def enviar(self, mensagem: dict[str, Any]) -> None:

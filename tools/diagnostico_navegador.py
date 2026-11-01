@@ -28,7 +28,6 @@ import argparse
 import json
 import os
 import re
-import socket
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -49,6 +48,7 @@ from jarvis.navegador.estado import manifestos  # noqa: E402
 from jarvis.navegador.host import pasta_dos_sockets  # noqa: E402
 from jarvis.navegador.instalar import EXTENSAO_NO_USUARIO, STUB_NO_USUARIO  # noqa: E402
 from jarvis.navegador.protocolo import VERSAO_DA_PONTE  # noqa: E402
+from jarvis.posix import soquete_unix, uid_atual  # noqa: E402
 from jarvis.trilha import ARQUIVO as ARQUIVO_DA_TRILHA  # noqa: E402
 
 MODULO_DO_HOST: Final = "jarvis.navegador.host"
@@ -125,7 +125,7 @@ def sockets(pasta: Path) -> list[dict[str, Any]]:
     for caminho in caminhos:
         vivo = True
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conexao:
+            with soquete_unix() as conexao:
                 conexao.settimeout(1.0)
                 conexao.connect(str(caminho))
         except OSError:
@@ -316,7 +316,7 @@ def coletar(
     turnos: int,
     proc: Path = Path("/proc"),
 ) -> dict[str, Any]:
-    pasta = pasta_dos_sockets(ambiente, os.getuid())
+    pasta = pasta_dos_sockets(ambiente, uid_atual())
     lista = sockets(pasta)
     relatorio: dict[str, Any] = {
         "versao_esperada": VERSAO_DA_PONTE,

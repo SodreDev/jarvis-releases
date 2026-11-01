@@ -451,24 +451,25 @@ def ambiente_saneado(origem: Mapping[str, str] | None = None) -> dict[str, str]:
 def lancar(app: App, *, ambiente: Mapping[str, str] | None = None) -> int:
     """Abre o app numa sessão própria e devolve o pid. Quem espera o filho é uma linha à parte,
     para não sobrar processo zumbi; o Jarvis não fica preso a ele."""
-    if sys.platform == "win32":  # pragma: no cover — Menu Iniciar/AppX ainda não implementado
-        raise AppRecusado("abrir aplicativo no Windows ainda não foi implementado")
-    executavel = app.argv[0] if Path(app.argv[0]).is_absolute() else shutil.which(app.argv[0])
-    if executavel is None:
-        raise AppRecusado(f"{app.nome}: o executável {app.argv[0]!r} não está no PATH")
-    return _separar(executavel, app.argv, ambiente, nome=f"app-{app.id}")
+    if sys.platform != "win32":
+        executavel = app.argv[0] if Path(app.argv[0]).is_absolute() else shutil.which(app.argv[0])
+        if executavel is None:
+            raise AppRecusado(f"{app.nome}: o executável {app.argv[0]!r} não está no PATH")
+        return _separar(executavel, app.argv, ambiente, nome=f"app-{app.id}")
+    # pragma: no cover — Menu Iniciar/AppX ainda não implementado
+    raise AppRecusado("abrir aplicativo no Windows ainda não foi implementado")
 
 
 def lancar_argv(argv: Sequence[str], *, ambiente: Mapping[str, str] | None = None) -> int:
     """O mesmo `lancar`, para quem já tem o `argv` montado pelo código (o navegador do dono +
     uma URL validada). Nada aqui vem do modelo além da URL, que é um único elemento do `argv` e
     já passou por `validar_url` (só http/https)."""
-    if sys.platform == "win32":  # pragma: no cover
-        raise AppRecusado("abrir programa no Windows ainda não foi implementado")
-    executavel = argv[0] if Path(argv[0]).is_absolute() else shutil.which(argv[0])
-    if executavel is None:
-        raise AppRecusado(f"o executável {argv[0]!r} não está no PATH")
-    return _separar(executavel, argv, ambiente, nome="programa-aberto")
+    if sys.platform != "win32":
+        executavel = argv[0] if Path(argv[0]).is_absolute() else shutil.which(argv[0])
+        if executavel is None:
+            raise AppRecusado(f"o executável {argv[0]!r} não está no PATH")
+        return _separar(executavel, argv, ambiente, nome="programa-aberto")
+    raise AppRecusado("abrir programa no Windows ainda não foi implementado")
 
 
 def _separar(

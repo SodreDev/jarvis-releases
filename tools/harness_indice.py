@@ -174,8 +174,13 @@ def _rss_de_pico_mib() -> float:
 
 
 def _cpu() -> float:
-    uso = resource.getrusage(resource.RUSAGE_SELF)
-    return uso.ru_utime + uso.ru_stime
+    if sys.platform != "win32":
+        uso = resource.getrusage(resource.RUSAGE_SELF)
+        return float(uso.ru_utime + uso.ru_stime)
+    else:
+        return (
+            time.process_time()
+        )  # o Windows não tem `resource`; é o mesmo tempo de CPU do processo
 
 
 def filho(candidato: str, dados: Path, saida: Path) -> None:

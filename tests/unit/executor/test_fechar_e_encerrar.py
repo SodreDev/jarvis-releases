@@ -38,6 +38,7 @@ from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.metodo import ContextoDoMetodo, escolher_metodo
 from jarvis.politica.modos import Modo
 from jarvis.politica.pdp import Pdp
+from jarvis.posix import SINAL_DE_MATAR, uid_atual
 
 EU = 1000
 OUTRO = 1001
@@ -372,7 +373,7 @@ def test_quem_ignora_o_sigterm_leva_sigkill_so_depois_do_prazo() -> None:
     dados = fechador.encerrar_app(fechador.app("discord"))
 
     assert tabela.sinais[0] == (700, signal.SIGTERM)
-    assert (700, signal.SIGKILL) in tabela.sinais
+    assert (700, SINAL_DE_MATAR) in tabela.sinais
     assert relogio.agora >= fechador.prazo_do_term_s, "forçou antes do prazo"
     assert dados["sigkill"] >= 1 and dados["conferido"] is True
 
@@ -689,7 +690,7 @@ def test_o_teimoso_de_verdade_leva_sigkill_depois_do_prazo(tmp_path: Path) -> No
         comeco = time.monotonic()
         dados = fechador.encerrar_app(fechador.app("Teimoso de Teste"))
 
-        assert processo.wait(timeout=5) == -signal.SIGKILL, "só o SIGKILL o levou"
+        assert processo.wait(timeout=5) == -SINAL_DE_MATAR, "só o SIGKILL o levou"
         assert time.monotonic() - comeco >= fechador.prazo_do_term_s
         assert dados["sigterm"] == 1 and dados["sigkill"] >= 1 and dados["conferido"] is True
     finally:
@@ -707,7 +708,7 @@ def test_o_proprio_processo_e_quem_o_abriu_nunca_sao_alvo() -> None:
     eu = tabela.ler(os.getpid())
     pai = tabela.ler(os.getppid())
     assert eu is not None and pai is not None
-    assert jarvis.pid == os.getpid() and jarvis.uid == os.getuid()
+    assert jarvis.pid == os.getpid() and jarvis.uid == uid_atual()
     assert "próprio Jarvis" in protecao(eu, jarvis, frozenset())
     assert pai.pid in jarvis.ancestrais
     assert "rodando dentro dele" in protecao(pai, jarvis, frozenset()) or pai.uid != jarvis.uid

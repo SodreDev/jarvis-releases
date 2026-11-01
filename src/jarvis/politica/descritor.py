@@ -118,14 +118,15 @@ def openat2_disponivel() -> bool:
     """`openat2` existe neste kernel? (Linux 5.6+; sem ele a travessia é por componente.)"""
     if sys.platform != "linux":
         return False
-    libc = _libc()
-    if libc is None:
-        return False
-    try:
-        with abrir_raiz(Path.cwd()) as raiz:
-            return raiz._abrir_openat2(".", escrever=False, diretorio=True) is not None
-    except (AberturaRecusada, OSError):
-        return False
+    else:
+        libc = _libc()
+        if libc is None:
+            return False
+        try:
+            with abrir_raiz(Path.cwd()) as raiz:
+                return raiz._abrir_openat2(".", escrever=False, diretorio=True) is not None
+        except (AberturaRecusada, OSError):
+            return False
 
 
 @dataclass(slots=True)
@@ -196,66 +197,73 @@ class RaizAberta:
         return Aberto(fd=fd, identidade=identidade, relativo=alvo, nlink=nlink)
 
     def _abrir_openat2(self, alvo: str, escrever: bool, diretorio: bool) -> int | None:
-        libc = _libc()
-        if libc is None or sys.platform != "linux":
+        if sys.platform != "linux":
             return None
-        flags = os.O_RDWR if escrever else os.O_RDONLY
-        if diretorio:
-            flags = os.O_RDONLY | os.O_DIRECTORY
-        how = _OpenHow(flags=flags | os.O_CLOEXEC, mode=0, resolve=RESOLVE_DA_POLITICA)
-        ctypes.set_errno(0)
-        fd = libc.syscall(
-            ctypes.c_long(SYS_OPENAT2),
-            ctypes.c_int(self.fd),
-            alvo.encode("utf-8"),
-            ctypes.byref(how),
-            ctypes.c_size_t(ctypes.sizeof(how)),
-        )
-        if fd >= 0:
-            return int(fd)
-        erro = ctypes.get_errno()
-        if erro in (errno.ENOSYS, errno.EINVAL, errno.EPERM):
-            return None  # kernel sem openat2 (ou bloqueado por seccomp): usa o outro caminho
-        raise AberturaRecusada(f"{alvo!r}: {os.strerror(erro)} (openat2)")
+        else:
+            libc = _libc()
+            if libc is None:
+                return None
+            flags = os.O_RDWR if escrever else os.O_RDONLY
+            if diretorio:
+                flags = os.O_RDONLY | os.O_DIRECTORY
+            how = _OpenHow(flags=flags | os.O_CLOEXEC, mode=0, resolve=RESOLVE_DA_POLITICA)
+            ctypes.set_errno(0)
+            fd = libc.syscall(
+                ctypes.c_long(SYS_OPENAT2),
+                ctypes.c_int(self.fd),
+                alvo.encode("utf-8"),
+                ctypes.byref(how),
+                ctypes.c_size_t(ctypes.sizeof(how)),
+            )
+            if fd >= 0:
+                return int(fd)
+            erro = ctypes.get_errno()
+            if erro in (errno.ENOSYS, errno.EINVAL, errno.EPERM):
+                return None  # kernel sem openat2 (ou bloqueado por seccomp): usa o outro caminho
+            raise AberturaRecusada(f"{alvo!r}: {os.strerror(erro)} (openat2)")
 
     def _abrir_componente_a_componente(self, alvo: str, escrever: bool, diretorio: bool) -> int:
         """Travessia POSIX com `O_NOFOLLOW` e `dir_fd`: link simbólico falha, não escapa."""
-        partes = [p for p in Path(alvo).parts if p not in (".", "")]
-        atual = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC, dir_fd=self.fd)
-        try:
-            for i, parte in enumerate(partes):
-                ultimo = i == len(partes) - 1
-                flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
-                if not ultimo or diretorio:
-                    flags |= os.O_DIRECTORY
-                elif escrever:
-                    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC
-                try:
-                    proximo = os.open(parte, flags, dir_fd=atual)
-                except OSError as erro:
-                    raise AberturaRecusada(f"{alvo!r} em {parte!r}: {erro.strerror}") from erro
-                info = os.fstat(proximo)
-                if info.st_dev != self.identidade.device:
-                    os.close(proximo)
-                    raise AberturaRecusada(f"{parte!r} atravessa ponto de montagem")
+        if sys.platform == "win32":  # pragma: no cover - o Windows abre pela RaizWindows
+            raise AberturaRecusada("travessia por descritor POSIX não existe no Windows")
+        else:
+            partes = [p for p in Path(alvo).parts if p not in (".", "")]
+            atual = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC, dir_fd=self.fd)
+            try:
+                for i, parte in enumerate(partes):
+                    ultimo = i == len(partes) - 1
+                    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+                    if not ultimo or diretorio:
+                        flags |= os.O_DIRECTORY
+                    elif escrever:
+                        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC
+                    try:
+                        proximo = os.open(parte, flags, dir_fd=atual)
+                    except OSError as erro:
+                        raise AberturaRecusada(f"{alvo!r} em {parte!r}: {erro.strerror}") from erro
+                    info = os.fstat(proximo)
+                    if info.st_dev != self.identidade.device:
+                        os.close(proximo)
+                        raise AberturaRecusada(f"{parte!r} atravessa ponto de montagem")
+                    os.close(atual)
+                    atual = proximo
+                return atual
+            except BaseException:
                 os.close(atual)
-                atual = proximo
-            return atual
-        except BaseException:
-            os.close(atual)
-            raise
+                raise
 
 
 def abrir_raiz(caminho: Path) -> RaizAberta:
     """Abre a raiz uma vez e guarda a identidade dela (§5.5: a raiz é aberta no grant)."""
     if sys.platform == "win32":  # pragma: no cover - não executado nesta máquina
         return abrir_raiz_windows(caminho)
-    try:
-        fd = os.open(caminho, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-    except OSError as erro:
-        raise AberturaRecusada(f"raiz {caminho} não abriu: {erro.strerror}") from erro
-    info = os.fstat(fd)
-    return RaizAberta(caminho=caminho, fd=fd, identidade=Identidade(info.st_dev, info.st_ino))
+    else:
+        try:
+            fd = os.open(caminho, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        except OSError as erro:
+            raise AberturaRecusada(f"raiz {caminho} não abriu: {erro.strerror}") from erro
+        info = os.fstat(fd)
+        return RaizAberta(caminho=caminho, fd=fd, identidade=Identidade(info.st_dev, info.st_ino))
 
 
 @runtime_checkable
@@ -294,7 +302,7 @@ class Kernel32:  # pragma: no cover - só Windows, nunca executado nesta máquin
     """A fronteira de verdade. Cada método é uma chamada do `kernel32`, e nada mais."""
 
     def abrir_sem_seguir_reparse(self, caminho: Path) -> int:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
         handle = kernel32.CreateFileW(
             str(caminho),
             GENERIC_READ,
@@ -306,32 +314,32 @@ class Kernel32:  # pragma: no cover - só Windows, nunca executado nesta máquin
         )
         if handle == HANDLE_INVALIDO:
             raise AberturaRecusada(
-                f"raiz {caminho} não abriu: erro {ctypes.get_last_error()} em CreateFileW"  # type: ignore[attr-defined]
+                f"raiz {caminho} não abriu: erro {ctypes.get_last_error()} em CreateFileW"  # type: ignore[attr-defined,unused-ignore]
             )
         return int(handle)
 
     def e_reparse_point(self, handle: int) -> bool:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
         informacao = _InformacaoPorHandle()
         if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(informacao)):
-            raise AberturaRecusada(f"erro {ctypes.get_last_error()} em GetFileInformationByHandle")  # type: ignore[attr-defined]
+            raise AberturaRecusada(f"erro {ctypes.get_last_error()} em GetFileInformationByHandle")  # type: ignore[attr-defined,unused-ignore]
         return bool(informacao.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
 
     def caminho_final(self, handle: int) -> str:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
         buffer = ctypes.create_unicode_buffer(32768)
         if kernel32.GetFinalPathNameByHandleW(handle, buffer, len(buffer), 0) == 0:
-            raise AberturaRecusada(f"erro {ctypes.get_last_error()} em GetFinalPathNameByHandleW")  # type: ignore[attr-defined]
+            raise AberturaRecusada(f"erro {ctypes.get_last_error()} em GetFinalPathNameByHandleW")  # type: ignore[attr-defined,unused-ignore]
         return str(buffer.value)
 
     def descritor_de(self, handle: int) -> int:
         """Converte o handle conferido em descritor: a posse passa para o descritor."""
         import msvcrt
 
-        return int(msvcrt.open_osfhandle(handle, os.O_RDONLY))  # type: ignore[attr-defined]
+        return int(msvcrt.open_osfhandle(handle, os.O_RDONLY))  # type: ignore[attr-defined,unused-ignore]
 
     def fechar(self, handle: int) -> None:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
         kernel32.CloseHandle(handle)
 
 
@@ -386,28 +394,27 @@ def abrir_raiz_windows(caminho: Path, api: ApiDoWindows | None = None) -> RaizAb
 
 def caminho_final_do_handle(caminho: Path) -> str:  # pragma: no cover - só Windows
     """`GetFinalPathNameByHandleW`: o caminho real por trás de junções e links do Windows."""
-    if sys.platform != "win32":
-        raise AberturaRecusada("GetFinalPathNameByHandleW só existe no Windows")
-    # mypy analisa com a plataforma desta máquina (Linux) e vê o resto como inalcançável.
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[unreachable]
-    handle = kernel32.CreateFileW(
-        str(caminho),
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        None,
-        OPEN_EXISTING,
-        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-        None,
-    )
-    if handle == -1:
-        raise AberturaRecusada(f"{caminho}: erro {ctypes.get_last_error()} em CreateFileW")
-    try:
-        buffer = ctypes.create_unicode_buffer(32768)
-        tamanho = kernel32.GetFinalPathNameByHandleW(handle, buffer, len(buffer), 0)
-        if tamanho == 0:
-            raise AberturaRecusada(
-                f"{caminho}: erro {ctypes.get_last_error()} em GetFinalPathNameByHandleW"
-            )
-        return buffer.value
-    finally:
-        kernel32.CloseHandle(handle)
+    if sys.platform == "win32":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.CreateFileW(
+            str(caminho),
+            GENERIC_READ,
+            FILE_SHARE_READ,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            None,
+        )
+        if handle == -1:
+            raise AberturaRecusada(f"{caminho}: erro {ctypes.get_last_error()} em CreateFileW")
+        try:
+            buffer = ctypes.create_unicode_buffer(32768)
+            tamanho = kernel32.GetFinalPathNameByHandleW(handle, buffer, len(buffer), 0)
+            if tamanho == 0:
+                raise AberturaRecusada(
+                    f"{caminho}: erro {ctypes.get_last_error()} em GetFinalPathNameByHandleW"
+                )
+            return buffer.value
+        finally:
+            kernel32.CloseHandle(handle)
+    raise AberturaRecusada("GetFinalPathNameByHandleW só existe no Windows")

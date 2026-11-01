@@ -243,7 +243,7 @@ def test_a_raiz_no_windows_recusa_quando_o_caminho_real_diverge(tmp_path: Path) 
 
 def test_a_raiz_no_windows_aceita_pasta_de_verdade_e_guarda_a_identidade(tmp_path: Path) -> None:
     """O prefixo de caminho longo (`\\\\?\\`) não é divergência: é a mesma pasta, escrita assim."""
-    descritor = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    descritor = os.open(tmp_path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     janela = JanelaFalsa(final=f"\\\\?\\{tmp_path}", fd=descritor)
 
     with abrir_raiz_windows(tmp_path, janela) as aberta:

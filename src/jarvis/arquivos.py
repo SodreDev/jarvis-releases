@@ -93,7 +93,7 @@ def _travar(descritor: int) -> bool:
     """Trava exclusiva, sem bloquear. `False` quando outro processo está dentro."""
     try:
         if sys.platform == "win32":  # pragma: no cover — nunca executado nesta máquina
-            msvcrt.locking(descritor, msvcrt.LK_NBLCK, 1)  # type: ignore[unreachable]
+            msvcrt.locking(descritor, msvcrt.LK_NBLCK, 1)
         else:
             fcntl.flock(descritor, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -104,7 +104,7 @@ def _travar(descritor: int) -> bool:
 def _destravar(descritor: int) -> None:
     try:
         if sys.platform == "win32":  # pragma: no cover — nunca executado nesta máquina
-            msvcrt.locking(descritor, msvcrt.LK_UNLCK, 1)  # type: ignore[unreachable]
+            msvcrt.locking(descritor, msvcrt.LK_UNLCK, 1)
         else:
             fcntl.flock(descritor, fcntl.LOCK_UN)
     except OSError:  # pragma: no cover — descritor já fechado pelo sistema
@@ -132,7 +132,7 @@ def tranca_exclusiva(
     """
     alvo = caminho.with_name(caminho.name + SUFIXO_DA_TRANCA)
     try:
-        descritor = os.open(alvo, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
+        descritor = os.open(alvo, os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0), 0o600)
     except OSError:  # pragma: no cover — pasta só de leitura: a escrita falharia de todo jeito
         yield False
         return

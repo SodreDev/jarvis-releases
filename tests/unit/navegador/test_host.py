@@ -22,6 +22,7 @@ from jarvis.navegador.cliente import (
 )
 from jarvis.navegador.protocolo import ORIGEM_CHROMIUM, PedidoDaPonte
 from jarvis.navegador.quadro import codificar, escrever_quadro, ler_quadro
+from jarvis.posix import uid_atual
 
 Extensao = Callable[[dict[str, Any]], dict[str, Any] | None]
 
@@ -57,14 +58,18 @@ class Navegador:
 
         self._host = threading.Thread(target=rodar, daemon=True)
         self._extensao = threading.Thread(target=self._servir, daemon=True)
-        self.pasta = host.pasta_dos_sockets(ambiente, os.getuid())
+        self.pasta = host.pasta_dos_sockets(ambiente, uid_atual())
 
     def abrir(self) -> None:
         self._host.start()
         self._extensao.start()
         fim = time.monotonic() + PRAZO_DO_TESTE_S
-        while time.monotonic() < fim:  # espera o socket nascer
-            if list(self.pasta.glob("*.sock")):
+        # Espera o host ACEITAR conexão, não só o arquivo do socket nascer: entre o `bind` e o
+        # `listen` o arquivo já existe e o `connect` é recusado — e um `sondar` que caísse nessa
+        # janela via a extensão desligada (falha intermitente no runner do CI).
+        transporte = TransporteUnix(self.pasta)
+        while time.monotonic() < fim:
+            if transporte.vivos():
                 return
             threading.Event().wait(0.01)
         raise AssertionError(f"o host não abriu o socket em {PRAZO_DO_TESTE_S:.0f} s")

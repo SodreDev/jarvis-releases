@@ -14,7 +14,7 @@ comparar e devolve 0, e isso está dito no campo `detalhe`.
 
 from __future__ import annotations
 
-import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -69,11 +69,11 @@ def _memoria() -> tuple[float, str] | None:
 
 def _disco(caminho: str = "/") -> tuple[float, str] | None:
     try:
-        estado = os.statvfs(caminho)
+        uso = shutil.disk_usage(caminho)  # no POSIX é o mesmo statvfs; existe também no Windows
     except OSError:
         return None
-    total = estado.f_blocks * estado.f_frsize
-    livre = estado.f_bavail * estado.f_frsize
+    total = uso.total
+    livre = uso.free
     if not total:
         return None
     usado = total - livre

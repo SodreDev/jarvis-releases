@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import os
 import shutil
-import signal
 import subprocess
 import time
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
+
+from jarvis.posix import matar_o_grupo
 
 PRAZO_PADRAO_S: Final = 10.0
 CPU_PADRAO_S: Final = 10
@@ -330,7 +331,7 @@ class CaixaDeScript:
 
 def _matar_o_grupo(pid: int) -> None:
     with suppress(ProcessLookupError, PermissionError):
-        os.killpg(os.getpgid(pid), signal.SIGKILL)
+        matar_o_grupo(pid)
 
 
 def _texto(bruto: bytes, limite: int) -> str:

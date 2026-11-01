@@ -47,8 +47,9 @@ def test_lanca_em_sessao_propria_sem_posix_spawn(monkeypatch: pytest.MonkeyPatch
     try:
         assert pid > 0 and pid != os.getpid()
         assert Path(f"/proc/{pid}/comm").read_text().strip() == "sleep"
-        assert os.getsid(pid) == pid, "o filho tem de liderar uma sessão só dele"
-        assert os.getsid(pid) != os.getsid(0)
+        if sys.platform != "win32":
+            assert os.getsid(pid) == pid, "o filho tem de liderar uma sessão só dele"
+            assert os.getsid(pid) != os.getsid(0)
     finally:
         _encerrar(pid)
 

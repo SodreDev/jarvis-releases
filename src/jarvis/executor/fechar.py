@@ -55,6 +55,7 @@ from jarvis.executor.janelas import (
     de_app,
 )
 from jarvis.executor.lancador import App
+from jarvis.posix import SINAL_DE_MATAR, sessao_atual, uid_atual
 
 PRAZO_DO_TERM_S: Final = 3.0
 """Depois do SIGTERM, quanto o app tem para sair sozinho antes do SIGKILL."""
@@ -253,7 +254,9 @@ class Jarvis:
             if processo is None:
                 break
             atual = processo.pai
-        return cls(pid=pid, uid=os.getuid(), sessao=os.getsid(0), ancestrais=frozenset(ancestrais))
+        return cls(
+            pid=pid, uid=uid_atual(), sessao=sessao_atual(), ancestrais=frozenset(ancestrais)
+        )
 
 
 def _filhos(processos: Iterable[Processo]) -> dict[int, list[Processo]]:
@@ -761,7 +764,7 @@ class Fechador:
         forcados = 0
         for processo in alvo.processos:
             if pode(processo):
-                self._sinal(processo.pid, signal.SIGKILL)
+                self._sinal(processo.pid, SINAL_DE_MATAR)
                 forcados += 1
         if forcados:
             self.dormir(INTERVALO_S)

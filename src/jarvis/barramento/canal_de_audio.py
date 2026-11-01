@@ -135,19 +135,19 @@ class CanalDeSocket:
         erro críptico do stdlib não diz o que fazer. O sistema entra por parâmetro, como na
         canonicalização do F0-06, para a recusa ser testável rodando em Linux.
         """
-        if sistema == "win32":
-            raise ErroDeCanal(
-                "CanalDeSocket não existe no Windows: o Python de lá não tem AF_UNIX em "
-                "datagrama (lacuna de P11 declarada na ADR-0015). Use CanalDeConexao."
-            )
-        esquerda, direita = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
-        tamanho = folga * (TAMANHO_CABECALHO + BYTES_POR_QUADRO)
-        for lado in (esquerda, direita):
-            lado.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, tamanho)
-            lado.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, tamanho)
-        esquerda.setblocking(False)
-        direita.setblocking(False)
-        return cls(envio=esquerda, recepcao=direita, taxa=taxa)
+        if sistema != "win32" and sys.platform != "win32":
+            esquerda, direita = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+            tamanho = folga * (TAMANHO_CABECALHO + BYTES_POR_QUADRO)
+            for lado in (esquerda, direita):
+                lado.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, tamanho)
+                lado.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, tamanho)
+            esquerda.setblocking(False)
+            direita.setblocking(False)
+            return cls(envio=esquerda, recepcao=direita, taxa=taxa)
+        raise ErroDeCanal(
+            "CanalDeSocket não existe no Windows: o Python de lá não tem AF_UNIX em "
+            "datagrama (lacuna de P11 declarada na ADR-0015). Use CanalDeConexao."
+        )
 
     def enviar(self, quadro: Quadro, *, epoch: int) -> bool:
         self._seq += 1
@@ -433,11 +433,12 @@ class CanalDeConexao:
         """
         if sys.platform == "win32":  # pragma: no cover — P11: o CI do Windows ainda não rodou
             return True
-        try:
-            descritor = self.envio.fileno()
-        except (OSError, ValueError):  # pragma: no cover — ponta já fechada
-            return True
-        return bool(select.select([], [descritor], [], 0)[1])
+        else:
+            try:
+                descritor = self.envio.fileno()
+            except (OSError, ValueError):  # pragma: no cover — ponta já fechada
+                return True
+            return bool(select.select([], [descritor], [], 0)[1])
 
     def enviar(self, quadro: Quadro, *, epoch: int) -> bool:
         if self.envio is None:

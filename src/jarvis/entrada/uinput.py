@@ -22,6 +22,7 @@ import contextlib
 import fcntl
 import os
 import struct
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -68,16 +69,22 @@ class Dispositivo:
         self._fd = -1
 
     def abrir(self) -> None:
-        try:
-            self._fd = os.open(self.caminho, os.O_WRONLY | os.O_NONBLOCK)
-        except OSError as erro:
-            raise EntradaIndisponivel(
-                f"sem acesso a {self.caminho} ({erro.strerror}): o dono precisa liberar o "
-                "uinput para o seu usuário (regra de udev) antes de ligar a reserva"
-            ) from None
+        if sys.platform != "win32":
+            try:
+                self._fd = os.open(self.caminho, os.O_WRONLY | os.O_NONBLOCK)
+            except OSError as erro:
+                raise EntradaIndisponivel(
+                    f"sem acesso a {self.caminho} ({erro.strerror}): o dono precisa liberar o "
+                    "uinput para o seu usuário (regra de udev) antes de ligar a reserva"
+                ) from None
+            return
+        raise EntradaIndisponivel("o uinput é do kernel Linux: não existe no Windows")
 
     def ioctl(self, pedido: int, argumento: int | bytes = 0) -> None:
-        fcntl.ioctl(self._fd, pedido, argumento)
+        if sys.platform != "win32":
+            fcntl.ioctl(self._fd, pedido, argumento)
+            return
+        raise EntradaIndisponivel("o uinput é do kernel Linux: não existe no Windows")
 
     def escrever(self, dados: bytes) -> None:
         os.write(self._fd, dados)

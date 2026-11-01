@@ -34,9 +34,18 @@ PROFUNDIDADE_MAXIMA: Final = 8
 PASTA_DE_RASCUNHOS: Final = "rascunhos"
 PASTA_DE_AGENDA: Final = "rascunhos/agenda"
 EXTENSOES_DE_RASCUNHO: Final = (".md", ".txt")
-CRIAR: Final = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+CRIAR: Final = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+)
 DESCER: Final = (
-    os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    os.O_RDONLY
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
 )
 
 Cancelado = Callable[[], bool]

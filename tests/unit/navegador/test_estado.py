@@ -15,6 +15,7 @@ import pytest
 from jarvis.navegador import estado as est
 from jarvis.navegador import instalar as inst
 from jarvis.navegador.cliente import TransporteUnix
+from jarvis.posix import soquete_unix
 
 
 @pytest.fixture
@@ -35,7 +36,7 @@ def escutando(pasta: Path) -> Iterator[list[socket.socket]]:
 
 
 def _host_vivo(pasta: Path, nome: str, abertos: list[socket.socket]) -> None:
-    servidor = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    servidor = soquete_unix()
     servidor.bind(str(pasta / nome))
     servidor.listen(4)
     abertos.append(servidor)
@@ -43,7 +44,7 @@ def _host_vivo(pasta: Path, nome: str, abertos: list[socket.socket]) -> None:
 
 def _host_morto(pasta: Path, nome: str) -> None:
     """O arquivo que um host derrubado deixa: existe, é socket, e recusa conexão."""
-    sobra = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sobra = soquete_unix()
     sobra.bind(str(pasta / nome))
     sobra.close()
 

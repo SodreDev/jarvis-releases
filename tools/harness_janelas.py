@@ -318,7 +318,8 @@ def _roteiro(relatorio: Relatorio) -> None:
             pid = resultado.dados.get("pid") if resultado.status == "ok" else None
             if isinstance(pid, int) and pid > 1:  # o grupo do processo que este código lançou
                 with contextlib.suppress(ProcessLookupError, PermissionError):
-                    os.killpg(pid, signal.SIGTERM)
+                    if sys.platform != "win32":  # o harness é do X11 (wmctrl): só Linux
+                        os.killpg(pid, signal.SIGTERM)
             subprocess.run([WMCTRL, "-i", "-a", hex(id_do_dono)], check=False)
             _esperar(lambda: _ativa() == id_do_dono, 5)
             registradas.ativadas.clear()

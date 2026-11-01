@@ -27,7 +27,11 @@ def abrir_pelo_portal(url: str) -> None:
     """`OpenURI` do xdg-desktop-portal. Erro do portal sobe como `OSError` com o motivo."""
     if sys.platform == "win32":  # pragma: no cover — não executado nesta máquina
         os.startfile(url)  # noqa: S606 — abrir com o padrão do sistema, sem shell
-        return
+    else:
+        _abrir_pelo_portal_xdg(url)
+
+
+def _abrir_pelo_portal_xdg(url: str) -> None:
     try:
         from jeepney import DBusAddress, new_method_call
         from jeepney.io.blocking import open_dbus_connection

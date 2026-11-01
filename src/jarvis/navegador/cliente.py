@@ -38,6 +38,7 @@ from jarvis.navegador.protocolo import (
     validar_resposta,
 )
 from jarvis.navegador.quadro import CABECALHO, QuadroInvalido, escrever_quadro
+from jarvis.posix import soquete_unix, uid_atual
 
 
 def familia_do_host(principal: str) -> str:
@@ -189,7 +190,7 @@ class TransporteUnix:
         uid: int | None = None,
         prazo_s: float = PRAZO_S + 5,
     ) -> None:
-        self._uid = os.getuid() if uid is None else uid
+        self._uid = uid_atual() if uid is None else uid
         self._pasta = pasta or pasta_dos_sockets(os.environ, self._uid)
         self._prazo_s = prazo_s
 
@@ -197,7 +198,7 @@ class TransporteUnix:
     def do_ambiente(cls, ambiente: Mapping[str, str]) -> TransporteUnix:
         """O socket em `$XDG_RUNTIME_DIR` **deste** ambiente, não do `os.environ`: o do teste é uma
         pasta temporária, e o teste nunca fala com o navegador de verdade do dono."""
-        uid = os.getuid()
+        uid = uid_atual()
         return cls(pasta_dos_sockets(ambiente, uid), uid=uid)
 
     @property
@@ -233,7 +234,7 @@ class TransporteUnix:
         familias: list[str] = []
         for caminho in self._soquetes(navegador):
             try:
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conexao:
+                with soquete_unix() as conexao:
                     conexao.settimeout(1.0)
                     conexao.connect(str(caminho))
             except OSError:
@@ -277,7 +278,7 @@ class TransporteUnix:
         """Uma conexão que fica aberta recebendo os eventos da extensão (o PARAR do dono): no host
         mais recente daquela família, como os pedidos."""
         for caminho in self._soquetes(navegador):
-            conexao = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            conexao = soquete_unix()
             try:
                 conexao.settimeout(self._prazo_s)
                 conexao.connect(str(caminho))
@@ -306,7 +307,7 @@ class TransporteUnix:
         por uma extensão travada, e o "para" do dono vale na hora."""
         prazo = self.prazo_de(pedido.method)
         limite = time.monotonic() + prazo
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conexao:
+        with soquete_unix() as conexao:
             conexao.settimeout(min(prazo, 2.0))
             conexao.connect(str(caminho))
             conexao.settimeout(min(prazo, 2.0))

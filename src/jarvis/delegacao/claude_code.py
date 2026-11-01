@@ -31,7 +31,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import signal
 import subprocess
 import tempfile
 import threading
@@ -45,6 +44,7 @@ from typing import IO, Any, Final
 
 from jarvis.delegacao.config import ConfiguracaoDaDelegacao
 from jarvis.memoryd.importacao import redigir
+from jarvis.posix import matar_o_grupo
 
 FERRAMENTAS_DO_CHROME: Final = "mcp__claude-in-chrome__*"
 """As tools que o Claude Code expõe pela integração do Chrome (servidor `claude-in-chrome`)."""
@@ -411,7 +411,7 @@ class _Leitor(threading.Thread):
 
 def _matar_o_grupo(pid: int) -> None:
     with suppress(ProcessLookupError, PermissionError):
-        os.killpg(os.getpgid(pid), signal.SIGKILL)
+        matar_o_grupo(pid)
 
 
 def _curto(texto: str, limite: int) -> str:

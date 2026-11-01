@@ -180,7 +180,9 @@ class Corretor:
         self._admitir_novos()
         canais = {a.canal.conexao: a for a in self.assinantes}
         if canais:
-            for conexao in wait(list(canais), timeout=timeout):
+            # O `wait` do typeshed não lista a `PipeConnection` do Windows (o de verdade aceita):
+            # o ignore só vale lá, por isso o `unused-ignore`.
+            for conexao in wait(list(canais), timeout=timeout):  # type: ignore[arg-type,unused-ignore]
                 assinante = canais[conexao]  # type: ignore[index]
                 quadro = assinante.canal.receber()
                 if quadro is None:

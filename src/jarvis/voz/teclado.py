@@ -104,22 +104,21 @@ def preparado(teclado: Teclado) -> Iterator[Teclado]:
     interromper o Jarvis sem nada acontecer. O `finally` é obrigatório: um terminal deixado em
     modo cru é um terminal que o dono tem de fechar na mão.
     """
-    if os.name == "nt" or not isinstance(teclado, TecladoDoTerminal):  # pragma: no cover
-        yield teclado
-        return
-    import termios
-    import tty
+    # O modo cru é `termios`, que só existe no POSIX: no Windows o teclado segue como veio.
+    if sys.platform != "win32" and isinstance(teclado, TecladoDoTerminal):
+        import termios
+        import tty
 
-    descritor = teclado.descritor()
-    if descritor is None:
-        yield teclado
-        return
-    antes = termios.tcgetattr(descritor)
-    try:
-        tty.setcbreak(descritor)
-        yield teclado
-    finally:
-        termios.tcsetattr(descritor, termios.TCSADRAIN, antes)
+        descritor = teclado.descritor()
+        if descritor is not None:
+            antes = termios.tcgetattr(descritor)
+            try:
+                tty.setcbreak(descritor)
+                yield teclado
+            finally:
+                termios.tcsetattr(descritor, termios.TCSADRAIN, antes)
+            return
+    yield teclado  # pragma: no cover — sem terminal de verdade (ou no Windows)
 
 
 def teclado_do_ambiente(interativo: bool | None = None) -> Teclado:
