@@ -64,7 +64,19 @@ jobs:
         run: uv run --frozen mypy
 
       - name: testes
+        if: runner.os != 'Windows'
         run: uv run --frozen pytest
+
+      # Windows: INFORMATIVO até portar os testes POSIX-only (SPEC P11; backlog "portar para
+      # Windows"). A suíte nunca tinha rodado lá e boa parte dela usa /proc, AF_UNIX, sinais e
+      # grupos de processo. Formatação, lint e mypy do Windows continuam OBRIGATÓRIOS; só este
+      # passo não derruba o job. O faulthandler despeja a pilha de um teste preso por 3 min, para
+      # o backlog saber qual é.
+      - name: testes (Windows, informativo)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        timeout-minutes: 25
+        run: uv run --frozen pytest -rfE -o faulthandler_timeout=180
 
       # Cartão F0-10: decisão com número traz hardware, n, data e commit.
       - name: procedência das ADRs
