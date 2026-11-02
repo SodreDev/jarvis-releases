@@ -269,9 +269,15 @@ controlador, a abertura continua no comportamento seguro já existente do navega
 informa que a aba não foi reutilizada. Entre as etapas o Jarvis fica calado (2026-10-20, §0.12):
 no máximo a frase curta do começo e, no fim, o resultado conferido.
 
-Os tetos do encadeamento são do dono, em `jarvis-voz.toml`: `laco_max_passos` (padrão 12, de 1 a
-50) e `laco_prazo_s` (padrão 90, de 5 a 600). Estourou um dos dois, o turno termina dizendo isso,
+Os tetos do encadeamento são do dono, em `jarvis-voz.toml`: `laco_max_passos` (padrão 50, de 1 a
+200) e `laco_prazo_s` (padrão 90, de 5 a 600). Estourou um dos dois, o turno termina dizendo isso,
 sem chamar o motor de novo; interromper o Jarvis também corta o laço.
+
+Na tarefa em segundo plano, `laco_max_passos` é o tamanho do bloco e `tarefa_prazo_s` (padrão 900,
+de 30 a 7200) é o tempo dele. Acabou um dos dois sem a tarefa acabar, o Jarvis pergunta (voz e faixa
+da janela) se continua: «sim» ou «mais 50» dá mais um bloco, «até terminar» vai até o fim sem
+perguntar de novo, e «não» ou 120 s sem resposta encerram a tarefa dizendo o que foi feito
+(ADR-0059). A faixa só tem sim e não: «até terminar» é dito ou digitado.
 
 Para conferir sem rede, navegador real ou microfone:
 
@@ -1675,7 +1681,7 @@ serve: com ela o Claude Code desliga o Chrome), a extensão **Claude in Chrome**
 ligado = true
 # executavel = "/home/voce/.local/bin/claude"   # padrão: o `claude` do PATH
 prazo_s = 300        # 30 a 600
-max_turnos = 30      # teto de turnos do Claude Code por delegação
+max_turnos = 50      # teto de turnos do Claude Code por delegação
 # modelo = "sonnet"  # padrão: o da sua conta
 ```
 

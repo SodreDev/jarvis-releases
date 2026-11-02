@@ -27,7 +27,7 @@ import unicodedata
 from dataclasses import dataclass
 from enum import StrEnum
 
-from jarvis.s2.portao import RespostaDoDono, resposta_literal
+from jarvis.s2.portao import OpcaoDeContinuar, RespostaDoDono, ler_continuacao, resposta_literal
 from jarvis.voz.palavra import DetectorDePalavra
 
 
@@ -72,9 +72,18 @@ def _literal_no_comeco(palavras: list[str], da_pergunta: set[str]) -> RespostaDo
 
 
 def ler_resposta(
-    texto: str, pergunta: str, *, palavra: DetectorDePalavra | None = None
+    texto: str,
+    pergunta: str,
+    *,
+    palavra: DetectorDePalavra | None = None,
+    continuar_por: int = 0,
 ) -> LeituraDaResposta:
-    """O que a fala é diante da pergunta aberta `pergunta` (o texto que o Jarvis falou)."""
+    """O que a fala é diante da pergunta aberta `pergunta` (o texto que o Jarvis falou).
+
+    `continuar_por`: a pergunta do teto de uma tarefa, **já ouvida inteira** (ADR-0059). A pergunta
+    diz as opções, e o dono as repete: «até terminar» depois do fim da fala dele é a resposta, e
+    não o eco. O mesmo vale para o «não», que a descrição da tarefa pode trazer («não apague
+    nada»). Enquanto ela toca, quem chama passa 0: ali, ouvir as opções é ouvir o eco."""
     restante = texto
     if palavra is not None:
         achado = palavra.achar(texto)
@@ -82,6 +91,15 @@ def ler_resposta(
             if not achado.depois.strip():
                 return LeituraDaResposta(TipoDaResposta.OUTRA, texto)  # só a chamada: arma a escuta
             restante = achado.depois  # o que vem antes da chamada é o eco do fim da fala dele
+    if continuar_por:
+        opcao = ler_continuacao(restante, continuar_por)
+        if opcao is OpcaoDeContinuar.ATE_TERMINAR:
+            return LeituraDaResposta(TipoDaResposta.SIM, "até terminar")
+        literal = resposta_literal(restante)
+        if opcao is OpcaoDeContinuar.MAIS_UM_BLOCO or literal is RespostaDoDono.SIM:
+            return LeituraDaResposta(TipoDaResposta.SIM, "sim")
+        if literal is RespostaDoDono.NAO:
+            return LeituraDaResposta(TipoDaResposta.NAO, "não")
     palavras = _palavras(restante)
     da_pergunta = _palavras(pergunta)
     palavras = _sem_o_eco(palavras, da_pergunta)

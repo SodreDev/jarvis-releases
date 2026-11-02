@@ -129,6 +129,7 @@ def test_status_do_laco_entra_na_fila_de_avisos_sem_virar_fala_direta(tmp_path: 
         app.configuracao.laco_max_passos,
         app.configuracao.laco_prazo_s,
     )
+    assert app._cerebro.prazo_da_tarefa_s == app.configuracao.tarefa_prazo_s
 
 
 def test_modo_texto_fala_de_verdade_quando_ha_onde_tocar(tmp_path: Path) -> None:

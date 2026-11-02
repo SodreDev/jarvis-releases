@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from jarvis.executor import arquivos
+from jarvis.executor.desfazer import Contaminacao
 from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
@@ -25,10 +26,12 @@ from jarvis.politica.pdp import Pdp
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.tarefas.gestor import (
+    TOOL_DO_TETO,
     EstadoDaTarefa,
     FimDaTarefa,
     GestorDeTarefas,
     MotorDireto,
+    RespostaAoTeto,
     Tarefa,
     TarefaRecusada,
 )
@@ -496,3 +499,132 @@ def test_o_prazo_e_o_aviso_da_tarefa_sao_do_codigo_que_a_criou(
 
     assert propria.estado is EstadoDaTarefa.CONCLUIDA and propria.aviso == ""
     assert de_sempre.estado is EstadoDaTarefa.FALHOU and "passou de 0 s" in de_sempre.motivo
+
+
+# --- o teto de passos e de tempo: quem decide é o dono (ADR-0059) ----------------------------
+class _MotorSemFim:
+    """Propõe a mesma leitura para sempre: só o teto o para."""
+
+    nome = "agente"
+    na_nuvem = False
+
+    def __init__(self, proposta: str = "system.clock.now") -> None:
+        self.proposta = proposta
+
+    def proximo(
+        self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
+    ) -> PedidoDeTool:
+        return PedidoDeTool(self.proposta, {})
+
+
+def _sem_fim(gestor: GestorDeTarefas, motor: Any = None) -> Tarefa:
+    tarefa = gestor.iniciar(
+        "ver a hora", "system.clock.now", {}, motor=motor if motor is not None else _MotorSemFim()
+    )
+    assert gestor.esperar(tarefa.id, 10.0), "a tarefa não parou no teto"
+    return tarefa
+
+
+def test_no_teto_o_nao_do_dono_encerra_com_o_resumo_do_codigo(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    painel = Painel()
+    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=3))
+
+    assert [p.tool_id for p in painel.perguntas] == [TOOL_DO_TETO]
+    assert painel.perguntas[0].continuar_por == 3
+    assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.passo == 3
+    assert tarefa.motivo == "Parei sem terminar, depois de 3 passos; 3 deram certo."
+
+
+def test_no_teto_o_sim_do_dono_da_mais_um_bloco_e_pergunta_de_novo(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    class SimUmaVez(Painel):
+        def confirmar(self, pergunta: Confirmacao, cancelada: Callable[[], bool]) -> bool:
+            self.perguntas.append(pergunta)
+            return len(self.perguntas) == 1
+
+    painel = SimUmaVez()
+    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=3))
+
+    assert len(painel.perguntas) == 2 and tarefa.passo == 6
+    assert len({p.id for p in painel.perguntas}) == 2, "cada pergunta tem o id dela"
+
+
+def test_ate_terminar_tira_o_teto_de_passos_e_o_de_tempo(executor: ExecutorDeFerramentas) -> None:
+    class Ate:
+        nome = "agente"
+        na_nuvem = False
+
+        def proximo(
+            self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
+        ) -> PedidoDeTool | FimDaTarefa:
+            if len(feitos) >= 12:
+                return FimDaTarefa("pronto")
+            return PedidoDeTool("system.clock.now", {})
+
+    painel = Painel()
+    perguntas: list[Confirmacao] = []
+
+    def no_teto(_tarefa: Tarefa, pergunta: Confirmacao) -> RespostaAoTeto:
+        perguntas.append(pergunta)
+        return RespostaAoTeto.ATE_TERMINAR
+
+    gestor = _gestor(executor, painel, passos_por_bloco=2, prazo_s=0.0)
+    tarefa = gestor.iniciar_objetivo(
+        "ver a hora", Ate(), contaminacao=Contaminacao(), prazo_s=0.001, no_teto=no_teto
+    )
+    time.sleep(0.01)
+
+    assert gestor.esperar(tarefa.id, 10.0)
+    assert tarefa.estado is EstadoDaTarefa.CONCLUIDA and tarefa.passo == 12
+    assert len(perguntas) == 1 and not painel.perguntas
+
+
+def test_o_motor_que_so_propoe_fora_da_allowlist_tambem_chega_ao_teto(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """O passo recusado conta: sem isso, um motor teimoso rodaria para sempre sem perguntar."""
+    painel = Painel()
+    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=3), _MotorSemFim("tarefa.iniciar"))
+
+    assert len(painel.perguntas) == 1
+    assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.passo == 0
+
+
+def test_a_acao_de_um_passo_nao_pergunta_no_prazo_e_acaba_nele(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    painel = Painel()
+    gestor = _gestor(executor, painel, prazo_s=0.0)
+
+    tarefa = gestor.iniciar("ver a hora", "system.clock.now", {})
+    time.sleep(0.01)
+    assert gestor.esperar(tarefa.id)
+
+    assert not painel.perguntas
+    assert tarefa.estado is EstadoDaTarefa.FALHOU and "passou de 0 s" in tarefa.motivo
+
+
+def test_o_motor_agente_pergunta_no_prazo_em_vez_de_morrer_nele(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    painel = Painel()
+    tarefa = _sem_fim(_gestor(executor, painel, prazo_s=0.0))
+
+    assert len(painel.perguntas) == 1
+    assert "O tempo acabou" in painel.perguntas[0].pergunta_falada
+    assert tarefa.motivo.startswith("Parei sem terminar")
+
+
+def test_o_resumo_que_falha_nao_derruba_o_fim_da_tarefa(executor: ExecutorDeFerramentas) -> None:
+    class ResumoQuebrado(_MotorSemFim):
+        def resumir_no_teto(
+            self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
+        ) -> str:
+            raise RuntimeError("o motor caiu")
+
+    tarefa = _sem_fim(_gestor(executor, Painel(), passos_por_bloco=2), ResumoQuebrado())
+
+    assert tarefa.motivo == "Parei sem terminar, depois de 2 passos; 2 deram certo."

@@ -48,6 +48,9 @@ from jarvis.voz.s2_provisorio import nomes_de_gerador
 from jarvis.voz.tom import DIMENSOES as DIMENSOES_DO_TOM
 
 ARQUIVO: Final = "jarvis-voz.toml"
+LACO_MAX_PASSOS_PADRAO: Final = 50
+LACO_MAX_PASSOS_ANTIGO: Final = 12
+LACO_MAX_PASSOS_TETO: Final = 200
 PASTA: Final = "jarvis"
 VARIAVEL_CONFIG: Final = "JARVIS_VOZ_CONFIG"
 """Aponta para outro arquivo de configuração. Serve ao teste e a quem tem mais de um perfil."""
@@ -202,10 +205,14 @@ class Configuracao:
     """Quem conduz as tarefas em segundo plano (ADR-0022): `direto` roda a ferramenta pedida;
     `agente` deixa o motor de conversa (`s2`) planejar os passos — e, se o `s2` é de nuvem, a
     tarefa também vai para a nuvem. **Só o dono escolhe**: nenhuma tool tem este campo."""
-    laco_max_passos: int = 12
-    """Teto de chamadas de ferramenta encadeadas num turno (1 a 50). Só o dono escolhe."""
+    laco_max_passos: int = LACO_MAX_PASSOS_PADRAO
+    """Teto de chamadas de ferramenta encadeadas num turno e o bloco de passos de uma tarefa: acabou
+    o bloco sem acabar a tarefa, o Jarvis pergunta se segue (1 a 200; ADR-0059). Do dono."""
     laco_prazo_s: float = 90.0
     """Teto, em segundos, do encadeamento inteiro de um turno (5 a 600). Só o dono escolhe."""
+    tarefa_prazo_s: float = 900.0
+    """Teto, em segundos, de um bloco de passos de uma tarefa (30 a 7200; ADR-0059): acabou o
+    tempo, a mesma pergunta do teto de passos. Só o dono escolhe."""
     prazo_do_foco_s: float = 300.0
     """Quanto o Jarvis espera a janela de um app que abriu para pô-la em foco (10 a 1800 s;
     ADR-0037). O padrão (o `PRAZO_DO_FOCO_S` do executor) é longo: o jogo pelo Steam demora."""
@@ -271,6 +278,7 @@ class Configuracao:
             "tarefa_motor": self.tarefa_motor,
             "laco_max_passos": self.laco_max_passos,
             "laco_prazo_s": self.laco_prazo_s,
+            "tarefa_prazo_s": self.tarefa_prazo_s,
             "prazo_do_foco_s": self.prazo_do_foco_s,
             "caminho_rapido": self.caminho_rapido,
             "omnivoice_uso_pessoal": self.omnivoice_uso_pessoal,
@@ -407,9 +415,12 @@ entrada_uinput = {"true" if configuracao.entrada_uinput else "false"}
 # Quem conduz as tarefas em segundo plano: "direto" (roda a ferramenta pedida) ou "agente"
 # (o motor de conversa planeja os passos; se ele é de nuvem, a tarefa vai junto).
 tarefa_motor = {aspas(configuracao.tarefa_motor)}
-# Laço de ferramentas: quantas chamadas encadeadas num turno (1 a 50) e quantos segundos (5 a 600).
+# Laço de ferramentas: quantas chamadas encadeadas num turno (1 a 200) e quantos segundos (5 a 600).
+# Na tarefa, laco_max_passos é o bloco: acabou sem terminar, o Jarvis pergunta se segue.
 laco_max_passos = {configuracao.laco_max_passos}
 laco_prazo_s = {configuracao.laco_prazo_s}
+# Quantos segundos um bloco de passos de uma tarefa pode levar antes da mesma pergunta (30 a 7200).
+tarefa_prazo_s = {configuracao.tarefa_prazo_s}
 # Quantos segundos o Jarvis espera a janela de um app que abriu para pô-la em foco (10 a 1800).
 prazo_do_foco_s = {configuracao.prazo_do_foco_s}
 # Caminho rápido (ADR-0045): "abre o Discord", "fecha o Steam", "abre o YouTube", "o que está
@@ -518,12 +529,16 @@ def validar(configuracao: Configuracao) -> Configuracao:
         raise ConfiguracaoInvalida(
             f"sem_fala_maximo = {configuracao.sem_fala_maximo} fora de 0,05 a 1,0"
         )
-    if not 1 <= configuracao.laco_max_passos <= 50:
+    if not 1 <= configuracao.laco_max_passos <= LACO_MAX_PASSOS_TETO:
         raise ConfiguracaoInvalida(
-            f"laco_max_passos = {configuracao.laco_max_passos} fora de 1 a 50"
+            f"laco_max_passos = {configuracao.laco_max_passos} fora de 1 a {LACO_MAX_PASSOS_TETO}"
         )
     if not 5 <= configuracao.laco_prazo_s <= 600:
         raise ConfiguracaoInvalida(f"laco_prazo_s = {configuracao.laco_prazo_s} fora de 5 a 600")
+    if not 30 <= configuracao.tarefa_prazo_s <= 7200:
+        raise ConfiguracaoInvalida(
+            f"tarefa_prazo_s = {configuracao.tarefa_prazo_s} fora de 30 a 7200"
+        )
     if not 10 <= configuracao.prazo_do_foco_s <= 1800:
         raise ConfiguracaoInvalida(
             f"prazo_do_foco_s = {configuracao.prazo_do_foco_s} fora de 10 a 1800"
@@ -666,6 +681,11 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
     antigo = "voz_elevenlabs" not in dados and tts == TTS_ELEVENLABS
     if antigo and voz and not FORMA_DA_VOZ_DO_PIPER.fullmatch(voz):
         voz_elevenlabs, voz = voz, VOZ_PADRAO
+    # Arquivo de antes da pergunta do teto (ADR-0059): o `escrever` gravava o padrão de então, e o
+    # 12 ali é ele, não uma escolha. Depois de regravado, com a chave nova, o 12 é do dono.
+    laco_max_passos = _inteiro(dados, "laco_max_passos", LACO_MAX_PASSOS_PADRAO)
+    if "tarefa_prazo_s" not in dados and laco_max_passos == LACO_MAX_PASSOS_ANTIGO:
+        laco_max_passos = LACO_MAX_PASSOS_PADRAO
     configuracao = Configuracao(
         asr=_texto(dados, "asr", ASR_PADRAO),
         tts=tts,
@@ -706,8 +726,9 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         entrada_virtual=_logico(dados, "entrada_virtual"),
         entrada_uinput=_logico(dados, "entrada_uinput"),
         tarefa_motor=_texto(dados, "tarefa_motor", "direto"),
-        laco_max_passos=_inteiro(dados, "laco_max_passos", 12),
+        laco_max_passos=laco_max_passos,
         laco_prazo_s=_numero(dados, "laco_prazo_s", 90.0),
+        tarefa_prazo_s=_numero(dados, "tarefa_prazo_s", 900.0),
         prazo_do_foco_s=_numero(dados, "prazo_do_foco_s", 300.0),
         caminho_rapido=_logico(dados, "caminho_rapido", padrao=True),
         omnivoice_uso_pessoal=_logico(dados, "omnivoice_uso_pessoal"),

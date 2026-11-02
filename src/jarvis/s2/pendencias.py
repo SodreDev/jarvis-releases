@@ -39,6 +39,8 @@ class Espera:
     evento: threading.Event = field(default_factory=threading.Event)
     sim: bool = False
     ouvida: bool = False
+    ate_terminar: bool = False
+    """O «sim» à pergunta do teto foi «até terminar» (ADR-0059): sem outra pergunta até o fim."""
     so_clique: bool = False
     """Só o clique responde: a pergunta por ação (o que está sob o clique, ADR-0027) e a que nasce
     sem o portão (sem o Jev, nada interpreta a fala) — como na janela de antes."""

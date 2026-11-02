@@ -84,3 +84,7 @@ passageira, permanente, vazia, prazo em tudo, motor que cai; o PDP contado na au
 
 **Não provado:** o `claude -p` real seguindo a nota de replanejar (o motor dos testes é roteirizado);
 o custo real em tokens de uma tarefa que gasta as 4 tentativas.
+
+## Emenda de 2026-11-01 — o teto vira pergunta (ADR-0059)
+
+O teto de passos e o prazo da tarefa deixam de ser os do laço do turno e de acabar com ela em erro: `laco_max_passos` é o bloco, `tarefa_prazo_s` é o tempo do bloco, e ao fim de um deles o Jarvis pergunta ao dono se segue.

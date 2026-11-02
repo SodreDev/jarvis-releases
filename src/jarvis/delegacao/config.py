@@ -8,8 +8,8 @@ segredo: um arquivo com cara de segredo é recusado inteiro, como o `mcp.toml` (
     [claude_code]
     ligado = true
     # executavel = "/home/eu/.local/bin/claude"
-    prazo_s = 300
-    max_turnos = 30
+    prazo_s = 600
+    max_turnos = 50
     # modelo = "sonnet"
 """
 
@@ -23,11 +23,13 @@ from typing import Final
 
 ARQUIVO: Final = "delegar.toml"
 EXECUTAVEL_PADRAO: Final = "claude"
-PRAZO_PADRAO_S: Final = 300.0
+PRAZO_PADRAO_S: Final = 600.0
 PRAZO_MINIMO_S: Final = 30.0
 PRAZO_MAXIMO_S: Final = 600.0
 """O teto do `timeout_ms` do manifesto (600 s): o dono aperta, nunca passa disso."""
-MAX_TURNOS_PADRAO: Final = 30
+MAX_TURNOS_PADRAO: Final = 50
+"""O mesmo teto da tarefa (ADR-0059). Com 300 s, os 50 turnos de navegador não caberiam: o prazo
+padrão é o teto do manifesto."""
 MAX_TURNOS_TETO: Final = 100
 DELEGACOES_POR_OBJETIVO_PADRAO: Final = 10
 """Quantas delegações um mesmo objetivo (o pedido, ou a tarefa dele) pode fazer (dono, 2026-10-29:

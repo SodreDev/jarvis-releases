@@ -123,6 +123,7 @@ def test_le_a_chave_e_aperta_os_limites(tmp_path: Path) -> None:
     assert config.ligado is True and config.executavel == "claude"
     assert config.prazo_s == 600.0  # o teto do manifesto
     assert config.max_turnos == 1
+    assert (ConfiguracaoDaDelegacao().max_turnos, ConfiguracaoDaDelegacao().prazo_s) == (50, 600.0)
     assert config.modelo == "sonnet"
     assert config.delegacoes_por_objetivo == 10  # o padrão (emenda de 2026-10-29)
 

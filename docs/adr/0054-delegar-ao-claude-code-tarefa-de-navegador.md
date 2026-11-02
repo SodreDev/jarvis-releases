@@ -53,7 +53,7 @@ claude -p "<prompt fixo>" --chrome --output-format json \
 
 ### Custo (para o dono ler antes de ligar)
 
-Cada delegação roda **na conta do dono** e **consome o limite de uso dela — inclusive o limite semanal** dos planos Pro/Max. Uma tarefa de navegador pode gastar dezenas de turnos com capturas de tela. O teto de turnos (`max_turnos`, padrão 30) e o prazo apertam isso; o sim a cada delegação é o controle principal.
+Cada delegação roda **na conta do dono** e **consome o limite de uso dela — inclusive o limite semanal** dos planos Pro/Max. Uma tarefa de navegador pode gastar dezenas de turnos com capturas de tela. O teto de turnos (`max_turnos`, padrão 50 desde a ADR-0059) e o prazo apertam isso; o sim a cada delegação é o controle principal.
 
 ## Estado da implementação (2026-10-29)
 

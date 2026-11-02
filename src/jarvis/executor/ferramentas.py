@@ -255,6 +255,9 @@ class Confirmacao:
     razao_falada: str = ""
     """Por que **este alvo** pede o sim, em frase de gente (o `exige_o_sim` do pedido, ADR-0041 e
     0042): "a tarefa «…» ainda está rodando e vai ser cancelada". Vai na pergunta falada."""
+    continuar_por: int = 0
+    """A pergunta do teto de uma tarefa (ADR-0059): o tamanho do bloco que o «sim» dá. Só ela aceita
+    «até terminar» e «mais 50» como resposta. 0 = a pergunta de uma ação."""
 
     @property
     def para_ouvir(self) -> str:

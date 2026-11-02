@@ -745,6 +745,7 @@ class Aplicativo:
         self._cerebro.ao_raciocinio = lambda linha: self.escrever_na_tela(f"  ↻ {linha}")
         self._cerebro.maximo_de_passos = self.configuracao.laco_max_passos
         self._cerebro.prazo_do_laco_de_ferramentas_s = self.configuracao.laco_prazo_s
+        self._cerebro.prazo_da_tarefa_s = self.configuracao.tarefa_prazo_s
         self.ferramentas.prazo_do_foco_s = self.configuracao.prazo_do_foco_s
         self._sincronizar_conversa(self._cerebro)
         if self.ferramentas.tarefas is None:
@@ -837,6 +838,7 @@ class Aplicativo:
             ao_concluir=self._tarefa_concluida,
             ao_avisar=self._aviso_da_tarefa,
             ao_retirar_aviso=self._retirar_aviso,
+            passos_por_bloco=self.configuracao.laco_max_passos,
         )
 
     def _tarefas_mudaram(self) -> None:
@@ -2287,6 +2289,14 @@ class Aplicativo:
             return ""
         return pendencia.pergunta.pergunta_falada
 
+    def _bloco_da_pergunta_ouvida(self) -> int:
+        """O bloco da pergunta do teto de uma tarefa que já tocou inteira (ADR-0059); 0 = não há."""
+        cerebro = self._cerebro
+        pendencia = cerebro.pendencias.valida() if cerebro is not None else None
+        if pendencia is None or pendencia.espera is None or not pendencia.espera.ouvida:
+            return 0
+        return pendencia.pergunta.continuar_por
+
     def _trilhar_a_vigia(self) -> None:
         """Cada decisão da vigia vai para a trilha: o modo, o que fez, o motivo (código) e em
         quantos milissegundos de trecho — nunca o que o dono disse."""
@@ -2689,7 +2699,12 @@ class Aplicativo:
         # própria pergunta não responde nem a cancela; e "para"/"cancela" são o "não".
         pergunta = self._pergunta_aberta()
         leitura = (
-            ler_resposta(hipotese.texto, pergunta, palavra=self.modo_de_escuta.detector)
+            ler_resposta(
+                hipotese.texto,
+                pergunta,
+                palavra=self.modo_de_escuta.detector,
+                continuar_por=self._bloco_da_pergunta_ouvida(),
+            )
             if pergunta
             else None
         )

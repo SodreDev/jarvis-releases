@@ -388,6 +388,41 @@ def resposta_literal(fala: str) -> RespostaDoDono | None:
     return None
 
 
+class OpcaoDeContinuar(StrEnum):
+    """O que o dono escolheu ao responder à pergunta do teto de uma tarefa (ADR-0059)."""
+
+    MAIS_UM_BLOCO = "mais_um_bloco"
+    ATE_TERMINAR = "ate_terminar"
+
+
+_ATE_O_FIM: Final = re.compile(r"\bate (?:o )?(?:terminar|acabar|concluir|fim|final)\b")
+_PALAVRAS_DE_CONTINUAR: Final = (
+    _AFIRMACOES
+    | _RECHEIO
+    | frozenset({"ate", "terminar", "acabar", "concluir", "fim", "final", "mais", "so", "passos"})
+)
+_NUMEROS_POR_EXTENSO: Final[Mapping[str, int]] = {"cinquenta": 50}
+
+
+def ler_continuacao(fala: str, bloco: int) -> OpcaoDeContinuar | None:
+    """«até terminar» e «mais 50» ditos à pergunta do teto. `None` = não é uma das duas, e vale a
+    leitura de sempre (`resposta_literal`): «sim» dá mais um bloco, «não» para. Fala com negação
+    ou com outra palavra nunca escolhe nada, e o número tem de ser o do bloco: «mais 10» não vira
+    mais 50 sem o dono saber."""
+    palavras = re.sub(r"[^\w\s]", " ", normalizar(fala)).split()
+    numeros = [p for p in palavras if p.isdecimal() or p in _NUMEROS_POR_EXTENSO]
+    resto = [p for p in palavras if p not in numeros]
+    if not palavras or len(palavras) > PALAVRAS_DA_RESPOSTA or set(palavras) & _NEGACOES:
+        return None
+    if not set(resto) <= _PALAVRAS_DE_CONTINUAR:
+        return None
+    if any(_NUMEROS_POR_EXTENSO.get(p, int(p) if p.isdecimal() else 0) != bloco for p in numeros):
+        return None
+    if _ATE_O_FIM.search(" ".join(palavras)):
+        return OpcaoDeContinuar.ATE_TERMINAR
+    return OpcaoDeContinuar.MAIS_UM_BLOCO if "mais" in palavras else None
+
+
 # --- autorização explícita ----------------------------------------------------------------------
 @dataclass(slots=True)
 class AutorizacoesExplicitas:

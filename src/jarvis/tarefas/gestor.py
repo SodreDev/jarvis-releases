@@ -21,12 +21,13 @@ própria —, devolve o id na hora e o Jarvis segue falando. O que a ADR manda, 
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
 
 import jsonschema
 
@@ -44,8 +45,15 @@ if TYPE_CHECKING:
     )
 
 MAXIMO_DE_TAREFAS_AO_MESMO_TEMPO: Final = 2
-MAXIMO_DE_PASSOS: Final = 6
+MAXIMO_DE_PASSOS: Final = 50
+"""Os passos de um bloco (ADR-0059): acabou o bloco sem acabar a tarefa, o dono decide se segue."""
 PRAZO_DA_TAREFA_S: Final = 300.0
+PRAZO_DA_PERGUNTA_DO_TETO_S: Final = 120.0
+"""Quanto a pergunta do teto espera: tarefa longa roda com o dono longe, e o que se perde sem a
+resposta é o resto do trabalho (o `PRAZO_DE_CONFIRMACAO_S`, de 30 s, é o de uma ação na hora)."""
+TOOL_DO_TETO: Final = "tarefa.continuar"
+"""O nome da pergunta do teto na pendência e na trilha. Não é ferramenta: não está no catálogo, e
+o "sim" a ela não roda nada, só acorda a tarefa que espera."""
 TAREFAS_NO_CARD: Final = 8
 FORA_DA_ALLOWLIST: Final = ("tarefa.", "acao.desfazer", "jarvis.", "vocabulario.", "modelo.")
 """Profundidade 1: tarefa não cria tarefa. Desfazer é do dono na conversa, não de uma tarefa. E
@@ -70,6 +78,14 @@ class EstadoDaTarefa(StrEnum):
         return self in (EstadoDaTarefa.CONCLUIDA, EstadoDaTarefa.FALHOU, EstadoDaTarefa.CANCELADA)
 
 
+class RespostaAoTeto(StrEnum):
+    """O que o dono decidiu quando a tarefa chegou ao teto sem terminar (ADR-0059)."""
+
+    PARAR = "parar"
+    MAIS_UM_BLOCO = "mais_um_bloco"
+    ATE_TERMINAR = "ate_terminar"
+
+
 @dataclass(frozen=True, slots=True)
 class FimDaTarefa:
     """O motor não tem mais passo: a tarefa acabou, com este resumo."""
@@ -89,6 +105,8 @@ class FimDaTarefa:
 
 
 Passo = PedidoDeTool | FimDaTarefa
+PerguntarNoTeto = Callable[["Tarefa", "Confirmacao"], RespostaAoTeto]
+"""Faz a pergunta do teto e espera: a tarefa, a pergunta, e o que o dono decidiu."""
 
 
 class MotorDeTarefa(Protocol):
@@ -103,6 +121,15 @@ class MotorDeTarefa(Protocol):
     def proximo(
         self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
     ) -> Passo: ...
+
+
+@runtime_checkable
+class MotorQueResume(Protocol):
+    """O motor que sabe contar, em frase de gente, o que a tarefa fez até o teto (ADR-0059)."""
+
+    def resumir_no_teto(
+        self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
+    ) -> str: ...
 
 
 @dataclass(slots=True)
@@ -135,7 +162,13 @@ class Tarefa:
     resposta: str = ""
     """O que o Jarvis diz ao dono no fim da tarefa de um pedido (`FimDaTarefa.resposta`)."""
     maximo_de_passos: int | None = None
-    """O teto de passos desta tarefa, quando o código que a criou escolheu outro."""
+    """Os passos até a primeira pergunta do teto, quando o código que a criou escolheu outro."""
+    bloco_de_passos: int | None = None
+    """Os passos de cada continuação; `None` = o bloco do gestor."""
+    no_teto: PerguntarNoTeto | None = field(default=None, repr=False)
+    """Quem faz a pergunta do teto (voz e tela, ADR-0048); `None` = a faixa da janela."""
+    feitos_antes: tuple[ResultadoDeFerramenta, ...] = ()
+    """Os passos que o turno já deu antes de delegar: o dono conta com eles."""
     chamar: ChamarNaTarefa | None = field(default=None, repr=False)
     """Por onde cada passo passa até o executor: na tarefa de um pedido, o mesmo portão do turno
     (PDP, Jev, objetivo — `jarvis.s2.fluxo_de_acao`). `None` = direto ao executor (só o PDP)."""
@@ -233,6 +266,7 @@ class GestorDeTarefas:
     saiu, não sai mais."""
     maximo_ao_mesmo_tempo: int = MAXIMO_DE_TAREFAS_AO_MESMO_TEMPO
     prazo_s: float = PRAZO_DA_TAREFA_S
+    passos_por_bloco: int = MAXIMO_DE_PASSOS
     tarefas: dict[str, Tarefa] = field(default_factory=dict)
     _trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
     _linhas: dict[str, threading.Thread] = field(default_factory=dict, repr=False)
@@ -282,6 +316,9 @@ class GestorDeTarefas:
         chamar: ChamarNaTarefa | None = None,
         prazo_s: float | None = None,
         maximo_de_passos: int | None = None,
+        bloco_de_passos: int | None = None,
+        no_teto: PerguntarNoTeto | None = None,
+        feitos_antes: tuple[ResultadoDeFerramenta, ...] = (),
         ja_dito: str = "",
         turno: str = "",
     ) -> Tarefa:
@@ -302,6 +339,9 @@ class GestorDeTarefas:
                 prazo_s=prazo_s,
                 de_objetivo=True,
                 maximo_de_passos=maximo_de_passos,
+                bloco_de_passos=bloco_de_passos,
+                no_teto=no_teto,
+                feitos_antes=feitos_antes,
                 chamar=chamar,
                 ja_dito=ja_dito,
                 turno=turno,
@@ -438,13 +478,22 @@ class GestorDeTarefas:
         feitos: list[ResultadoDeFerramenta],
         limite: float,
     ) -> None:
-        maximo = tarefa.maximo_de_passos or MAXIMO_DE_PASSOS
-        for numero in range(1, maximo + 1):
+        bloco = tarefa.bloco_de_passos or self.passos_por_bloco
+        teto: float = tarefa.maximo_de_passos or self.passos_por_bloco
+        numero = 0
+        while True:
             if tarefa.cancelada.is_set():
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             if time.monotonic() > limite:
-                prazo = tarefa.prazo_s or self.prazo_s
-                raise ErroDeTarefa(f"passou de {prazo:.0f} s: o prazo é nosso")
+                # Só quem planeja passos pergunta: o prazo de uma ação de um passo (e o do foco de
+                # um app) continua sendo o fim dela.
+                if not (tarefa.de_objetivo or motor.nome == "agente"):
+                    prazo = tarefa.prazo_s or self.prazo_s
+                    raise ErroDeTarefa(f"passou de {prazo:.0f} s: o prazo é nosso")
+                renovado = self._no_teto(tarefa, motor, feitos, numero, bloco, por_tempo=True)
+                if renovado is None:
+                    return None
+                teto, limite = renovado
             passo = motor.proximo(tarefa, feitos, tarefa.cancelada.is_set)
             if tarefa.cancelada.is_set():
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
@@ -454,6 +503,13 @@ class GestorDeTarefas:
                 if passo.falhou:
                     return self._terminar(tarefa, EstadoDaTarefa.FALHOU, motivo=passo.resumo)
                 return self._terminar(tarefa, EstadoDaTarefa.CONCLUIDA)
+            if numero >= teto:
+                # A pergunta vem com o próximo passo na mão: tarefa que acabaria aqui não pergunta.
+                renovado = self._no_teto(tarefa, motor, feitos, numero, bloco, por_tempo=False)
+                if renovado is None:
+                    return None
+                teto, limite = renovado
+            numero += 1
             if passo.tool_id.startswith(FORA_DA_ALLOWLIST):
                 # O motor propôs fora da allowlist da tarefa: nem chega ao PDP (e fica registrado).
                 feitos.append(_negado(passo.tool_id, "tarefa não roda isto (allowlist da tarefa)"))
@@ -478,7 +534,67 @@ class GestorDeTarefas:
                 # Chegou depois do cancelamento: vai para a auditoria, não para o estado.
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             feitos.append(resultado)
-        raise ErroDeTarefa(f"passei de {maximo} passos sem terminar")
+
+    def _no_teto(
+        self,
+        tarefa: Tarefa,
+        motor: MotorDeTarefa,
+        feitos: Sequence[ResultadoDeFerramenta],
+        numero: int,
+        bloco: int,
+        *,
+        por_tempo: bool,
+    ) -> tuple[float, float] | None:
+        """A tarefa chegou ao teto (de passos ou de tempo) sem terminar: o dono decide (ADR-0059).
+        Devolve o novo `(teto, limite)` para seguir; `None` = ela acabou aqui, com o resumo."""
+        total = numero + len(tarefa.feitos_antes)
+        pergunta = _pergunta_do_teto(tarefa, total, bloco, por_tempo=por_tempo)
+        resposta = self._perguntar_no_teto(tarefa, pergunta)
+        if self.executor.trilha is not None:
+            self.executor.trilha.evento(
+                "permissao",
+                tool_id=TOOL_DO_TETO,
+                origem="teto_da_tarefa",
+                motivo=pergunta.causa,
+                resposta="não" if resposta is RespostaAoTeto.PARAR else "sim",
+            )
+        if tarefa.cancelada.is_set():
+            self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+            return None
+        if resposta is RespostaAoTeto.PARAR:
+            self._parar_no_teto(tarefa, motor, feitos)
+            return None
+        if resposta is RespostaAoTeto.ATE_TERMINAR:
+            return math.inf, math.inf
+        return numero + bloco, time.monotonic() + (tarefa.prazo_s or self.prazo_s)
+
+    def _perguntar_no_teto(self, tarefa: Tarefa, pergunta: Confirmacao) -> RespostaAoTeto:
+        if tarefa.no_teto is not None:
+            return tarefa.no_teto(tarefa, pergunta)
+        self.esperando_o_dono(tarefa, True)
+        try:
+            sim = self.confirmar(pergunta, tarefa.cancelada.is_set)
+        finally:
+            self.esperando_o_dono(tarefa, False)
+        return RespostaAoTeto.MAIS_UM_BLOCO if sim else RespostaAoTeto.PARAR
+
+    def _parar_no_teto(
+        self, tarefa: Tarefa, motor: MotorDeTarefa, feitos: Sequence[ResultadoDeFerramenta]
+    ) -> None:
+        """O dono não mandou seguir: a tarefa acaba dizendo o que fez. Não é erro dela, mas o
+        objetivo ficou sem cumprir: o estado é `falhou`, e o resumo é a resposta."""
+        contado = ""
+        if isinstance(motor, MotorQueResume):
+            try:
+                contado = motor.resumir_no_teto(tarefa, feitos, tarefa.cancelada.is_set)
+            except Exception:  # o motor caiu: o resumo do código ainda diz o que foi feito
+                contado = ""
+        if tarefa.cancelada.is_set():
+            return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+        todos = (*tarefa.feitos_antes, *feitos)
+        frase = f"Parei sem terminar. {contado}" if contado else _resumo_do_codigo(todos)
+        tarefa.resumo, tarefa.resposta = frase, frase
+        self._terminar(tarefa, EstadoDaTarefa.FALHOU, motivo=frase)
 
     def _confirmar_da(self, tarefa: Tarefa) -> Callable[[Confirmacao], bool]:
         def perguntar(pergunta: Confirmacao) -> bool:
@@ -508,6 +624,46 @@ class GestorDeTarefas:
             self.ao_concluir(tarefa)
         except Exception:  # aviso que falha não derruba a linha: o card já mostra o fim
             return
+
+
+def _pergunta_do_teto(tarefa: Tarefa, numero: int, bloco: int, *, por_tempo: bool) -> Confirmacao:
+    """A pergunta do teto, escrita pelo código. A frase falada acaba na razão, e não nas opções: o
+    que volta pelo microfone no fim da fala dele não pode soar como a resposta (ADR-0048). E a razão
+    não diz «não»: fala que só repete a pergunta é eco, e o «não» do dono seria ignorado."""
+    from jarvis.executor.ferramentas import Confirmacao
+
+    descricao = tarefa.descricao if len(tarefa.descricao) <= 60 else f"{tarefa.descricao[:60]}…"
+    feitos = _passos_em_frase(numero)
+    razao = (
+        f"o tempo acabou em «{descricao}», com {feitos}, e ainda falta"
+        if por_tempo
+        else f"já dei {feitos} em «{descricao}» e ainda falta"
+    )
+    return Confirmacao(
+        id=f"{tarefa.id}-teto-{uuid7()[-8:]}",
+        tool_id=TOOL_DO_TETO,
+        titulo="Continuar a tarefa",
+        detalhe=(
+            f"«{descricao}» ({feitos}, sem terminar): «sim» dá mais {bloco} passos, e dizer "
+            "«até terminar» vai até o fim"
+        ),
+        motivo="a tarefa chegou ao teto sem terminar",
+        prazo_s=PRAZO_DA_PERGUNTA_DO_TETO_S,
+        causa="teto_da_tarefa",
+        falado=f"continuar por mais {bloco} passos ou até terminar",
+        razao_falada=razao,
+        continuar_por=bloco,
+    )
+
+
+def _passos_em_frase(numero: int) -> str:
+    return "1 passo" if numero == 1 else f"{numero} passos"
+
+
+def _resumo_do_codigo(feitos: Sequence[ResultadoDeFerramenta]) -> str:
+    """O resumo sem o motor: quantos passos rodaram e quantos deram certo. Nunca cita ferramenta."""
+    certos = sum(1 for r in feitos if r.status == "ok")
+    return f"Parei sem terminar, depois de {_passos_em_frase(len(feitos))}; {certos} deram certo."
 
 
 def _negado(tool_id: str, motivo: str) -> ResultadoDeFerramenta:

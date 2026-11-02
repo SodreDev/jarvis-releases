@@ -46,8 +46,10 @@ from jarvis.s2.portao import (
     AutorizacoesExplicitas,
     Classe,
     Classificacao,
+    OpcaoDeContinuar,
     PortaoDeAcao,
     RespostaDoDono,
+    ler_continuacao,
     resposta_literal,
 )
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, MotorDireto, TarefaRecusada
@@ -409,7 +411,14 @@ class FluxoDeAcao:
             return LeituraDaResposta()
         detalhe = pendencia.pergunta.detalhe
         falado = pendencia.pergunta.para_ouvir
-        if self.portao is not None:
+        bloco = pendencia.pergunta.continuar_por
+        opcao = ler_continuacao(fala, bloco) if bloco else None
+        if opcao is not None:
+            # A pergunta do teto (ADR-0059): a opção é do código, e não passa pelo Jev.
+            resposta = RespostaDoDono.SIM
+            if opcao is OpcaoDeContinuar.ATE_TERMINAR and pendencia.espera is not None:
+                pendencia.espera.ate_terminar = True
+        elif self.portao is not None:
             resposta = self.portao.interpretar_resposta(
                 fala, acao_pendente=detalhe, mensagens=mensagens, cancelado=cancelado
             )
@@ -439,6 +448,8 @@ class FluxoDeAcao:
             self.pendencias.tomar(pendencia.id, sim=False, origem="voz")
         else:
             self.pendencias.cancelar()
+        if resposta is RespostaDoDono.NAO and bloco:
+            return LeituraDaResposta(frase="Tudo bem, paro por aqui.")
         if resposta is RespostaDoDono.NAO:
             return LeituraDaResposta(frase=f"Tudo bem, não vou fazer isso ({falado}).")
         return LeituraDaResposta(

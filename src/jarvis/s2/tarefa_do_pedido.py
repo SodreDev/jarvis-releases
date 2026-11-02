@@ -65,6 +65,11 @@ NOTA_DE_CONFERIR: Final = (
     "página, o estado) com uma ferramenta de leitura e só diga que ficou pronto se a leitura "
     "confirmar."
 )
+NOTA_DO_TETO: Final = (
+    "A tarefa parou aqui, sem terminar: não peça mais nenhuma ferramenta. Diga ao dono, em uma ou "
+    "duas frases, sem markdown, o que já ficou feito e o que faltou, só com o que as ferramentas "
+    "confirmaram."
+)
 FERRAMENTAS_DE_LEITURA: Final = frozenset(
     {"browser.read", "browser.tabs", "browser.tela", "browser.inspecionar", "web.ler"}
 )
@@ -198,6 +203,21 @@ class MotorDoObjetivo:
                 continue
             return self._fim(tarefa, feitos, texto, ids)
         return self._desistir(tarefa, feitos)
+
+    def resumir_no_teto(
+        self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
+    ) -> str:
+        """O que foi feito até o teto (ADR-0059), numa rodada sem ferramentas. Vazio = o motor não
+        contou (caiu, ou quis outra ferramenta): quem resume é o código."""
+        try:
+            pedido, texto = self._rodada(
+                tarefa, feitos, (), cancelado, conferir=False, recuperar=NOTA_DO_TETO
+            )
+        except MotorFalhou:
+            return ""
+        if pedido is not None:
+            return ""
+        return sem_etapas_internas(texto, self.ids | {r.tool_id for r in feitos})
 
     def _propor(self, pedido: PedidoDeTool) -> PedidoDeTool:
         self._propostos.append(assinatura(pedido.tool_id, pedido.args))

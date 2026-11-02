@@ -75,7 +75,7 @@ from jarvis.s2.motor import (
     aceita_imagem,
 )
 from jarvis.s2.orcamento_da_fala import OrcamentoDaFala, quer_detalhe
-from jarvis.s2.pendencias import Espera, RegistroDePendencias
+from jarvis.s2.pendencias import INTERVALO_DA_ESPERA_S, Espera, RegistroDePendencias
 from jarvis.s2.persona import sistema_do_jarvis
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
 from jarvis.s2.protocolo import LeitorDoProtocolo
@@ -83,12 +83,23 @@ from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.receitas import receitas_do_turno
 from jarvis.s2.recuperacao import nota_do_turno
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
-from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ChamarNaTarefa, Tarefa, TarefaRecusada
+from jarvis.tarefas.gestor import (
+    FORA_DA_ALLOWLIST,
+    ChamarNaTarefa,
+    PerguntarNoTeto,
+    RespostaAoTeto,
+    Tarefa,
+    TarefaRecusada,
+)
 from jarvis.tela.guia import nota_da_tela
 from jarvis.voz.interface import Cancelado, nunca_cancelado
 
-MAXIMO_DE_PASSOS: Final = 12
-"""Chamadas de ferramenta que um turno pode encadear antes de ter de responder."""
+MAXIMO_DE_PASSOS: Final = 50
+"""Chamadas de ferramenta que um turno pode encadear antes de ter de responder; na tarefa de um
+pedido, os passos de um bloco antes de perguntar ao dono se segue (ADR-0059)."""
+PRAZO_DA_TAREFA_S: Final = 900.0
+"""O tempo de um bloco da tarefa de um pedido. Não é o do turno (90 s): cinquenta passos, cada um
+com uma rodada do motor, não cabem nele."""
 PRAZO_DO_LACO_DE_FERRAMENTAS_S: Final = 90.0
 """Orçamento total do laço agêntico; inclui pensar e executar as ferramentas."""
 # Nome preservado para quem importava o teto antigo. Agora cada rodada tem exatamente um passo:
@@ -254,6 +265,7 @@ class Cerebro:
     """Chamada da linha do cérebro quando a consulta termina, antes do motor: é por onde a tela
     mostra "lembrei: …". Quem liga aqui guarda e volta."""
     maximo_de_passos: int = MAXIMO_DE_PASSOS
+    prazo_da_tarefa_s: float = PRAZO_DA_TAREFA_S
     """Teto configurável de chamadas no encadeamento de ferramentas deste turno."""
     prazo_do_laco_de_ferramentas_s: float = PRAZO_DO_LACO_DE_FERRAMENTAS_S
     """Teto configurável, em segundos, para o encadeamento inteiro."""
@@ -937,8 +949,11 @@ class Cerebro:
                 chamar=self._chamada_da_tarefa(
                     marca, autorizacoes, texto_do_dono, tuple(self.conversa.turnos)
                 ),
-                prazo_s=self.prazo_do_laco_de_ferramentas_s,
+                prazo_s=self.prazo_da_tarefa_s,
                 maximo_de_passos=max(1, self.maximo_de_passos - len(resposta.ferramentas)),
+                bloco_de_passos=self.maximo_de_passos,
+                no_teto=self._pergunta_do_teto(marca),
+                feitos_antes=tuple(resposta.ferramentas),
                 # O que o dono já ouviu deste pedido (dono, 2026-10-25): o fim da tarefa não repete.
                 ja_dito=f"{_dito_no_turno(resposta)} {frase}".strip(),
                 turno=resposta.turn_id,
@@ -952,6 +967,49 @@ class Cerebro:
             crescer()
             for pedaco in fatiador.alimentar(frase + " ") + fatiador.descarregar():
                 self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+
+    def _pergunta_do_teto(self, marca: Contaminacao) -> PerguntarNoTeto:
+        """A pergunta do teto da tarefa de um pedido (ADR-0059): a mesma pendência das outras
+        perguntas da tarefa, dita em voz e na faixa, com a conversa livre."""
+        executor = self.ferramentas
+        assert executor is not None and executor.tarefas is not None
+        gestor = executor.tarefas
+        pendencias = self.pendencias
+
+        def perguntar(tarefa: Tarefa, pergunta: Confirmacao) -> RespostaAoTeto:
+            identificador = f"pergunta-{pergunta.id}"
+
+            def na_voz(aberta: Confirmacao) -> None:
+                gestor.avisar(tarefa, identificador, "precisa_decisao", aberta.pergunta_falada)
+
+            espera = Espera()
+            gestor.esperando_o_dono(tarefa, True)
+            limite = time.monotonic() + pergunta.prazo_s
+            try:
+                while True:
+                    resposta = pendencias.esperar(
+                        pergunta,
+                        contaminado=marca.valor,
+                        cancelado=tarefa.cancelada.is_set,
+                        anunciar=na_voz,
+                        espera=espera,
+                    )
+                    if resposta is not None:
+                        break
+                    # Outra pergunta está aberta, e nada a substitui: esta espera a vez dela, em
+                    # vez de jogar fora o trabalho porque o dono estava respondendo a outra coisa.
+                    if tarefa.cancelada.wait(INTERVALO_DA_ESPERA_S) or time.monotonic() > limite:
+                        return RespostaAoTeto.PARAR
+            finally:
+                gestor.esperando_o_dono(tarefa, False)
+                gestor.retirar_aviso(tarefa, identificador)
+            if not resposta or tarefa.cancelada.is_set():
+                return RespostaAoTeto.PARAR
+            return (
+                RespostaAoTeto.ATE_TERMINAR if espera.ate_terminar else RespostaAoTeto.MAIS_UM_BLOCO
+            )
+
+        return perguntar
 
     def _chamada_da_tarefa(
         self,
