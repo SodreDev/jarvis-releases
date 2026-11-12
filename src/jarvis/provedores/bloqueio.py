@@ -92,7 +92,7 @@ def bloqueio_do_preset(
             ),
             como=(
                 f"Configuração → resposta → toque em {nome} → «li o aviso — ligar {nome}» "
-                f"(vale na hora, nesta conversa; «salvar configuração» guarda para as próximas), "
+                f"(vale na hora e fica salvo), "
                 f"{voltar}"
             ),
             voz=f"O {nome} está desligado: ligue em Configuração, resposta, depois do aviso.",

@@ -5,8 +5,8 @@ import JarvisUI
 // provedor → modelo (com o que ele faz) → esforço → nome e papel.
 //
 // As regras são as da caixa de voz. Escolher, salvar e ativar **não** ligam nuvem: o aviso
-// montado do registro aparece inteiro antes do botão de ligar, e ligar vale nesta sessão até o
-// "salvar configuração". Id, nome e preço de modelo vêm do provedor — dado de terceiros, por isso
+// montado do registro aparece inteiro antes do botão de ligar, e ligar vale na hora e já fica
+// salvo (ADR-0060: toda troca de ajuste grava no mesmo clique). Id, nome e preço de modelo vêm do provedor — dado de terceiros, por isso
 // todo texto aqui é puro e nada vira marcação. O que cada clique grava e o que cada frase diz vêm
 // prontos do Python (`jarvis.gui.modelos`): esta tela só desenha e repassa.
 Column {
@@ -418,7 +418,7 @@ Column {
                 }
                 Nota {
                     width: parent.width
-                    text: "vale nesta sessão; «salvar configuração», no alto desta coluna, guarda no arquivo"
+                    text: "vale na hora e fica salvo no arquivo"
                 }
             }
 

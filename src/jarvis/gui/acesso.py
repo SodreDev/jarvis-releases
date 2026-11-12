@@ -160,6 +160,9 @@ class PonteDeAcesso(QObject):
     @Property(list, notify=mudou)
     def navegadores(self) -> list[dict[str, Any]]:
         """Os detectados, e os que o dono pôs à mão, cada um com as opções de binário."""
+        return self._linhas_dos_navegadores()
+
+    def _linhas_dos_navegadores(self) -> list[dict[str, Any]]:
         configuracao = self._obter()
         escolhidos = separar(configuracao.navegadores)
         linhas: list[dict[str, Any]] = []
@@ -202,6 +205,11 @@ class PonteDeAcesso(QObject):
                 }
             )
         return linhas
+
+    def familias(self) -> list[tuple[str, str]]:
+        """(família, nome) de cada navegador da lista — a escolha do «navegador preferido» das
+        redes sociais (ADR-0060) sai daqui, para as duas abas falarem dos mesmos navegadores."""
+        return [(linha["familia"], linha["nome"]) for linha in self._linhas_dos_navegadores()]
 
     @Property(bool, notify=mudou)
     def navegadorControlado(self) -> bool:

@@ -214,8 +214,8 @@ class PonteDeModelos(QObject):
         """Monta os `Provedores` da configuração **viva**: a nuvem que o dono acabou de ligar já
         conta no `ligado` seguinte."""
         self._ligar_nuvem = ligar_nuvem
-        """O interruptor da janela (`Ponte.ligarNuvem`): muda `nuvem_ligada` nesta sessão; o
-        "salvar configuração" é que grava o arquivo."""
+        """O interruptor da janela (`Ponte.ligarNuvem`): muda `nuvem_ligada` e já grava o arquivo
+        (ADR-0060)."""
         self._registrados: tuple[Motor, ...] | None = None
         self._aberto = ""
         self._listagem: dict[str, Any] = {}
@@ -751,7 +751,7 @@ class PonteDeModelos(QObject):
     @Slot(str, bool)
     def ligarProvedor(self, identificador: str, ligado: bool) -> None:
         """O botão depois do aviso (ADR-0017, política 2): liga ou desliga a nuvem deste provedor
-        **nesta sessão**; "salvar configuração" é que guarda no arquivo."""
+        e já grava no arquivo (ADR-0060: sem botão de salvar)."""
         motor = self._motor(identificador)
         if motor is None:
             self._avisar(f"não deu: o provedor {identificador[:64]!r} não está no registro")
@@ -762,16 +762,13 @@ class PonteDeModelos(QObject):
             return
         self._ligar_nuvem(motor.id, ligado)
         if ligado:
-            self._avisar(
-                f"{nome} ligado — vale já, nesta conversa; «salvar configuração» guarda para as "
-                "próximas"
-            )
+            self._avisar(f"{nome} ligado — vale já e fica salvo")
         elif esta_ligado(motor, self._provedores()):
             self._avisar(
                 f'{nome} continua ligado pela configuração (s2 = "claude" conta como ligado)'
             )
         else:
-            self._avisar(f"{nome} desligado — «salvar configuração» guarda no arquivo")
+            self._avisar(f"{nome} desligado — fica salvo")
 
 
 def _passo(passo: str, *, ok: bool, frase: str) -> dict[str, Any]:

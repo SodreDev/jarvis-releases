@@ -146,9 +146,8 @@ def test_atalho_global_salvo_volta_sozinho_ao_abrir_a_janela(
     while not primeira.estado_da_escuta()["atalhoGlobal"] and time.monotonic() < limite:
         time.sleep(0.02)
     assert primeira.estado_da_escuta()["atalhoGlobal"] is True
-    assert "salve a configuração" in lido(primeira, "portalFrase")
-    primeira.salvarConfiguracao()
-    assert ler(caminho).atalho_global is True
+    assert "atalho global ligado pelo sistema" in lido(primeira, "portalFrase")
+    assert ler(caminho).atalho_global is True, "salvo na hora, sem botão (ADR-0060)"
 
     segunda = Ponte(raiz=tmp_path / "s2", caminho_da_configuracao=caminho)
     limite = time.monotonic() + 5

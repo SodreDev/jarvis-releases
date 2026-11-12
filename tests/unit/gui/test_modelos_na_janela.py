@@ -296,7 +296,7 @@ def test_o_jev_so_tem_o_modelo_do_registro_e_nenhum_esforco(
     assert frase.startswith("preset «jev de novo» salvo para jev"), frase
 
 
-def test_ligar_o_provedor_e_o_interruptor_da_janela_e_salvar_guarda(
+def test_ligar_o_provedor_e_o_interruptor_da_janela_gravam_na_hora(
     tmp_path: Path, ambiente: dict[str, str], sem_chaveiro: None
 ) -> None:
     tela = cast(Any, _ponte(tmp_path, ambiente))
@@ -312,14 +312,15 @@ def test_ligar_o_provedor_e_o_interruptor_da_janela_e_salvar_guarda(
     assert _do(modelos.provedores, ECO)["ligado"], "local não tem interruptor"
 
     modelos.ligarProvedor(GROQ, True)
-    assert modelos.aviso.startswith("Groq ligado — vale já, nesta conversa")
+    assert modelos.aviso == "Groq ligado — vale já e fica salvo"
     assert _do(modelos.provedores, GROQ)["ligado"]
     assert GROQ in tela.configuracao["nuvem_ligada"]
-    tela.salvarConfiguracao()
-    assert ler(tmp_path / "config" / "jarvis" / "jarvis-voz.toml").nuvem_ligada == (GROQ,)
+    arquivo = tmp_path / "config" / "jarvis" / "jarvis-voz.toml"
+    assert ler(arquivo).nuvem_ligada == (GROQ,), "salvo no mesmo clique (ADR-0060)"
 
     modelos.ligarProvedor(GROQ, False)
     assert not _do(modelos.provedores, GROQ)["ligado"]
+    assert ler(arquivo).nuvem_ligada == ()
     modelos.ligarProvedor(ECO, True)
     assert "não há nuvem para ligar" in modelos.aviso
 

@@ -285,13 +285,19 @@ def test_navegador_incluido_a_mao_aparece_e_pode_ser_retirado(
     assert ler(maquina["config"]).navegadores == ()
 
 
-def test_so_os_campos_de_acesso_vao_para_o_arquivo(
+def test_marcar_um_app_grava_so_os_campos_de_acesso_por_cima_do_disco(
     tela_de_acesso: tuple[QQuickView, Any, Ponte], maquina: dict[str, Path]
 ) -> None:
+    """Toda troca grava na hora (ADR-0060), e cada uma só os campos dela: o que o dono mudou
+    à mão no arquivo, noutro campo, continua lá."""
+    from jarvis.voz.config import escrever, validar
+
     _, tela, _ = tela_de_acesso
-    tela.definirCampo("saida", "pipewire")  # escolha da voz ainda não salva
+    tela.definirCampo("saida", "pipewire")
+    assert ler(maquina["config"]).saida == "pipewire"
+    escrever(validar(ler(maquina["config"]).com(saida="alsa")), maquina["config"])
     tela.acesso.marcarApp("org.kde.kate", True)
-    assert ler(maquina["config"]).saida == "", "marcar um app não salva o que o dono não salvou"
+    assert ler(maquina["config"]).saida == "alsa", "o acesso não regrava a voz da sessão"
     assert ler(maquina["config"]).apps_autorizados == ("org.kde.kate",)
 
 

@@ -43,7 +43,7 @@ vai a quem vê).
   presets, ativos, a lista do provedor aberto; listar e perguntar a prontidão das CLIs em thread, com
   sinal enfileirado para a thread da janela) e `qml/JarvisUI/PainelDeModelos.qml` no painel
   «resposta» da `VistaConfiguracao.qml` (substituiu os botões eco/claude; `ponte.geradores` ficou
-  sem uso no QML). Ligar nuvem vale na sessão; «salvar configuração» grava, como no painel de voz.
+  sem uso no QML). Ligar nuvem vale na hora e grava no arquivo no mesmo clique (ADR-0060).
   A ponte passa a fonte de presets dela à sessão (`SessaoDeVoz.presets` → `Aplicativo.presets`): o
   que a janela grava é o que o cérebro lê, inclusive com `--config`.
 - Configuração nova: `base_compativel_local`, `base_compativel_nuvem`. Chaves novas no chaveiro da

@@ -44,9 +44,11 @@ from jarvis.gui.componentes import CATALOGO
 from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
 from jarvis.gui.modelos import PonteDeModelos
 from jarvis.gui.nucleo import SessaoDeVoz
+from jarvis.gui.redes import PonteDasRedes
 from jarvis.gui.workspace import Workspace
 from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.rede import ErroDeRede
+from jarvis.social.config import ARQUIVO as ARQUIVO_DAS_REDES
 from jarvis.ui.atalhos import AtalhoIndisponivel
 from jarvis.ui.portal import AtalhoPortal, portal_disponivel
 from jarvis.voz import aferir
@@ -312,6 +314,13 @@ class Ponte(QObject):
             parent=self,
             **extras_do_acesso,
         )
+        self._redes = PonteDasRedes(
+            # Ao lado do `jarvis-voz.toml` (ADR-0060): o teste e o `--config` isolam os dois juntos.
+            caminho=self._caminho.parent / ARQUIVO_DAS_REDES,
+            navegadores=self._acesso.familias,
+            principal=lambda: self._configuracao.navegador_principal,
+            parent=self,
+        )
         self._modelos = PonteDeModelos.da_janela(
             obter=lambda: self._configuracao,
             raiz=raiz,
@@ -506,11 +515,34 @@ class Ponte(QObject):
         arquivo de presets na hora."""
         return self._modelos
 
-    def _gravar_acesso(self, nova: Configuracao) -> str:
-        """Guarda só os campos de acesso — no arquivo e na conversa aberta — e diz o que fez.
+    @Property(QObject, constant=True)
+    def redes(self) -> QObject:
+        """A aba «redes sociais» (`PonteDasRedes`, ADR-0060): grava `redes.toml` na hora."""
+        return self._redes
 
-        O resto da configuração (motores, voz, escuta) não é gravado por aqui: uma escolha de
-        motor ainda não salva não vira arquivo por ter o dono marcado um aplicativo."""
+    def _gravar_campos(self, **mudancas: Any) -> str:
+        """Toda troca de ajuste da janela vale na hora **e** vai ao arquivo no mesmo clique
+        (ADR-0060, pedido do dono: sem botão de salvar). Só os campos que mudaram são gravados,
+        por cima do que está no disco: o arquivo editado à mão, ou por outra janela, não perde o
+        resto. Devolve "salvo" ou o motivo de não ter salvo (vale na sessão do mesmo jeito)."""
+        self._configuracao = self._configuracao.com(**mudancas)
+        try:
+            no_disco = ler(self._caminho)
+        except ConfiguracaoInvalida as erro:
+            return f"vale agora, mas não deu para salvar ({erro})"
+        try:
+            escrever(validar(no_disco.com(**mudancas)), self._caminho)
+        except (ValueError, OSError) as erro:
+            return f"vale agora, mas não deu para salvar ({erro})"
+        return "salvo"
+
+    def _guardar(self, frase: str = "", **mudancas: Any) -> None:
+        """`_gravar_campos` com a frase na linha de aviso da janela."""
+        resultado = self._gravar_campos(**mudancas)
+        self._aviso = f"{frase} — {resultado}" if frase else resultado
+
+    def _gravar_acesso(self, nova: Configuracao) -> str:
+        """Guarda os campos de acesso — no arquivo e na conversa aberta — e diz o que fez."""
         campos = (
             "acesso",
             "raizes",
@@ -522,18 +554,10 @@ class Ponte(QObject):
             "navegador_controlado",
         )
         mudancas = {campo: getattr(nova, campo) for campo in campos}
-        self._configuracao = self._configuracao.com(**mudancas)
+        resultado = self._gravar_campos(**mudancas)
         if self._sessao is not None and self._sessao.viva and self._sessao.aplicativo is not None:
             self._sessao.aplicativo.atualizar_acesso(self._configuracao)
-        try:
-            no_disco = ler(self._caminho)
-        except ConfiguracaoInvalida as erro:
-            return f"vale agora, mas não deu para salvar ({erro})"
-        try:
-            escrever(validar(no_disco.com(**mudancas)), self._caminho)
-        except (ValueError, OSError) as erro:
-            return f"vale agora, mas não deu para salvar ({erro})"
-        return "salvo"
+        return resultado
 
     @Property(list, notify=mudou)
     def motores(self) -> list[dict[str, Any]]:
@@ -847,7 +871,7 @@ class Ponte(QObject):
         campo = CAMPO_DO_PAPEL.get(papel, papel)
         if papel == "decisao" and getattr(self._configuracao, campo) == identificador:
             identificador = ""  # o detector é opcional: clicar no escolhido tira a escolha
-        self._configuracao = self._configuracao.com(**{campo: identificador})
+        self._guardar(f"{papel}: {identificador or 'nenhum'}", **{campo: identificador})
         self._publicar()
 
     @Slot(str, str)
@@ -889,13 +913,20 @@ class Ponte(QObject):
         atuais = [m for m in self._configuracao.nuvem_ligada if m != identificador]
         if ligado:
             atuais.append(identificador)
-        self._configuracao = self._configuracao.com(nuvem_ligada=tuple(atuais))
+        self._guardar(
+            f"{identificador} {'ligado' if ligado else 'desligado'}", nuvem_ligada=tuple(atuais)
+        )
         self._publicar()
 
     @Slot(str, str)
     def definirCampo(self, campo: str, valor: str) -> None:
         if campo in self._configuracao.para_dict():
-            self._configuracao = self._configuracao.com(**{campo: valor})
+            try:
+                validar(self._configuracao.com(**{campo: valor}))
+            except ValueError as erro:
+                self._aviso = f"{campo} recusado: {erro}"
+            else:
+                self._guardar(campo, **{campo: valor})
             self._publicar()
 
     # --- modos de ativação (ADR-0021) -----------------------------------------------------
@@ -909,7 +940,7 @@ class Ponte(QObject):
             self._aviso = str(erro)
         else:
             self._escuta.trocar(alvo)
-            self._configuracao = self._configuracao.com(escuta=alvo.value)
+            self._guardar(f"escuta: {alvo.value}", escuta=alvo.value)
         self._publicar()
 
     @Slot(str, str)
@@ -925,11 +956,10 @@ class Ponte(QObject):
             self._aviso = f"palavra recusada: {erro}"
         else:
             detector = self._escuta.detector
-            self._configuracao = self._configuracao.com(
-                palavra=detector.palavra, limiar_palavra=detector.limiar
-            )
-            self._aviso = (
-                f"palavra de ativação: “{detector.palavra}” (limiar {detector.limiar:.2f})"
+            self._guardar(
+                f"palavra de ativação: “{detector.palavra}” (limiar {detector.limiar:.2f})",
+                palavra=detector.palavra,
+                limiar_palavra=detector.limiar,
             )
         self._publicar()
 
@@ -978,10 +1008,12 @@ class Ponte(QObject):
             else:
                 self._portal = portal
                 self._portal_frase = f"atalho global ligado pelo sistema: {portal.gatilho}"
-                self._escuta.trocar_atalho(combinacao, global_=True)
+                # Grava antes de a escuta virar global: quem vê o global já acha o arquivo salvo.
                 if not self._configuracao.atalho_global:
-                    self._configuracao = self._configuracao.com(atalho_global=True)
-                    self._portal_frase += " — salve a configuração para ele voltar ao abrir"
+                    resultado = self._gravar_campos(atalho_global=True)
+                    if resultado != "salvo":
+                        self._portal_frase += f" — {resultado}"
+                self._escuta.trocar_atalho(combinacao, global_=True)
             self.escutaMudou.emit()
 
         threading.Thread(target=trabalhar, name="jarvis-portal-ligar", daemon=True).start()
@@ -1091,8 +1123,7 @@ class Ponte(QObject):
             self._portal.fechar()
             self._portal = None
         self._escuta.trocar_atalho(atalho, global_=False)
-        self._configuracao = self._configuracao.com(atalho=atalho, atalho_global=False)
-        self._aviso = f"atalho: {atalho or 'barra de espaço'}"
+        self._guardar(f"atalho: {atalho or 'barra de espaço'}", atalho=atalho, atalho_global=False)
         self._publicar()
 
     def _combinacao(self) -> tuple[int, int]:

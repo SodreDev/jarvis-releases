@@ -12,8 +12,9 @@ import JarvisUI
 Item {
     id: vista
     property var dados: ({})
-    // Quatro folhas, cada uma cabe numa tela e nenhuma rola dentro de outra: o que o Jarvis ouve
-    // e fala, e o que ele pode tocar (pastas, programas, navegadores).
+    // Cinco folhas, cada uma cabe numa tela e nenhuma rola dentro de outra: o que o Jarvis ouve
+    // e fala, o que ele pode tocar (pastas, programas, navegadores) e as redes sociais que ele
+    // monitora (ADR-0060). Toda troca de ajuste grava na hora: não há botão de salvar.
     property string aba: "voz"
 
     Flow {
@@ -46,6 +47,21 @@ Item {
             ativo: vista.aba === "navegadores"
             onApertado: vista.aba = "navegadores"
         }
+        Botao {
+            objectName: "abaRedes"
+            texto: "redes sociais"
+            ativo: vista.aba === "redes"
+            onApertado: vista.aba = "redes"
+        }
+    }
+
+    VistaRedes {
+        objectName: "vistaRedes"
+        anchors.top: abas.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: vista.aba === "redes"
     }
 
     VistaAcesso {
@@ -55,7 +71,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        visible: vista.aba !== "voz"
+        visible: vista.aba !== "voz" && vista.aba !== "redes"
     }
 
     // --- as caixas -----------------------------------------------------------------------
@@ -141,15 +157,23 @@ Item {
             width: (parent.width - Tema.espacamento) * 0.44
             spacing: Tema.espacamento
 
-            // No alto da coluna da direita: com um provedor aberto a da esquerda rola, e o
-            // botão de salvar não pode sumir junto.
+            // No alto da coluna da direita: o que acabou de ser salvo (ou por que não) não pode
+            // sumir quando a da esquerda rola. Não há botão de salvar: cada troca grava na hora.
             Painel {
                 width: parent.width
                 titulo: "arquivo"
                 Column {
                     width: parent.width
                     spacing: 8
-                    Botao { texto: "salvar configuração"; onApertado: ponte.salvarConfiguracao() }
+                    Nota {
+                        objectName: "salvamentoAutomatico"
+                        width: parent.width
+                        text: ponte && ponte.aviso !== ""
+                              ? ponte.aviso
+                              : "cada troca é salva na hora — não há botão de salvar"
+                        color: ponte && ponte.aviso.indexOf("não deu") >= 0 ? Tema.alerta : Tema.texto
+                        wrapMode: Text.WordWrap
+                    }
                     Nota {
                         width: parent.width
                         text: "escolher não liga nuvem nenhuma: ligar é outra confirmação"

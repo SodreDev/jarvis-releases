@@ -329,7 +329,7 @@ class SessaoDeVoz:
                 # e o caminho tem de estar na frase — e no card, que não rola para fora.
                 frase = (
                     f"não estou ouvindo: {erro}. Para falar comigo, ligue esse ASR em "
-                    "Configuração → Voz — ouvir (e salve), ou escolha asr-whisper-local, que "
+                    "Configuração → Voz — ouvir (salva na hora), ou escolha asr-whisper-local, que "
                     "roda na máquina."
                 )
                 self.ao_linha(frase)

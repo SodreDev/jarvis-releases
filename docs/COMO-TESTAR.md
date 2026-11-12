@@ -72,11 +72,11 @@ aparece acima da barra de conversa, com o motivo.
    GPL-3.0, e a tela diz isso. Se falhar, o motivo aparece na conversa e no card de avisos.
 4. **"Minha voz não sai."** Com `asr = "asr-groq-…"` e a Groq **fora** de `nuvem_ligada`, o
    Jarvis não te ouve. Agora a conversa diz `não estou ouvindo: …` e o caminho: ligue a Groq
-   em Configuração → Voz — ouvir (e salve) **ou** escolha `asr-whisper-local`. O ASR local é
+   em Configuração → Voz — ouvir (salva na hora) **ou** escolha `asr-whisper-local`. O ASR local é
    o padrão e foi conferido sem rede (transcreve o corpus; ~1,9 s por frase nesta CPU).
 5. **Atalhos.** Clique em qualquer lugar e segure a barra de espaço: deve aparecer "ouvindo".
    O atalho **global** (Configuração → Escuta → "usar como atalho global") abre o diálogo do
-   sistema; depois de aceitar, **salve a configuração**, e a janela pede o mesmo atalho ao
+   sistema; depois de aceitar, ele já fica salvo (toda troca de ajuste grava na hora), e a janela pede o mesmo atalho ao
    sistema toda vez que abrir. A frase ao lado diz o estado real ("ligado pelo sistema: …"
    ou o motivo da recusa).
 6. **Tempo de cada trecho.** Depois de cada resposta aparece uma linha
