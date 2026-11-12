@@ -341,3 +341,75 @@ def test_sem_navegador_aberto_diz_isso_e_nao_abre_nada() -> None:
         assert ponte.pedidos == []
     finally:
         monitor.parar()
+
+
+# --- fatia E: Instagram, Facebook, TikTok e Discord, só leitura -------------------------------
+def test_quatro_redes_ao_mesmo_tempo_com_notificacoes_e_alertas_separados() -> None:
+    ponte = PonteFalsa()
+    redes = ("instagram", "facebook", "tiktok", "discord")
+    configuracao = [ligado(*redes)]
+    avisos: list[Notificacao] = []
+    alertas: list[tuple[str, str]] = []
+    monitor = MonitorSocial(
+        ponte,
+        configuracao=lambda: configuracao[0],
+        familia=lambda: "chromium",
+        ao_notificar=avisos.append,
+        ao_mudar=lambda: None,
+        ao_alerta=lambda rede, alerta: alertas.append((rede, alerta)),
+        intervalo_s=0.02,
+    )
+    monitor.iniciar()
+    try:
+        assert _esperar(
+            lambda: {p[2]["rede"] for p in ponte.pedidos if p[0] == "social.abrir"} == set(redes)
+        )
+        for numero, rede in enumerate(redes, start=1):
+            ponte.fila.append(
+                {
+                    "evento": "social",
+                    "rede": rede,
+                    "logado": True,
+                    "naoLidas": numero,
+                    "conversas": [{"nome": f"pessoa-{rede}", "naoLidas": numero}],
+                    "formato": "conhecido",
+                    "alerta": "",
+                }
+            )
+        assert _esperar(lambda: len(avisos) == 4)
+        assert sorted(a.rede for a in avisos) == sorted(redes)
+        for rede in redes:
+            cartao = monitor.estado.para_a_tela(rede)
+            assert len(cartao["notificacoes"]) == 1
+            assert f"pessoa-{rede}" in cartao["notificacoes"][0]["texto"]
+        ponte.fila.append(
+            {
+                "evento": "social",
+                "rede": "discord",
+                "logado": True,
+                "naoLidas": 0,
+                "conversas": [],
+                "formato": "conhecido",
+                "alerta": "verificacao",
+            }
+        )
+        assert _esperar(lambda: alertas == [("discord", "verificacao")])
+        assert monitor.estado.para_a_tela("instagram")["estado"] == "conectada"
+        assert {p[0] for p in ponte.pedidos} <= {"social.abrir", "social.estado"}, "só leitura"
+    finally:
+        monitor.parar()
+
+
+def test_nenhuma_rede_alem_do_whatsapp_tem_caminho_de_envio() -> None:
+    from jarvis.social.envio import REDES_COM_ENVIO
+    from jarvis.social.redes import REDES
+
+    assert {"whatsapp"} == REDES_COM_ENVIO
+    assert [r.id for r in REDES if r.responde] == ["whatsapp"]
+    for rede in ("instagram", "facebook", "tiktok", "discord"):
+        for metodo in ("social.cabecalho", "social.abrirConversa", "social.enviar"):
+            params: dict[str, Any] = {"rede": rede}
+            if metodo == "social.abrirConversa":
+                params["nome"] = "alguém"
+            with pytest.raises(PedidoInvalido):
+                validar_pedido({"id": "z1", "method": metodo, "params": params})

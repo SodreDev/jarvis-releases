@@ -7,7 +7,7 @@
 // `login`: só existe na tela de entrar. `essenciais`: só existe logado — é o canário: sem nenhum
 // deles e sem login, o formato é «desconhecido» e a rede só notifica.
 globalThis.__jarvisSeletoresSociais = {
-  "versao": 2,
+  "versao": 3,
   "alertas": {
     "captcha": ["iframe[src*='captcha']", "iframe[title*='captcha']", "iframe[title*='CAPTCHA']", "[aria-label*='captcha']"],
     "onde": ["[role='alertdialog']", "[role='dialog']", "[role='alert']"],
@@ -37,7 +37,7 @@ globalThis.__jarvisSeletoresSociais = {
       "essenciais": ["a[href='/direct/inbox/']", "svg[aria-label='Direct']", "[role='navigation']"],
       "conversa": ["[role='listitem']"],
       "nome": ["span[title]"],
-      "selo": ["[aria-label*='não lida']", "[aria-label*='unread']"]
+      "selo": ["[aria-label*='não lida']", "[aria-label*='unread']", "[aria-label*='Unread']"]
     },
     "facebook": {
       "hosts": ["www.facebook.com", "facebook.com", "web.facebook.com"],
@@ -45,7 +45,7 @@ globalThis.__jarvisSeletoresSociais = {
       "essenciais": ["[role='navigation']", "[aria-label='Messenger']", "[aria-label='Conversas']"],
       "conversa": ["[role='row']"],
       "nome": ["span[title]"],
-      "selo": ["[aria-label*='não lida']", "[aria-label*='unread']"]
+      "selo": ["[aria-label*='não lida']", "[aria-label*='unread']", "[aria-label*='Unread']"]
     },
     "tiktok": {
       "hosts": ["www.tiktok.com", "tiktok.com"],

@@ -305,3 +305,37 @@ test("envio: cabeçalho, conversa pelo nome exato (homônimo conta) e a caixa de
   const sem = social.cabecalhoDoChat(rede, await pagina("whatsapp-logado"));
   assert.equal(sem.ambiguo, true, "sem chat aberto, nada a conferir: ambíguo");
 });
+
+test("fatia E: Instagram, Facebook, TikTok e Discord — logado, login e alerta", async () => {
+  const instagram = social.lerEstado("instagram", await pagina("instagram-logado"));
+  assert.equal(instagram.logado, true);
+  assert.equal(instagram.naoLidas, 2);
+  assert.deepEqual([...instagram.conversas].map((c) => c.nome), ["lia.foto", "nina"]);
+
+  const messenger = social.lerEstado("facebook", await pagina("facebook-messenger"));
+  assert.equal(messenger.logado, true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(messenger.conversas)),
+    [{ nome: "Otávio Lima", naoLidas: 1 }],
+  );
+
+  for (const [rede, nome] of [
+    ["facebook", "facebook-login"],
+    ["tiktok", "tiktok-login"],
+    ["discord", "discord-login"],
+  ]) {
+    const estado = social.lerEstado(rede, await pagina(nome));
+    assert.equal(estado.logado, false, nome);
+    assert.equal(estado.formato, "conhecido", nome);
+    assert.equal(estado.naoLidas, 0, nome);
+  }
+
+  const verificacao = social.lerEstado("discord", await pagina("discord-verificacao"));
+  assert.equal(verificacao.alerta, "verificacao");
+});
+
+test("fatia E: página de uma rede lida com os seletores de outra não inventa contagem", async () => {
+  const errada = social.lerEstado("tiktok", await pagina("instagram-logado"));
+  assert.equal(errada.formato, "desconhecido");
+  assert.equal(errada.conversas.length, 0);
+});
