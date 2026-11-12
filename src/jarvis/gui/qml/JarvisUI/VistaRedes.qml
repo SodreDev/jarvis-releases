@@ -137,6 +137,166 @@ Item {
                 }
             }
 
+            // Respostas no WhatsApp (ADR-0060, fatia D). Tudo desligado por padrão; cada clique
+            // grava na hora. A chave mestra, o «estou ausente» e o PARAR ficam no alto, e o aviso
+            // do risco vem antes de qualquer botão (docs/redes-sociais-riscos.md).
+            Painel {
+                id: caixaDoEnvio
+                objectName: "envioWhatsapp"
+                property var envio: vista.redes ? vista.redes.envio : ({})
+                width: coluna.width
+                titulo: "respostas no whatsapp"
+                dica: caixaDoEnvio.envio.ausente ? "ausente: respondendo a lista"
+                      : (caixaDoEnvio.envio.automatico ? "armado, você presente" : "desligado")
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Nota {
+                        width: parent.width
+                        color: Tema.alerta
+                        text: "Arriscado: o WhatsApp proíbe automação e pode limitar ou banir a "
+                              + "conta. Ler é quase seguro; enviar não. O Jarvis só responde quem "
+                              + "está na lista e escreveu primeiro, com você ausente, poucas vezes "
+                              + "por hora, nunca de madrugada. Na dúvida, só avisa você."
+                    }
+                    Flow {
+                        width: parent.width
+                        spacing: 8
+                        Botao {
+                            objectName: "envioAutomatico"
+                            texto: caixaDoEnvio.envio.automatico ? "envio automático ligado"
+                                                                 : "ligar envio automático"
+                            ativo: caixaDoEnvio.envio.automatico === true
+                            onApertado: vista.redes.definirEnvioAutomatico(!caixaDoEnvio.envio.automatico)
+                        }
+                        Botao {
+                            objectName: "estouAusente"
+                            visible: caixaDoEnvio.envio.automatico === true
+                            texto: caixaDoEnvio.envio.ausente ? "estou ausente" : "estou presente"
+                            ativo: caixaDoEnvio.envio.ausente === true
+                            onApertado: vista.redes.definirAusente(!caixaDoEnvio.envio.ausente)
+                        }
+                        Botao {
+                            objectName: "pararEnvios"
+                            visible: caixaDoEnvio.envio.automatico === true
+                                     || caixaDoEnvio.envio.ausente === true
+                            texto: "parar envios agora"
+                            onApertado: vista.redes.pararEnvios()
+                        }
+                    }
+                    Row {
+                        spacing: 8
+                        Rotulo { text: "por hora: " + caixaDoEnvio.envio.porHora + " (máx. " + caixaDoEnvio.envio.tetoHora + ")" }
+                        Botao {
+                            objectName: "menosPorHora"
+                            texto: "−"
+                            onApertado: vista.redes.definirTeto(caixaDoEnvio.envio.porHora - 1, caixaDoEnvio.envio.porDia)
+                        }
+                        Botao {
+                            objectName: "maisPorHora"
+                            texto: "+"
+                            visible: caixaDoEnvio.envio.porHora < caixaDoEnvio.envio.tetoHora
+                            onApertado: vista.redes.definirTeto(caixaDoEnvio.envio.porHora + 1, caixaDoEnvio.envio.porDia)
+                        }
+                        Rotulo { text: "por dia: " + caixaDoEnvio.envio.porDia + " (máx. " + caixaDoEnvio.envio.tetoDia + ")" }
+                        Botao {
+                            objectName: "menosPorDia"
+                            texto: "−"
+                            onApertado: vista.redes.definirTeto(caixaDoEnvio.envio.porHora, caixaDoEnvio.envio.porDia - 1)
+                        }
+                        Botao {
+                            objectName: "maisPorDia"
+                            texto: "+"
+                            visible: caixaDoEnvio.envio.porDia < caixaDoEnvio.envio.tetoDia
+                            onApertado: vista.redes.definirTeto(caixaDoEnvio.envio.porHora, caixaDoEnvio.envio.porDia + 1)
+                        }
+                    }
+                    Nota {
+                        width: parent.width
+                        text: "intervalo mínimo de " + caixaDoEnvio.envio.intervaloMin
+                              + " min entre envios; sem envio das " + caixaDoEnvio.envio.silencio
+                    }
+                    Row {
+                        spacing: 8
+                        visible: caixaDoEnvio.envio.pausa !== "" && caixaDoEnvio.envio.pausa !== undefined
+                        Nota {
+                            objectName: "pausaDoEnvio"
+                            color: Tema.alerta
+                            text: "envio pausado por 24 h: sinal de alerta («" + caixaDoEnvio.envio.pausa + "»)"
+                        }
+                        Botao {
+                            objectName: "tirarPausa"
+                            texto: "tirar a pausa"
+                            onApertado: vista.redes.tirarPausa()
+                        }
+                    }
+                    Rotulo { text: "lista permitida (contatos salvos)" }
+                    Repeater {
+                        model: caixaDoEnvio.envio.permitidos || []
+                        Row {
+                            spacing: 8
+                            Text {
+                                textFormat: Text.PlainText
+                                text: modelData.nome + " · " + modelData.telefone
+                                color: Tema.texto
+                                font.pixelSize: Tema.tamanhoTexto - 2
+                                renderType: Text.NativeRendering
+                            }
+                            Botao {
+                                objectName: "tirarPermitido-" + modelData.nome
+                                texto: "tirar"
+                                onApertado: vista.redes.removerPermitido(modelData.nome, modelData.telefone)
+                            }
+                        }
+                    }
+                    Row {
+                        spacing: 8
+                        Repeater {
+                            id: camposDoPermitido
+                            model: [
+                                { campo: "nome", largura: 200, dica: "nome como está no WhatsApp" },
+                                { campo: "telefone", largura: 160, dica: "telefone" }
+                            ]
+                            Rectangle {
+                                property alias valor: campoDoPermitido.text
+                                width: modelData.largura
+                                height: 28
+                                color: "transparent"
+                                border.width: 1
+                                border.color: campoDoPermitido.activeFocus ? Tema.cianoFraco : Tema.linha
+                                TextInput {
+                                    id: campoDoPermitido
+                                    objectName: "permitidoNovo-" + modelData.campo
+                                    anchors.fill: parent
+                                    anchors.margins: 6
+                                    color: Tema.texto
+                                    font.pixelSize: Tema.tamanhoTexto - 3
+                                    clip: true
+                                }
+                                Rotulo {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 6
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.dica
+                                    visible: campoDoPermitido.text === "" && !campoDoPermitido.activeFocus
+                                }
+                            }
+                        }
+                        Botao {
+                            objectName: "adicionarPermitido"
+                            texto: "permitir"
+                            onApertado: {
+                                if (vista.redes.adicionarPermitido(camposDoPermitido.itemAt(0).valor,
+                                                                   camposDoPermitido.itemAt(1).valor)) {
+                                    camposDoPermitido.itemAt(0).valor = ""
+                                    camposDoPermitido.itemAt(1).valor = ""
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Memórias fixas (ADR-0060, fatia C): o que o Jarvis sabe de antemão para responder —
             // contatos, prestadores de serviço e como responder. Editar grava ao sair do campo;
             // o telefone nunca vai ao modelo (é do código, para conferir o contato no envio).

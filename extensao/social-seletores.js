@@ -7,7 +7,7 @@
 // `login`: só existe na tela de entrar. `essenciais`: só existe logado — é o canário: sem nenhum
 // deles e sem login, o formato é «desconhecido» e a rede só notifica.
 globalThis.__jarvisSeletoresSociais = {
-  "versao": 1,
+  "versao": 2,
   "alertas": {
     "captcha": ["iframe[src*='captcha']", "iframe[title*='captcha']", "iframe[title*='CAPTCHA']", "[aria-label*='captcha']"],
     "onde": ["[role='alertdialog']", "[role='dialog']", "[role='alert']"],
@@ -25,7 +25,11 @@ globalThis.__jarvisSeletoresSociais = {
       "essenciais": ["#pane-side", "[aria-label='Lista de conversas']", "[aria-label='Chat list']"],
       "conversa": ["#pane-side [role='listitem']", "#pane-side [role='row']"],
       "nome": ["span[title]", "[dir='auto'][title]"],
-      "selo": ["span[aria-label*='não lida']", "span[aria-label*='unread']"]
+      "selo": ["span[aria-label*='não lida']", "span[aria-label*='unread']"],
+      "cabecalho": ["#main header", "[role='main'] header"],
+      "nomeDoCabecalho": ["span[title]", "[dir='auto']"],
+      "grupo": ["[data-icon='default-group']", "[data-icon='group']"],
+      "caixa": ["footer [contenteditable='true'][role='textbox']", "footer [contenteditable='true']"]
     },
     "instagram": {
       "hosts": ["www.instagram.com", "instagram.com"],

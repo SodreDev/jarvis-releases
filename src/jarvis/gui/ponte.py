@@ -49,7 +49,10 @@ from jarvis.gui.workspace import Workspace
 from jarvis.navegador.cliente import familia_do_host
 from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.rede import ErroDeRede
+from jarvis.social.ausente import RespostaAusente, Resultado
 from jarvis.social.config import ARQUIVO as ARQUIVO_DAS_REDES
+from jarvis.social.enviar import Enviador
+from jarvis.social.envio import ARQUIVO_DOS_ENVIOS, Guardiao, HistoricoDeEnvios
 from jarvis.social.monitor import MonitorSocial, Notificacao
 from jarvis.social.monitor import Ponte as PonteSocial
 from jarvis.ui.atalhos import AtalhoIndisponivel
@@ -330,6 +333,7 @@ class Ponte(QObject):
             parent=self,
         )
         self._monitor_das_redes: MonitorSocial | None = None
+        self._resposta_ausente: RespostaAusente | None = None
         """O monitor das redes (ADR-0060): só com a ponte do navegador de verdade, que só a
         janela de verdade passa (`principal.py`). Sem ela (os testes), a aba só grava os ajustes."""
         if ponte_das_redes is not None:
@@ -540,6 +544,17 @@ class Ponte(QObject):
                 redes.navegador_preferido or self._configuracao.navegador_principal
             )
 
+        def envio_armado() -> bool:
+            envio = self._redes.configuracao.envio
+            return envio.automatico and envio.ausente
+
+        guardiao = Guardiao(
+            ajuste=lambda: self._redes.configuracao.envio,
+            historico=HistoricoDeEnvios(self._caminho.parent / ARQUIVO_DOS_ENVIOS),
+            pausas=self._redes.pausas,
+        )
+        # O «parar envios» grava automatico/ausente desligados: o envio em curso vê na hora.
+        enviador = Enviador(ponte, guardiao, familia=familia, cancelado=lambda: not envio_armado())
         monitor = MonitorSocial(
             ponte,
             configuracao=lambda: self._redes.configuracao,
@@ -547,7 +562,30 @@ class Ponte(QObject):
             # Os dois vêm do fio do monitor: o sinal do Qt entrega na thread da janela.
             ao_notificar=lambda aviso: self.redeNotificou.emit(aviso.rede, aviso.texto),
             ao_mudar=self.redesMudaram.emit,
+            # Sinal de alerta (captcha, conta limitada, logout…): todo envio da rede para por 24 h.
+            ao_alerta=lambda rede, alerta: self._redes.pausas.pausar(rede, alerta, time.time()),
         )
+
+        def resultado(feito: Resultado) -> None:
+            texto = (
+                f"WhatsApp: respondi a {feito.nome} (você está ausente)"
+                if feito.enviado
+                else f"WhatsApp: não respondi a {feito.nome} — {feito.motivo}"
+            )
+            aviso = monitor.estado.anotar("whatsapp", texto)
+            self.redeNotificou.emit(aviso.rede, aviso.texto)
+            self.redesMudaram.emit()
+
+        ausente = RespostaAusente(
+            guardiao=guardiao,
+            enviador=enviador,
+            redator=self._redigir_para_ausente,
+            permitidos=lambda: self._redes.configuracao.envio.permitidos,
+            ao_resultado=resultado,
+        )
+        monitor.ao_estado = ausente.ao_estado
+        self._resposta_ausente = ausente
+        self._redes.ao_parar_envios = self.redesMudaram.emit
         self._monitor_das_redes = monitor
         self.redesMudaram.connect(self._redes.mudou.emit)
         self.redeNotificou.connect(self._avisar_da_rede)
@@ -562,9 +600,18 @@ class Ponte(QObject):
         if sessao is not None and sessao.viva and sessao.aplicativo is not None:
             sessao.aplicativo.aviso_de_rede(Notificacao(rede, texto, 0.0).nome_da_rede, texto)
 
+    def _redigir_para_ausente(self, nome: str) -> str | None:
+        """O texto da resposta, redigido pelo motor da conversa aberta; `None` sem conversa."""
+        sessao = self._sessao
+        if sessao is None or not sessao.viva or sessao.aplicativo is None:
+            return None
+        return sessao.aplicativo.redigir_para_ausente(nome)
+
     def parar_o_monitor_das_redes(self) -> None:
         if self._monitor_das_redes is not None:
             self._monitor_das_redes.parar()
+        if self._resposta_ausente is not None:
+            self._resposta_ausente.parar()
 
     def _gravar_campos(self, **mudancas: Any) -> str:
         """Toda troca de ajuste da janela vale na hora **e** vai ao arquivo no mesmo clique

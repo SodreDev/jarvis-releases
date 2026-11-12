@@ -10,7 +10,7 @@ const NATIVE_HOST = "br.com.granafacil.jarvis";
 // número menor), diz ao dono para recarregá-la — em vez de ver as ferramentas novas falharem
 // uma a uma (dono, 2026-10-30: «o Jarvis não sabe mais usar a extensão»). Igual a
 // `VERSAO_DA_PONTE` em src/jarvis/navegador/protocolo.py (o teste confere).
-const VERSAO_DA_PONTE = 3;
+const VERSAO_DA_PONTE = 4;
 const MAX_ID = 80;
 const MAX_URL = 2_048;
 const RECONNECT_BASE_MS = 250;
@@ -1121,6 +1121,16 @@ async function executarSemControle(method, params, concessao) {
       return abrirRedeSocial(params);
     case "social.estado":
       return estadoDaRede(params);
+    case "social.cabecalho":
+      return cabecalhoSocial(params);
+    case "social.abrirConversa":
+      return abrirConversaSocial(params);
+    case "social.digitar":
+      return digitarSocial(params);
+    case "social.enviar":
+      return enviarSocial(params);
+    case "social.soltar":
+      return soltarSocial(params);
     default:
       throw erro("metodo_invalido", "método não autorizado para a extensão");
   }
@@ -1254,6 +1264,189 @@ function repassarEstadoSocial(remetente, bruto) {
   } catch (causa) {
     console.warn("Jarvis: não foi possível repassar o estado da rede", detalheDaFalha(causa));
   }
+}
+
+// --- o envio no WhatsApp Web (ADR-0060, fatia D; docs/redes-sociais-riscos.md §4) ----------------
+// Só o WhatsApp, e só o que o Jarvis já decidiu no código (lista, ausente, teto, conteúdo). Entrada
+// CONFIÁVEL pelo CDP (`Input.*`, isTrusted = true), nunca evento sintético do conteúdo. O depurador é
+// anexado SÓ durante o envio, SEM ligar domínio nenhum (Runtime/Network/Log.enable são sinais que a
+// página consegue perceber; `Input.*` não precisa deles), e solto no fim — ou sozinho em 120 s.
+const REDES_COM_ENVIO = new Set(["whatsapp"]);
+const PRAZO_DO_ENVIO_MS = 120_000;
+const MAX_TECLAS_POR_PEDIDO = 80;
+const MAX_ATRASO_MS = 2_000;
+const envioSocial = new Map(); // tabId → { timer, focado }
+
+function redeComEnvio(id) {
+  redeSocial(id);
+  if (!REDES_COM_ENVIO.has(id)) {
+    throw erro("rede_sem_envio", "esta rede é só leitura");
+  }
+}
+
+async function abaDoEnvio(params) {
+  redeComEnvio(params.rede);
+  const tab = await abaDaRede(params.rede);
+  if (!tab || typeof tab.id !== "number") {
+    throw erro("sem_aba", "a rede não tem aba aberta");
+  }
+  return tab;
+}
+
+async function perguntarAoSocial(tabId, mensagem) {
+  try {
+    return comoObjeto(await api.tabs.sendMessage(tabId, mensagem));
+  } catch {
+    throw erro("pagina_indisponivel", "a aba da rede não respondeu ao monitor; recarregue a aba");
+  }
+}
+
+async function anexarSoEntrada(tabId) {
+  if (!temCdp()) {
+    throw erro("sem_cdp_no_firefox", "sem CDP neste navegador: o envio não existe aqui");
+  }
+  const atual = envioSocial.get(tabId);
+  if (atual) {
+    clearTimeout(atual.timer);
+  } else {
+    await api.debugger.attach({ tabId }, CDP_VERSAO);
+  }
+  const estado = atual ?? { focado: false };
+  estado.timer = setTimeout(() => void soltarEnvio(tabId), PRAZO_DO_ENVIO_MS);
+  envioSocial.set(tabId, estado);
+  return estado;
+}
+
+async function soltarEnvio(tabId) {
+  const estado = envioSocial.get(tabId);
+  if (!estado) {
+    return false;
+  }
+  envioSocial.delete(tabId);
+  clearTimeout(estado.timer);
+  try {
+    await api.debugger.detach({ tabId });
+  } catch {
+    // a aba fechou ou já soltou
+  }
+  return true;
+}
+
+async function cliqueConfiavel(tabId, x, y) {
+  const evento = (type, buttons) =>
+    api.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
+      type,
+      x,
+      y,
+      button: type === "mouseMoved" ? "none" : "left",
+      buttons,
+      clickCount: type === "mouseMoved" ? 0 : 1,
+    });
+  await evento("mouseMoved", 0);
+  await evento("mousePressed", 1);
+  await evento("mouseReleased", 0);
+}
+
+function centro(resposta, codigo) {
+  const x = Number(resposta.x);
+  const y = Number(resposta.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw erro(codigo, "o elemento não está na tela");
+  }
+  return { x, y };
+}
+
+function esperarMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function abrirConversaSocial(params) {
+  const tab = await abaDoEnvio(params);
+  if (typeof params.nome !== "string" || !params.nome.trim()) {
+    throw erro("pedido_invalido", "falta o nome do contato");
+  }
+  const achado = await perguntarAoSocial(tab.id, { social: "conversa", nome: params.nome });
+  if (Number(achado.quantas) > 1) {
+    return { ambiguo: true };
+  }
+  if (Number(achado.quantas) !== 1) {
+    throw erro("sem_conversa", "não há conversa com este nome na lista");
+  }
+  const { x, y } = centro(achado, "sem_conversa");
+  await anexarSoEntrada(tab.id);
+  await cliqueConfiavel(tab.id, x, y);
+  return { ambiguo: false };
+}
+
+async function cabecalhoSocial(params) {
+  const tab = await abaDoEnvio(params);
+  const cabecalho = await perguntarAoSocial(tab.id, { social: "cabecalho" });
+  return {
+    nome: String(cabecalho.nome ?? "").slice(0, 120),
+    telefone: String(cabecalho.telefone ?? "").slice(0, 40),
+    grupo: cabecalho.grupo === true,
+    ambiguo: cabecalho.ambiguo === true,
+  };
+}
+
+async function digitarSocial(params) {
+  const tab = await abaDoEnvio(params);
+  const texto = typeof params.texto === "string" ? [...params.texto] : [];
+  const atrasos = Array.isArray(params.atrasos) ? params.atrasos : [];
+  if (!texto.length || texto.length > MAX_TECLAS_POR_PEDIDO || atrasos.length !== texto.length) {
+    throw erro("pedido_invalido", "texto e atrasos têm de ter o mesmo tamanho (até 80)");
+  }
+  const estado = envioSocial.get(tab.id);
+  if (!estado) {
+    throw erro("sem_envio", "abra a conversa antes de digitar");
+  }
+  if (!estado.focado) {
+    const caixa = await perguntarAoSocial(tab.id, { social: "caixa" });
+    const { x, y } = centro(caixa, "sem_caixa");
+    await cliqueConfiavel(tab.id, x, y);
+    estado.focado = true;
+  }
+  for (let i = 0; i < texto.length; i += 1) {
+    const atraso = Number(atrasos[i]);
+    await esperarMs(Number.isFinite(atraso) ? Math.min(MAX_ATRASO_MS, Math.max(0, atraso)) : 150);
+    const tecla = texto[i];
+    await api.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: tecla,
+      text: tecla,
+      unmodifiedText: tecla,
+    });
+    await api.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: tecla,
+    });
+  }
+  return { digitadas: texto.length };
+}
+
+async function enviarSocial(params) {
+  const tab = await abaDoEnvio(params);
+  if (!envioSocial.has(tab.id)) {
+    throw erro("sem_envio", "abra a conversa e digite antes de enviar");
+  }
+  const enter = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+  await api.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchKeyEvent", {
+    type: "keyDown",
+    text: "\r",
+    ...enter,
+  });
+  await api.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchKeyEvent", {
+    type: "keyUp",
+    ...enter,
+  });
+  await soltarEnvio(tab.id);
+  return { enviado: true };
+}
+
+async function soltarSocial(params) {
+  redeSocial(params.rede);
+  const soltas = await Promise.all([...envioSocial.keys()].map((tabId) => soltarEnvio(tabId)));
+  return { soltas: soltas.filter(Boolean).length };
 }
 
 async function receberDoHost(bruto) {

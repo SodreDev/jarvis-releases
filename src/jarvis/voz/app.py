@@ -134,6 +134,7 @@ from jarvis.social.memorias import ARQUIVO as ARQUIVO_DAS_MEMORIAS
 from jarvis.social.memorias import MemoriaInvalida
 from jarvis.social.memorias import bloco as bloco_das_memorias
 from jarvis.social.memorias import ler as ler_as_memorias
+from jarvis.social.redator import redigir
 from jarvis.tarefas.gestor import (
     EstadoDaTarefa,
     GestorDeTarefas,
@@ -1328,6 +1329,14 @@ class Aplicativo:
         return dica_do_asr(self.configuracao.palavra, self._vocabulario_lido.termos_da_dica())
 
     # --- o vocabulário do dono (ADR-0044) -------------------------------------------------------
+    def redigir_para_ausente(self, nome: str) -> str:
+        """O texto curto da resposta automática no WhatsApp (ADR-0060, fatia D), pelo motor desta
+        conversa e com as memórias fixas do dono. Vazio = não enviar (o Jarvis só notifica)."""
+        if self._motor is None:
+            return ""
+        memorias = self._memorias_fixas_do_turno(f"responder mensagem do whatsapp de {nome}")
+        return redigir(self._motor, nome, memorias)
+
     def _memorias_fixas_do_turno(self, fala: str) -> str:
         """O bloco das memórias fixas para esta fala (relido a cada turno: a aba grava na hora e
         o arquivo é pequeno). A suíte, sem o repositório do vocabulário, não lê a pasta do dono."""

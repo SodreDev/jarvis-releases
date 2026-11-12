@@ -39,8 +39,24 @@ class PortaFalsa {
   }
 }
 
-function carregar({ abas = [], responderPagina = () => ({}) } = {}) {
-  const estado = { abas: [...abas], criadas: [], atualizadas: [], janelasCriadas: 0, enviadas: [] };
+function carregar({ abas = [], responderPagina = () => ({}), comCdp = false } = {}) {
+  const estado = {
+    abas: [...abas],
+    criadas: [],
+    atualizadas: [],
+    janelasCriadas: 0,
+    enviadas: [],
+    cdp: [],
+  };
+  const debugger_ = comCdp
+    ? {
+        attach: async (alvo) => estado.cdp.push(["attach", alvo.tabId]),
+        detach: async (alvo) => estado.cdp.push(["detach", alvo.tabId]),
+        sendCommand: async (alvo, metodo, params) => estado.cdp.push([metodo, params]),
+        onEvent: new EventoFalso(),
+        onDetach: new EventoFalso(),
+      }
+    : undefined;
   const portas = [];
   const onMessage = new EventoFalso();
   const contexto = vm.createContext({
@@ -48,6 +64,7 @@ function carregar({ abas = [], responderPagina = () => ({}) } = {}) {
     Date,
     Math,
     chrome: {
+      ...(debugger_ ? { debugger: debugger_ } : {}),
       windows: {
         getLastFocused: async () => ({ id: 1 }),
         get: async (id) => ({ id }),
@@ -91,7 +108,12 @@ function carregar({ abas = [], responderPagina = () => ({}) } = {}) {
       },
     },
     console: { warn() {} },
-    setTimeout() {
+    // As esperas curtas da digitação correm na hora; as longas (reconexão, o prazo de 120 s do
+    // envio) nunca disparam no teste.
+    setTimeout(funcao, ms) {
+      if (ms <= 2_000) {
+        queueMicrotask(funcao);
+      }
       return 1;
     },
     clearTimeout() {},
@@ -103,7 +125,7 @@ function carregar({ abas = [], responderPagina = () => ({}) } = {}) {
 async function pedir(cenario, pedido) {
   cenario.porta.respostas.length = 0;
   cenario.porta.onMessage.emitir(pedido);
-  for (let volta = 0; volta < 30 && cenario.porta.respostas.length === 0; volta += 1) {
+  for (let volta = 0; volta < 300 && cenario.porta.respostas.length === 0; volta += 1) {
     await new Promise((resolve) => setImmediate(resolve));
   }
   assert.equal(cenario.porta.respostas.length, 1, "a extensão tinha de responder uma vez");
@@ -190,4 +212,100 @@ test("só o social.js da própria rede repassa estado ao Jarvis", async () => {
   cenario.onMessage.emitir({ tipo: "social", estado }, { id: "outra", tab: { id: 3, url: "https://web.whatsapp.com/" } }, () => {});
   const eventos = JSON.parse(JSON.stringify(cenario.porta.respostas));
   assert.deepEqual(eventos, [{ evento: "social", ...estado }]);
+});
+
+function paginaDoChat(mensagem) {
+  if (mensagem.social === "conversa") {
+    return mensagem.nome === "Carlos" ? { quantas: 2 } : { quantas: 1, x: 60, y: 35 };
+  }
+  if (mensagem.social === "caixa") {
+    return { x: 300, y: 700 };
+  }
+  if (mensagem.social === "cabecalho") {
+    return { nome: "Ana Souza", telefone: "", grupo: false, ambiguo: false, extra: "não vai" };
+  }
+  return {};
+}
+
+test("envio: anexa SÓ a entrada, clique e teclas confiáveis, Enter no fim e solta", async () => {
+  const cenario = carregar({ abas: [DO_DONO], responderPagina: paginaDoChat, comCdp: true });
+  const abrir = await pedir(cenario, {
+    id: "d1",
+    method: "social.abrirConversa",
+    params: { rede: "whatsapp", nome: "Ana Souza" },
+  });
+  assert.deepEqual(abrir.result, { ambiguo: false });
+  const cabecalho = await pedir(cenario, { id: "d2", method: "social.cabecalho", params: { rede: "whatsapp" } });
+  assert.deepEqual(cabecalho.result, { nome: "Ana Souza", telefone: "", grupo: false, ambiguo: false });
+  const digitar = await pedir(cenario, {
+    id: "d3",
+    method: "social.digitar",
+    params: { rede: "whatsapp", texto: "oi!", atrasos: [120, 90, 300] },
+  });
+  assert.deepEqual(digitar.result, { digitadas: 3 });
+  const enviar = await pedir(cenario, { id: "d4", method: "social.enviar", params: { rede: "whatsapp" } });
+  assert.deepEqual(enviar.result, { enviado: true });
+
+  const cdp = JSON.parse(JSON.stringify(cenario.estado.cdp));
+  const metodos = cdp.map(([m]) => m);
+  assert.deepEqual(cdp[0], ["attach", 3]);
+  assert.equal(metodos.filter((m) => m === "attach").length, 1, "um anexo por envio");
+  assert.equal(metodos.some((m) => /\.enable$/u.test(m)), false, "nenhum domínio ligado");
+  assert.equal(metodos.at(-1), "detach", "solta no fim do envio");
+  const teclas = cdp.filter(([m, p]) => m === "Input.dispatchKeyEvent" && p.type === "keyDown");
+  assert.deepEqual(
+    teclas.map(([, p]) => p.key),
+    ["o", "i", "!", "Enter"],
+    "uma tecla por caractere e o Enter só no fim",
+  );
+  const cliques = cdp.filter(([m, p]) => m === "Input.dispatchMouseEvent" && p.type === "mousePressed");
+  assert.deepEqual(
+    cliques.map(([, p]) => [p.x, p.y]),
+    [
+      [60, 35],
+      [300, 700],
+    ],
+    "a conversa e depois a caixa de texto",
+  );
+});
+
+test("envio: homônimo não abre, rede só leitura recusa, digitar sem conversa recusa", async () => {
+  const cenario = carregar({ abas: [DO_DONO], responderPagina: paginaDoChat, comCdp: true });
+  const homonimo = await pedir(cenario, {
+    id: "d5",
+    method: "social.abrirConversa",
+    params: { rede: "whatsapp", nome: "Carlos" },
+  });
+  assert.deepEqual(homonimo.result, { ambiguo: true });
+  assert.equal(cenario.estado.cdp.length, 0, "nem anexou");
+  const insta = await pedir(cenario, { id: "d6", method: "social.enviar", params: { rede: "instagram" } });
+  assert.equal(insta.error.codigo, "rede_sem_envio");
+  const solto = await pedir(cenario, {
+    id: "d7",
+    method: "social.digitar",
+    params: { rede: "whatsapp", texto: "oi", atrasos: [1, 1] },
+  });
+  assert.equal(solto.error.codigo, "sem_envio");
+});
+
+test("envio: no Firefox (sem CDP) não existe", async () => {
+  const cenario = carregar({ abas: [DO_DONO], responderPagina: paginaDoChat, comCdp: false });
+  const resposta = await pedir(cenario, {
+    id: "d8",
+    method: "social.abrirConversa",
+    params: { rede: "whatsapp", nome: "Ana Souza" },
+  });
+  assert.equal(resposta.error.codigo, "sem_cdp_no_firefox");
+});
+
+test("social.soltar desanexa o que estiver anexado", async () => {
+  const cenario = carregar({ abas: [DO_DONO], responderPagina: paginaDoChat, comCdp: true });
+  await pedir(cenario, {
+    id: "d9",
+    method: "social.abrirConversa",
+    params: { rede: "whatsapp", nome: "Ana Souza" },
+  });
+  const soltar = await pedir(cenario, { id: "d10", method: "social.soltar", params: { rede: "whatsapp" } });
+  assert.deepEqual(soltar.result, { soltas: 1 });
+  assert.deepEqual(JSON.parse(JSON.stringify(cenario.estado.cdp.at(-1))), ["detach", 3]);
 });

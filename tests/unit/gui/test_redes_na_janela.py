@@ -340,3 +340,134 @@ def test_memorias_fixas_pela_aba_gravam_na_hora_com_0600(
     assert vista.redes.frase.startswith("não deu")
     vista.redes.removerMemoria(memoria.id)
     assert ler_memorias(arquivo) == ()
+
+
+# --- fatia D: o envio na aba e de ponta a ponta com a ponte FALSA ------------------------------
+def test_envio_desligado_por_padrao_e_cada_chave_grava_na_hora(
+    tela: tuple[QQuickView, Any, Ponte], aplicativo: QGuiApplication, maquina: dict[str, Path]
+) -> None:
+    janela, vista, _ = tela
+    _aba(janela, aplicativo, "Redes")
+    envio = vista.redes.envio
+    assert (envio["automatico"], envio["ausente"], envio["permitidos"]) == (False, False, [])
+    assert (envio["porHora"], envio["porDia"]) == (4, 15)
+    assert not _item(janela, "estouAusente").isVisible(), "sem a chave mestra, nada de ausente"
+    assert not vista.redes.definirAusente(True)
+    assert vista.redes.definirEnvioAutomatico(True)
+    assert vista.redes.definirAusente(True)
+    assert ler_redes(_redes(maquina)).envio.ausente is True
+    assert vista.redes.adicionarPermitido("Ana Souza", "+55 11 98888-7777")
+    assert not vista.redes.adicionarPermitido("Bruno", "liga pra mim")
+    assert not vista.redes.definirTeto(9, 15), "acima do teto rígido é recusado"
+    assert vista.redes.definirTeto(2, 10)
+    cortou: list[bool] = []
+    vista.redes.ao_parar_envios = lambda: cortou.append(True)
+    vista.redes.pararEnvios()
+    no_disco = ler_redes(_redes(maquina)).envio
+    assert (no_disco.automatico, no_disco.ausente) == (False, False) and cortou == [True]
+    assert no_disco.permitidos[0].nome == "Ana Souza" and no_disco.por_hora == 2
+    _capturar(janela, "redes-5-envio.png")
+
+
+def test_pausa_de_alerta_aparece_e_so_o_dono_tira(
+    tela: tuple[QQuickView, Any, Ponte], aplicativo: QGuiApplication
+) -> None:
+    import time
+
+    _, vista, _ = tela
+    vista.redes.pausas.pausar("whatsapp", "captcha", time.time())
+    vista.redes.mudou.emit()
+    assert vista.redes.envio["pausa"] == "captcha"
+    vista.redes.tirarPausa()
+    assert vista.redes.envio["pausa"] == ""
+
+
+class PonteDoChatFalsa:
+    """A ponte do navegador FALSA, com o monitor e o envio: nada sai daqui."""
+
+    def __init__(self) -> None:
+        from tests.unit.social.test_monitor import PonteFalsa
+
+        self.monitor = PonteFalsa()
+        self.fila = self.monitor.fila
+        self.pedidos: list[tuple[str, dict[str, Any]]] = []
+
+    def assinar(self, navegador: str = "") -> Any:
+        return self.monitor.assinar(navegador)
+
+    def pedir(self, metodo: str, navegador: str, **params: Any) -> dict[str, Any]:
+        from jarvis.navegador.protocolo import validar_pedido
+
+        validar_pedido({"id": "x1", "method": metodo, "params": params})
+        self.pedidos.append((metodo, params))
+        if metodo == "social.estado":
+            return {"logado": True, "naoLidas": 0, "conversas": [], "formato": "conhecido"}
+        if metodo == "social.cabecalho":
+            return {"nome": "Ana Souza", "telefone": "", "grupo": False, "ambiguo": False}
+        if metodo == "social.abrirConversa":
+            return {"ambiguo": False}
+        return {}
+
+
+def test_ausente_de_ponta_a_ponta_responde_a_ana_pela_ponte_falsa(
+    maquina: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from jarvis.social import envio as modulo_envio
+    from tests.unit.social.test_monitor import _esperar as esperar_fio
+
+    monkeypatch.setattr(modulo_envio, "REACAO_S", (0.0, 0.0))  # o teste não espera 20 s
+    # O relógio da máquina pode estar na madrugada (sem envio, de propósito): aqui não importa.
+    monkeypatch.setattr(modulo_envio, "na_madrugada", lambda hora, silencio: False)
+    falsa = PonteDoChatFalsa()
+    ponte = Ponte(
+        raiz=tmp_path / "sessao",
+        caminho_da_configuracao=maquina["config"],
+        ambiente={"CI": "1"},
+        pastas_de_apps=(str(maquina["apps"]),),
+        ponte_das_redes=falsa,
+    )
+    vista = cast(Any, ponte)
+    try:
+        cast(Any, ponte)._sessao = SimpleNamespace(
+            viva=True,
+            aplicativo=SimpleNamespace(
+                redigir_para_ausente=lambda nome: f"Oi, {nome.split()[0]}! Ele volta à tarde.",
+                aviso_de_rede=lambda origem, resumo: None,
+            ),
+        )
+        assert vista.redes.definirEnvioAutomatico(True)
+        assert vista.redes.definirAusente(True)
+        assert vista.redes.adicionarPermitido("Ana Souza", "+55 11 98888-7777")
+        assert vista.redes.definirMonitorar("whatsapp", True)
+        assert esperar_fio(lambda: any(p[0] == "social.abrir" for p in falsa.pedidos))
+        falsa.fila.append(
+            {
+                "evento": "social",
+                "rede": "whatsapp",
+                "logado": True,
+                "naoLidas": 1,
+                "conversas": [
+                    {"nome": "Ana Souza", "naoLidas": 1},
+                    {"nome": "Desconhecido", "naoLidas": 2},
+                ],
+                "formato": "conhecido",
+                "alerta": "",
+            }
+        )
+        assert esperar_fio(lambda: any(p[0] == "social.enviar" for p in falsa.pedidos), 6.0)
+        metodos = [m for m, _ in falsa.pedidos]
+        assert metodos[-1] == "social.soltar"
+        digitado = "".join(p["texto"] for m, p in falsa.pedidos if m == "social.digitar")
+        assert digitado == "Oi, Ana! Ele volta à tarde."
+        assert all(p.get("nome") != "Desconhecido" for _, p in falsa.pedidos)
+        log = (maquina["config"].parent / "envios.jsonl").read_text("utf-8")
+        assert '"resultado": "enviado"' in log and "volta à tarde" not in log
+        assert esperar_fio(
+            lambda: any(
+                "respondi a Ana" in n["texto"] for n in vista.redes.redes[0]["notificacoes"]
+            )
+        )
+    finally:
+        ponte.parar_o_monitor_das_redes()

@@ -6,6 +6,7 @@ informa e as últimas notificações daquela rede — sem vídeo nem captura, s�
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,12 @@ from jarvis.social.config import (
     ConfiguracaoSocialInvalida,
     gravar,
     ler,
+)
+from jarvis.social.envio import (
+    TETO_RIGIDO_POR_DIA,
+    TETO_RIGIDO_POR_HORA,
+    Pausas,
+    Permitido,
 )
 from jarvis.social.redes import REDES, rede
 
@@ -54,6 +61,10 @@ class PonteDasRedes(QObject):
         self.ao_mudar = ao_mudar
         """Avisa o monitor vivo (ele relê os ajustes sem reiniciar o Jarvis)."""
         self._frase = ""
+        self.pausas = Pausas(caminho.parent / "redes-pausas.json")
+        """As pausas de 24 h por sinal de alerta (fatia D): o dono vê e pode tirar aqui."""
+        self.ao_parar_envios: Callable[[], None] | None = None
+        """O «parar envios» do dono: além de gravar, corta o envio em curso (a Ponte liga)."""
         self._caminho_das_memorias = caminho.parent / fixas.ARQUIVO
         """As memórias fixas (ADR-0060, fatia C) moram ao lado do `redes.toml`."""
         try:
@@ -140,6 +151,24 @@ class PonteDasRedes(QObject):
             opcoes.append({"familia": escolhido, "nome": escolhido, "escolhido": True})
         return opcoes
 
+    @Property(dict, notify=mudou)
+    def envio(self) -> dict[str, Any]:
+        """O envio no WhatsApp (fatia D): a chave mestra, o ausente, os tetos, a lista e a pausa."""
+        envio = self._configuracao.envio
+        pausa = self.pausas.ativa("whatsapp", time.time())
+        return {
+            "automatico": envio.automatico,
+            "ausente": envio.ausente,
+            "porHora": envio.por_hora,
+            "porDia": envio.por_dia,
+            "tetoHora": TETO_RIGIDO_POR_HORA,
+            "tetoDia": TETO_RIGIDO_POR_DIA,
+            "intervaloMin": int(envio.intervalo_s // 60),
+            "silencio": f"{envio.silencio[0]}h–{envio.silencio[1]}h",
+            "permitidos": [{"nome": p.nome, "telefone": p.telefone} for p in envio.permitidos],
+            "pausa": pausa,
+        }
+
     @Property(list, notify=mudou)
     def memorias(self) -> list[dict[str, str]]:
         return [m.para_a_tela() for m in self._memorias]
@@ -212,6 +241,73 @@ class PonteDasRedes(QObject):
         novas = tuple(m for m in self._memorias if m.id != identificador)
         if len(novas) != len(self._memorias):
             _gravar_memorias(self, novas, "memória apagada")
+
+    # --- o envio (fatia D) -------------------------------------------------------------
+    @Slot(bool, result=bool)
+    def definirEnvioAutomatico(self, ligado: bool) -> bool:
+        """A chave mestra. Desligar também desliga o ausente: nada fica armado sem a chave."""
+        return self._aplicar(
+            lambda c: c.com_envio(automatico=ligado, ausente=c.envio.ausente and ligado),
+            "envio automático no WhatsApp " + ("ligado" if ligado else "desligado"),
+        )
+
+    @Slot(bool, result=bool)
+    def definirAusente(self, ausente: bool) -> bool:
+        if ausente and not self._configuracao.envio.automatico:
+            self._frase = "não deu: ligue o envio automático antes do modo ausente"
+            self.mudou.emit()
+            return False
+        return self._aplicar(
+            lambda c: c.com_envio(ausente=ausente),
+            "modo ausente " + ("ligado: o Jarvis responde a lista" if ausente else "desligado"),
+        )
+
+    @Slot()
+    def pararEnvios(self) -> None:
+        """Parada imediata: desliga o ausente e o envio, grava e corta o que está no ar."""
+        self._aplicar(
+            lambda c: c.com_envio(automatico=False, ausente=False),
+            "envios parados: o Jarvis só notifica",
+        )
+        if self.ao_parar_envios is not None:
+            self.ao_parar_envios()
+
+    @Slot(int, int, result=bool)
+    def definirTeto(self, por_hora: int, por_dia: int) -> bool:
+        return self._aplicar(
+            lambda c: c.com_envio(por_hora=max(0, por_hora), por_dia=max(0, por_dia)),
+            f"teto: {max(0, por_hora)} por hora, {max(0, por_dia)} por dia",
+        )
+
+    @Slot(str, str, result=bool)
+    def adicionarPermitido(self, nome: str, telefone: str) -> bool:
+        novo = Permitido(nome.strip(), telefone.strip())
+        return self._aplicar(
+            lambda c: c.com_envio(permitidos=(*c.envio.permitidos, novo)),
+            f"{novo.nome} na lista permitida",
+        )
+
+    @Slot(str, str)
+    def removerPermitido(self, nome: str, telefone: str) -> None:
+        self._aplicar(
+            lambda c: c.com_envio(
+                permitidos=tuple(
+                    p for p in c.envio.permitidos if (p.nome, p.telefone) != (nome, telefone)
+                )
+            ),
+            f"{nome} fora da lista permitida",
+        )
+
+    @Slot()
+    def tirarPausa(self) -> None:
+        """Só o dono tira a pausa de 24 h antes do prazo."""
+        try:
+            self.pausas.tirar("whatsapp")
+        except OSError as erro:
+            self._frase = f"não deu: {erro}"
+        else:
+            self._frase = "pausa tirada: o envio volta a valer (com a lista e o ausente)"
+        self.mudou.emit()
 
     @Slot(str, result=bool)
     def definirNavegadorPreferido(self, familia: str) -> bool:

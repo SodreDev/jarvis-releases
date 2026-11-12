@@ -37,6 +37,11 @@ class No {
     return this.filhos.map((f) => (typeof f === "string" ? f : f.textContent)).join("");
   }
 
+  getBoundingClientRect() {
+    // Uma caixa fixa: o DOM de teste não tem layout; o script só precisa do centro.
+    return { left: 10, top: 20, width: 100, height: 30 };
+  }
+
   getAttribute(nome) {
     return Object.hasOwn(this.atributos, nome) ? this.atributos[nome] : null;
   }
@@ -272,4 +277,31 @@ test("sinais de alerta: conta bloqueada no diálogo e captcha", async () => {
   assert.equal(captcha.alerta, "captcha");
   const normal = social.lerEstado("whatsapp", await pagina("whatsapp-logado"));
   assert.equal(normal.alerta, "");
+});
+
+test("envio: cabeçalho, conversa pelo nome exato (homônimo conta) e a caixa de texto", async () => {
+  const chat = await pagina("whatsapp-chat");
+  const rede = JSON.parse(
+    DADOS.split("\n").filter((l) => !l.startsWith("//")).join("\n").trim()
+      .slice("globalThis.__jarvisSeletoresSociais = ".length, -1),
+  ).redes.whatsapp;
+  const cabecalho = social.cabecalhoDoChat(rede, chat);
+  assert.deepEqual(JSON.parse(JSON.stringify(cabecalho)), {
+    nome: "Ana Souza",
+    telefone: "",
+    grupo: false,
+    ambiguo: false,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(social.conversaPeloNome(rede, chat, "ana  souza"))), {
+    quantas: 1,
+    x: 60,
+    y: 35,
+  });
+  assert.equal(social.conversaPeloNome(rede, chat, "Carlos").quantas, 2);
+  assert.equal(social.conversaPeloNome(rede, chat, "Ninguém").quantas, 0);
+  assert.deepEqual(JSON.parse(JSON.stringify(social.caixaDeTexto(rede, chat))), { x: 60, y: 35 });
+  const grupo = social.cabecalhoDoChat(rede, await pagina("whatsapp-grupo"));
+  assert.equal(grupo.grupo, true);
+  const sem = social.cabecalhoDoChat(rede, await pagina("whatsapp-logado"));
+  assert.equal(sem.ambiguo, true, "sem chat aberto, nada a conferir: ambíguo");
 });

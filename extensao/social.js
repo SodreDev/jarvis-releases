@@ -145,6 +145,53 @@
     return "";
   }
 
+  // --- só para o envio (fatia D): ler o cabeçalho, achar a conversa e a caixa de texto. Continua
+  // SÓ leitura: quem clica e digita é o fundo, pelo CDP. Devolve o centro do elemento na tela.
+  const TELEFONE = /^\+?[\d\s().-]{8,24}$/u;
+
+  function normal(texto) {
+    return limpo(texto, MAX_NOME)
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/gu, "")
+      .toLowerCase();
+  }
+
+  function centroDe(elemento) {
+    const caixa = elemento?.getBoundingClientRect?.();
+    if (!caixa || caixa.width <= 0 || caixa.height <= 0) {
+      return {};
+    }
+    return { x: Math.round(caixa.left + caixa.width / 2), y: Math.round(caixa.top + caixa.height / 2) };
+  }
+
+  function cabecalhoDoChat(rede, documento) {
+    const topo = primeiro(documento, rede.cabecalho);
+    if (!topo) {
+      return { nome: "", telefone: "", grupo: false, ambiguo: true };
+    }
+    const elemento = primeiro(topo, rede.nomeDoCabecalho);
+    const nome = limpo(elemento?.getAttribute?.("title") || elemento?.textContent, MAX_NOME);
+    return {
+      nome,
+      telefone: TELEFONE.test(nome) ? nome : "",
+      grupo: existe(topo, rede.grupo),
+      ambiguo: !nome,
+    };
+  }
+
+  function conversaPeloNome(rede, documento, nome) {
+    const alvo = normal(nome);
+    const achadas = todos(documento, rede.conversa).filter((linha) => {
+      const elemento = primeiro(linha, rede.nome);
+      return normal(elemento?.getAttribute?.("title") || elemento?.textContent) === alvo;
+    });
+    return { quantas: achadas.length, ...(achadas.length === 1 ? centroDe(achadas[0]) : {}) };
+  }
+
+  function caixaDeTexto(rede, documento) {
+    return centroDe(primeiro(documento, rede.caixa));
+  }
+
   // Exportada para o teste (tests/unit/social/social.test.mjs), que a roda contra as páginas
   // falsas de tests/unit/social/paginas/ — nunca contra a rede de verdade.
   function lerEstado(id, documento) {
@@ -193,6 +240,9 @@
     redeDoHost,
     contagemDoTitulo,
     alertaDaPagina,
+    cabecalhoDoChat,
+    conversaPeloNome,
+    caixaDeTexto,
     versao: SELETORES.versao,
   };
 
@@ -236,10 +286,19 @@
   // O fundo pergunta o estado de agora (`social.estado`). `comando` fica de fora de propósito:
   // é o que o content.js atende, e as duas respostas disputariam a mesma mensagem.
   api.runtime.onMessage.addListener((mensagem, remetente, responder) => {
-    if (mensagem?.social !== "estado" || remetente?.id !== api.runtime.id) {
+    if (remetente?.id !== api.runtime.id) {
       return false;
     }
-    responder(informar(true));
+    const rede = REDES[id];
+    if (mensagem?.social === "estado") {
+      responder(informar(true));
+    } else if (mensagem?.social === "cabecalho" && rede?.cabecalho) {
+      responder(cabecalhoDoChat(rede, document));
+    } else if (mensagem?.social === "conversa" && rede?.cabecalho) {
+      responder(conversaPeloNome(rede, document, String(mensagem.nome ?? "")));
+    } else if (mensagem?.social === "caixa" && rede?.caixa) {
+      responder(caixaDeTexto(rede, document));
+    }
     return false;
   });
 

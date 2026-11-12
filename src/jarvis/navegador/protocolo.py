@@ -63,7 +63,7 @@ EVENTOS: Final = frozenset({"parar", "social"})
 ORIGENS_DA_PARADA: Final = frozenset({"faixa", "barra"})
 """Onde o dono apertou PARAR: na faixa desenhada na página, ou no botão da extensão na barra."""
 MAXIMO_DE_CONCESSOES: Final = 32
-VERSAO_DA_PONTE: Final = 3
+VERSAO_DA_PONTE: Final = 4
 """O contrato de métodos entre o Jarvis, o host e a extensão. Sobe a cada método novo, junto com
 `VERSAO_DA_PONTE` de extensao/background.js (o teste confere). A 2 é a do CDP (ADR-0051) mais
 `ponte.versao`: a extensão que não responde a ela, ou responde menos, é a de antes — o dono ouve
@@ -153,6 +153,12 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     # de cada rede; o Jarvis só diz qual. Não levam concessão: não agem na página.
     "social.abrir": {"rede": str},
     "social.estado": {"rede": str},
+    # O envio (fatia D), só no WhatsApp e só depois do guardião do código (jarvis.social.envio).
+    "social.cabecalho": {"rede": str},
+    "social.abrirConversa": {"rede": str, "nome": str},
+    "social.digitar": {"rede": str, "texto": str, "atrasos": list},
+    "social.enviar": {"rede": str},
+    "social.soltar": {"rede": str},
     VERSAO: {},
     VERSAO_DO_HOST: {},
     ASSINAR: {},
@@ -184,6 +190,11 @@ PRAZOS_CURTOS: Final = frozenset(
         "controle.estado",
         "social.abrir",
         "social.estado",
+        "social.cabecalho",
+        "social.abrirConversa",
+        "social.digitar",
+        "social.enviar",
+        "social.soltar",
         VERSAO,
         VERSAO_DO_HOST,
     }
@@ -209,6 +220,11 @@ OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "page.gesture": frozenset({"gesto"}),
     "social.abrir": frozenset({"rede"}),
     "social.estado": frozenset({"rede"}),
+    "social.cabecalho": frozenset({"rede"}),
+    "social.abrirConversa": frozenset({"rede", "nome"}),
+    "social.digitar": frozenset({"rede", "texto", "atrasos"}),
+    "social.enviar": frozenset({"rede"}),
+    "social.soltar": frozenset({"rede"}),
 }
 COM_ALVO: Final = frozenset({"page.inspect", "page.click", "page.type", "page.act"})
 """Métodos que agem num elemento: exatamente um de `alvo` (texto visível) ou `ref` (do mapa)."""
@@ -241,6 +257,26 @@ def _url_http(valor: str) -> None:
 def _tamanho(nome: str, valor: str, maximo: int) -> None:
     if len(valor) > maximo:
         raise PedidoInvalido(f"{nome} passa de {maximo} caracteres")
+
+
+ENVIO_SOCIAL: Final = frozenset(
+    {"social.cabecalho", "social.abrirConversa", "social.digitar", "social.enviar"}
+)
+REDES_COM_ENVIO: Final = frozenset({"whatsapp"})
+MAXIMO_DE_TECLAS: Final = 80
+MAXIMO_DO_ATRASO_MS: Final = 2_000
+
+
+def _teclas(texto: str, atrasos: list[Any]) -> None:
+    if not texto or len(texto) > MAXIMO_DE_TECLAS:
+        raise PedidoInvalido(f"social.digitar: de 1 a {MAXIMO_DE_TECLAS} caracteres por pedido")
+    if len(atrasos) != len(texto) or not all(
+        isinstance(a, int) and not isinstance(a, bool) and 0 <= a <= MAXIMO_DO_ATRASO_MS
+        for a in atrasos
+    ):
+        raise PedidoInvalido("social.digitar: um atraso (0..2000 ms) por caractere")
+    if any(c in texto for c in "\r\n\x00"):
+        raise PedidoInvalido("social.digitar: sem quebra de linha (o Enter é o social.enviar)")
 
 
 def validar_pedido(bruto: object) -> PedidoDaPonte:
@@ -299,6 +335,12 @@ def validar_pedido(bruto: object) -> PedidoDaPonte:
         _tamanho("texto", params["texto"], LIMITE_DO_TEXTO)
     if "rede" in params and params["rede"] not in REDES_SOCIAIS:
         raise PedidoInvalido(f"rede fora da lista: {sorted(REDES_SOCIAIS)}")
+    if metodo in ENVIO_SOCIAL and params.get("rede") not in REDES_COM_ENVIO:
+        raise PedidoInvalido("o envio existe só no WhatsApp")
+    if metodo == "social.abrirConversa" and not 0 < len(params["nome"].strip()) <= LIMITE_DO_NOME:
+        raise PedidoInvalido("nome do contato vazio ou longo")
+    if metodo == "social.digitar":
+        _teclas(params["texto"], params["atrasos"])
     if "pixels" in params and abs(params["pixels"]) > LIMITE_DO_DESLOCAMENTO:
         raise PedidoInvalido(f"pixels passa de {LIMITE_DO_DESLOCAMENTO}")
     return PedidoDaPonte(identificador, metodo, dict(params))

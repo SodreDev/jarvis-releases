@@ -112,3 +112,42 @@ def test_rede_pela_url_so_pelo_host_exato_e_https() -> None:
     assert rede_da_url("https://web.whatsapp.com.golpe.example/") is None
     assert rede_da_url("https://exemplo.com/?u=web.whatsapp.com") is None
     assert [r for r in IDS if rede(r).responde] == ["whatsapp"]
+
+
+def test_envio_desligado_por_padrao_e_volta_igual_do_arquivo(tmp_path: Path) -> None:
+    from jarvis.social.envio import Permitido
+
+    assert ConfiguracaoSocial().envio.automatico is False
+    assert ConfiguracaoSocial().envio.ausente is False
+    caminho = tmp_path / "redes.toml"
+    configuracao = ConfiguracaoSocial().com_envio(
+        automatico=True,
+        por_hora=2,
+        permitidos=(Permitido("Ana Souza", "+55 11 98888-7777"),),
+    )
+    gravar(configuracao, caminho)
+    assert ler(caminho) == configuracao
+
+
+@pytest.mark.parametrize(
+    ("bloco", "trecho"),
+    [
+        ("[envio]\npor_hora = 50\n", "teto"),
+        ("[envio]\npor_dia = 31\n", "teto"),
+        ("[envio]\nautomatico = 1\n", "true ou false"),
+        ("[envio]\nsilencio = [0, 30]\n", "silencio"),
+        ("[envio]\nlimite = 3\n", "desconhecida"),
+        ('[[envio.permitido]]\nnome = "Ana"\ntelefone = "ligue já"\n', "telefone"),
+        ('[[envio.permitido]]\nnome = "Ana"\n', "nome e telefone"),
+        (
+            '[[envio.permitido]]\nnome = "Ana"\ntelefone = "11 98888-7777"\n'
+            '[[envio.permitido]]\nnome = "ana"\ntelefone = "1198888-7777"\n',
+            "repetido",
+        ),
+    ],
+)
+def test_envio_que_nao_cabe_e_recusado(tmp_path: Path, bloco: str, trecho: str) -> None:
+    caminho = tmp_path / "redes.toml"
+    caminho.write_text(bloco, "utf-8")
+    with pytest.raises(ConfiguracaoSocialInvalida, match=trecho):
+        ler(caminho)

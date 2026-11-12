@@ -53,6 +53,7 @@ Este documento vale para **todo agente** que mexer em `jarvis.social`, `extensao
 
 - Evento sintético de content script (`dispatchEvent`, `element.value = …`, `execCommand`) tem `isTrusted = false` e é detectável. **Não use.**
 - Use a **entrada confiável já existente**: o CDP da ADR-0051 (`Input.dispatchKeyEvent` / `Input.insertText` por caractere, pelo `page.gesture` «digitar»). O depurador é **anexado só durante o envio e solto logo em seguida**, nunca permanente. O Chromium mostra ao dono a faixa «um software está depurando este navegador» enquanto está anexado; é esperado.
+- Anexe **sem ligar domínio nenhum** do CDP. `Input.*` não precisa de `Runtime.enable`, `Network.enable` nem `Log.enable`, e ligar o `Runtime` tem efeito colateral que a página consegue medir. O envio usa `anexarSoEntrada` (em `extensao/background.js`), nunca o `anexarCdp` das ferramentas de depuração.
 - No Firefox não há CDP pela extensão (ADR-0051): **lá o envio não existe**, só a notificação.
 - Simule o fluxo de uma pessoa, sem exagero:
   - **Atraso de reação** antes de começar: dezenas de segundos, aleatório (padrão entre 20 e 90 s). Nunca instantâneo.

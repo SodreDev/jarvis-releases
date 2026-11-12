@@ -184,6 +184,13 @@ class EstadoDoMonitor:
                 ):
                     da_rede.estado = "sem_noticia"
 
+    def anotar(self, identificador: str, texto: str) -> Notificacao:
+        """Uma notificação que não veio da página (o resultado de uma resposta no modo ausente)."""
+        aviso = Notificacao(identificador, texto, self._relogio())
+        with self._trava:
+            self._redes[identificador].notificacoes.appendleft(aviso)
+        return aviso
+
     def alerta(self, identificador: str) -> str:
         with self._trava:
             return self._redes[identificador].alerta
@@ -305,6 +312,7 @@ class MonitorSocial:
         ao_notificar: Callable[[Notificacao], None],
         ao_mudar: Callable[[], None],
         ao_alerta: Callable[[str, str], None] | None = None,
+        ao_estado: Callable[[EstadoDaPagina], None] | None = None,
         estado: EstadoDoMonitor | None = None,
         intervalo_s: float = INTERVALO_S,
     ) -> None:
@@ -315,6 +323,8 @@ class MonitorSocial:
         self._ao_notificar = ao_notificar
         self._ao_mudar = ao_mudar
         self._ao_alerta = ao_alerta
+        self.ao_estado = ao_estado
+        """Cada estado de página recebido (a resposta no modo ausente, fatia D, ouve aqui)."""
         """(rede, alerta): o envio pausa a rede por 24 h (fatia D)."""
         self.estado = estado or EstadoDoMonitor()
         self._intervalo_s = intervalo_s
@@ -401,6 +411,7 @@ class MonitorSocial:
             )
             mudou = True
             self._entregar(pagina.rede, aviso)
+            self._repassar(pagina)
         self.estado.conferir_noticia()
         if mudou:
             self._ao_mudar()
@@ -421,7 +432,13 @@ class MonitorSocial:
                 pagina, notificar=self._configuracao().ajuste(identificador).notificar
             )
             self._entregar(identificador, aviso)
+            self._repassar(pagina)
         self._ao_mudar()
+
+    def _repassar(self, pagina: EstadoDaPagina) -> None:
+        if self.ao_estado is not None:
+            with contextlib.suppress(Exception):
+                self.ao_estado(pagina)
 
     def _entregar(self, identificador: str, aviso: Notificacao | None) -> None:
         if aviso is None:
