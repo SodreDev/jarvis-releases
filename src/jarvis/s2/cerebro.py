@@ -271,6 +271,9 @@ class Cerebro:
     """Teto configurável, em segundos, para o encadeamento inteiro."""
     ao_status: AvisarStatus | None = None
     """Porta para a fila de avisos: status nunca é publicado por cima da fala em curso."""
+    memorias_fixas: Callable[[str], str] | None = None
+    """As memórias fixas do dono (ADR-0060, fatia C): da fala, o bloco do assunto ou vazio. Só o
+    turno de mensagem, rede, contato ou serviço paga o bloco (orçamento da ADR-0047)."""
     classificador_de_receitas: ClassificadorDeDecisao | None = None
     """Quem escolhe a família das receitas quando as regras não reconhecem o assunto e o pedido tem
     verbo de ação (o Jev, ADR-0029; ADR-0047, emenda de 2026-10-30). `None` = só as regras."""
@@ -420,6 +423,11 @@ class Cerebro:
             # assunto deste pedido, só neste turno — o de conversa custa o mesmo de antes.
             contexto = Contexto(
                 sistema=f"{contexto.sistema}\n\n{receitas}", mensagens=contexto.mensagens
+            )
+        fixas = self._memorias_fixas(texto_do_dono)
+        if fixas:
+            contexto = Contexto(
+                sistema=f"{contexto.sistema}\n\n{fixas}", mensagens=contexto.mensagens
             )
         if nota_da_pendencia:
             contexto = Contexto(
@@ -794,6 +802,16 @@ class Cerebro:
                 return False
             time.sleep(INTERVALO_DA_EXTENSAO_S)
         return False
+
+    def _memorias_fixas(self, texto_do_dono: str) -> str:
+        """O bloco das memórias fixas deste turno. Arquivo quebrado ou ilegível não derruba o
+        turno: o turno segue sem o bloco (a aba «redes sociais» diz o erro ao dono)."""
+        if self.memorias_fixas is None or not texto_do_dono.strip():
+            return ""
+        try:
+            return self.memorias_fixas(texto_do_dono)
+        except Exception:
+            return ""
 
     def _receitas(self, texto_do_dono: str, metodo: Escolha | None) -> str:
         """As receitas do assunto deste pedido, com as ferramentas que estão ligadas agora."""

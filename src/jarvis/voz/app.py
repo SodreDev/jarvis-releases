@@ -130,6 +130,10 @@ from jarvis.s2.portao import PortaoDeAcao
 from jarvis.s2.protocolo import sem_protocolo
 from jarvis.s2.regras import Regras, na_pasta
 from jarvis.s2.regras import padrao as padrao_das_regras
+from jarvis.social.memorias import ARQUIVO as ARQUIVO_DAS_MEMORIAS
+from jarvis.social.memorias import MemoriaInvalida
+from jarvis.social.memorias import bloco as bloco_das_memorias
+from jarvis.social.memorias import ler as ler_as_memorias
 from jarvis.tarefas.gestor import (
     EstadoDaTarefa,
     GestorDeTarefas,
@@ -742,6 +746,9 @@ class Aplicativo:
             # As regras do dono (ADR-0047), depois da persona, em todo turno: as do arquivo dele
             # (a pasta do vocabulário, a do jarvis-voz.toml), ou as do repositório.
             self._cerebro.conversa.sistema = sistema_do_jarvis(self._ler_as_regras().bloco())
+            if self.vocabulario is not None:
+                # As memórias fixas do dono (ADR-0060), da mesma pasta: só no turno do assunto.
+                self._cerebro.memorias_fixas = self._memorias_fixas_do_turno
         if self.ferramentas is None:
             self.ferramentas = self._montar_ferramentas()
         self._cerebro.ferramentas = self.ferramentas
@@ -1321,6 +1328,17 @@ class Aplicativo:
         return dica_do_asr(self.configuracao.palavra, self._vocabulario_lido.termos_da_dica())
 
     # --- o vocabulário do dono (ADR-0044) -------------------------------------------------------
+    def _memorias_fixas_do_turno(self, fala: str) -> str:
+        """O bloco das memórias fixas para esta fala (relido a cada turno: a aba grava na hora e
+        o arquivo é pequeno). A suíte, sem o repositório do vocabulário, não lê a pasta do dono."""
+        if self.vocabulario is None:
+            return ""
+        try:
+            memorias = ler_as_memorias(self.vocabulario.pasta / ARQUIVO_DAS_MEMORIAS)
+        except (MemoriaInvalida, OSError):
+            return ""
+        return bloco_das_memorias(fala, memorias)
+
     def _ler_as_regras(self) -> Regras:
         """As regras de comportamento do dono (ADR-0047): o `regras.toml` da pasta de configuração
         dele, ou as do repositório. A suíte, sem o repositório do vocabulário, nunca lê a pasta do

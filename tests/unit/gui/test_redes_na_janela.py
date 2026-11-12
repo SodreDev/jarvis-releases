@@ -302,3 +302,41 @@ def test_notificacao_da_rede_vai_a_fila_da_conversa_pelo_laco(
         assert recebidos == [("Discord", "Discord: 1 mensagem nova — edu (1)")]
     finally:
         ponte.parar_o_monitor_das_redes()
+
+
+# --- fatia C: as memórias fixas na aba ---------------------------------------------------------
+def test_memorias_fixas_pela_aba_gravam_na_hora_com_0600(
+    tela: tuple[QQuickView, Any, Ponte], aplicativo: QGuiApplication, maquina: dict[str, Path]
+) -> None:
+    from jarvis.social.memorias import ler as ler_memorias
+
+    janela, vista, _ = tela
+    arquivo = maquina["config"].parent / "memorias-fixas.toml"
+    _aba(janela, aplicativo, "Redes")
+    assert _item(janela, "memoriasFixas").isVisible()
+    rolagem = _item(janela, "rolagemDasRedes")
+    rolagem.setProperty("contentY", max(0.0, rolagem.property("contentHeight") - rolagem.height()))
+    _esperar(aplicativo, 0.3)
+    _clicar(janela, aplicativo, _item(janela, "tipoDeMemoria-servico"))
+    _item(janela, "memoriaNova-nome").setProperty("text", "João Encanador")
+    _item(janela, "memoriaNova-texto").setProperty("text", "encanador do prédio")
+    _item(janela, "memoriaNova-telefone").setProperty("text", "11 97777-6666")
+    _clicar(janela, aplicativo, _item(janela, "adicionarMemoria"))
+    (memoria,) = ler_memorias(arquivo)
+    assert (memoria.tipo, memoria.nome, memoria.telefone) == (
+        "servico",
+        "João Encanador",
+        "11 97777-6666",
+    )
+    assert vista.redes.frase == "memória «João Encanador» guardada — salvo"
+    assert _item(janela, "memoriaNova-nome").property("text") == "", "o formulário limpa"
+    if os.name != "nt":
+        assert stat.S_IMODE(arquivo.stat().st_mode) == 0o600
+    _capturar(janela, "redes-4-memorias.png")
+
+    assert vista.redes.editarMemoria(memoria.id, "João", "encanador, atende sábado", "")
+    assert ler_memorias(arquivo)[0].texto == "encanador, atende sábado"
+    assert not vista.redes.adicionarMemoria("instrucao", "tom", "curto", "11999998888")
+    assert vista.redes.frase.startswith("não deu")
+    vista.redes.removerMemoria(memoria.id)
+    assert ler_memorias(arquivo) == ()

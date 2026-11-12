@@ -43,6 +43,7 @@ Item {
 
     Flickable {
         id: rolagem
+        objectName: "rolagemDasRedes"
         anchors.top: frase.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -130,6 +131,150 @@ Item {
                                 width: parent.width
                                 text: modelData.hora + " · " + modelData.texto
                                 color: Tema.textoForte
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Memórias fixas (ADR-0060, fatia C): o que o Jarvis sabe de antemão para responder —
+            // contatos, prestadores de serviço e como responder. Editar grava ao sair do campo;
+            // o telefone nunca vai ao modelo (é do código, para conferir o contato no envio).
+            Painel {
+                id: caixaDeMemorias
+                objectName: "memoriasFixas"
+                width: coluna.width
+                titulo: "memórias fixas"
+                dica: "o Jarvis só lê no assunto de mensagens, contatos e serviços"
+                property string tipoNovo: "contato"
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Repeater {
+                        model: vista.redes ? vista.redes.memorias : []
+                        Column {
+                            id: linhaDeMemoria
+                            property var memoria: modelData
+                            width: parent.width
+                            spacing: 4
+                            Rotulo { text: linhaDeMemoria.memoria.rotulo }
+                            Row {
+                                spacing: 8
+                                Repeater {
+                                    model: [
+                                        { campo: "nome", largura: 160 },
+                                        { campo: "texto", largura: 300 },
+                                        { campo: "telefone", largura: 130 }
+                                    ]
+                                    Rectangle {
+                                        visible: modelData.campo !== "telefone"
+                                                 || linhaDeMemoria.memoria.tipo !== "instrucao"
+                                        width: modelData.largura
+                                        height: 28
+                                        color: "transparent"
+                                        border.width: 1
+                                        border.color: campoDaMemoria.activeFocus ? Tema.cianoFraco : Tema.linha
+                                        TextInput {
+                                            id: campoDaMemoria
+                                            objectName: "memoria-" + modelData.campo + "-"
+                                                        + linhaDeMemoria.memoria.id
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            text: linhaDeMemoria.memoria[modelData.campo]
+                                            color: Tema.texto
+                                            font.pixelSize: Tema.tamanhoTexto - 3
+                                            clip: true
+                                            onEditingFinished: {
+                                                var m = linhaDeMemoria.memoria
+                                                var novo = {
+                                                    nome: m.nome, texto: m.texto, telefone: m.telefone
+                                                }
+                                                novo[modelData.campo] = text
+                                                if (novo[modelData.campo] !== m[modelData.campo])
+                                                    vista.redes.editarMemoria(m.id, novo.nome,
+                                                                              novo.texto, novo.telefone)
+                                            }
+                                        }
+                                    }
+                                }
+                                Botao {
+                                    objectName: "removerMemoria-" + linhaDeMemoria.memoria.id
+                                    texto: "apagar"
+                                    onApertado: vista.redes.removerMemoria(linhaDeMemoria.memoria.id)
+                                }
+                            }
+                        }
+                    }
+                    Nota {
+                        width: parent.width
+                        visible: vista.redes && vista.redes.memorias.length === 0
+                        text: "Nenhuma ainda. Ex.: contato «Ana — colega do financeiro», serviço "
+                              + "«João — encanador do prédio», instrução «responda curto e diga "
+                              + "que eu retorno à tarde»."
+                    }
+                    Flow {
+                        width: parent.width
+                        spacing: 8
+                        Repeater {
+                            model: vista.redes ? vista.redes.tiposDeMemoria : []
+                            Botao {
+                                objectName: "tipoDeMemoria-" + modelData.id
+                                texto: modelData.id === "servico" ? "serviço"
+                                       : (modelData.id === "instrucao" ? "instrução" : "contato")
+                                ativo: caixaDeMemorias.tipoNovo === modelData.id
+                                onApertado: caixaDeMemorias.tipoNovo = modelData.id
+                            }
+                        }
+                    }
+                    Row {
+                        spacing: 8
+                        Repeater {
+                            id: camposNovos
+                            model: [
+                                { campo: "nome", largura: 160, dica: "nome" },
+                                { campo: "texto", largura: 300, dica: "quem é / o que fazer" },
+                                { campo: "telefone", largura: 130, dica: "telefone" }
+                            ]
+                            Rectangle {
+                                property alias valor: campoNovo.text
+                                visible: modelData.campo !== "telefone"
+                                         || caixaDeMemorias.tipoNovo !== "instrucao"
+                                width: modelData.largura
+                                height: 28
+                                color: "transparent"
+                                border.width: 1
+                                border.color: campoNovo.activeFocus ? Tema.cianoFraco : Tema.linha
+                                TextInput {
+                                    id: campoNovo
+                                    objectName: "memoriaNova-" + modelData.campo
+                                    anchors.fill: parent
+                                    anchors.margins: 6
+                                    color: Tema.texto
+                                    font.pixelSize: Tema.tamanhoTexto - 3
+                                    clip: true
+                                }
+                                Rotulo {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 6
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.dica
+                                    visible: campoNovo.text === "" && !campoNovo.activeFocus
+                                }
+                            }
+                        }
+                        Botao {
+                            objectName: "adicionarMemoria"
+                            texto: "adicionar"
+                            onApertado: {
+                                var nome = camposNovos.itemAt(0).valor
+                                var texto = camposNovos.itemAt(1).valor
+                                var telefone = caixaDeMemorias.tipoNovo === "instrucao"
+                                               ? "" : camposNovos.itemAt(2).valor
+                                if (vista.redes.adicionarMemoria(caixaDeMemorias.tipoNovo, nome,
+                                                                 texto, telefone)) {
+                                    for (var i = 0; i < 3; i++)
+                                        camposNovos.itemAt(i).valor = ""
+                                }
                             }
                         }
                     }
