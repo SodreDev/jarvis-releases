@@ -451,3 +451,13 @@ def test_o_fim_da_tarefa_fala_o_aviso_do_codigo_e_cala_quando_ele_pede(tmp_path:
         "Spacewar abriu e está em foco",
         "a tarefa «pôr Spacewar em foco quando a janela abrir» terminou",
     ]
+
+
+def test_aviso_de_rede_entra_na_fila_como_terceiros(tmp_path: Path) -> None:
+    """ADR-0060: a notificação do monitor das redes leva o nome de quem mandou (da página): vai à
+    fila como as outras, com a confiança de terceiros, que o card mostra."""
+    app = aplicativo_de(tmp_path)
+    app.aviso_de_rede("WhatsApp", "WhatsApp: 1 mensagem nova — Ana (1)")
+    (aviso,) = app.dados_dos_avisos()["avisos"]
+    assert aviso["origem"] == "WhatsApp"
+    assert aviso["confianca"] == "terceiros"

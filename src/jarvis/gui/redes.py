@@ -50,8 +50,8 @@ class PonteDasRedes(QObject):
         """(família, nome) dos navegadores que o Jarvis conhece (a aba «navegadores»)."""
         self._principal = principal
         self._estado = estado
-        self._ao_mudar = ao_mudar
-        """Avisa o laço vivo (o monitor relê os ajustes sem reiniciar o Jarvis)."""
+        self.ao_mudar = ao_mudar
+        """Avisa o monitor vivo (ele relê os ajustes sem reiniciar o Jarvis)."""
         self._frase = ""
         try:
             self._configuracao = ler(caminho)
@@ -148,8 +148,8 @@ class PonteDasRedes(QObject):
         else:
             self._configuracao = nova
             self._frase = f"{ok} — salvo"
-        if self._ao_mudar is not None:
-            self._ao_mudar(self._configuracao)
+        if self.ao_mudar is not None:
+            self.ao_mudar(self._configuracao)
         self.mudou.emit()
         return True
 

@@ -10,7 +10,7 @@ const NATIVE_HOST = "br.com.granafacil.jarvis";
 // número menor), diz ao dono para recarregá-la — em vez de ver as ferramentas novas falharem
 // uma a uma (dono, 2026-10-30: «o Jarvis não sabe mais usar a extensão»). Igual a
 // `VERSAO_DA_PONTE` em src/jarvis/navegador/protocolo.py (o teste confere).
-const VERSAO_DA_PONTE = 2;
+const VERSAO_DA_PONTE = 3;
 const MAX_ID = 80;
 const MAX_URL = 2_048;
 const RECONNECT_BASE_MS = 250;
@@ -1117,8 +1117,142 @@ async function executarSemControle(method, params, concessao) {
       return avaliarNaAba(params);
     case "page.gesture":
       return gestoNaAba(params);
+    case "social.abrir":
+      return abrirRedeSocial(params);
+    case "social.estado":
+      return estadoDaRede(params);
     default:
       throw erro("metodo_invalido", "método não autorizado para a extensão");
+  }
+}
+
+// --- redes sociais (ADR-0060), SÓ LEITURA: a aba de fundo de cada rede e o estado que ela informa ---
+// Regras em docs/redes-sociais-riscos.md: a aba é da janela do dono (nunca janela, instância ou
+// perfil novos), uma só por rede (a que existe é reusada: duas abas da mesma conta são um sinal),
+// sem `active` e sem mexer no foco. O endereço e os hosts são daqui: o Jarvis só diz qual rede.
+const REDES_SOCIAIS = {
+  whatsapp: { url: "https://web.whatsapp.com/", hosts: ["web.whatsapp.com"] },
+  instagram: {
+    url: "https://www.instagram.com/direct/inbox/",
+    hosts: ["www.instagram.com", "instagram.com"],
+  },
+  facebook: {
+    url: "https://www.facebook.com/messages/",
+    hosts: ["www.facebook.com", "facebook.com", "web.facebook.com"],
+  },
+  tiktok: { url: "https://www.tiktok.com/messages", hosts: ["www.tiktok.com", "tiktok.com"] },
+  discord: {
+    url: "https://discord.com/channels/@me",
+    hosts: ["discord.com", "ptb.discord.com", "canary.discord.com"],
+  },
+};
+const ALERTAS_SOCIAIS = ["captcha", "verificacao", "limitada", "atividade_incomum"];
+const MAX_CONVERSAS_SOCIAIS = 20;
+const MAX_NOME_SOCIAL = 80;
+const MAX_NAO_LIDAS = 9_999;
+
+function redeSocial(id) {
+  if (typeof id !== "string" || !Object.hasOwn(REDES_SOCIAIS, id)) {
+    throw erro("rede_invalida", "rede social fora da lista");
+  }
+  return REDES_SOCIAIS[id];
+}
+
+function hostDe(url) {
+  try {
+    const partes = new URL(url);
+    return partes.protocol === "https:" ? partes.hostname : "";
+  } catch {
+    return "";
+  }
+}
+
+function redeDaUrl(url) {
+  const host = hostDe(url);
+  return Object.keys(REDES_SOCIAIS).find((id) => REDES_SOCIAIS[id].hosts.includes(host));
+}
+
+async function abaDaRede(id) {
+  const rede = redeSocial(id);
+  const abas = (await api.tabs.query({})).filter((tab) => rede.hosts.includes(hostDe(tab.url)));
+  // A que o dono está usando primeiro; depois a mais recente.
+  abas.sort((a, b) => Number(b.active) - Number(a.active) || (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
+  return abas[0];
+}
+
+async function abrirRedeSocial(params) {
+  const rede = redeSocial(params.rede);
+  const existente = await abaDaRede(params.rede);
+  if (existente && typeof existente.id === "number") {
+    return { tabId: existente.id, reutilizada: true };
+  }
+  const dono = await janelaDoDono();
+  const criada = await api.tabs.create({
+    url: rede.url,
+    active: false,
+    ...(typeof dono === "number" ? { windowId: dono } : {}),
+  });
+  // Aba de fundo descartada pelo navegador não informa nada; no Chromium dá para pedir que não.
+  try {
+    await api.tabs.update(criada.id, { autoDiscardable: false });
+  } catch {
+    // Firefox: sem a opção — a aba que for descartada vira «sem notícia» no Jarvis
+  }
+  return { tabId: criada.id, reutilizada: false };
+}
+
+function estadoSocialLimpo(id, bruto) {
+  // O que vem da página: só os campos do contrato, nos limites — o Jarvis valida de novo.
+  const corpo = comoObjeto(bruto);
+  const contagem = (valor) =>
+    Number.isInteger(valor) && valor >= 0 ? Math.min(MAX_NAO_LIDAS, valor) : 0;
+  const conversas = (Array.isArray(corpo.conversas) ? corpo.conversas : [])
+    .slice(0, MAX_CONVERSAS_SOCIAIS)
+    .map((c) => ({
+      nome: String(comoObjeto(c).nome ?? "")
+        .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/gu, " ")
+        .replace(/\s+/gu, " ")
+        .trim()
+        .slice(0, MAX_NOME_SOCIAL),
+      naoLidas: contagem(comoObjeto(c).naoLidas),
+    }))
+    .filter((c) => c.nome);
+  return {
+    rede: id,
+    logado: corpo.logado === true,
+    naoLidas: contagem(corpo.naoLidas),
+    conversas,
+    formato: corpo.formato === "conhecido" ? "conhecido" : "desconhecido",
+    alerta: ALERTAS_SOCIAIS.includes(corpo.alerta) ? corpo.alerta : "",
+  };
+}
+
+async function estadoDaRede(params) {
+  redeSocial(params.rede);
+  const tab = await abaDaRede(params.rede);
+  if (!tab || typeof tab.id !== "number") {
+    throw erro("sem_aba", "a rede não tem aba aberta");
+  }
+  let resposta;
+  try {
+    resposta = await api.tabs.sendMessage(tab.id, { social: "estado" });
+  } catch {
+    throw erro("pagina_indisponivel", "a aba da rede ainda não carregou o monitor; recarregue a aba");
+  }
+  const { rede: _rede, ...estado } = estadoSocialLimpo(params.rede, resposta);
+  return estado;
+}
+
+function repassarEstadoSocial(remetente, bruto) {
+  // Só o social.js da própria rede fala por ela: a rede do estado tem de ser a do host da aba.
+  const id = redeDaUrl(remetente?.tab?.url ?? remetente?.url ?? "");
+  if (!id || comoObjeto(bruto).rede !== id || !nativePort) {
+    return;
+  }
+  try {
+    nativePort.postMessage({ evento: "social", ...estadoSocialLimpo(id, bruto) });
+  } catch (causa) {
+    console.warn("Jarvis: não foi possível repassar o estado da rede", detalheDaFalha(causa));
   }
 }
 
@@ -1240,6 +1374,8 @@ api.runtime.onMessage?.addListener((mensagem, remetente, responderAoConteudo) =>
     responderAoConteudo({ ligado: controladas.has(remetente.tab.id) });
   } else if (corpo.tipo === "parar") {
     responderAoConteudo({ paradas: pararPeloDono("faixa").length });
+  } else if (corpo.tipo === "social") {
+    repassarEstadoSocial(remetente, corpo.estado);
   }
   return false;
 });

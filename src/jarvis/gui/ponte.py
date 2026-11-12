@@ -46,9 +46,12 @@ from jarvis.gui.modelos import PonteDeModelos
 from jarvis.gui.nucleo import SessaoDeVoz
 from jarvis.gui.redes import PonteDasRedes
 from jarvis.gui.workspace import Workspace
+from jarvis.navegador.cliente import familia_do_host
 from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.rede import ErroDeRede
 from jarvis.social.config import ARQUIVO as ARQUIVO_DAS_REDES
+from jarvis.social.monitor import MonitorSocial, Notificacao
+from jarvis.social.monitor import Ponte as PonteSocial
 from jarvis.ui.atalhos import AtalhoIndisponivel
 from jarvis.ui.portal import AtalhoPortal, portal_disponivel
 from jarvis.voz import aferir
@@ -202,6 +205,10 @@ class Ponte(QObject):
     avisosMudaram = Signal()
     tarefasMudaram = Signal()
     navegadorMudou = Signal(bool)
+    redeNotificou = Signal(str, str)
+    """(rede, texto): uma notificação do monitor das redes (ADR-0060), vinda do fio dele."""
+    redesMudaram = Signal()
+    """O estado de alguma rede mudou (fio do monitor → thread da janela)."""
     conteudoMostrado = Signal(str, str, str, str)
     """(id, título, documento, fundo) de uma exibição que o Jarvis montou (ADR-0055): vem da linha
     do cérebro; o Qt entrega aqui, na da janela."""
@@ -233,6 +240,7 @@ class Ponte(QObject):
         pastas_de_apps: tuple[str, ...] | None = None,
         lar: Path | None = None,
         sondar_navegador: Callable[[Configuracao], EstadoDaPonte] | None = None,
+        ponte_das_redes: PonteSocial | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -321,6 +329,11 @@ class Ponte(QObject):
             principal=lambda: self._configuracao.navegador_principal,
             parent=self,
         )
+        self._monitor_das_redes: MonitorSocial | None = None
+        """O monitor das redes (ADR-0060): só com a ponte do navegador de verdade, que só a
+        janela de verdade passa (`principal.py`). Sem ela (os testes), a aba só grava os ajustes."""
+        if ponte_das_redes is not None:
+            self._ligar_o_monitor_das_redes(ponte_das_redes)
         self._modelos = PonteDeModelos.da_janela(
             obter=lambda: self._configuracao,
             raiz=raiz,
@@ -519,6 +532,39 @@ class Ponte(QObject):
     def redes(self) -> QObject:
         """A aba «redes sociais» (`PonteDasRedes`, ADR-0060): grava `redes.toml` na hora."""
         return self._redes
+
+    def _ligar_o_monitor_das_redes(self, ponte: PonteSocial) -> None:
+        def familia() -> str:
+            redes = self._redes.configuracao
+            return familia_do_host(
+                redes.navegador_preferido or self._configuracao.navegador_principal
+            )
+
+        monitor = MonitorSocial(
+            ponte,
+            configuracao=lambda: self._redes.configuracao,
+            familia=familia,
+            # Os dois vêm do fio do monitor: o sinal do Qt entrega na thread da janela.
+            ao_notificar=lambda aviso: self.redeNotificou.emit(aviso.rede, aviso.texto),
+            ao_mudar=self.redesMudaram.emit,
+        )
+        self._monitor_das_redes = monitor
+        self.redesMudaram.connect(self._redes.mudou.emit)
+        self.redeNotificou.connect(self._avisar_da_rede)
+        self._redes.trocar_estado(monitor.estado.para_a_tela)
+        self._redes.ao_mudar = lambda _configuracao: monitor.atualizar()
+        monitor.iniciar()
+
+    def _avisar_da_rede(self, rede: str, texto: str) -> None:
+        """Uma notificação de rede (ADR-0060): na fila de avisos da conversa aberta, com a
+        confiança de terceiros (o nome de quem mandou vem da página), e sempre no cartão da rede."""
+        sessao = self._sessao
+        if sessao is not None and sessao.viva and sessao.aplicativo is not None:
+            sessao.aplicativo.aviso_de_rede(Notificacao(rede, texto, 0.0).nome_da_rede, texto)
+
+    def parar_o_monitor_das_redes(self) -> None:
+        if self._monitor_das_redes is not None:
+            self._monitor_das_redes.parar()
 
     def _gravar_campos(self, **mudancas: Any) -> str:
         """Toda troca de ajuste da janela vale na hora **e** vai ao arquivo no mesmo clique

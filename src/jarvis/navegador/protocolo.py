@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from typing import Any, Final
 from urllib.parse import urlsplit
 
+from jarvis.social.redes import IDS as REDES_SOCIAIS
+
 NOME_DO_HOST: Final = "br.com.granafacil.jarvis"
 ID_CHROMIUM: Final = "eainnehpangdlhmjenljnbfkjjeckoli"
 ID_FIREFOX: Final = "jarvis-browser@granafacil.local"
@@ -56,15 +58,17 @@ de 2026-10-21) — reservado à automação de redes sociais, e-mail e agenda, q
 Sem `modo`, a aba nova nasce na janela do dono; com `fundo`, em segundo plano, sem tirar o foco."""
 PADRAO_DA_CONCESSAO: Final = re.compile(r"[a-z0-9]{8,32}")
 """A concessão de controle de um objetivo: aleatória, gerada pelo Jarvis (`navegador.controle`)."""
-EVENTOS: Final = frozenset({"parar"})
+EVENTOS: Final = frozenset({"parar", "social"})
+"""`parar` (o dono apertou PARAR) e `social` (o estado de uma rede, ADR-0060)."""
 ORIGENS_DA_PARADA: Final = frozenset({"faixa", "barra"})
 """Onde o dono apertou PARAR: na faixa desenhada na página, ou no botão da extensão na barra."""
 MAXIMO_DE_CONCESSOES: Final = 32
-VERSAO_DA_PONTE: Final = 2
+VERSAO_DA_PONTE: Final = 3
 """O contrato de métodos entre o Jarvis, o host e a extensão. Sobe a cada método novo, junto com
 `VERSAO_DA_PONTE` de extensao/background.js (o teste confere). A 2 é a do CDP (ADR-0051) mais
 `ponte.versao`: a extensão que não responde a ela, ou responde menos, é a de antes — o dono ouve
-para recarregá-la, em vez de ver as ferramentas novas falharem uma a uma (2026-10-30)."""
+para recarregá-la, em vez de ver as ferramentas novas falharem uma a uma (2026-10-30). A 3
+traz o monitor das redes sociais (ADR-0060): `social.abrir`, `social.estado` e o evento `social`."""
 VERSAO: Final = "ponte.versao"
 """Respondido pela extensão: a versão dela, a do manifesto e se tem as permissões do CDP."""
 VERSAO_DO_HOST: Final = "host.versao"
@@ -145,6 +149,10 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     "controle.manter": {"controle": str},
     "controle.parar": {},
     "controle.estado": {},
+    # O monitor das redes sociais (ADR-0060), só leitura: a extensão sabe o endereço e os hosts
+    # de cada rede; o Jarvis só diz qual. Não levam concessão: não agem na página.
+    "social.abrir": {"rede": str},
+    "social.estado": {"rede": str},
     VERSAO: {},
     VERSAO_DO_HOST: {},
     ASSINAR: {},
@@ -174,6 +182,8 @@ PRAZOS_CURTOS: Final = frozenset(
         "controle.manter",
         "controle.parar",
         "controle.estado",
+        "social.abrir",
+        "social.estado",
         VERSAO,
         VERSAO_DO_HOST,
     }
@@ -197,6 +207,8 @@ OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "page.act": frozenset({"acao"}),
     "page.eval": frozenset({"codigo"}),
     "page.gesture": frozenset({"gesto"}),
+    "social.abrir": frozenset({"rede"}),
+    "social.estado": frozenset({"rede"}),
 }
 COM_ALVO: Final = frozenset({"page.inspect", "page.click", "page.type", "page.act"})
 """Métodos que agem num elemento: exatamente um de `alvo` (texto visível) ou `ref` (do mapa)."""
@@ -285,6 +297,8 @@ def validar_pedido(bruto: object) -> PedidoDaPonte:
         raise PedidoInvalido("controle fora do formato da concessão")
     if "texto" in params:
         _tamanho("texto", params["texto"], LIMITE_DO_TEXTO)
+    if "rede" in params and params["rede"] not in REDES_SOCIAIS:
+        raise PedidoInvalido(f"rede fora da lista: {sorted(REDES_SOCIAIS)}")
     if "pixels" in params and abs(params["pixels"]) > LIMITE_DO_DESLOCAMENTO:
         raise PedidoInvalido(f"pixels passa de {LIMITE_DO_DESLOCAMENTO}")
     return PedidoDaPonte(identificador, metodo, dict(params))
@@ -320,11 +334,85 @@ def validar_resposta(bruta: object) -> dict[str, Any]:
     }
 
 
+FORMATOS_SOCIAIS: Final = frozenset({"conhecido", "desconhecido"})
+MAXIMO_DE_CONVERSAS: Final = 20
+LIMITE_DO_NOME: Final = 80
+MAXIMO_DE_NAO_LIDAS: Final = 9_999
+ALERTAS_SOCIAIS: Final = frozenset({"", "captcha", "verificacao", "limitada", "atividade_incomum"})
+"""Os sinais de alerta que a página mostra (docs/redes-sociais-riscos.md §6); vazio = nenhum."""
+_CHAVES_DO_SOCIAL: Final = frozenset(
+    {"evento", "rede", "logado", "naoLidas", "conversas", "formato", "alerta"}
+)
+_INVISIVEIS: Final = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+"""Controle, largura zero e inversão de direção: o `social.js` já tira; quem traz é recusado."""
+
+
+def _contagem(valor: object, nome: str) -> int:
+    if (
+        not isinstance(valor, int)
+        or isinstance(valor, bool)
+        or not 0 <= valor <= MAXIMO_DE_NAO_LIDAS
+    ):
+        raise PedidoInvalido(f"{nome} fora de 0..{MAXIMO_DE_NAO_LIDAS}")
+    return valor
+
+
+def validar_estado_social(bruto: object) -> dict[str, Any]:
+    """O estado de uma rede (ADR-0060), do evento `social` ou da resposta de `social.estado`:
+    `{rede, logado, naoLidas, conversas: [{nome, naoLidas}], formato, alerta}` — nada além disso. Os
+    nomes são de terceiros: curtos, sem caractere de controle nem de inversão de direção."""
+    if not isinstance(bruto, dict):
+        raise PedidoInvalido("o estado da rede tem de ser um objeto")
+    fora = sorted(set(bruto) - _CHAVES_DO_SOCIAL)
+    if fora:
+        raise PedidoInvalido(f"estado da rede com campo fora do contrato: {fora}")
+    rede = bruto.get("rede")
+    if rede not in REDES_SOCIAIS:
+        raise PedidoInvalido("rede fora da lista")
+    logado = bruto.get("logado")
+    if not isinstance(logado, bool):
+        raise PedidoInvalido("logado tem de ser true ou false")
+    formato = bruto.get("formato", "conhecido")
+    if formato not in FORMATOS_SOCIAIS:
+        raise PedidoInvalido("formato fora da lista")
+    alerta = bruto.get("alerta", "")
+    if alerta not in ALERTAS_SOCIAIS:
+        raise PedidoInvalido("alerta fora da lista")
+    conversas = bruto.get("conversas", [])
+    if not isinstance(conversas, list) or len(conversas) > MAXIMO_DE_CONVERSAS:
+        raise PedidoInvalido(f"conversas: lista de até {MAXIMO_DE_CONVERSAS}")
+    limpas = []
+    for conversa in conversas:
+        if not isinstance(conversa, dict) or set(conversa) != {"nome", "naoLidas"}:
+            raise PedidoInvalido("conversa fora do contrato {nome, naoLidas}")
+        nome = conversa["nome"]
+        if (
+            not isinstance(nome, str)
+            or not nome.strip()
+            or len(nome) > LIMITE_DO_NOME
+            or _INVISIVEIS.search(nome)
+        ):
+            raise PedidoInvalido("nome da conversa vazio, longo ou com caractere de controle")
+        limpas.append({"nome": nome, "naoLidas": _contagem(conversa["naoLidas"], "naoLidas")})
+    return {
+        "evento": "social",
+        "rede": str(rede),
+        "logado": logado,
+        "naoLidas": _contagem(bruto.get("naoLidas"), "naoLidas"),
+        "conversas": limpas,
+        "formato": str(formato),
+        "alerta": str(alerta),
+    }
+
+
 def validar_evento(bruto: object) -> dict[str, Any]:
-    """Um evento que a extensão manda por conta própria (não é resposta): hoje, só o PARAR do dono.
-    `{evento: "parar", concessoes: [...], origem: "faixa" | "barra"}` — nada além disso."""
+    """Um evento que a extensão manda por conta própria (não é resposta): o PARAR do dono,
+    `{evento: "parar", concessoes: [...], origem: "faixa" | "barra"}`, e o estado de uma rede
+    social (`validar_estado_social`) — nada além disso."""
     if not isinstance(bruto, dict) or bruto.get("evento") not in EVENTOS:
         raise PedidoInvalido("evento fora da lista")
+    if bruto["evento"] == "social":
+        return validar_estado_social(bruto)
     concessoes = bruto.get("concessoes", [])
     if (
         not isinstance(concessoes, list)

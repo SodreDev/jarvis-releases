@@ -19,6 +19,8 @@ TESTE_NAVEGACAO = Path(__file__).with_name("background_navegacao.test.mjs")
 TESTE_CONTROLE = Path(__file__).with_name("background_controle.test.mjs")
 TESTE_INDICADOR = Path(__file__).with_name("indicador.test.mjs")
 TESTE_CDP = Path(__file__).with_name("background_cdp.test.mjs")
+TESTE_SOCIAL = RAIZ / "tests" / "unit" / "social" / "social.test.mjs"
+TESTE_SOCIAL_FUNDO = Path(__file__).with_name("background_social.test.mjs")
 
 
 def _json(nome: str) -> dict[str, object]:
@@ -52,8 +54,15 @@ def test_manifesto_mv3_pina_ids_e_so_age_em_paginas_http() -> None:
     assert [(c["js"], c["run_at"]) for c in conteudos] == [
         (["indicador.js"], "document_start"),
         (["content.js"], "document_idle"),
+        (["social-seletores.js", "social.js"], "document_idle"),
     ]
-    assert all(c["matches"] == ["http://*/*", "https://*/*"] for c in conteudos)
+    assert all(c["matches"] == ["http://*/*", "https://*/*"] for c in conteudos[:2])
+    # O monitor das redes (ADR-0060) só nos hosts das cinco redes, em https, e os seletores (dados)
+    # antes do script que os lê.
+    from jarvis.social.redes import REDES
+
+    hosts_das_redes = sorted({f"https://{h}/*" for r in REDES for h in r.hosts})
+    assert sorted(conteudos[2]["matches"]) == hosts_das_redes
     assert all(c["all_frames"] is False for c in conteudos)
     # O botão da extensão é o PARAR (sem popup: o clique vai para o fundo) e mostra o selo.
     assert manifesto["action"] == {
@@ -139,7 +148,16 @@ def test_so_a_automacao_social_chega_a_criar_janela() -> None:
 
 @pytest.mark.parametrize(
     "roteiro",
-    [TESTE_RECONEXAO, TESTE_RESPOSTAS, TESTE_NAVEGACAO, TESTE_CONTROLE, TESTE_INDICADOR, TESTE_CDP],
+    [
+        TESTE_RECONEXAO,
+        TESTE_RESPOSTAS,
+        TESTE_NAVEGACAO,
+        TESTE_CONTROLE,
+        TESTE_INDICADOR,
+        TESTE_CDP,
+        TESTE_SOCIAL,
+        TESTE_SOCIAL_FUNDO,
+    ],
     ids=lambda p: p.stem,
 )
 def test_comportamento_do_fundo_com_porta_e_abas_falsas(roteiro: Path) -> None:

@@ -57,3 +57,8 @@ O DOM real de cada rede (as fixtures imitam o que é público hoje), o comportam
 ## Como invalidar esta decisão
 
 Se o dono for bloqueado por uma rede com o volume dentro do teto, o envio daquela rede é desligado e o teto padrão cai. Se a trilha mostrar um envio fora da lista, sem «ausente» ou com o contato divergente, o envio é desligado inteiro até a causa ser corrigida.
+
+## Andamento
+
+- **Fatia A** (`f7898dc`): esta ADR, o documento de risco, a aba «redes sociais», `redes.toml` e o salvamento na hora de todo ajuste.
+- **Fatia B** (monitor só leitura): `extensao/social.js` e `extensao/social-seletores.js` (seletores como dados, versão 1, com canário e sinais de alerta), `social.abrir`/`social.estado` e o evento `social` no protocolo (ponte versão 3), `jarvis.social.monitor` (estado por rede, aviso quando a contagem sobe, alerta sempre avisado e nunca repetido) e o monitor ligado à janela só pela ponte de verdade (`gui/principal.py`). Provas: `tests/unit/social/social.test.mjs` contra as páginas falsas de `tests/unit/social/paginas/`, `tests/unit/navegador/background_social.test.mjs` com abas falsas, `tests/unit/social/test_monitor.py` e a janela offscreen em `tests/unit/gui/test_redes_na_janela.py`. Para usar: recarregar a extensão do Jarvis no navegador (ela reinicia o host) e ligar a rede na aba.

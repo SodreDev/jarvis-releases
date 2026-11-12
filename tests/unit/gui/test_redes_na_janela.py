@@ -220,3 +220,85 @@ def test_campo_invalido_e_recusado_sem_ir_ao_arquivo(
     assert "recusado" in vista.aviso
     depois = maquina["config"].read_text("utf-8") if maquina["config"].exists() else ""
     assert antes == depois
+
+
+# --- fatia B: o monitor ligado à janela, com uma ponte de navegador FALSA ---------------------
+def test_monitor_na_janela_abre_a_aba_de_fundo_e_mostra_a_notificacao_no_cartao(
+    abrir: Callable[[Ponte], QQuickView],
+    aplicativo: QGuiApplication,
+    maquina: dict[str, Path],
+    tmp_path: Path,
+) -> None:
+    from tests.unit.social.test_monitor import PonteFalsa
+    from tests.unit.social.test_monitor import _esperar as esperar_fio
+
+    falsa = PonteFalsa()
+    ponte = Ponte(
+        raiz=tmp_path / "sessao",
+        caminho_da_configuracao=maquina["config"],
+        ambiente={"CI": "1"},
+        pastas_de_apps=(str(maquina["apps"]),),
+        lar=maquina["lar"],
+        ponte_das_redes=falsa,
+    )
+    vista = cast(Any, ponte)
+    try:
+        janela = abrir(ponte)
+        janela.show()
+        vista.abrirPainel("configuracao")
+        _esperar(aplicativo, 0.5)
+        _aba(janela, aplicativo, "Redes")
+        assert falsa.pedidos == [], "nada ligado: o monitor não pede nada"
+        _clicar(janela, aplicativo, _item(janela, "monitorar-whatsapp"))
+        assert esperar_fio(lambda: any(p[0] == "social.abrir" for p in falsa.pedidos))
+        assert falsa.pedidos[0][2] == {"rede": "whatsapp"}
+        falsa.fila.append(
+            {
+                "evento": "social",
+                "rede": "whatsapp",
+                "logado": True,
+                "naoLidas": 2,
+                "conversas": [{"nome": "Ana", "naoLidas": 2}],
+                "formato": "conhecido",
+                "alerta": "",
+            }
+        )
+
+        def chegou() -> bool:
+            linha = vista.redes.redes[0]
+            return bool(linha["notificacoes"])
+
+        _esperar(aplicativo, 3.0, ate=chegou)
+        linha = vista.redes.redes[0]
+        assert linha["estado"] == "conectada" and linha["naoLidas"] == 2
+        assert linha["notificacoes"][0]["texto"] == "WhatsApp: 2 mensagens novas — Ana (2)"
+        _capturar(janela, "redes-3-whatsapp-notificacao.png")
+        assert {p[0] for p in falsa.pedidos} <= {"social.abrir", "social.estado"}
+    finally:
+        ponte.parar_o_monitor_das_redes()
+
+
+def test_notificacao_da_rede_vai_a_fila_da_conversa_pelo_laco(
+    maquina: dict[str, Path], tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from tests.unit.social.test_monitor import PonteFalsa
+
+    recebidos: list[tuple[str, str]] = []
+    ponte = Ponte(
+        raiz=tmp_path / "sessao",
+        caminho_da_configuracao=maquina["config"],
+        ambiente={"CI": "1"},
+        pastas_de_apps=(str(maquina["apps"]),),
+        ponte_das_redes=PonteFalsa(),
+    )
+    try:
+        cast(Any, ponte)._sessao = SimpleNamespace(
+            viva=True,
+            aplicativo=SimpleNamespace(aviso_de_rede=lambda o, r: recebidos.append((o, r))),
+        )
+        ponte._avisar_da_rede("discord", "Discord: 1 mensagem nova — edu (1)")
+        assert recebidos == [("Discord", "Discord: 1 mensagem nova — edu (1)")]
+    finally:
+        ponte.parar_o_monitor_das_redes()

@@ -166,6 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from jarvis.gui import foco
     from jarvis.gui.acesso import estado_do_navegador
     from jarvis.gui.ponte import Ponte
+    from jarvis.social.navegador import PonteDoNavegador
     from jarvis.voz.conversa import abrir_conversa
     from jarvis.voz.vocabulario import RepositorioDoVocabulario
 
@@ -186,6 +187,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         vocabulario=None if args.capturar is not None else RepositorioDoVocabulario.padrao(),
         # A tela de acesso diz se a extensão está conectada; a captura não sonda a sessão do dono.
         sondar_navegador=None if args.capturar is not None else estado_do_navegador,
+        # O monitor das redes (ADR-0060) fala com o host do navegador do dono: só a janela de
+        # verdade monta a ponte; a captura e os testes nunca.
+        ponte_das_redes=(
+            None if args.capturar is not None else PonteDoNavegador.do_ambiente(os.environ)
+        ),
     )
     janela = QQuickView()
     janela.setTitle(NOME)
@@ -218,6 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # abas; a janela fecha, e a conversa — que já está no livro — é fechada com a indexação inteira.
     ponte.encerramentoPedido.connect(aplicativo.quit)
     codigo = int(aplicativo.exec())
+    ponte.parar_o_monitor_das_redes()
     if conversa is not None:
         conversa.fechar()
     return codigo

@@ -622,6 +622,20 @@ class Aplicativo:
             self.avisos.decidido(identificador, Entrega.SO_CARD)
         self._avisos_mudaram()
 
+    def aviso_de_rede(self, origem: str, resumo: str) -> None:
+        """Uma notificação do monitor das redes sociais (ADR-0060): entra na fila como as outras,
+        mas com a confiança de **terceiros** — o nome de quem mandou vem da página da rede."""
+        self.receber_aviso(
+            notificacao(
+                self.session_id,
+                f"rede-{uuid7()}",
+                tipo="evento",
+                origem=origem[:80],
+                resumo=resumo,
+                trust=Trust.THIRD_PARTY,
+            )
+        )
+
     def _status_do_laco(self, resumo: str) -> None:
         """Progresso do encadeamento vai para a fila, nunca direto à fala em andamento."""
         self.receber_aviso(
