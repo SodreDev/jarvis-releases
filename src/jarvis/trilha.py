@@ -155,6 +155,8 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     # A guarda de laço da tarefa (ADR-0062): o tamanho do ciclo e o passo em que disparou.
     "periodo": Forma.NUMERO,
     "passo": Forma.NUMERO,
+    # A nota do dono a um turno (ADR-0063): `boa` ou `ruim`.
+    "nota": Forma.CODIGO,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -214,6 +216,8 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     # A guarda de laço (ADR-0062): a última ferramenta do laço, o tipo, aviso ou parada — nunca
     # argumento nem resultado.
     "tarefa.laco": frozenset({"tool_id", "categoria", "decisao", "periodo", "passo"}),
+    # A nota do dono (ADR-0063), com o id do turno avaliado: o código e de onde veio (botão, voz).
+    "turno.nota": frozenset({"nota", "origem"}),
     "ferramenta": frozenset(
         {"tool_id", "argumentos", "status", "pdp", "ms", "motivo", "codigo", "aviso", "fase"}
     ),
@@ -642,6 +646,8 @@ def _linha(evento: Mapping[str, Any]) -> str:
             f"caminho rápido {evento.get('regra')} → {evento.get('tool_id')}: "
             f"{evento.get('status')}{'' if evento.get('completo') else ' (o motor seguiu)'}"
         )
+    if tipo == "turno.nota":
+        return f"nota do dono: {evento.get('nota')} ({evento.get('origem')})"
     if tipo == "tarefa.laco":
         return (
             f"laço na tarefa ({evento.get('categoria')}, período {evento.get('periodo')}) no "
@@ -803,6 +809,30 @@ def consumo_por_dia(pasta: Path, *, dias: int = DIAS_DE_RETENCAO) -> list[str]:
             f"{mediana}{extra}"
         )
     return linhas
+
+
+def notas_por_dia(pasta: Path, *, dias: int = DIAS_DE_RETENCAO) -> list[str]:
+    """As notas do dono por dia (ADR-0063), para o `--diagnostico`: vale a última nota de cada
+    turno (o clique corrige a frase)."""
+    por_turno: dict[str, tuple[str, str]] = {}
+    for evento in _todos_os_eventos(pasta):
+        instante = evento.get("t")
+        nota = evento.get("nota")
+        if evento.get("evento") != "turno.nota" or not isinstance(instante, int | float):
+            continue
+        if nota not in ("boa", "ruim"):
+            continue
+        dia = time.strftime("%Y-%m-%d", time.localtime(float(instante)))
+        por_turno[str(evento.get("turno", ""))] = (dia, str(nota))
+    if not por_turno:
+        return ["  notas: nenhuma nota do dono na trilha"]
+    por_dia: dict[str, dict[str, int]] = {}
+    for dia, nota in por_turno.values():
+        por_dia.setdefault(dia, {"boa": 0, "ruim": 0})[nota] += 1
+    return [
+        f"  {dia}: {por_dia[dia]['boa']} boa(s) · {por_dia[dia]['ruim']} ruim(ns)"
+        for dia in sorted(por_dia)[-dias:]
+    ]
 
 
 def chaves(argumentos: Mapping[str, Any] | Iterable[str]) -> list[str]:

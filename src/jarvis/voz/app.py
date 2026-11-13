@@ -124,6 +124,7 @@ from jarvis.s2.motor import (
     MotorDeConversa,
     aceita_imagem,
 )
+from jarvis.s2.nota_do_dono import VALE_POR_S, Nota, nota_do_botao, nota_na_fala
 from jarvis.s2.orcamento_da_fala import orcar, quer_detalhe
 from jarvis.s2.persona import sistema_do_jarvis
 from jarvis.s2.portao import PortaoDeAcao
@@ -871,6 +872,24 @@ class Aplicativo:
         """O que o card `tarefas` mostra: nome, estado, progresso e o id do "parar"."""
         gestor = self.ferramentas.tarefas if self.ferramentas is not None else None
         return gestor.dados_do_card() if gestor is not None else {"itens": []}
+
+    @property
+    def turno_para_nota(self) -> str:
+        """O id do último turno que acabou (o que a nota avalia); vazio antes do primeiro."""
+        return self._ultimo_turno
+
+    def anotar_turno(self, boa: bool) -> bool:
+        """O 👍/👎 da janela para o último turno que acabou (ADR-0063). `False` = não há turno."""
+        return self._anotar(nota_do_botao(boa), "botao")
+
+    def _anotar(self, nota: Nota, origem: str) -> bool:
+        """Grava a nota na trilha com o id do turno avaliado: só o código, nunca a fala. Nada é
+        treinado com ela."""
+        if not self._ultimo_turno:
+            return False
+        self.trilha.evento("turno.nota", turno=self._ultimo_turno, nota=str(nota), origem=origem)
+        self.nota_do_ultimo_turno = str(nota)
+        return True
 
     def parar_tarefa(self, tarefa_id: str) -> bool:
         """O botão "parar" do card — o dono, com o dedo, não passa pela política."""
@@ -1851,6 +1870,11 @@ class Aplicativo:
     _escuta_por_cima: ThreadPoolExecutor | None = field(default=None, repr=False)
     _vigia_montada_aqui: bool = False
     _decisoes_na_trilha: int = 0
+    _ultimo_turno: str = ""
+    """O `turn_id` do último turno que acabou: é ele que a nota do dono avalia (ADR-0063)."""
+    _fim_do_ultimo_turno: float = 0.0
+    nota_do_ultimo_turno: str = ""
+    """`boa`, `ruim` ou vazio: a nota que vale para o último turno (o botão aceso na janela)."""
     _cerebro_em_voo: threading.Thread | None = field(default=None, repr=False)
     """A linha do cérebro de um turno cortado que ainda não parou (uma ferramenta em voo): o turno
     seguinte e os avisos esperam por ela, fora do laço do microfone."""
@@ -1897,6 +1921,11 @@ class Aplicativo:
         cancelado = self.cancelado_de(epoch)
         parar_geracao = threading.Event()
         turn_id = f"t-{uuid7()}"
+        # A nota do dono ao turno anterior dita no começo desta fala (ADR-0063): só se grava; a
+        # fala segue ao cérebro como sempre.
+        nota = nota_na_fala(texto)
+        if nota is not None and time.monotonic() - self._fim_do_ultimo_turno <= VALE_POR_S:
+            self._anotar(nota, "voz")
         self.trilha.novo_turno(
             turn_id,
             motor=getattr(self._motor, "codigo", "") or type(self._motor).__name__,
@@ -2065,6 +2094,9 @@ class Aplicativo:
         )
         if self.conversa is not None:
             self.conversa.indexar_depois()
+        # Antes do repouso: a janela renova a nota (ADR-0063) quando o estado muda.
+        self._ultimo_turno, self._fim_do_ultimo_turno = turn_id, time.monotonic()
+        self.nota_do_ultimo_turno = ""
         self._mudar(self._repouso)
         respondeu = " ".join(exibido)
         self.trilha.evento(

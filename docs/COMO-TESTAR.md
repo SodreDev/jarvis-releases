@@ -922,6 +922,15 @@ terminar». A trilha leva `tarefa.laco` (categoria, aviso/parada, período, pass
 `tests/unit/tarefas/test_laco.py`, `tests/unit/tarefas/test_gestor.py`,
 `tests/unit/s2/test_teto_da_tarefa.py`.
 
+**Nota do dono por turno (2026-11-12, ADR-0063).** Na conversa da janela, a última resposta do
+Jarvis tem 👍/👎 depois que o turno acaba; o botão aceso é a nota que vale. Por voz, começar a fala
+seguinte com «ficou ótimo», «mandou bem», «boa, Jarvis» (boa) ou «ficou ruim», «não era isso»,
+«você errou», «não gostei» (ruim) anota o turno anterior (até 10 min depois) — e a fala segue ao
+cérebro como sempre, sem «anotado». «Valeu», «isso mesmo» e «não ficou ruim» não anotam. A trilha
+leva `turno.nota` (nota e origem, nunca a fala); o `--diagnostico` conta por dia. Nada é treinado.
+Testes: `tests/unit/s2/test_nota_do_dono.py`, `tests/unit/voz/test_nota_do_turno.py`,
+`tests/unit/gui/test_nota_na_janela.py`.
+
 ### 0.12 Pensar não é falar: menos fala, só o resultado (2026-10-20, ADR-0031)
 
 O Jarvis não narra mais os passos. Num pedido com ferramentas ele fala **no máximo uma** frase

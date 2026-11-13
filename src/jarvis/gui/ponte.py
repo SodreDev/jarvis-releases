@@ -400,6 +400,13 @@ class Ponte(QObject):
     def conversaViva(self) -> bool:
         return self._sessao is not None and self._sessao.viva
 
+    @Property(dict, notify=conversaMudou)
+    def notaDoTurno(self) -> dict[str, Any]:
+        """O 👍/👎 da última resposta (ADR-0063): se há turno para dar nota e qual vale."""
+        if self._sessao is None:
+            return {"pode": False, "nota": ""}
+        return self._sessao.nota_do_turno()
+
     @Property(list, notify=conversaMudou)
     def transcricao(self) -> list[dict[str, str]]:
         return self._transcricao[-MAXIMO_DE_LINHAS:]
@@ -885,6 +892,13 @@ class Ponte(QObject):
         if self._sessao is not None and self._sessao.viva:
             self._sessao.interromper()  # o turno em curso é da conversa que acabou
         self._transcricao = []
+        self.conversaMudou.emit()
+
+    @Slot(bool)
+    def notarTurno(self, boa: bool) -> None:
+        """O dono deu nota à última resposta: vai à trilha, e nada é treinado (ADR-0063)."""
+        if self._sessao is not None:
+            self._sessao.anotar_turno(boa)
         self.conversaMudou.emit()
 
     @Slot(str)

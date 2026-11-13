@@ -245,6 +245,17 @@ class SessaoDeVoz:
             return {"itens": []}
         return self.aplicativo.dados_das_tarefas()
 
+    def anotar_turno(self, boa: bool) -> bool:
+        """O 👍/👎 do dono para o último turno (ADR-0063)."""
+        return self.aplicativo is not None and self.aplicativo.anotar_turno(boa)
+
+    def nota_do_turno(self) -> dict[str, Any]:
+        """Se há turno para dar nota e qual vale agora (o botão aceso)."""
+        aplicativo = self.aplicativo
+        if aplicativo is None or not aplicativo.turno_para_nota:
+            return {"pode": False, "nota": ""}
+        return {"pode": True, "nota": aplicativo.nota_do_ultimo_turno}
+
     def parar_tarefa(self, tarefa_id: str) -> bool:
         """O "parar" do card: o dono, com o dedo."""
         return self.aplicativo is not None and self.aplicativo.parar_tarefa(tarefa_id)

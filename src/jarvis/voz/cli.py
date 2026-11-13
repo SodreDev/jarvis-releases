@@ -31,7 +31,12 @@ from jarvis.navegador.estado import sondar
 from jarvis.rede import ErroDeRede
 from jarvis.s2.regras import arquivo_do_dono, na_pasta
 from jarvis.s2.regras import padrao as padrao_das_regras
-from jarvis.trilha import consumo_por_dia, resumo_do_ultimo_turno, ruidos_descartados
+from jarvis.trilha import (
+    consumo_por_dia,
+    notas_por_dia,
+    resumo_do_ultimo_turno,
+    ruidos_descartados,
+)
 from jarvis.trilha import limites as limites_da_trilha
 from jarvis.voz.app import PASTA_DA_TRILHA, Aplicativo, AplicativoIndisponivel
 from jarvis.voz.chaves import (
@@ -209,6 +214,9 @@ def diagnosticar(
         linha(texto)
     linha("consumo do motor por dia (tokens, custo estimado e 1º token; ADR-0061):")
     for texto in consumo_por_dia(pasta_da_trilha):
+        linha(texto)
+    linha("notas do dono por dia (👍/👎 e frases; nada é treinado; ADR-0063):")
+    for texto in notas_por_dia(pasta_da_trilha):
         linha(texto)
     for texto in _linhas_do_ruido(configuracao, pasta_da_trilha):
         linha(texto)
