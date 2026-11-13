@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from jarvis.barramento import LogDeEventos, Tipo
+from jarvis.barramento import Envelope, LogDeEventos, Tipo
 from jarvis.barramento.canal_de_audio import endereco_do_audio
 from jarvis.supervisao import Supervisor
 
@@ -48,6 +48,24 @@ def esperar_tipo(raiz: Path, tipo: Tipo, *, limite: float = LIMITE) -> list[Tipo
                 return vistos
         time.sleep(0.05)
     raise AssertionError(f"{tipo} não apareceu em {limite}s; log tem {vistos}")
+
+
+def _depois_do_cancel(raiz: Path, *, limite: float = 5.0) -> tuple[list[Envelope], Envelope | None]:
+    """O log inteiro e o primeiro `PlaybackProgress` depois do Cancel, esperado até `limite`."""
+    fim = time.monotonic() + limite
+    while True:
+        with LogDeEventos(raiz / "eventos.sqlite") as log:
+            registros = [r.envelope for r in log.ler()]
+        tipos = [e.type for e in registros]
+        progresso = None
+        if Tipo.CANCEL in tipos:
+            corte = tipos.index(Tipo.CANCEL)
+            progresso = next(
+                (e for e in registros[corte + 1 :] if e.type is Tipo.PLAYBACK_PROGRESS), None
+            )
+        if progresso is not None or time.monotonic() >= fim:
+            return registros, progresso
+        time.sleep(0.05)
 
 
 def test_o_endereco_do_canal_fica_ao_lado_do_barramento(tmp_path: Path) -> None:
@@ -98,15 +116,13 @@ def test_barge_in_com_os_dois_processos_de_verdade(supervisor: Supervisor) -> No
     )
 
     esperar_tipo(supervisor.raiz, Tipo.CANCEL)
-    time.sleep(0.4)  # deixa a reação do audio-io (esvaziar a fila) chegar ao log
-    with LogDeEventos(supervisor.raiz / "eventos.sqlite") as log:
-        registros = [r.envelope for r in log.ler()]
+    # A reação do audio-io (esvaziar a fila e publicar o played_ms) chega ao log depois do
+    # Cancel: espera por ela com prazo, em vez de um sono fixo que o runner carregado estoura.
+    registros, progresso = _depois_do_cancel(supervisor.raiz)
 
     tipos = [e.type for e in registros]
     assert Tipo.AUDIO_ACTIVITY in tipos and Tipo.CANCEL in tipos
     fala = next(e for e in registros if e.type is Tipo.AUDIO_ACTIVITY and e.payload["speech"])
-    corte = tipos.index(Tipo.CANCEL)
-    progresso = next((e for e in registros[corte + 1 :] if e.type is Tipo.PLAYBACK_PROGRESS), None)
 
     assert progresso is not None, "o audio-io tem de publicar o played_ms do pedaço truncado"
     slo2_ms = (progresso.ts_mono_ns - fala.ts_mono_ns) / 1e6

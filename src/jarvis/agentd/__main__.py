@@ -20,6 +20,9 @@ from jarvis.barramento.envelope import uuid7
 from jarvis.barramento.epoch import DonoDoEpoch
 from jarvis.barramento.log import LogDeEventos
 
+DRENO_AO_PARAR_S = 1.0
+"""Com `--parar-em`: quanto o corretor segue entregando depois do evento de parada."""
+
 
 def main(argv: list[str] | None = None) -> int:
     analisa = argparse.ArgumentParser(prog="jarvis.agentd")
@@ -110,7 +113,15 @@ def _laco(
             str(registro.envelope.type) == parar_em
             for registro in log.ler(session_id=corretor.session_id)
         ):
-            corretor.passo(timeout=0.2)  # deixa a última entrega sair
+            # Deixa sair a última entrega E chegar a reação dos outros processos ao evento (o
+            # `audio-io` publica o `PlaybackProgress` do pedaço cortado depois do Cancel): quem
+            # grava o log é este corretor, e um passo só de 0,2 s perdia essa reação num runner
+            # carregado (CI de 2026-11-13).
+            dreno = time.monotonic() + DRENO_AO_PARAR_S
+            while time.monotonic() < dreno:
+                corretor.passo(timeout=0.05)
+                if canal is not None:
+                    _consumir_audio(canal, dono=dono, raiz=raiz)
             return
 
 
