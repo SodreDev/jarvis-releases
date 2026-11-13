@@ -408,6 +408,10 @@ class MotorClaudeCli:
                 for chave, valor in uso.items()
                 if chave.endswith("tokens") and isinstance(valor, int)
             }
+            # O custo que a CLI reporta (ADR-0061) vence a conta pelo preço do catálogo.
+            custo = evento.get("total_cost_usd")
+            if isinstance(custo, int | float) and not isinstance(custo, bool) and custo >= 0:
+                tokens["custo_microusd"] = round(custo * 1_000_000)
             if evento.get("is_error"):
                 return Fim(MotivoDoFim.ERRO, str(evento.get("result", ""))[:200], tokens)
             return Fim(MotivoDoFim.CONCLUIDO, uso=tokens)

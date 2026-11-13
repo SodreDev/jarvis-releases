@@ -146,6 +146,12 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "confianca": Forma.NUMERO,
     "fonte": Forma.CODIGO,
     "base_pronta": Forma.BOOLEANO,
+    # O consumo de cada chamada ao motor (ADR-0061): contagens, nunca o texto.
+    "chamadas_ao_motor": Forma.NUMERO,
+    "tokens_entrada": Forma.NUMERO,
+    "tokens_saida": Forma.NUMERO,
+    "tokens_estimados": Forma.BOOLEANO,
+    "custo_microusd": Forma.NUMERO,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -178,6 +184,27 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
             "motor_chamado",
             # Uma resposta por pedido (ADR-0046): frases do motor que repetiam o já dito no turno.
             "frases_caladas",
+            # O consumo do turno (ADR-0061): a soma das chamadas ao motor feitas no turno.
+            "chamadas_ao_motor",
+            "tokens_entrada",
+            "tokens_saida",
+            "tokens_estimados",
+            "custo_microusd",
+        }
+    ),
+    # Uma chamada ao motor (ADR-0061): de onde (turno ou tarefa), tokens, custo em micro-dólares,
+    # tempo até o 1º delta e total — nunca o contexto nem a resposta.
+    "motor.chamada": frozenset(
+        {
+            "motor",
+            "origem",
+            "tokens_entrada",
+            "tokens_saida",
+            "tokens_estimados",
+            "custo_microusd",
+            "ms_primeiro_token",
+            "ms",
+            "fim",
         }
     ),
     "ferramenta.inicio": frozenset({"tool_id", "argumentos", "pdp", "fase"}),
@@ -609,6 +636,12 @@ def _linha(evento: Mapping[str, Any]) -> str:
             f"caminho rápido {evento.get('regra')} → {evento.get('tool_id')}: "
             f"{evento.get('status')}{'' if evento.get('completo') else ' (o motor seguiu)'}"
         )
+    if tipo == "motor.chamada":
+        return (
+            f"motor ({evento.get('origem', 'turno')}): {evento.get('fim')} · 1º token "
+            f"{_ms(evento.get('ms_primeiro_token'))} · total {_ms(evento.get('ms'))}"
+            f"{_consumo(evento, chamadas=False)}"
+        )
     if tipo == "metodo":
         return (
             f"método {evento.get('metodo')} ({evento.get('motivo')})"
@@ -643,6 +676,7 @@ def _linha(evento: Mapping[str, Any]) -> str:
         if evento.get("atalho"):
             sem_motor = " (sem o motor)" if evento.get("motor_chamado") is False else ""
             etapas += f" · caminho rápido {evento['atalho']}{sem_motor}"
+        etapas += _consumo(evento)
         return (
             f"fim: {evento.get('fim')} · 1ª fala {_ms(evento.get('ms_primeira_fala'))} · "
             f"1º áudio {_ms(evento.get('ms_primeiro_audio'))} · total {_ms(evento.get('ms_total'))}"
@@ -650,6 +684,114 @@ def _linha(evento: Mapping[str, Any]) -> str:
         )
     resto = ", ".join(f"{k}={v}" for k, v in evento.items() if k not in ("t", "turno", "evento"))
     return f"{tipo}: {resto}"
+
+
+def _dolares(microusd: object) -> str:
+    if not isinstance(microusd, int | float) or isinstance(microusd, bool):
+        return "sem preço"
+    valor = microusd / 1_000_000
+    return "US$ " + f"{valor:.{4 if valor < 1 else 2}f}".replace(".", ",")
+
+
+def _consumo(evento: Mapping[str, Any], *, chamadas: bool = True) -> str:
+    """` · 1.234 → 56 tokens (estimado) · US$ 0,0012` — vazio quando o evento não traz tokens
+    (trilha de antes da ADR-0061, ou turno em que o motor nem foi chamado)."""
+    entrada, saida = evento.get("tokens_entrada"), evento.get("tokens_saida")
+    if not isinstance(entrada, int | float) or not isinstance(saida, int | float):
+        return ""
+    vezes = evento.get("chamadas_ao_motor")
+    prefixo = f" · {vezes} chamada(s) ao motor" if chamadas and isinstance(vezes, int) else ""
+    estimado = " (estimado)" if evento.get("tokens_estimados") else ""
+    return (
+        f"{prefixo} · tokens {entrada:.0f} → {saida:.0f}{estimado}"
+        f" · custo {_dolares(evento.get('custo_microusd'))}"
+    )
+
+
+def _todos_os_eventos(pasta: Path) -> list[dict[str, Any]]:
+    """Do arquivo mais velho ao vivo: tudo que a retenção ainda guarda."""
+    eventos: list[dict[str, Any]] = []
+    for indice in range(COPIAS, 0, -1):
+        eventos.extend(_eventos_do_arquivo(pasta / f"{ARQUIVO}.{indice}"))
+    eventos.extend(_eventos_do_arquivo(pasta / ARQUIVO))
+    return eventos
+
+
+def _eventos_do_arquivo(arquivo: Path) -> list[dict[str, Any]]:
+    try:
+        linhas = arquivo.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    eventos: list[dict[str, Any]] = []
+    for linha in linhas:
+        try:
+            dado = json.loads(linha)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(dado, dict):
+            eventos.append(dado)
+    return eventos
+
+
+def consumo_por_dia(pasta: Path, *, dias: int = DIAS_DE_RETENCAO) -> list[str]:
+    """O consumo dos últimos dias, uma linha por dia, para o `--diagnostico` (ADR-0061): chamadas
+    ao motor, tokens de entrada e saída, custo e o tempo mediano até o 1º token. Soma os eventos
+    `motor.chamada` (turno e tarefa); quando alguma chamada do dia não tinha preço, diz quantas —
+    a soma do custo fica menor que o real, e a linha não esconde isso."""
+    por_dia: dict[str, dict[str, Any]] = {}
+    for evento in _todos_os_eventos(pasta):
+        if evento.get("evento") != "motor.chamada":
+            continue
+        instante = evento.get("t")
+        if not isinstance(instante, int | float):
+            continue
+        dia = time.strftime("%Y-%m-%d", time.localtime(float(instante)))
+        soma = por_dia.setdefault(
+            dia,
+            {
+                "chamadas": 0,
+                "entrada": 0,
+                "saida": 0,
+                "custo": 0,
+                "sem_preco": 0,
+                "estimadas": 0,
+                "ttft": [],
+            },
+        )
+        soma["chamadas"] += 1
+        for nome, campo in (("entrada", "tokens_entrada"), ("saida", "tokens_saida")):
+            valor = evento.get(campo)
+            if isinstance(valor, int | float) and not isinstance(valor, bool):
+                soma[nome] += valor
+        custo = evento.get("custo_microusd")
+        if isinstance(custo, int | float) and not isinstance(custo, bool):
+            soma["custo"] += custo
+        else:
+            soma["sem_preco"] += 1
+        if evento.get("tokens_estimados"):
+            soma["estimadas"] += 1
+        ttft = evento.get("ms_primeiro_token")
+        if isinstance(ttft, int | float) and not isinstance(ttft, bool):
+            soma["ttft"].append(float(ttft))
+    if not por_dia:
+        return ["  consumo: nenhuma chamada ao motor na trilha"]
+    linhas = []
+    for dia in sorted(por_dia)[-dias:]:
+        soma = por_dia[dia]
+        ttft = sorted(soma["ttft"])
+        mediana = _ms(ttft[len(ttft) // 2]) if ttft else "?"
+        avisos = []
+        if soma["estimadas"]:
+            avisos.append(f"{soma['estimadas']} com tokens estimados")
+        if soma["sem_preco"]:
+            avisos.append(f"{soma['sem_preco']} sem preço no catálogo")
+        extra = f" ({'; '.join(avisos)})" if avisos else ""
+        linhas.append(
+            f"  {dia}: {soma['chamadas']} chamada(s) · tokens {soma['entrada']:.0f} → "
+            f"{soma['saida']:.0f} · custo {_dolares(soma['custo'])} · 1º token mediano "
+            f"{mediana}{extra}"
+        )
+    return linhas
 
 
 def chaves(argumentos: Mapping[str, Any] | Iterable[str]) -> list[str]:

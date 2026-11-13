@@ -78,6 +78,16 @@ def test_a_troca_de_preset_vale_no_pedido_seguinte(tmp_path: Path) -> None:
     corpo = json.loads(servico.pedidos[0].corpo)
     assert corpo["model"] == "openai/gpt-oss-20b" and corpo["reasoning_effort"] == "low"
     assert motor.onde is Onde.NUVEM
+    # O preço do preset que rodou (ADR-0061): o que o catálogo sabe sem rede.
+    conhecidas = motor.provedores.capacidades("conversa-groq", "openai/gpt-oss-20b")
+    assert motor.precos == (conhecidas.preco_entrada, conhecidas.preco_saida)
+
+
+def test_sem_pedido_ou_sem_preco_no_catalogo_o_preco_e_desconhecido(tmp_path: Path) -> None:
+    motor = roteador(tmp_path)
+    assert motor.precos == (None, None)
+    texto(motor, pedido())
+    assert motor.precos == (None, None)  # o eco não tem preço: o custo fica "sem preço"
 
 
 def test_imagem_vai_ao_preset_de_visao_quando_o_cerebro_nao_ve(tmp_path: Path) -> None:

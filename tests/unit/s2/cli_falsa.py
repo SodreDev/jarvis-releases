@@ -42,6 +42,7 @@ def main() -> int:
                 "is_error": False,
                 "result": "".join(roteiro.get("deltas", [])),
                 "usage": {"input_tokens": 12, "output_tokens": 7},
+                **({"total_cost_usd": roteiro["custo"]} if "custo" in roteiro else {}),
             },
         )
     return 0

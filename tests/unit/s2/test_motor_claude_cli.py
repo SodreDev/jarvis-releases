@@ -139,6 +139,16 @@ def test_o_stream_vira_texto_e_o_pensamento_nao(pasta_vazia: Path, tmp_path: Pat
     assert motor.ultimo_codigo == 0
 
 
+def test_o_custo_que_a_cli_reporta_vai_no_uso_em_micro_dolares(
+    pasta_vazia: Path, tmp_path: Path
+) -> None:
+    """ADR-0061: o `total_cost_usd` do `result` vence a conta pelo preço do catálogo."""
+    motor = _motor(pasta_vazia, tmp_path / "r.jsonl", deltas=["Oi"], custo=0.0123456)
+    fim = list(motor.gerar(_contexto(), Modo.RAPIDO, nunca_cancelado))[-1]
+    assert isinstance(fim, Fim)
+    assert fim.uso == {"input_tokens": 12, "output_tokens": 7, "custo_microusd": 12346}
+
+
 def test_processo_que_sai_sem_fim_vira_erro_com_o_motivo(pasta_vazia: Path, tmp_path: Path) -> None:
     motor = _motor(pasta_vazia, tmp_path / "r.jsonl", deltas=["Oi"], sem_result=True, codigo=3)
     fim = list(motor.gerar(_contexto(), Modo.RAPIDO, nunca_cancelado))[-1]

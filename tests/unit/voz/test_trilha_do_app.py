@@ -53,7 +53,17 @@ def test_o_turno_deixa_so_metadados_na_trilha(tmp_path: Path) -> None:
     # método: ADR-0035; a ferramenta deixa início e fim (dono, 2026-10-20) — na tarefa do pedido
     # (ADR-0038), que corre ao lado do fim do turno: a ordem entre os dois não é fixa.
     assert tipos[:2] == ["turno.inicio", "metodo"]
-    assert sorted(tipos[2:]) == ["ferramenta", "ferramenta.inicio", "turno.fim"]
+    # O consumo (ADR-0061): cada rodada do motor deixa um `motor.chamada`, só números, e o
+    # `turno.fim` soma as do turno.
+    assert sorted(t for t in tipos[2:] if t != "motor.chamada") == [
+        "ferramenta",
+        "ferramenta.inicio",
+        "turno.fim",
+    ]
+    chamadas = [e for e in eventos_do_ultimo_turno(pasta) if e["evento"] == "motor.chamada"]
+    do_turno = [c for c in chamadas if c["origem"] == "turno"]
+    assert do_turno and eventos["turno.fim"]["chamadas_ao_motor"] == len(do_turno)
+    assert all(c["tokens_estimados"] is True and c["custo_microusd"] is None for c in chamadas)
     assert tipos.index("ferramenta.inicio") < tipos.index("ferramenta")
     metodo = eventos["metodo"]
     assert set(metodo) == {"t", "turno", "evento", "metodo", "motivo", "de_fora"}

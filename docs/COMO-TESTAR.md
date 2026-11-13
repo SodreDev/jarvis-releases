@@ -903,6 +903,16 @@ fim** (interrompido, ou o app saiu antes) e quando uma ferramenta **começou e n
 Testes: `tests/unit/test_trilha.py`, `tests/unit/voz/test_trilha_do_app.py`,
 `tests/unit/voz/test_cli.py`.
 
+**Consumo do motor (2026-11-12, ADR-0061).** Cada chamada ao motor deixa um `motor.chamada` com
+tokens de entrada e saída, custo em micro-dólares (`custo_microusd`; US$ × 10⁶), tempo até o 1º
+token (de qualquer delta, inclusive proposta de ferramenta) e total, e `origem` (`turno` ou
+`tarefa`); o `turno.fim` traz a soma do turno. Tokens vêm do `usage` do provedor; sem ele, são
+caracteres ÷ 4 e a linha diz «(estimado)». O custo é tokens × preço por milhão do catálogo — sem
+preço no catálogo, «sem preço» (nunca zero); o custo que a CLI do Claude reporta vence a conta.
+O `--diagnostico` mostra o consumo no último turno e uma linha por dia («consumo do motor por
+dia»), com o 1º token mediano e quantas chamadas foram estimadas ou ficaram sem preço. Teste:
+`tests/unit/s2/test_consumo.py`.
+
 ### 0.12 Pensar não é falar: menos fala, só o resultado (2026-10-20, ADR-0031)
 
 O Jarvis não narra mais os passos. Num pedido com ferramentas ele fala **no máximo uma** frase

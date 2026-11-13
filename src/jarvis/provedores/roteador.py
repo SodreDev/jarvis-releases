@@ -57,6 +57,7 @@ class MotorDosPresets:
     """Avisado com o nome do motor quando um pedido vai ao preset de visão (a tela e o log)."""
     _motores: dict[tuple[str, str, str], MotorDeConversa] = field(default_factory=dict)
     _ultimo: MotorDeConversa | None = field(default=None, repr=False)
+    _precos: tuple[float | None, float | None] = field(default=(None, None), repr=False)
 
     @classmethod
     def da_configuracao(
@@ -130,6 +131,20 @@ class MotorDosPresets:
         return re.sub(r"[^\w.:/-]", "_", f"{preset.provedor}/{preset.modelo or 'padrao'}")[:64]
 
     @property
+    def precos(self) -> tuple[float | None, float | None]:
+        """US$ por milhão de tokens (entrada, saída) do preset do último pedido, como o catálogo
+        sabe sem rede — para o custo na trilha (ADR-0061). `None` = não informado."""
+        return self._precos
+
+    def _precos_do_preset(self, preset: Preset) -> tuple[float | None, float | None]:
+        try:
+            modelo = preset.modelo or self.provedores.registro(preset.provedor).modelo
+            capacidades = self.provedores.capacidades(preset.provedor, modelo)
+        except Exception:
+            return None, None
+        return capacidades.preco_entrada, capacidades.preco_saida
+
+    @property
     def onde(self) -> Onde:
         motor = self._ultimo or self._ativo()
         return motor.onde if motor is not None else Onde.LOCAL
@@ -162,11 +177,15 @@ class MotorDosPresets:
             visao = self.motor_do_papel(Papel.VISAO)
             if visao is not None and aceita_imagem(visao):
                 motor = visao
+                preset_de_visao = self.fonte.atuais().ativo(Papel.VISAO)
+                if preset_de_visao is not None:
+                    preset = preset_de_visao
                 if self.ao_rotear is not None:
                     self.ao_rotear(visao.nome)
             else:
                 contexto = replace(contexto, imagens=())
         self._ultimo = motor
+        self._precos = self._precos_do_preset(preset)
         yield from motor.gerar(contexto, modo, cancelado)
 
 

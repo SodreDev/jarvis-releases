@@ -57,6 +57,7 @@ from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrent
 from jarvis.politica.metodo import Escolha
 from jarvis.politica.objetivo import EstadoDoObjetivo
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
+from jarvis.s2.consumo import ConsumoDoTurno, Medicao, campos_da_medicao, medir, precos_do_motor
 from jarvis.s2.entrega import FiltroDoJaDito, traz_algo_novo
 from jarvis.s2.fluxo_de_acao import FluxoDeAcao, frase_do_feito
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
@@ -231,6 +232,8 @@ class Resposta:
     vazio: o turno foi todo do motor."""
     motor_chamado: bool = True
     """`False` quando o atalho resolveu o pedido sozinho e o motor nem foi chamado."""
+    consumo: ConsumoDoTurno = field(default_factory=ConsumoDoTurno)
+    """Tokens, custo e chamadas ao motor do turno (ADR-0061): só números, para a trilha."""
     caladas: list[str] = field(default_factory=list)
     """Frases do motor que repetiam o que o dono já tinha ouvido neste turno (o aviso, a frase do
     código): foram à tela e não à voz (`jarvis.s2.entrega`, dono, 2026-10-25)."""
@@ -958,6 +961,7 @@ class Cerebro:
             ids=frozenset(executor.manifestos),
             limite_do_raciocinio=LIMITE_DO_RACIOCINIO,
             na_tela=self.ao_raciocinio,
+            ao_medir=lambda medicao: self._anotar_consumo(None, medicao, "tarefa"),
         )
         try:
             tarefa = executor.tarefas.iniciar_objetivo(
@@ -1202,7 +1206,12 @@ class Cerebro:
         # Todo texto de **qualquer** motor passa por um leitor do protocolo (ADR-0038): o motor
         # que esqueceu de separar a proposta (ou um JSON solto) não a faz chegar à voz.
         leitor = LeitorDoProtocolo()
-        deltas = self.motor.gerar(contexto, modo, cancelado)
+        deltas = medir(
+            self.motor.gerar(contexto, modo, cancelado),
+            caracteres_entrada=lambda: len(contexto.como_texto()),
+            precos=lambda: precos_do_motor(self.motor),
+            ao_medir=lambda medicao: self._anotar_consumo(resposta.consumo, medicao, "turno"),
+        )
 
         def falar(texto: str) -> bool:
             """Tela e fala; devolve se o cancelamento chegou no meio. A tela recebe tudo; a voz, o
@@ -1290,6 +1299,22 @@ class Cerebro:
                     visto_cancelamento = time.monotonic()
             resposta.caladas.extend(filtro.caladas)
         return pedidos, visto_cancelamento
+
+    def _anotar_consumo(
+        self, consumo: ConsumoDoTurno | None, medicao: Medicao, origem: str
+    ) -> None:
+        """Uma chamada ao motor: soma no turno (a da tarefa não tem turno) e vai à trilha como
+        `motor.chamada` (ADR-0061)."""
+        if consumo is not None:
+            consumo.somar(medicao)
+        trilha = self.ferramentas.trilha if self.ferramentas is not None else None
+        if trilha is not None:
+            trilha.evento(
+                "motor.chamada",
+                motor=getattr(self.motor, "codigo", "") or type(self.motor).__name__,
+                origem=origem,
+                **campos_da_medicao(medicao),
+            )
 
     def _chamar(
         self,

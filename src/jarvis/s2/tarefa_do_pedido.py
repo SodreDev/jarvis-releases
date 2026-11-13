@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
 from jarvis.imagem import Imagem
+from jarvis.s2.consumo import Medicao, medir, precos_do_motor
 from jarvis.s2.motor import (
     Contexto,
     Fim,
@@ -129,6 +130,8 @@ class MotorDoObjetivo:
     na_tela: Callable[[str], None] | None = None
     """O canal de raciocínio na tela (ADR-0031): a linha de cada replanejamento — nunca a voz."""
     pausa_depois_do_erro_s: float = PAUSA_DEPOIS_DO_ERRO_S
+    ao_medir: Callable[[Medicao], None] | None = None
+    """Recebe o consumo (tokens, custo, 1º token) de cada chamada ao motor (ADR-0061)."""
     _propostos: list[str] = field(default_factory=list)
     """A assinatura (ferramenta + argumentos) de cada passo proposto, na ordem dos `feitos`."""
 
@@ -293,6 +296,14 @@ class MotorDoObjetivo:
         pedido: PedidoDeTool | None = None
         texto: list[str] = []
         deltas = self.motor.gerar(contexto, Modo.RAPIDO, cancelado)
+        if self.ao_medir is not None:
+            # O consumo de cada passo da tarefa vai à trilha (ADR-0061): só números.
+            deltas = medir(
+                deltas,
+                caracteres_entrada=lambda: len(contexto.como_texto()),
+                precos=lambda: precos_do_motor(self.motor),
+                ao_medir=self.ao_medir,
+            )
         try:
             for delta in deltas:
                 if isinstance(delta, Fim):
