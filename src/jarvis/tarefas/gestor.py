@@ -36,6 +36,7 @@ from jarvis.executor.desfazer import Contaminacao
 from jarvis.politica.atalho import frase_da_ferramenta
 from jarvis.politica.objetivo import EstadoDoObjetivo, Objetivo
 from jarvis.s2.motor import PedidoDeTool
+from jarvis.tarefas.laco import AcaoDoLaco, GuardaDeLaco, Laco, campos_na_trilha
 
 if TYPE_CHECKING:
     from jarvis.executor.ferramentas import (
@@ -52,6 +53,8 @@ PRAZO_DA_PERGUNTA_DO_TETO_S: Final = 120.0
 """Quanto a pergunta do teto espera: tarefa longa roda com o dono longe, e o que se perde sem a
 resposta é o resto do trabalho (o `PRAZO_DE_CONFIRMACAO_S`, de 30 s, é o de uma ação na hora)."""
 TOOL_DO_TETO: Final = "tarefa.continuar"
+ABERTURA_DO_LACO: Final = "Parei sem terminar: eu estava repetindo os mesmos passos sem avançar."
+"""O começo da frase quando a guarda de laço para a tarefa (ADR-0062)."""
 """O nome da pergunta do teto na pendência e na trilha. Não é ferramenta: não está no catálogo, e
 o "sim" a ela não roda nada, só acorda a tarefa que espera."""
 TAREFAS_NO_CARD: Final = 8
@@ -177,6 +180,8 @@ class Tarefa:
     do turno): o fim da tarefa não repete (dono, 2026-10-25)."""
     turno: str = ""
     """O turno que criou a tarefa: a trilha liga a entrega do fim ao pedido."""
+    nota_de_laco: str = ""
+    """O aviso da guarda de laço para o próximo passo do motor (ADR-0062): quem o lê o apaga."""
 
     @property
     def progresso(self) -> int:
@@ -267,6 +272,8 @@ class GestorDeTarefas:
     maximo_ao_mesmo_tempo: int = MAXIMO_DE_TAREFAS_AO_MESMO_TEMPO
     prazo_s: float = PRAZO_DA_TAREFA_S
     passos_por_bloco: int = MAXIMO_DE_PASSOS
+    guarda_de_laco: Callable[[], GuardaDeLaco] | None = GuardaDeLaco
+    """Uma guarda por tarefa que planeja passos (ADR-0062); `None` = só o teto a para."""
     tarefas: dict[str, Tarefa] = field(default_factory=dict)
     _trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
     _linhas: dict[str, threading.Thread] = field(default_factory=dict, repr=False)
@@ -481,6 +488,10 @@ class GestorDeTarefas:
         bloco = tarefa.bloco_de_passos or self.passos_por_bloco
         teto: float = tarefa.maximo_de_passos or self.passos_por_bloco
         numero = 0
+        # A guarda de laço (ADR-0062) vive a tarefa inteira: «mais 50» e «até terminar» não a
+        # zeram. Só na tarefa que planeja passos: a ação de um passo não tem laço.
+        planeja = tarefa.de_objetivo or motor.nome == "agente"
+        guarda = self.guarda_de_laco() if planeja and self.guarda_de_laco is not None else None
         while True:
             if tarefa.cancelada.is_set():
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
@@ -512,7 +523,12 @@ class GestorDeTarefas:
             numero += 1
             if passo.tool_id.startswith(FORA_DA_ALLOWLIST):
                 # O motor propôs fora da allowlist da tarefa: nem chega ao PDP (e fica registrado).
-                feitos.append(_negado(passo.tool_id, "tarefa não roda isto (allowlist da tarefa)"))
+                negado = _negado(passo.tool_id, "tarefa não roda isto (allowlist da tarefa)")
+                feitos.append(negado)
+                if guarda is not None and self._no_laco(
+                    tarefa, motor, feitos, guarda, passo, negado
+                ):
+                    return None
                 continue
             tarefa.passo = numero
             self.ao_mudar()
@@ -534,6 +550,32 @@ class GestorDeTarefas:
                 # Chegou depois do cancelamento: vai para a auditoria, não para o estado.
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             feitos.append(resultado)
+            if guarda is not None and self._no_laco(
+                tarefa, motor, feitos, guarda, passo, resultado
+            ):
+                return None
+
+    def _no_laco(
+        self,
+        tarefa: Tarefa,
+        motor: MotorDeTarefa,
+        feitos: Sequence[ResultadoDeFerramenta],
+        guarda: GuardaDeLaco,
+        passo: PedidoDeTool,
+        resultado: ResultadoDeFerramenta,
+    ) -> bool:
+        """O passo entra na guarda de laço (ADR-0062). No aviso, a nota vai ao próximo passo do
+        motor; na parada, a tarefa acaba como no «não» do teto. Devolve se a tarefa acabou."""
+        laco: Laco | None = guarda.observar(passo, resultado)
+        if laco is None:
+            return False
+        if self.executor.trilha is not None:
+            self.executor.trilha.evento("tarefa.laco", **campos_na_trilha(laco, len(feitos)))
+        if laco.acao is AcaoDoLaco.AVISO:
+            tarefa.nota_de_laco = laco.nota_ao_motor()
+            return False
+        self._parar_no_teto(tarefa, motor, feitos, abertura=ABERTURA_DO_LACO)
+        return True
 
     def _no_teto(
         self,
@@ -579,7 +621,12 @@ class GestorDeTarefas:
         return RespostaAoTeto.MAIS_UM_BLOCO if sim else RespostaAoTeto.PARAR
 
     def _parar_no_teto(
-        self, tarefa: Tarefa, motor: MotorDeTarefa, feitos: Sequence[ResultadoDeFerramenta]
+        self,
+        tarefa: Tarefa,
+        motor: MotorDeTarefa,
+        feitos: Sequence[ResultadoDeFerramenta],
+        *,
+        abertura: str = "Parei sem terminar.",
     ) -> None:
         """O dono não mandou seguir: a tarefa acaba dizendo o que fez. Não é erro dela, mas o
         objetivo ficou sem cumprir: o estado é `falhou`, e o resumo é a resposta."""
@@ -592,7 +639,7 @@ class GestorDeTarefas:
         if tarefa.cancelada.is_set():
             return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
         todos = (*tarefa.feitos_antes, *feitos)
-        frase = f"Parei sem terminar. {contado}" if contado else _resumo_do_codigo(todos)
+        frase = f"{abertura} {contado}" if contado else _resumo_do_codigo(todos, abertura)
         tarefa.resumo, tarefa.resposta = frase, frase
         self._terminar(tarefa, EstadoDaTarefa.FALHOU, motivo=frase)
 
@@ -660,10 +707,14 @@ def _passos_em_frase(numero: int) -> str:
     return "1 passo" if numero == 1 else f"{numero} passos"
 
 
-def _resumo_do_codigo(feitos: Sequence[ResultadoDeFerramenta]) -> str:
+def _resumo_do_codigo(
+    feitos: Sequence[ResultadoDeFerramenta], abertura: str = "Parei sem terminar."
+) -> str:
     """O resumo sem o motor: quantos passos rodaram e quantos deram certo. Nunca cita ferramenta."""
     certos = sum(1 for r in feitos if r.status == "ok")
-    return f"Parei sem terminar, depois de {_passos_em_frase(len(feitos))}; {certos} deram certo."
+    return (
+        f"{abertura.rstrip('.')}, depois de {_passos_em_frase(len(feitos))}; {certos} deram certo."
+    )
 
 
 def _negado(tool_id: str, motivo: str) -> ResultadoDeFerramenta:

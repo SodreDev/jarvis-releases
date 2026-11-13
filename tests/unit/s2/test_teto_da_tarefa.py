@@ -24,6 +24,7 @@ from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.s2.pendencias import Pendencia, RegistroDePendencias
 from jarvis.s2.tarefa_do_pedido import NOTA_DO_TETO
 from jarvis.tarefas.gestor import TOOL_DO_TETO, EstadoDaTarefa, GestorDeTarefas, Tarefa
+from jarvis.tarefas.laco import GuardaDeLaco
 
 BLOCO = 3
 NO_TURNO = 2
@@ -47,7 +48,11 @@ def executor(tmp_path: Path) -> Iterator[ExecutorDeFerramentas]:
         )
         executor = ExecutorDeFerramentas(pdp=pdp, lar=lar)
         executor.preparar()
-        executor.tarefas = GestorDeTarefas(executor=executor, confirmar=lambda _p, _c: False)
+        # Sem a guarda de laço (ADR-0062): cada passo relê a mesma pasta vazia, que é laço; aqui
+        # o assunto é o teto.
+        executor.tarefas = GestorDeTarefas(
+            executor=executor, confirmar=lambda _p, _c: False, guarda_de_laco=None
+        )
         yield executor
         executor.tarefas.encerrar()
 
@@ -284,3 +289,35 @@ def test_o_prazo_do_bloco_tambem_pergunta_e_o_do_turno_nao_vale_para_a_tarefa(
     _dizer(cerebro, "não")
     _fim(executor, tarefa)
     assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.resposta.startswith("Parei")
+
+
+def test_com_a_guarda_o_laco_avisa_o_motor_e_para_sem_perguntar(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """ADR-0062: reler a mesma pasta vazia é laço. A nota vai ao motor uma vez; se ele insiste, a
+    tarefa acaba com o resumo, sem a pergunta do teto."""
+    assert executor.tarefas is not None
+    executor.tarefas.guarda_de_laco = GuardaDeLaco
+    executor.tarefas.passos_por_bloco = 50
+    vistos: list[str] = []
+
+    class Espiao(Roteiro):
+        def __call__(self, contexto: Contexto) -> Sequence[Parte]:
+            vistos.append(contexto.sistema)
+            return super().__call__(contexto)
+
+    cerebro = Cerebro(
+        motor=MotorRoteirizado(resposta=Espiao()),
+        ferramentas=executor,
+        delegar_em_tarefa=True,
+        pendencia_sem_portao=True,
+        maximo_de_passos=50,
+    )
+    resposta = cerebro.responder(PEDIDO, epoch=0, publicar=lambda _p: None)
+    tarefa = _fim(executor, executor.tarefas.tarefas[resposta.tarefa_id])
+
+    assert sum("LAÇO" in s for s in vistos) == 1, "a nota vai uma vez, no passo seguinte"
+    assert tarefa.estado is EstadoDaTarefa.FALHOU
+    assert tarefa.resposta.startswith("Parei sem terminar: eu estava repetindo")
+    assert "Li a pasta, faltou organizar." in tarefa.resposta
+    assert cerebro.pendencias.valida() is None, "o laço não vira pergunta"

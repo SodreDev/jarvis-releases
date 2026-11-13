@@ -517,6 +517,12 @@ class _MotorSemFim:
         return PedidoDeTool(self.proposta, {})
 
 
+def _so_teto(executor: ExecutorDeFerramentas, painel: Painel, **extra: Any) -> GestorDeTarefas:
+    """O gestor sem a guarda de laço (ADR-0062): estes testes repetem a mesma leitura da hora
+    para chegar ao teto, e a guarda a pararia antes. O laço tem os testes dele."""
+    return _gestor(executor, painel, guarda_de_laco=None, **extra)
+
+
 def _sem_fim(gestor: GestorDeTarefas, motor: Any = None) -> Tarefa:
     tarefa = gestor.iniciar(
         "ver a hora", "system.clock.now", {}, motor=motor if motor is not None else _MotorSemFim()
@@ -529,7 +535,7 @@ def test_no_teto_o_nao_do_dono_encerra_com_o_resumo_do_codigo(
     executor: ExecutorDeFerramentas,
 ) -> None:
     painel = Painel()
-    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=3))
+    tarefa = _sem_fim(_so_teto(executor, painel, passos_por_bloco=3))
 
     assert [p.tool_id for p in painel.perguntas] == [TOOL_DO_TETO]
     assert painel.perguntas[0].continuar_por == 3
@@ -546,7 +552,7 @@ def test_no_teto_o_sim_do_dono_da_mais_um_bloco_e_pergunta_de_novo(
             return len(self.perguntas) == 1
 
     painel = SimUmaVez()
-    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=3))
+    tarefa = _sem_fim(_so_teto(executor, painel, passos_por_bloco=3))
 
     assert len(painel.perguntas) == 2 and tarefa.passo == 6
     assert len({p.id for p in painel.perguntas}) == 2, "cada pergunta tem o id dela"
@@ -571,7 +577,7 @@ def test_ate_terminar_tira_o_teto_de_passos_e_o_de_tempo(executor: ExecutorDeFer
         perguntas.append(pergunta)
         return RespostaAoTeto.ATE_TERMINAR
 
-    gestor = _gestor(executor, painel, passos_por_bloco=2, prazo_s=0.0)
+    gestor = _so_teto(executor, painel, passos_por_bloco=2, prazo_s=0.0)
     tarefa = gestor.iniciar_objetivo(
         "ver a hora", Ate(), contaminacao=Contaminacao(), prazo_s=0.001, no_teto=no_teto
     )
@@ -611,7 +617,7 @@ def test_o_motor_agente_pergunta_no_prazo_em_vez_de_morrer_nele(
     executor: ExecutorDeFerramentas,
 ) -> None:
     painel = Painel()
-    tarefa = _sem_fim(_gestor(executor, painel, prazo_s=0.0))
+    tarefa = _sem_fim(_so_teto(executor, painel, prazo_s=0.0))
 
     assert len(painel.perguntas) == 1
     assert "O tempo acabou" in painel.perguntas[0].pergunta_falada
@@ -628,3 +634,59 @@ def test_o_resumo_que_falha_nao_derruba_o_fim_da_tarefa(executor: ExecutorDeFerr
     tarefa = _sem_fim(_gestor(executor, Painel(), passos_por_bloco=2), ResumoQuebrado())
 
     assert tarefa.motivo == "Parei sem terminar, depois de 2 passos; 2 deram certo."
+
+
+# --- a guarda de laço: repetir sem avançar avisa e depois para (ADR-0062) ---------------------
+class _MotorQueRepete:
+    """Propõe sempre a mesma ação e guarda as notas de laço que recebeu."""
+
+    nome = "agente"
+    na_nuvem = False
+
+    def __init__(self) -> None:
+        self.notas: list[str] = []
+
+    def proximo(
+        self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
+    ) -> PedidoDeTool:
+        if tarefa.nota_de_laco:
+            self.notas.append(tarefa.nota_de_laco)
+            tarefa.nota_de_laco = ""
+        return PedidoDeTool("system.clock.now", {})
+
+
+def test_a_mesma_acao_com_o_mesmo_resultado_avisa_o_motor_e_depois_para_a_tarefa(
+    executor: ExecutorDeFerramentas, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jarvis.executor import sistema
+
+    hora_fixa = {"iso": "2026-11-12T10:00:00-03:00", "hora": "10:00"}
+    monkeypatch.setattr(sistema, "hora_agora", lambda _agora: dict(hora_fixa))
+    painel = Painel()
+    motor = _MotorQueRepete()
+    gestor = _gestor(executor, painel, passos_por_bloco=50)
+    tarefa = gestor.iniciar_objetivo(
+        "ver a hora", motor, contaminacao=Contaminacao(), no_teto=lambda *_: RespostaAoTeto.PARAR
+    )
+
+    assert gestor.esperar(tarefa.id, 10.0)
+    assert tarefa.passo == 4, "três iguais avisam; a quarta, depois do aviso, para"
+    assert len(motor.notas) == 1 and "LAÇO" in motor.notas[0]
+    assert tarefa.estado is EstadoDaTarefa.FALHOU
+    assert tarefa.resposta.startswith("Parei sem terminar: eu estava repetindo")
+    assert not painel.perguntas, "o laço não vira pergunta ao dono"
+
+
+def test_com_o_resultado_mudando_a_cada_passo_so_o_teto_para(
+    executor: ExecutorDeFerramentas, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A mesma ferramenta com resultado sempre novo não é laço: só o teto a para."""
+    from jarvis.executor import sistema
+
+    contador = iter(range(1000))
+    monkeypatch.setattr(sistema, "hora_agora", lambda _agora: {"iso": str(next(contador))})
+    painel = Painel()
+    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=6))
+
+    assert tarefa.passo == 6 and len(painel.perguntas) == 1
+    assert tarefa.motivo.startswith("Parei sem terminar, depois de 6 passos")

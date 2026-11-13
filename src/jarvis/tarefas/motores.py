@@ -69,6 +69,10 @@ class MotorDeAgente:
                 f"{contexto_do_objetivo['fase']}. Passos feitos: {feitos_ate_aqui}. Continue até "
                 "o critério estar cumprido e conferido; então responda com o resultado."
             )
+        if tarefa.nota_de_laco:
+            # O aviso da guarda de laço (ADR-0062): uma vez, no passo seguinte.
+            objetivo += f" {tarefa.nota_de_laco}"
+            tarefa.nota_de_laco = ""
         contexto = Contexto(
             sistema=SISTEMA_DA_TAREFA,
             mensagens=(

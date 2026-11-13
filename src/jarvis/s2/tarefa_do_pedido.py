@@ -159,6 +159,10 @@ class MotorDoObjetivo:
             return self._desistir(tarefa, feitos)
         if recuperacao.ultima() is not None:
             self._mostrar(recuperacao.linha_na_tela())
+        # O aviso da guarda de laço (ADR-0062) vai junto da nota de replanejar, uma vez.
+        nota_de_laco, tarefa.nota_de_laco = tarefa.nota_de_laco, ""
+        if nota_de_laco:
+            self._mostrar("repetindo passos sem avançar: avisei o motor para mudar de caminho")
         objetivo = tarefa.contaminacao.objetivo
         catalogo = tuple(
             f for f in self.catalogo() if not str(f["id"]).startswith(FORA_DA_ALLOWLIST)
@@ -173,7 +177,9 @@ class MotorDoObjetivo:
                     catalogo,
                     cancelado,
                     conferir=cobrar,
-                    recuperar=recuperacao.nota(disponiveis),
+                    recuperar=" ".join(
+                        n for n in (recuperacao.nota(disponiveis), nota_de_laco) if n
+                    ),
                 )
             except MotorFalhou as erro:
                 recuperacao.motor_falhou += 1

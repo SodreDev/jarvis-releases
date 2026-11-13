@@ -152,6 +152,9 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "tokens_saida": Forma.NUMERO,
     "tokens_estimados": Forma.BOOLEANO,
     "custo_microusd": Forma.NUMERO,
+    # A guarda de laço da tarefa (ADR-0062): o tamanho do ciclo e o passo em que disparou.
+    "periodo": Forma.NUMERO,
+    "passo": Forma.NUMERO,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -208,6 +211,9 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
         }
     ),
     "ferramenta.inicio": frozenset({"tool_id", "argumentos", "pdp", "fase"}),
+    # A guarda de laço (ADR-0062): a última ferramenta do laço, o tipo, aviso ou parada — nunca
+    # argumento nem resultado.
+    "tarefa.laco": frozenset({"tool_id", "categoria", "decisao", "periodo", "passo"}),
     "ferramenta": frozenset(
         {"tool_id", "argumentos", "status", "pdp", "ms", "motivo", "codigo", "aviso", "fase"}
     ),
@@ -635,6 +641,11 @@ def _linha(evento: Mapping[str, Any]) -> str:
         return (
             f"caminho rápido {evento.get('regra')} → {evento.get('tool_id')}: "
             f"{evento.get('status')}{'' if evento.get('completo') else ' (o motor seguiu)'}"
+        )
+    if tipo == "tarefa.laco":
+        return (
+            f"laço na tarefa ({evento.get('categoria')}, período {evento.get('periodo')}) no "
+            f"passo {evento.get('passo')}: {evento.get('decisao')} · {evento.get('tool_id')}"
         )
     if tipo == "motor.chamada":
         return (

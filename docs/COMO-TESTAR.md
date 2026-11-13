@@ -913,6 +913,15 @@ O `--diagnostico` mostra o consumo no último turno e uma linha por dia («consu
 dia»), com o 1º token mediano e quantas chamadas foram estimadas ou ficaram sem preço. Teste:
 `tests/unit/s2/test_consumo.py`.
 
+**Guarda de laço da tarefa (2026-11-12, ADR-0062).** A tarefa que repete a mesma ação com o mesmo
+resultado 3 vezes, que vai e volta (A B A B, A B C A B C) ou que dá 6 passos seguidos sem nada
+novo recebe **uma** nota («mude de caminho ou termine») e a linha na tela; se insistir, para com o
+resumo e a frase «Parei sem terminar: eu estava repetindo os mesmos passos sem avançar.», sem a
+pergunta do teto. Rolar e ler com texto novo a cada volta não é laço. Vale também no «até
+terminar». A trilha leva `tarefa.laco` (categoria, aviso/parada, período, passo). Testes:
+`tests/unit/tarefas/test_laco.py`, `tests/unit/tarefas/test_gestor.py`,
+`tests/unit/s2/test_teto_da_tarefa.py`.
+
 ### 0.12 Pensar não é falar: menos fala, só o resultado (2026-10-20, ADR-0031)
 
 O Jarvis não narra mais os passos. Num pedido com ferramentas ele fala **no máximo uma** frase
