@@ -25,6 +25,9 @@ ETAPAS: tuple[tuple[str, list[str]], ...] = (
     ("cancelamento (20 pontos)", ["pytest", "-m", "cancelamento", "-q"]),
     ("adrs", ["python", "tools/adr.py", "conferir"]),
     ("corpus", ["python", "tools/corpus.py", "verificar"]),
+    # O acerto em pt-BR (ADR-0064): atalho, método, sim/não, teto e nota contra a linha de base.
+    # Só código, sem rede nem chave; leva menos de um segundo.
+    ("acerto pt-BR", ["python", "tools/harness_acerto.py", "--gate"]),
     ("manifestos", ["python", "tools/manifesto.py", "validar"]),
     ("lint de catálogo", ["python", "tools/manifesto.py", "lint"]),
     ("stubs em dia", ["python", "tools/manifesto.py", "conferir"]),

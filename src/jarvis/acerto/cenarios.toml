@@ -1,0 +1,439 @@
+# Cenários do harness de acerto em pt-BR (ADR-0064). Uma fala do dono e o que se espera dela.
+# `tipo` diz quem responde (o atalho, o roteador de método, a leitura do sim/não, do teto, da
+# nota, ou um motor); `ferramenta`/`args` ou `decisao` dizem o esperado. `nenhuma` = não deve
+# responder nada. Os apps e navegadores "instalados" são os do `Ambiente` (jarvis.acerto).
+# Mudar um esperado é mudar o comportamento: a mudança vem com a razão no commit.
+
+# --- apps: abrir, fechar, encerrar ---------------------------------------------------------------
+[[cenario]]
+id = "apps-abre-discord"
+categoria = "apps"
+tipo = "atalho"
+fala = "abre o Discord"
+ferramenta = "apps.launch"
+args = { nome = "discord" }
+
+[[cenario]]
+id = "apps-abre-spotify-cortesia"
+categoria = "apps"
+tipo = "atalho"
+fala = "Jarvis, abre o Spotify por favor"
+ferramenta = "apps.launch"
+args = { nome = "spotify" }
+
+[[cenario]]
+id = "apps-abre-calculadora-pelo-apelido"
+categoria = "apps"
+tipo = "atalho"
+fala = "abre a calculadora"
+ferramenta = "apps.launch"
+args = { nome = "gnome-calculator" }
+
+[[cenario]]
+id = "apps-encerra-steam"
+categoria = "apps"
+tipo = "atalho"
+fala = "encerra o Steam"
+ferramenta = "apps.quit"
+args = { app = "steam" }
+
+[[cenario]]
+id = "apps-fecha-spotify"
+categoria = "apps"
+tipo = "atalho"
+fala = "fecha o Spotify"
+ferramenta = "window.close"
+args = { app = "spotify" }
+
+[[cenario]]
+id = "apps-fecha-a-da-frente"
+categoria = "apps"
+tipo = "atalho"
+fala = "fecha essa janela"
+ferramenta = "window.close"
+
+[[cenario]]
+id = "apps-abre-o-brave"
+categoria = "apps"
+tipo = "atalho"
+fala = "abre o Brave"
+ferramenta = "browser.launch"
+args = { navegador = "brave" }
+
+[[cenario]]
+id = "apps-app-desconhecido-nao-e-atalho"
+categoria = "apps"
+tipo = "atalho"
+fala = "abre o programa de notas fiscais da prefeitura"
+ferramenta = "nenhuma"
+
+# --- janelas e abas: o que está aberto -------------------------------------------------------------
+[[cenario]]
+id = "janelas-quais-abertas"
+categoria = "janelas"
+tipo = "atalho"
+fala = "quais janelas estão abertas?"
+ferramenta = "window.list"
+
+[[cenario]]
+id = "janelas-o-que-esta-aberto"
+categoria = "janelas"
+tipo = "atalho"
+fala = "o que está aberto?"
+ferramenta = "window.list"
+
+[[cenario]]
+id = "janelas-em-foco"
+categoria = "janelas"
+tipo = "atalho"
+fala = "qual janela está em foco?"
+ferramenta = "window.focused"
+
+[[cenario]]
+id = "janelas-abas-abertas"
+categoria = "janelas"
+tipo = "atalho"
+fala = "quais abas estão abertas?"
+ferramenta = "browser.tabs"
+
+[[cenario]]
+id = "janelas-lista-as-abas"
+categoria = "janelas"
+tipo = "atalho"
+fala = "lista as abas do navegador"
+ferramenta = "browser.tabs"
+
+# --- navegador: sites e busca dentro do site -------------------------------------------------------
+[[cenario]]
+id = "navegador-abre-youtube"
+categoria = "navegador"
+tipo = "atalho"
+fala = "abre o YouTube"
+ferramenta = "browser.navigate"
+args = { url = "https://www.youtube.com/" }
+
+[[cenario]]
+id = "navegador-abre-g1"
+categoria = "navegador"
+tipo = "atalho"
+fala = "abre o g1"
+ferramenta = "browser.navigate"
+args = { url = "https://g1.globo.com/" }
+
+[[cenario]]
+id = "navegador-busca-no-youtube"
+categoria = "navegador"
+tipo = "atalho"
+fala = "pesquisa no YouTube o canal do Primo Rico"
+ferramenta = "browser.navigate"
+
+[[cenario]]
+id = "navegador-toca-video-primeiro-passo"
+categoria = "navegador"
+tipo = "atalho"
+fala = "toca um vídeo no YouTube"
+ferramenta = "browser.navigate"
+args = { url = "https://www.youtube.com/" }
+
+[[cenario]]
+id = "navegador-noticias-do-g1"
+categoria = "navegador"
+tipo = "atalho"
+fala = "quais as notícias de hoje no g1"
+ferramenta = "browser.navigate"
+args = { url = "https://g1.globo.com/" }
+
+# --- web: busca genérica, sem navegador ------------------------------------------------------------
+[[cenario]]
+id = "web-pesquisa-na-internet"
+categoria = "web"
+tipo = "atalho"
+fala = "pesquisa na internet o que é um buraco negro"
+ferramenta = "web.buscar"
+args = { consulta = "o que é um buraco negro" }
+
+[[cenario]]
+id = "web-busca-sobre"
+categoria = "web"
+tipo = "atalho"
+fala = "busca sobre a previsão do tempo em Recife"
+ferramenta = "web.buscar"
+
+[[cenario]]
+id = "web-metodo-da-busca-generica"
+categoria = "web"
+tipo = "metodo"
+fala = "pesquisa na web quem ganhou o jogo ontem"
+decisao = "web"
+
+[[cenario]]
+id = "web-metodo-das-noticias"
+categoria = "web"
+tipo = "metodo"
+fala = "me fala as notícias de hoje"
+decisao = "web"
+
+[[cenario]]
+id = "web-piada-nao-e-busca"
+categoria = "web"
+tipo = "atalho"
+fala = "me conta uma piada"
+ferramenta = "nenhuma"
+
+# --- roteamento: que método cada pedido usa --------------------------------------------------------
+[[cenario]]
+id = "metodo-hora-e-sistema"
+categoria = "roteamento"
+tipo = "metodo"
+fala = "que horas são?"
+decisao = "sistema"
+
+[[cenario]]
+id = "metodo-volume-e-sistema"
+categoria = "roteamento"
+tipo = "metodo"
+fala = "aumenta o volume"
+decisao = "sistema"
+
+[[cenario]]
+id = "metodo-anota-e-memoria"
+categoria = "roteamento"
+tipo = "metodo"
+fala = "anota que a reunião é amanhã às nove"
+decisao = "memoria"
+
+[[cenario]]
+id = "metodo-site-e-navegador"
+categoria = "roteamento"
+tipo = "metodo"
+fala = "abre o YouTube"
+decisao = "navegador"
+
+[[cenario]]
+id = "metodo-whatsapp-e-entrada-virtual"
+categoria = "roteamento"
+tipo = "metodo"
+fala = "manda mensagem pro João no WhatsApp"
+decisao = "entrada_virtual"
+
+[[cenario]]
+id = "metodo-encerrar-o-jarvis-e-sistema"
+categoria = "roteamento"
+tipo = "metodo"
+fala = "encerra o Jarvis"
+decisao = "sistema"
+
+[[cenario]]
+id = "metodo-app-citado"
+categoria = "roteamento"
+tipo = "metodo"
+fala = "abre o Discord"
+decisao = "app"
+
+[[cenario]]
+id = "metodo-conversa-livre"
+categoria = "roteamento"
+tipo = "metodo"
+fala = "me conta uma piada"
+decisao = "conversa"
+
+# --- sim e não falados à pergunta do Jarvis --------------------------------------------------------
+[[cenario]]
+id = "sim-curto"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "sim"
+decisao = "sim"
+
+[[cenario]]
+id = "sim-pode-seguir"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "sim, pode seguir"
+decisao = "sim"
+
+[[cenario]]
+id = "sim-vai-em-frente"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "vai em frente"
+decisao = "sim"
+
+[[cenario]]
+id = "sim-beleza-manda"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "beleza, manda"
+decisao = "sim"
+
+[[cenario]]
+id = "nao-curto"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "não"
+decisao = "nao"
+
+[[cenario]]
+id = "nao-nao-faz-isso"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "não, não faz isso"
+decisao = "nao"
+
+[[cenario]]
+id = "nao-melhor-nao"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "melhor não"
+decisao = "nao"
+
+[[cenario]]
+id = "ambigua-nao-pode-seguir"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "não, pode seguir"
+decisao = "nenhuma"
+
+[[cenario]]
+id = "ambigua-pode-mas"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "pode, mas antes salva o arquivo"
+decisao = "nenhuma"
+
+[[cenario]]
+id = "outro-pedido-nao-e-resposta"
+categoria = "sim_nao"
+tipo = "resposta"
+fala = "abre o Spotify e coloca a playlist de foco"
+decisao = "nenhuma"
+
+# --- a pergunta do teto da tarefa (bloco de 50) ----------------------------------------------------
+[[cenario]]
+id = "teto-mais-50"
+categoria = "teto"
+tipo = "continuar"
+fala = "mais 50"
+decisao = "mais_um_bloco"
+
+[[cenario]]
+id = "teto-mais-cinquenta-por-extenso"
+categoria = "teto"
+tipo = "continuar"
+fala = "continua, mais cinquenta"
+decisao = "mais_um_bloco"
+
+[[cenario]]
+id = "teto-ate-terminar"
+categoria = "teto"
+tipo = "continuar"
+fala = "vai até terminar"
+decisao = "ate_terminar"
+
+[[cenario]]
+id = "teto-ate-o-fim"
+categoria = "teto"
+tipo = "continuar"
+fala = "segue até o fim"
+decisao = "ate_terminar"
+
+[[cenario]]
+id = "teto-mais-10-nao-vira-50"
+categoria = "teto"
+tipo = "continuar"
+fala = "mais 10"
+decisao = "nenhuma"
+
+[[cenario]]
+id = "teto-negacao-nao-escolhe"
+categoria = "teto"
+tipo = "continuar"
+fala = "não vai até terminar"
+decisao = "nenhuma"
+
+# --- a nota do dono ao turno anterior (ADR-0063) ---------------------------------------------------
+[[cenario]]
+id = "nota-ficou-otimo"
+categoria = "nota"
+tipo = "nota"
+fala = "ficou ótimo, valeu"
+decisao = "boa"
+
+[[cenario]]
+id = "nota-mandou-bem"
+categoria = "nota"
+tipo = "nota"
+fala = "mandou bem, Jarvis"
+decisao = "boa"
+
+[[cenario]]
+id = "nota-nao-era-isso"
+categoria = "nota"
+tipo = "nota"
+fala = "não era isso, eu queria a planilha"
+decisao = "ruim"
+
+[[cenario]]
+id = "nota-voce-errou"
+categoria = "nota"
+tipo = "nota"
+fala = "você errou o nome do arquivo"
+decisao = "ruim"
+
+[[cenario]]
+id = "nota-valeu-nao-e-nota"
+categoria = "nota"
+tipo = "nota"
+fala = "valeu"
+decisao = "nenhuma"
+
+[[cenario]]
+id = "nota-negada-nao-anota"
+categoria = "nota"
+tipo = "nota"
+fala = "não ficou ruim"
+decisao = "nenhuma"
+
+[[cenario]]
+id = "nota-longe-do-comeco"
+categoria = "nota"
+tipo = "nota"
+fala = "abre o arquivo do relatório que eu escrevi ontem e diz se ficou bom"
+decisao = "nenhuma"
+
+# --- motor: a primeira ferramenta que o motor propõe (só com um motor dado por quem chama) --------
+[[cenario]]
+id = "motor-hora"
+categoria = "motor"
+tipo = "motor"
+fala = "que horas são?"
+ferramenta = "system.clock.now"
+
+[[cenario]]
+id = "motor-abre-discord"
+categoria = "motor"
+tipo = "motor"
+fala = "abre o Discord"
+ferramenta = "apps.launch"
+args = { nome = "discord" }
+
+[[cenario]]
+id = "motor-busca-web"
+categoria = "motor"
+tipo = "motor"
+fala = "pesquisa na internet o que é um buraco negro"
+ferramenta = "web.buscar"
+
+[[cenario]]
+id = "motor-anota"
+categoria = "motor"
+tipo = "motor"
+fala = "anota que a reunião é amanhã às nove"
+ferramenta = "memoria.lembrar"
+
+[[cenario]]
+id = "motor-piada-sem-ferramenta"
+categoria = "motor"
+tipo = "motor"
+fala = "me conta uma piada"
+ferramenta = "nenhuma"

@@ -1,0 +1,37 @@
+{
+  "total": 1.0,
+  "categorias": {
+    "apps": {
+      "fracao": 1.0,
+      "n": 8
+    },
+    "janelas": {
+      "fracao": 1.0,
+      "n": 5
+    },
+    "navegador": {
+      "fracao": 1.0,
+      "n": 5
+    },
+    "nota": {
+      "fracao": 1.0,
+      "n": 7
+    },
+    "roteamento": {
+      "fracao": 1.0,
+      "n": 8
+    },
+    "sim_nao": {
+      "fracao": 1.0,
+      "n": 10
+    },
+    "teto": {
+      "fracao": 1.0,
+      "n": 6
+    },
+    "web": {
+      "fracao": 1.0,
+      "n": 5
+    }
+  }
+}

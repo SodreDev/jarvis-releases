@@ -931,6 +931,14 @@ leva `turno.nota` (nota e origem, nunca a fala); o `--diagnostico` conta por dia
 Testes: `tests/unit/s2/test_nota_do_dono.py`, `tests/unit/voz/test_nota_do_turno.py`,
 `tests/unit/gui/test_nota_na_janela.py`.
 
+**Harness de acerto em pt-BR (2026-11-12, ADR-0064).** `uv run python tools/harness_acerto.py`
+mostra, por categoria (apps, janelas, navegador, web, roteamento, sim/não, teto, nota), quantos
+cenários de `src/jarvis/acerto/cenarios.toml` o código acerta (nota 0/1/2, sem juiz) e o que
+errou; `--gate` reprova se o total cair ou se uma categoria cair mais de 5 pontos contra
+`linha_de_base.json` (é a etapa «acerto pt-BR» do `verificar.py`); `--gravar-base` regrava a base.
+Os cenários de motor só rodam com um motor passado por código — nunca rede nem chave na
+verificação. Teste: `tests/unit/acerto/test_harness.py`.
+
 ### 0.12 Pensar não é falar: menos fala, só o resultado (2026-10-20, ADR-0031)
 
 O Jarvis não narra mais os passos. Num pedido com ferramentas ele fala **no máximo uma** frase
