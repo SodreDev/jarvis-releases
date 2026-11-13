@@ -67,6 +67,18 @@ dono instalá-lo com `tools/instalar_omnivoice.py`, aceitar o aviso de licença 
 - **VoiceStudio** (`debpalash/VoiceStudio`, AGPL-3.0) é citado só como referência, um programa
   à parte: nenhum código dele está neste repositório nem no pacote.
 
+## Código adaptado de terceiros
+
+- **OpenJarvis** (Stanford; <https://github.com/open-jarvis/OpenJarvis>, commit 13706f2) —
+  Copyright 2025 The OpenJarvis Authors, licenciado sob a
+  [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0). As expressões regulares do scanner
+  de injeção (`openjarvis/security/injection_scanner.py`) foram **adaptadas** em
+  `src/jarvis/politica/injecao.py`: reescritas em pt-BR e inglês, com pesos e limiar, e o
+  resultado vira sinal e não bloqueio (ADR-0065). O arquivo traz o aviso de alteração no
+  cabeçalho. O OpenJarvis não publica arquivo NOTICE próprio. As outras ideias trazidas do
+  estudo (`docs/estudos/openjarvis-nucleo.md`: consumo na trilha, guarda de laço, nota do dono,
+  harness de acerto) não copiam código.
+
 ## Outros componentes de terceiros (sem obrigação de atribuição, registrados por clareza)
 
 - `openai/whisper-small` e `openai/whisper-large-v3` — Apache-2.0.

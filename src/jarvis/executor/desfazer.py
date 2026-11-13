@@ -49,6 +49,9 @@ class Contaminacao:
     """O método do pedido que a tarefa cumpre (ADR-0035, ADR-0038): o pedido do dono que virou
     tarefa segue fora do que o roteador tirou dele, como seguiria no turno. `None` = nenhum (a
     tarefa que o modelo pediu com `tarefa.iniciar`, como antes)."""
+    injecao: str = ""
+    """As categorias de injeção suspeita no que este fluxo leu (ADR-0065), separadas por vírgula;
+    vazio = nada suspeito. Com ela, ação com efeito pede o sim do dono."""
 
 
 @dataclass(frozen=True, slots=True)

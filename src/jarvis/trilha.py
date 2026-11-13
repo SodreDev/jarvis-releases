@@ -157,6 +157,8 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "passo": Forma.NUMERO,
     # A nota do dono a um turno (ADR-0063): `boa` ou `ruim`.
     "nota": Forma.CODIGO,
+    # As categorias de injeção suspeita no resultado de uma ferramenta (ADR-0065), nunca o texto.
+    "injecao": Forma.CHAVES,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -219,7 +221,18 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     # A nota do dono (ADR-0063), com o id do turno avaliado: o código e de onde veio (botão, voz).
     "turno.nota": frozenset({"nota", "origem"}),
     "ferramenta": frozenset(
-        {"tool_id", "argumentos", "status", "pdp", "ms", "motivo", "codigo", "aviso", "fase"}
+        {
+            "tool_id",
+            "argumentos",
+            "status",
+            "pdp",
+            "ms",
+            "motivo",
+            "codigo",
+            "aviso",
+            "fase",
+            "injecao",
+        }
     ),
     "portao": frozenset({"tool_id", "pdp", "jev", "decisao", "ms"}),
     # O guarda de contexto (ADR-0049): a saída, a regra, a categoria, o tempo e se veio do

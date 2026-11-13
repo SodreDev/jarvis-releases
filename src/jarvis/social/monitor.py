@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final, Protocol
 
+from jarvis.politica.injecao import examinar
 from jarvis.social.config import ConfiguracaoSocial
 from jarvis.social.redes import IDS, rede
 
@@ -274,11 +275,22 @@ class EstadoDoMonitor:
             }
 
 
+NOME_SUSPEITO: Final = "uma conversa com nome suspeito"
+"""No lugar do nome que tenta dar ordens ao Jarvis (ADR-0065): o aviso vai à voz e ao modelo."""
+
+
+def _nome_seguro(nome: str) -> str:
+    """O nome da conversa é de terceiros: o que tenta dar ordens não entra no aviso."""
+    return NOME_SUSPEITO if examinar(nome) is not None else nome
+
+
 def _texto(pagina: EstadoDaPagina, novas: int) -> str:
     """«2 mensagens novas — Ana (1), Bruno (1)». Só nomes e contagem: nunca o texto da mensagem."""
     nome = rede(pagina.rede).nome
     plural = "mensagem nova" if novas == 1 else "mensagens novas"
-    quem = ", ".join(f"{c.nome} ({c.nao_lidas})" for c in pagina.conversas[:NOMES_NO_AVISO])
+    quem = ", ".join(
+        f"{_nome_seguro(c.nome)} ({c.nao_lidas})" for c in pagina.conversas[:NOMES_NO_AVISO]
+    )
     resto = len(pagina.conversas) - NOMES_NO_AVISO
     if resto > 0:
         quem += f" e mais {resto}"

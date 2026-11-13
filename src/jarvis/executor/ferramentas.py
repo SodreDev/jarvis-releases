@@ -18,7 +18,7 @@ import json
 import os
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
@@ -76,6 +76,7 @@ from jarvis.politica.guarda import (
     Tipo,
     guardada,
 )
+from jarvis.politica.injecao import aviso_de_injecao, examinar_dados
 from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.metodo import ContextoDoMetodo, Escolha, escolher_metodo
 from jarvis.politica.objetivo import Objetivo, enderecos_do_resultado
@@ -228,6 +229,11 @@ FONTES_DE_TERCEIROS: Final = frozenset(
 antiga). Depois de uma delas, o turno é `contaminado`: o que o PDP deixaria livre e que leva
 dado para fora (abrir site) passa a pedir o "sim" do dono — injeção não escolhe o destino."""
 
+MOTIVO_DA_INJECAO: Final = (
+    "o que eu li agora tem texto que tenta me dar ordens; esta ação só com o seu sim"
+)
+"""O porquê do sim quando o fluxo leu conteúdo suspeito de injeção (ADR-0065)."""
+
 Cancelado = Callable[[], bool]
 
 
@@ -315,6 +321,9 @@ class ResultadoDeFerramenta:
     causa: str = ""
     """Por que não foi ok, em código (`jarvis.trilha.CAUSAS`): o que a trilha grava no lugar do
     `motivo`, que pode trazer texto da página ou dos argumentos."""
+    injecao: str = ""
+    """As categorias de injeção suspeita nos dados (ADR-0065), separadas por vírgula: o modelo
+    recebe o aviso na frente dos dados, e a trilha, os códigos."""
 
     @property
     def detalhe_de_auditoria(self) -> str:
@@ -327,6 +336,9 @@ class ResultadoDeFerramenta:
 
     def para_o_modelo(self) -> str:
         corpo: dict[str, Any] = {"tool_id": self.tool_id, "status": self.status}
+        if self.injecao:
+            # Antes dos dados: o corte do texto longo nunca tira o aviso (ADR-0065).
+            corpo["atencao"] = aviso_de_injecao(self.injecao)
         if self.motivo:
             corpo["motivo"] = self.motivo
         if self.aviso:
@@ -346,6 +358,8 @@ class ResultadoDeFerramenta:
         de página, mapa, links, scripts), só o tamanho do que saiu. É o que um passo antigo vira
         quando o contexto do turno passa do orçamento."""
         corpo: dict[str, Any] = {"tool_id": self.tool_id, "status": self.status, "podado": True}
+        if self.injecao:
+            corpo["atencao"] = aviso_de_injecao(self.injecao)
         if self.motivo:
             corpo["motivo"] = self.motivo[:200]
         if self.aviso:
@@ -822,6 +836,9 @@ class ExecutorDeFerramentas:
                     exige_o_sim = f"{exige_o_sim}; e {julgamento.motivo}"
                 else:
                     exige_o_sim = exige_o_sim or julgamento.motivo
+        if marca.injecao and not exige_o_sim and self._com_efeito(tool_id):
+            # O fluxo leu conteúdo que tenta dar ordens (ADR-0065): o efeito é rebaixado ao sim.
+            exige_o_sim = MOTIVO_DA_INJECAO
         pedido = Pedido(
             tool_id=tool_id,
             args=argumentos,
@@ -834,6 +851,14 @@ class ExecutorDeFerramentas:
             exige_o_sim=exige_o_sim,
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido), julgamento)
+
+    def _com_efeito(self, tool_id: str) -> bool:
+        """A ferramenta muda alguma coisa (o `side_effect` do catálogo não é `none`). As `mcp.*`
+        fora do catálogo contam como com efeito."""
+        capacidade = self.pdp.catalogo.get(tool_id)
+        if capacidade is None:
+            return tool_id.startswith("mcp.")
+        return str(capacidade.side_effect) != "none"
 
     def _exige_o_sim(
         self, tool_id: str, argumentos: Mapping[str, Any], marca: Contaminacao | None = None
@@ -1025,6 +1050,7 @@ class ExecutorDeFerramentas:
             codigo=codigo_do_motivo(resultado.motivo) if causa else "",
             aviso="falado" if resultado.aviso else aviso,
             fase=fase,
+            injecao=resultado.injecao.split(",") if resultado.injecao else None,
         )
 
     def _trilhar_permissao(self, pergunta: Confirmacao, origem: str, sim: bool) -> None:
@@ -1145,6 +1171,14 @@ class ExecutorDeFerramentas:
         e, na **moderada**, montar o aviso falado e guardar como desfazer."""
         if tool_id in FONTES_DE_TERCEIROS:
             marca.valor = True
+            # O conteúdo que tenta dar ordens (ADR-0065): marcado para o modelo e para o fluxo,
+            # nunca bloqueado — daqui em diante, ação com efeito pede o sim do dono.
+            suspeita = examinar_dados(resultado.dados)
+            if suspeita is not None:
+                resultado = replace(resultado, injecao=suspeita.codigos())
+                marca.injecao = ",".join(
+                    dict.fromkeys([*filter(None, marca.injecao.split(",")), *suspeita.categorias])
+                )
         objetivo = self.objetivo_de(marca)
         if objetivo is not None:
             # O caminho do objetivo: o que ele abriu, os links e resultados que trouxe. É daqui
@@ -1167,6 +1201,7 @@ class ExecutorDeFerramentas:
             aviso_silencioso=frase if silencioso else "",
             acao_id=acao,
             anexos=resultado.anexos,
+            injecao=resultado.injecao,
         )
 
     def _registrar_desfazer(self, tool_id: str, dados: Mapping[str, Any]) -> str:

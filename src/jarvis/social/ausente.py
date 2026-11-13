@@ -19,6 +19,7 @@ import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from jarvis.politica.injecao import examinar
 from jarvis.social.enviar import Enviador
 from jarvis.social.envio import EnvioRecusado, Guardiao, PedidoDeEnvio, Permitido
 from jarvis.social.monitor import EstadoDaPagina
@@ -26,6 +27,7 @@ from jarvis.social.monitor import EstadoDaPagina
 REDE = "whatsapp"
 TEXTO_DE_CONFERENCIA = "Oi! Ele está ausente agora e responde assim que puder."
 """Só para o guardião conferir lista, teto e ritmo antes de gastar o motor; nunca é enviado."""
+MOTIVO_SUSPEITO = "a conversa tem texto que tenta dar ordens ao Jarvis: não respondi sozinho"
 
 
 def _normal(texto: str) -> str:
@@ -113,6 +115,10 @@ class RespostaAusente:
         )
 
     def _responder(self, nome: str, contato: Permitido) -> Resultado:
+        # O que a página mostra é de terceiros (ADR-0065): o nome da conversa que tenta dar ordens
+        # não vai ao redator — o dono é avisado e decide.
+        if examinar(nome) is not None:
+            return Resultado(nome, False, MOTIVO_SUSPEITO)
         try:
             self._guardiao.decidir(self._pedido(contato, TEXTO_DE_CONFERENCIA))
         except EnvioRecusado as recusa:
