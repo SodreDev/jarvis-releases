@@ -182,6 +182,8 @@ test("social.estado pergunta à aba da rede e devolve só o contrato, limpo", as
       conversas: [{ nome: "Ana‮\nX", naoLidas: 2, texto: "não pode ir" }],
       formato: "conhecido",
       alerta: "",
+      pista: "contador_ilegivel",
+      amostra: "1,5 mil\u0000 | x" + "9".repeat(80),
       cookie: "nunca",
     }),
   });
@@ -192,7 +194,16 @@ test("social.estado pergunta à aba da rede e devolve só o contrato, limpo", as
     conversas: [{ nome: "Ana X", naoLidas: 2 }],
     formato: "conhecido",
     alerta: "",
+    pista: "contador_ilegivel",
+    amostra: ("1,5 mil | x" + "9".repeat(80)).slice(0, 60),
   });
+  // pista fora da lista não passa
+  const outra = carregar({
+    abas: [DO_DONO],
+    responderPagina: () => ({ rede: "whatsapp", logado: true, naoLidas: 0, pista: "rm -rf" }),
+  });
+  const recusada = await pedir(outra, { id: "s7", method: "social.estado", params: { rede: "whatsapp" } });
+  assert.equal(recusada.result.pista, "");
   assert.deepEqual(JSON.parse(JSON.stringify(cenario.estado.enviadas)), [
     { tabId: 3, mensagem: { social: "estado" } },
   ]);
@@ -200,7 +211,16 @@ test("social.estado pergunta à aba da rede e devolve só o contrato, limpo", as
 
 test("só o social.js da própria rede repassa estado ao Jarvis", async () => {
   const cenario = carregar();
-  const estado = { rede: "whatsapp", logado: true, naoLidas: 1, conversas: [], formato: "conhecido", alerta: "" };
+  const estado = {
+    rede: "whatsapp",
+    logado: true,
+    naoLidas: 1,
+    conversas: [],
+    formato: "conhecido",
+    alerta: "",
+    pista: "",
+    amostra: "",
+  };
   const remetente = (url) => ({ id: "jarvis", tab: { id: 3, url } });
   cenario.onMessage.emitir({ tipo: "social", estado }, remetente("https://web.whatsapp.com/"), () => {});
   cenario.onMessage.emitir({ tipo: "social", estado }, remetente("https://golpe.example/"), () => {});

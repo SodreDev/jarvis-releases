@@ -33,6 +33,7 @@ from jarvis.navegador.cliente import (
 from jarvis.navegador.protocolo import VERSAO_DA_PONTE
 from jarvis.politica.injecao import examinar
 from jarvis.social.config import ConfiguracaoSocial
+from jarvis.social.contador import amostra_segura
 from jarvis.social.redes import IDS, rede
 
 MAXIMO_DE_NOTIFICACOES: Final = 5
@@ -73,6 +74,10 @@ class EstadoDaPagina:
     formato: str = "conhecido"
     alerta: str = ""
     """Sinal de alerta que a página mostra (captcha, verificação, conta limitada…)."""
+    pista: str = ""
+    """Por que o contador não saiu limpo: `carregando`, `sem_lista` ou `contador_ilegivel`."""
+    amostra: str = ""
+    """O texto do contador que não se reconheceu, sanitizado (`jarvis.social.contador`)."""
 
     @classmethod
     def do_evento(cls, evento: Mapping[str, Any]) -> EstadoDaPagina:
@@ -88,6 +93,8 @@ class EstadoDaPagina:
                 ),
                 formato=str(evento.get("formato", "conhecido")),
                 alerta=str(evento.get("alerta", "")),
+                pista=str(evento.get("pista", "")),
+                amostra=amostra_segura(evento.get("amostra", "")),
             )
         except (KeyError, TypeError, ValueError) as erro:
             raise EventoInvalido(f"evento social fora do contrato: {erro}") from None
@@ -127,8 +134,12 @@ ESTADOS: Final[dict[str, str]] = {
     "sem_resposta": "a extensão não respondeu ao abrir a aba: o Jarvis tenta de novo em 15 s",
     "abrindo": "abrindo a aba em segundo plano na sua janela…",
     "sem_noticia": "a aba não deu notícia: recarregue a extensão do Jarvis e a aba da rede",
+    "carregando": "a aba da rede ainda está carregando…",
     "esperando_login": "faça login nesta rede no seu navegador: o Jarvis não digita senha",
-    "formato_desconhecido": "a página mudou e o Jarvis não reconhece o contador desta rede",
+    "formato_desconhecido": (
+        "a aba abriu, mas o Jarvis não achou a lista de conversas (a página mudou?): rode o "
+        "diagnóstico do navegador e mande a saída"
+    ),
     "conectada": "conectada",
     "alerta": "sinal de alerta na página: envio pausado por 24 h — confira a aba você mesmo",
 }
@@ -141,6 +152,16 @@ ALERTAS_DITOS: Final[dict[str, str]] = {
     "elementos_sumiram": "a página mudou de repente",
 }
 """Docs/redes-sociais-riscos.md §6: cada um pausa todo envio da rede por 24 h."""
+LOGIN_POR_REDE: Final[dict[str, str]] = {
+    "whatsapp": (
+        "o WhatsApp Web está desconectado (pede o QR code): abra a aba e leia o QR com o celular "
+        "— o Jarvis não faz login"
+    ),
+}
+CONTADOR_ILEGIVEL: Final = (
+    "um contador veio num formato que o Jarvis não reconhece (contei 1 por conversa): rode o "
+    "diagnóstico do navegador e mande a saída"
+)
 
 
 @dataclass(slots=True)
@@ -158,6 +179,8 @@ class _DaRede:
     """O último `social.abrir` que falhou: a próxima tentativa vem em `REABRIR_APOS_FALHA_S`."""
     codigo: str = ""
     """O código da última falha (`sem_host`, `extensao_desatualizada`, `sem_resposta`…)."""
+    pista: str = ""
+    amostra: str = ""
     notificacoes: deque[Notificacao] = field(
         default_factory=lambda: deque(maxlen=MAXIMO_DE_NOTIFICACOES)
     )
@@ -236,7 +259,13 @@ class EstadoDoMonitor:
             codigo = da_rede.codigo or (
                 self._versao_antiga if da_rede.estado != "desligada" else ""
             )
-            return {"rede": identificador, "estado": da_rede.estado, "codigo": codigo}
+            return {
+                "rede": identificador,
+                "estado": da_rede.estado,
+                "codigo": codigo,
+                "pista": da_rede.pista,
+                "amostra": da_rede.amostra,
+            }
 
     def conferir_noticia(self) -> None:
         """Pedida e muda há `SEM_NOTICIA_S`: diz que a aba não deu notícia."""
@@ -271,15 +300,19 @@ class EstadoDoMonitor:
             if da_rede.estado == "desligada":
                 return None  # evento de rede que o dono não ligou: ignorado
             alerta = pagina.alerta
-            if not alerta and da_rede.estado == "conectada":
+            carregando = pagina.formato != "conhecido" and pagina.pista == "carregando"
+            if not alerta and da_rede.estado == "conectada" and not carregando:
                 # Transições que também são sinal (§6): a sessão caiu, ou a página que funcionava
-                # perdeu de repente os elementos que o canário confere.
+                # perdeu de repente os elementos que o canário confere. A tela de carga (o WhatsApp
+                # Web reconectando) não é nenhuma das duas.
                 if pagina.formato != "conhecido":
                     alerta = "elementos_sumiram"
                 elif not pagina.logado:
                     alerta = "logout"
             da_rede.noticia_em = agora
             da_rede.codigo = ""
+            da_rede.pista = pagina.pista
+            da_rede.amostra = pagina.amostra
             if alerta in ALERTAS_DITOS:
                 da_rede.estado = "alerta"
                 if alerta == da_rede.alerta:
@@ -301,6 +334,9 @@ class EstadoDoMonitor:
             ):
                 return None
             da_rede.alerta = ""
+            if carregando:
+                da_rede.estado = "carregando"
+                return None
             if pagina.formato != "conhecido":
                 da_rede.estado = "formato_desconhecido"
                 return None
@@ -327,12 +363,18 @@ class EstadoDoMonitor:
             frase = ESTADOS[da_rede.estado]
             if da_rede.estado == "alerta" and da_rede.alerta in ALERTAS_DITOS:
                 frase = f"{ALERTAS_DITOS[da_rede.alerta]} — {frase}"
+            if da_rede.estado == "esperando_login":
+                frase = LOGIN_POR_REDE.get(identificador, frase)
             if da_rede.estado == "conectada":
                 frase = (
                     f"conectada — {da_rede.nao_lidas} não lida(s)"
                     if da_rede.nao_lidas
                     else "conectada — nada novo"
                 )
+                if da_rede.pista == "contador_ilegivel":
+                    frase = f"{frase} — {CONTADOR_ILEGIVEL}"
+            if da_rede.estado == "formato_desconhecido" and da_rede.amostra:
+                frase = f"{frase} (a página mostra «{da_rede.amostra}»)"
             if self._versao_antiga and da_rede.estado not in ("desligada", "extensao_antiga"):
                 frase = f"{frase} — atenção: {ESTADOS['extensao_antiga']}"
             return {

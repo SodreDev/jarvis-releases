@@ -6,9 +6,11 @@ que `extensao/social.js` manda, depois de passar por `validar_evento`."""
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -27,6 +29,7 @@ from jarvis.navegador.protocolo import (
     validar_pedido,
 )
 from jarvis.social.config import ConfiguracaoSocial
+from jarvis.social.contador import VOCABULARIO, amostra_segura
 from jarvis.social.monitor import (
     REABRIR_APOS_FALHA_S,
     REABRIR_S,
@@ -36,6 +39,7 @@ from jarvis.social.monitor import (
     MonitorSocial,
     Notificacao,
 )
+from jarvis.trilha import TrilhaDeDiagnostico
 
 
 class Relogio:
@@ -44,6 +48,9 @@ class Relogio:
 
     def __call__(self) -> float:
         return self.agora
+
+
+RAIZ = Path(__file__).resolve().parents[3]
 
 
 def pagina(rede: str = "whatsapp", **campos: Any) -> EstadoDaPagina:
@@ -195,6 +202,16 @@ def test_logout_e_elementos_sumidos_depois_de_conectada_sao_alerta() -> None:
         {"evento": "social", "rede": "whatsapp", "logado": True, "naoLidas": -1},
         {"evento": "social", "rede": "whatsapp", "logado": True, "naoLidas": 10_000},
         {"evento": "social", "rede": "whatsapp", "logado": True, "naoLidas": True},
+        {"evento": "social", "rede": "whatsapp", "logado": True, "naoLidas": 1, "pista": "x"},
+        {"evento": "social", "rede": "whatsapp", "logado": True, "naoLidas": 1, "amostra": 3},
+        {
+            "evento": "social",
+            "rede": "whatsapp",
+            "logado": True,
+            "naoLidas": 1,
+            "amostra": "9" * 61,
+        },
+        {"evento": "social", "rede": "whatsapp", "logado": True, "naoLidas": 1, "amostra": "a\nb"},
         {
             "evento": "social",
             "rede": "whatsapp",
@@ -564,3 +581,96 @@ def test_extensao_de_antes_avisa_recarregar_mesmo_com_a_rede_conectada() -> None
         )
     finally:
         monitor.parar()
+
+
+# --- o contador (bug do dono, 2026-11-13: «formato não reconhecido do contador») ---------------
+def test_tela_de_carga_e_carregando_e_nao_vira_alerta_depois_de_conectada() -> None:
+    """O WhatsApp Web mostra a tela de carga ao abrir e ao reconectar: não é «a página mudou» nem
+    «a sessão caiu» — antes, isso pausava o envio por 24 h com «elementos sumiram»."""
+    estado = EstadoDoMonitor(Relogio())
+    estado.ajustar(ligado("whatsapp"))
+    carga: dict[str, Any] = {"logado": False, "formato": "desconhecido", "pista": "carregando"}
+    assert estado.receber(pagina(**carga), notificar=True) is None
+    tela = estado.para_a_tela("whatsapp")
+    assert tela["estado"] == "carregando" and "carregando" in tela["frase"]
+    estado.receber(pagina(naoLidas=2, conversas=[{"nome": "Ana", "naoLidas": 2}]), notificar=True)
+    assert estado.receber(pagina(**carga), notificar=True) is None
+    assert (
+        estado.alerta("whatsapp") == "" and estado.para_a_tela("whatsapp")["estado"] == "carregando"
+    )
+    # voltou com as mesmas não lidas: nada de aviso repetido
+    assert estado.receber(pagina(naoLidas=2), notificar=True) is None
+    assert estado.para_a_tela("whatsapp")["estado"] == "conectada"
+
+
+def test_cada_falta_tem_a_sua_frase() -> None:
+    estado = EstadoDoMonitor(Relogio())
+    estado.ajustar(ligado("whatsapp", "discord"))
+    estado.receber(pagina(logado=False), notificar=True)
+    assert "QR" in estado.para_a_tela("whatsapp")["frase"]
+    estado.receber(
+        pagina(
+            "discord",
+            logado=False,
+            formato="desconhecido",
+            pista="sem_lista",
+            amostra="(3) Ana Souza | Discord",
+        ),
+        notificar=True,
+    )
+    tela = estado.para_a_tela("discord")
+    assert tela["estado"] == "formato_desconhecido"
+    assert "lista de conversas" in tela["frase"] and "diagnóstico" in tela["frase"]
+    assert "«(3) x x | discord»" in tela["frase"], "a amostra chega sanitizada de novo"
+    assert "Ana" not in tela["frase"]
+
+
+def test_contador_ilegivel_conta_e_avisa_sem_derrubar_nada() -> None:
+    estado = EstadoDoMonitor(Relogio())
+    estado.ajustar(ligado("whatsapp"))
+    aviso = estado.receber(
+        pagina(
+            naoLidas=1,
+            conversas=[{"nome": "Zé", "naoLidas": 1}],
+            pista="contador_ilegivel",
+            amostra="1,5 mil",
+        ),
+        notificar=True,
+    )
+    assert aviso is not None and aviso.texto == "WhatsApp: 1 mensagem nova — Zé (1)"
+    tela = estado.para_a_tela("whatsapp")
+    assert tela["estado"] == "conectada" and "formato que o Jarvis não reconhece" in tela["frase"]
+    assert estado.diagnostico("whatsapp") == {
+        "rede": "whatsapp",
+        "estado": "conectada",
+        "codigo": "",
+        "pista": "contador_ilegivel",
+        "amostra": "1,5 mil",
+    }
+
+
+def test_a_trilha_guarda_a_pista_e_a_amostra_sanitizada(tmp_path: Path) -> None:
+    trilha = TrilhaDeDiagnostico(tmp_path)
+    trilha.evento(
+        "rede.estado",
+        rede="whatsapp",
+        estado="formato_desconhecido",
+        codigo="",
+        pista="sem_lista",
+        amostra="(2) Maria +55 11 98765-4321",
+        nome="Maria",
+    )
+    linha = json.loads((tmp_path / "turnos.jsonl").read_text("utf-8"))
+    assert linha["pista"] == "sem_lista"
+    assert linha["amostra"] == "(2) x ###"
+    assert linha["campos_fora"] == ["nome"]
+
+
+def test_o_vocabulario_da_amostra_e_o_mesmo_na_extensao() -> None:
+    dados = (RAIZ / "extensao" / "social-seletores.js").read_text("utf-8")
+    corpo = "\n".join(linha for linha in dados.splitlines() if not linha.startswith("//"))
+    prefixo = "globalThis.__jarvisSeletoresSociais = "
+    seletores = json.loads(corpo.strip().removeprefix(prefixo).removesuffix(";"))
+    assert frozenset(seletores["vocabularioDaAmostra"]) == VOCABULARIO
+    assert amostra_segura("(\u0663) WhatsApp") == "(3) whatsapp"
+    assert amostra_segura("Marcada como não lida") == "marcada como nao lida"

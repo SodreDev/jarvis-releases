@@ -10,7 +10,7 @@ const NATIVE_HOST = "br.com.granafacil.jarvis";
 // número menor), diz ao dono para recarregá-la — em vez de ver as ferramentas novas falharem
 // uma a uma (dono, 2026-10-30: «o Jarvis não sabe mais usar a extensão»). Igual a
 // `VERSAO_DA_PONTE` em src/jarvis/navegador/protocolo.py (o teste confere).
-const VERSAO_DA_PONTE = 4;
+const VERSAO_DA_PONTE = 5;
 const MAX_ID = 80;
 const MAX_URL = 2_048;
 const RECONNECT_BASE_MS = 250;
@@ -1157,6 +1157,8 @@ const REDES_SOCIAIS = {
   },
 };
 const ALERTAS_SOCIAIS = ["captcha", "verificacao", "limitada", "atividade_incomum"];
+const PISTAS_SOCIAIS = ["carregando", "sem_lista", "contador_ilegivel"];
+const MAX_AMOSTRA_SOCIAL = 60;
 const MAX_CONVERSAS_SOCIAIS = 20;
 const MAX_NOME_SOCIAL = 80;
 const MAX_NAO_LIDAS = 9_999;
@@ -1234,6 +1236,14 @@ function estadoSocialLimpo(id, bruto) {
     conversas,
     formato: corpo.formato === "conhecido" ? "conhecido" : "desconhecido",
     alerta: ALERTAS_SOCIAIS.includes(corpo.alerta) ? corpo.alerta : "",
+    // Por que o contador não saiu limpo, e a amostra JÁ sanitizada pelo social.js (aqui só o
+    // limite e sem controle: o Jarvis sanitiza de novo antes da trilha).
+    pista: PISTAS_SOCIAIS.includes(corpo.pista) ? corpo.pista : "",
+    amostra: String(corpo.amostra ?? "")
+      .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim()
+      .slice(0, MAX_AMOSTRA_SOCIAL),
   };
 }
 

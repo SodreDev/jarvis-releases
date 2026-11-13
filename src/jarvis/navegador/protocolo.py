@@ -63,12 +63,14 @@ EVENTOS: Final = frozenset({"parar", "social"})
 ORIGENS_DA_PARADA: Final = frozenset({"faixa", "barra"})
 """Onde o dono apertou PARAR: na faixa desenhada na página, ou no botão da extensão na barra."""
 MAXIMO_DE_CONCESSOES: Final = 32
-VERSAO_DA_PONTE: Final = 4
+VERSAO_DA_PONTE: Final = 5
 """O contrato de métodos entre o Jarvis, o host e a extensão. Sobe a cada método novo, junto com
 `VERSAO_DA_PONTE` de extensao/background.js (o teste confere). A 2 é a do CDP (ADR-0051) mais
 `ponte.versao`: a extensão que não responde a ela, ou responde menos, é a de antes — o dono ouve
 para recarregá-la, em vez de ver as ferramentas novas falharem uma a uma (2026-10-30). A 3
-traz o monitor das redes sociais (ADR-0060): `social.abrir`, `social.estado` e o evento `social`."""
+traz o monitor das redes sociais (ADR-0060): `social.abrir`, `social.estado` e o evento `social`.
+A 5 (2026-11-13) traz no estado da rede a `pista` (carregando, sem lista, contador ilegível) e a
+`amostra` sanitizada do contador que não se reconheceu: o host de antes recusaria esses campos."""
 VERSAO: Final = "ponte.versao"
 """Respondido pela extensão: a versão dela, a do manifesto e se tem as permissões do CDP."""
 VERSAO_DO_HOST: Final = "host.versao"
@@ -377,13 +379,17 @@ def validar_resposta(bruta: object) -> dict[str, Any]:
 
 
 FORMATOS_SOCIAIS: Final = frozenset({"conhecido", "desconhecido"})
+PISTAS_SOCIAIS: Final = frozenset({"", "carregando", "sem_lista", "contador_ilegivel"})
+"""Por que o contador não saiu limpo: a página ainda carrega, a lista de conversas não está lá (a
+página mudou), ou um contador veio num formato que o `social.js` não reconhece."""
+LIMITE_DA_AMOSTRA: Final = 60
 MAXIMO_DE_CONVERSAS: Final = 20
 LIMITE_DO_NOME: Final = 80
 MAXIMO_DE_NAO_LIDAS: Final = 9_999
 ALERTAS_SOCIAIS: Final = frozenset({"", "captcha", "verificacao", "limitada", "atividade_incomum"})
 """Os sinais de alerta que a página mostra (docs/redes-sociais-riscos.md §6); vazio = nenhum."""
 _CHAVES_DO_SOCIAL: Final = frozenset(
-    {"evento", "rede", "logado", "naoLidas", "conversas", "formato", "alerta"}
+    {"evento", "rede", "logado", "naoLidas", "conversas", "formato", "alerta", "pista", "amostra"}
 )
 _INVISIVEIS: Final = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
 """Controle, largura zero e inversão de direção: o `social.js` já tira; quem traz é recusado."""
@@ -401,7 +407,8 @@ def _contagem(valor: object, nome: str) -> int:
 
 def validar_estado_social(bruto: object) -> dict[str, Any]:
     """O estado de uma rede (ADR-0060), do evento `social` ou da resposta de `social.estado`:
-    `{rede, logado, naoLidas, conversas: [{nome, naoLidas}], formato, alerta}` — nada além disso. Os
+    `{rede, logado, naoLidas, conversas: [{nome, naoLidas}], formato, alerta, pista, amostra}` —
+    nada além disso (`pista` e `amostra` são opcionais: a extensão de antes não os manda). Os
     nomes são de terceiros: curtos, sem caractere de controle nem de inversão de direção."""
     if not isinstance(bruto, dict):
         raise PedidoInvalido("o estado da rede tem de ser um objeto")
@@ -420,6 +427,16 @@ def validar_estado_social(bruto: object) -> dict[str, Any]:
     alerta = bruto.get("alerta", "")
     if alerta not in ALERTAS_SOCIAIS:
         raise PedidoInvalido("alerta fora da lista")
+    pista = bruto.get("pista", "")
+    if pista not in PISTAS_SOCIAIS:
+        raise PedidoInvalido("pista fora da lista")
+    amostra = bruto.get("amostra", "")
+    if (
+        not isinstance(amostra, str)
+        or len(amostra) > LIMITE_DA_AMOSTRA
+        or _INVISIVEIS.search(amostra)
+    ):
+        raise PedidoInvalido(f"amostra: texto de até {LIMITE_DA_AMOSTRA} caracteres, sem controle")
     conversas = bruto.get("conversas", [])
     if not isinstance(conversas, list) or len(conversas) > MAXIMO_DE_CONVERSAS:
         raise PedidoInvalido(f"conversas: lista de até {MAXIMO_DE_CONVERSAS}")
@@ -444,6 +461,8 @@ def validar_estado_social(bruto: object) -> dict[str, Any]:
         "conversas": limpas,
         "formato": str(formato),
         "alerta": str(alerta),
+        "pista": str(pista),
+        "amostra": amostra,
     }
 
 

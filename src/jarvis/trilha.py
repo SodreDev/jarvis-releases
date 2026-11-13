@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.memoryd.importacao import CAMINHO, redigir
+from jarvis.social.contador import amostra_segura
 
 ARQUIVO: Final = "turnos.jsonl"
 PASTA: Final = "diagnostico"
@@ -83,6 +84,9 @@ class Forma(Enum):
     """Código de motivo da allowlist `CAUSAS` (vários, unidos por `+`). Fora dela, a marca."""
     CHAVES = auto()
     """Nomes de argumento — nunca os valores."""
+    AMOSTRA = auto()
+    """A amostra do contador que o monitor das redes não reconheceu, sanitizada de novo por
+    `jarvis.social.contador.amostra_segura`: só dígito, «x», vocabulário do contador e pontuação."""
 
 
 CAMPOS: Final[Mapping[str, Forma]] = {
@@ -164,6 +168,8 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     # O monitor das redes (ADR-0060): a rede e o estado dela, em códigos — nunca nome nem texto.
     "rede": Forma.CODIGO,
     "estado": Forma.CODIGO,
+    "pista": Forma.CODIGO,
+    "amostra": Forma.AMOSTRA,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -269,7 +275,8 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     ),
     # O monitor das redes (ADR-0060): cada mudança de estado de uma rede ligada — o estado
     # (`conectando`, `sem_extensao`…) e o código do que faltou (`sem_host`, `sem_resposta`…).
-    "rede.estado": frozenset({"rede", "estado", "codigo"}),
+    # Com o contador: a `pista` (carregando, sem lista, ilegível) e a `amostra` sanitizada.
+    "rede.estado": frozenset({"rede", "estado", "codigo", "pista", "amostra"}),
 }
 """Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
 dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""
@@ -413,6 +420,8 @@ def na_forma(forma: Forma, valor: object) -> object:
     if forma is Forma.CODIGO:
         texto = str(valor)
         return texto if SO_CODIGO.match(texto) else FORA_DA_FORMA
+    if forma is Forma.AMOSTRA:
+        return amostra_segura(valor)
     if forma is Forma.CAUSA:
         texto = str(valor)
         if not texto or all(parte in CAUSAS for parte in texto.split("+")):

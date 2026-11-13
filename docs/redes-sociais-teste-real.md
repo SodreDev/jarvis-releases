@@ -6,7 +6,7 @@
 
 1. Instale o pacote novo de `dist-teste/` (no Nobara, o `.rpm`), ou rode pelo repositório com `uv run jarvis`.
 2. Reinstale o host do navegador: `uv run jarvis-native-host --instalar` (ou o do pacote).
-3. No Brave, abra `brave://extensions` e clique em **Recarregar** na extensão do Jarvis. A ponte agora é a versão 4; isso também reinicia o host.
+3. No Brave, abra `brave://extensions` e clique em **Recarregar** na extensão do Jarvis. A ponte agora é a versão 5 (o contador novo); isso também reinicia o host. Sem isso o cartão avisa «a extensão do Jarvis no navegador é de uma versão anterior».
 4. Dê F5 na aba do WhatsApp Web, se ela já estava aberta.
 5. Abra o Jarvis e vá em **Configuração → redes sociais**. Tudo começa desligado.
 
@@ -29,13 +29,16 @@ Se continuar falhando, rode `uv run --frozen python tools/diagnostico_navegador.
 2. No cartão **WhatsApp**, clique em **monitorar**.
 3. O que deve acontecer:
    - Se não houver aba do WhatsApp, abre **uma** aba em segundo plano na sua janela. Não abre janela nova, não pega o foco e nunca abre uma segunda aba da mesma conta.
-   - O cartão vai de «abrindo…» para «conectada — nada novo» (ou «faça login…», se o WhatsApp pedir o QR; o Jarvis não lê o QR).
+   - O cartão vai de «abrindo…» para «a aba da rede ainda está carregando…» (a tela de carga do WhatsApp, que numa aba de fundo pode levar até um minuto) e depois para «conectada — nada novo». Se o WhatsApp pedir o QR, o cartão diz «o WhatsApp Web está desconectado (pede o QR code)»: leia o QR com o celular — o Jarvis não faz login.
 4. Peça a alguém que mande uma mensagem. O cartão mostra «WhatsApp: 1 mensagem nova — Nome (1)». O mesmo aviso aparece no card de avisos com a conversa aberta.
 5. Abra a conversa e leia. A contagem cai e não vem aviso novo.
 
 ## 2. O canário
 
-1. O cartão deve dizer «conectada» sempre que você está logado. Se ele mostrar «a página mudou e o Jarvis não reconhece o contador», o canário falhou: o WhatsApp mudou o DOM. A rede fica só avisando. Me mande o que o cartão diz.
+1. O cartão deve dizer «conectada» sempre que você está logado. O contador aceita «3», «1.234», «99+», «+999», a bolinha sem número (conversa marcada como não lida = 1) e a interface em português, inglês ou espanhol.
+   - «a aba abriu, mas o Jarvis não achou a lista de conversas (a página mudou?)»: o canário falhou — o WhatsApp mudou o DOM. A rede fica só avisando. O cartão mostra entre aspas uma amostra sanitizada do título (nomes viram «x»).
+   - «um contador veio num formato que o Jarvis não reconhece (contei 1 por conversa)»: o monitor segue funcionando, contando 1 por conversa.
+   - Nos dois casos, rode `uv run --frozen python tools/diagnostico_navegador.py` e me mande a saída: a seção «redes» diz se a extensão está conectada, a versão da ponte, se a aba do WhatsApp foi achada e o contador lido (só a amostra sanitizada e números, nunca nomes).
 2. Para ver um alerta de propósito, saia do WhatsApp Web (logout) com o monitor ligado. O cartão deve mostrar «sinal de alerta — a sessão caiu sem você sair», e o envio fica pausado por 24 h (painel «respostas no whatsapp»). Entre de novo e clique em **tirar a pausa**.
 3. Repita o passo 1 com Instagram, Facebook, TikTok e Discord se quiser. Essas redes só leem e avisam, nunca enviam.
 

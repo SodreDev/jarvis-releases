@@ -67,8 +67,9 @@ def test_o_diagnostico_diz_para_recarregar_a_extensao_de_antes(
     assert relatorio["versoes"][0]["extensao"] is None
     assert RECARREGAR in relatorio["o_que_fazer"]
     assert relatorio["trilha"]["ferramentas_que_nao_terminaram"] == ["browser.console"]
-    # a pergunta de versão não chega à página: só `ponte.versao` foi à extensão
-    assert [p["method"] for p in nav.recebidos] == ["ponte.versao"]
+    # só perguntas de leitura foram à extensão: a versão e o estado da rede (que ela não conhece)
+    assert [p["method"] for p in nav.recebidos] == ["ponte.versao", "social.estado"]
+    assert relatorio["redes"]["ao_vivo"][0]["codigo"] == "extensao_desatualizada"
     linhas: list[str] = []
     diagnostico.imprimir({**relatorio, "configuracao": {}}, linhas.append)
     assert any("Recarregar" in linha for linha in linhas)
@@ -130,3 +131,64 @@ def test_o_diagnostico_mostra_as_mudancas_do_monitor_das_redes_so_em_codigos(
     diagnostico.imprimir({**relatorio, "configuracao": {}}, linhas.append)
     assert any("sem_extensao" in linha for linha in linhas)
     assert not any("Ana" in linha for linha in linhas)
+
+
+def _whatsapp_que_mudou(pedido: dict[str, Any]) -> dict[str, Any]:
+    if pedido["method"] == "social.estado":
+        estado = {
+            "logado": False,
+            "naoLidas": 2,
+            "conversas": [{"nome": "Ana Souza", "naoLidas": 2}],
+            "formato": "desconhecido",
+            "alerta": "",
+            "pista": "sem_lista",
+            "amostra": "(2) Ana Souza | WhatsApp",
+        }
+        return {"id": pedido["id"], "ok": True, "result": estado}
+    return _de_antes(pedido)
+
+
+def _sem_aba(pedido: dict[str, Any]) -> dict[str, Any]:
+    if pedido["method"] != "social.estado":
+        return _de_antes(pedido)
+    erro = {"codigo": "sem_aba", "mensagem": "a rede não tem aba aberta"}
+    return {"id": pedido["id"], "ok": False, "error": erro}
+
+
+def test_o_diagnostico_le_o_contador_do_whatsapp_ao_vivo_sem_nomes(
+    navegador: Callable[[Extensao], Navegador], curto: Path, tmp_path: Path
+) -> None:
+    nav = navegador(_whatsapp_que_mudou)
+    relatorio = diagnostico.coletar(
+        home=tmp_path / "casa",
+        ambiente={"XDG_RUNTIME_DIR": str(curto)},
+        pasta_da_trilha=tmp_path / "trilha",
+        turnos=4,
+        proc=tmp_path / "proc",
+    )
+    [linha] = relatorio["redes"]["ao_vivo"]
+    assert linha["aba"] is True and linha["pista"] == "sem_lista"
+    assert linha["conversas"] == 1 and linha["naoLidas"] == 2
+    assert linha["amostra"] == "(2) x x | whatsapp"
+    assert any("lista de conversas" in passo for passo in relatorio["o_que_fazer"])
+    linhas: list[str] = []
+    diagnostico.imprimir({**relatorio, "configuracao": {}}, linhas.append)
+    assert not any("Ana" in texto for texto in linhas), "nome de conversa não sai do diagnóstico"
+    # só perguntas de leitura chegaram à extensão: versão e o estado da rede
+    assert {p["method"] for p in nav.recebidos} <= {"ponte.versao", "social.estado"}
+
+
+def test_o_diagnostico_diz_quando_nao_ha_aba_do_whatsapp(
+    navegador: Callable[[Extensao], Navegador], curto: Path, tmp_path: Path
+) -> None:
+    navegador(_sem_aba)
+    relatorio = diagnostico.coletar(
+        home=tmp_path / "casa",
+        ambiente={"XDG_RUNTIME_DIR": str(curto)},
+        pasta_da_trilha=tmp_path / "trilha",
+        turnos=4,
+        proc=tmp_path / "proc",
+    )
+    [linha] = relatorio["redes"]["ao_vivo"]
+    assert linha["aba"] is False and linha["codigo"] == "sem_aba"
+    assert any("não há aba aberta" in passo for passo in relatorio["o_que_fazer"])

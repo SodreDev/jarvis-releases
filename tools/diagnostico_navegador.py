@@ -18,10 +18,13 @@ com o mesmo código:
 - da trilha de diagnóstico, só códigos: como os últimos turnos acabaram, ferramenta que começou e
   não terminou, o erro do motor (já redigido pela trilha);
 - as redes sociais (ADR-0060): cada mudança de estado do monitor que a trilha guardou (rede,
-  estado e o código do que faltou: `sem_host`, `navegador_fechado`, `extensao_v3`…);
+  estado e o código do que faltou: `sem_host`, `navegador_fechado`, `extensao_v3`…) e, em cada host
+  vivo, o `social.estado` do WhatsApp — a aba foi achada? logado? o contador foi lido? (a `pista`,
+  o número de não lidas, QUANTAS conversas e a amostra sanitizada: nunca nome de ninguém);
 - no fim, **o que fazer**, em ordem.
 
-Só lê: não abre, não fecha e não mexe em aba nenhuma. Nada de chave nem de ambiente sai daqui.
+Só lê: não abre, não fecha e não mexe em aba nenhuma (o `social.estado` só pergunta ao
+`social.js` da aba que já existe). Nada de chave nem de ambiente sai daqui.
 """
 
 from __future__ import annotations
@@ -40,7 +43,10 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "src"))
 
 from jarvis.navegador.cliente import (  # noqa: E402
+    RECARREGAR,
     ClienteDoNavegador,
+    ExtensaoDesatualizada,
+    NavegadorFalhou,
     NavegadorIndisponivel,
     TransporteUnix,
     VersaoDaPonte,
@@ -49,8 +55,10 @@ from jarvis.navegador.cliente import (  # noqa: E402
 from jarvis.navegador.estado import manifestos  # noqa: E402
 from jarvis.navegador.host import pasta_dos_sockets  # noqa: E402
 from jarvis.navegador.instalar import EXTENSAO_NO_USUARIO, STUB_NO_USUARIO  # noqa: E402
-from jarvis.navegador.protocolo import VERSAO_DA_PONTE  # noqa: E402
+from jarvis.navegador.protocolo import VERSAO_DA_PONTE, PedidoInvalido  # noqa: E402
 from jarvis.posix import soquete_unix, uid_atual  # noqa: E402
+from jarvis.social.contador import amostra_segura  # noqa: E402
+from jarvis.social.navegador import PonteDoNavegador  # noqa: E402
 from jarvis.trilha import ARQUIVO as ARQUIVO_DA_TRILHA  # noqa: E402
 
 MODULO_DO_HOST: Final = "jarvis.navegador.host"
@@ -200,7 +208,7 @@ def versoes(pasta: Path, vivos: Sequence[Mapping[str, Any]]) -> list[dict[str, A
         try:
             versao: VersaoDaPonte | None = cliente.versao()
             falha = ""
-        except NavegadorIndisponivel as erro:
+        except (NavegadorIndisponivel, NavegadorFalhou) as erro:
             versao, falha = None, str(erro)[:160]
         ms = round((time.monotonic() - comeco) * 1000, 1)
         resultado.append(
@@ -257,7 +265,7 @@ def trilha(pasta: Path, turnos: int) -> dict[str, Any]:
     return {"eventos": linhas, "ferramentas_que_nao_terminaram": presas}
 
 
-CAMPOS_DAS_REDES: Final = ("rede", "estado", "codigo")
+CAMPOS_DAS_REDES: Final = ("rede", "estado", "codigo", "pista", "amostra")
 """O que sai de cada evento `rede.estado` da trilha (já só códigos)."""
 
 
@@ -277,6 +285,71 @@ def redes_na_trilha(pasta: Path, quantos: int = 20) -> list[dict[str, Any]]:
                 enxuto["hora"] = time.strftime("%d/%m %H:%M:%S", time.localtime(dado["t"]))
             achados.append(enxuto)
     return achados[-quantos:]
+
+
+REDES_SONDADAS: Final = ("whatsapp",)
+
+
+def redes_ao_vivo(
+    pasta: Path, vivos: Sequence[Mapping[str, Any]], redes: Sequence[str] = REDES_SONDADAS
+) -> list[dict[str, Any]]:
+    """O `social.estado` de cada rede em cada família com host vivo: o que o monitor leria agora."""
+    resultado: list[dict[str, Any]] = []
+    familias = list(dict.fromkeys(str(item["familia"]) for item in vivos))
+    ponte = PonteDoNavegador(TransporteUnix(pasta))
+    for familia in familias:
+        for rede in redes:
+            linha: dict[str, Any] = {"familia": familia, "rede": rede, "aba": None, "codigo": ""}
+            try:
+                estado = ponte.pedir("social.estado", familia, rede=rede)
+            except ExtensaoDesatualizada:
+                linha["codigo"] = "extensao_desatualizada"
+            except NavegadorFalhou as erro:
+                linha["codigo"] = erro.codigo
+                linha["aba"] = False if erro.codigo == "sem_aba" else None
+            except (NavegadorIndisponivel, PedidoInvalido) as erro:
+                linha["codigo"] = "falha"
+                linha["falha"] = str(erro)[:120]
+            else:
+                linha.update(
+                    aba=True,
+                    logado=estado.get("logado"),
+                    formato=estado.get("formato"),
+                    pista=estado.get("pista", ""),
+                    naoLidas=estado.get("naoLidas"),
+                    conversas=len(estado.get("conversas", [])),
+                    amostra=amostra_segura(estado.get("amostra", "")),
+                )
+            resultado.append(linha)
+    return resultado
+
+
+def _passo_da_rede(linha: Mapping[str, Any]) -> str:
+    nome = str(linha["rede"]).capitalize()
+    codigo = linha.get("codigo", "")
+    if codigo == "sem_aba":
+        return (
+            f"{nome}: não há aba aberta — ligue «monitorar» na aba «redes sociais» do Jarvis (ele "
+            "abre a aba em segundo plano) e rode o diagnóstico de novo"
+        )
+    if codigo == "pagina_indisponivel":
+        return f"{nome}: a aba existe mas está sem o monitor — dê F5 nela (a extensão é mais nova)"
+    if codigo == "extensao_desatualizada":
+        return f"{nome}: a extensão não conhece o monitor das redes — {RECARREGAR}"
+    if codigo:
+        return f"{nome}: a extensão não respondeu ao estado da rede ({codigo}): cole este relatório"
+    if linha.get("pista") == "carregando":
+        return f"{nome}: a aba ainda está carregando — espere um minuto e rode de novo"
+    if linha.get("pista") == "sem_lista":
+        return (
+            f"{nome}: a aba abriu, mas a lista de conversas não foi achada (a página mudou): cole "
+            "este relatório (a amostra vai sanitizada)"
+        )
+    if linha.get("formato") == "conhecido" and linha.get("logado") is False:
+        return f"{nome}: deslogado — abra a aba e leia o QR code com o celular"
+    if linha.get("pista") == "contador_ilegivel":
+        return f"{nome}: um contador veio num formato novo: cole este relatório"
+    return ""
 
 
 def o_que_fazer(relatorio: Mapping[str, Any]) -> list[str]:
@@ -323,6 +396,10 @@ def o_que_fazer(relatorio: Mapping[str, Any]) -> list[str]:
         passos.append(
             f"{len(zumbis)} processo(s) de host zumbi: fechar e abrir o navegador os recolhe"
         )
+    for linha in relatorio.get("redes", {}).get("ao_vivo", []):
+        passo = _passo_da_rede(linha)
+        if passo:
+            passos.append(passo)
     presas = relatorio["trilha"]["ferramentas_que_nao_terminaram"]
     if presas:
         passos.append(
@@ -350,7 +427,10 @@ def coletar(
         "processos": processos_do_host(proc),
         "versoes": versoes(pasta, [s for s in lista if s["vivo"]]),
         "trilha": trilha(pasta_da_trilha, turnos),
-        "redes": {"trilha": redes_na_trilha(pasta_da_trilha)},
+        "redes": {
+            "trilha": redes_na_trilha(pasta_da_trilha),
+            "ao_vivo": redes_ao_vivo(pasta, [s for s in lista if s["vivo"]]),
+        },
     }
     relatorio["o_que_fazer"] = o_que_fazer(relatorio)
     return relatorio
@@ -403,6 +483,9 @@ def imprimir(relatorio: Mapping[str, Any], escrever: Callable[[str], None]) -> N
     escrever(f"redes sociais (mudanças do monitor na trilha): {len(redes.get('trilha', []))}")
     for evento in redes.get("trilha", []):
         escrever(f"  {json.dumps(evento, ensure_ascii=False)}")
+    escrever("redes sociais agora (social.estado em cada host vivo; nunca nomes):")
+    for linha in redes.get("ao_vivo", []) or [{"rede": "nenhum host vivo"}]:
+        escrever(f"  - {json.dumps(linha, ensure_ascii=False)}")
     escrever("o que fazer:")
     for passo in relatorio["o_que_fazer"] or ["nada: a ponte está em dia"]:
         escrever(f"  - {passo}")

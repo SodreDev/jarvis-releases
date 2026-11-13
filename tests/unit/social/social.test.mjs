@@ -198,6 +198,95 @@ test("DOM que mudou vira formato desconhecido, sem inventar conversa", async () 
   assert.equal(estado.formato, "desconhecido");
   assert.equal(estado.logado, false);
   assert.equal(estado.conversas.length, 0);
+  // já teve tempo de carregar: a página mudou, com a amostra do título para o diagnóstico
+  assert.equal(estado.pista, "sem_lista");
+  assert.equal(estado.amostra, "(5) whatsapp");
+  // o mesmo DOM logo depois de o script nascer ainda é a página carregando, não a que mudou
+  const cedo = social.lerEstado("whatsapp", await pagina("whatsapp-mudou"), { idadeMs: 2_000 });
+  assert.equal(cedo.pista, "carregando");
+  assert.equal(cedo.amostra, "");
+});
+
+// --- o contador tolerante (bug do dono, 2026-11-13: «formato não reconhecido do contador») ------
+test("a tela de carga do WhatsApp é «carregando», não «a página mudou»", async () => {
+  const estado = social.lerEstado("whatsapp", await pagina("whatsapp-carregando"));
+  assert.equal(estado.formato, "desconhecido");
+  assert.equal(estado.pista, "carregando");
+  assert.equal(estado.logado, false);
+  assert.equal(estado.conversas.length, 0);
+});
+
+test("todos os formatos de contador da página: milhar, 99+, bolinha, outros alfabetos, NBSP", async () => {
+  const estado = social.lerEstado("whatsapp", await pagina("whatsapp-contadores"));
+  assert.equal(estado.formato, "conhecido");
+  assert.equal(estado.pista, "", "tudo reconhecido: nenhuma pista");
+  assert.deepEqual(JSON.parse(JSON.stringify(estado.conversas)), [
+    { nome: "Ana", naoLidas: 1234 },
+    { nome: "Bruno", naoLidas: 99 },
+    { nome: "Carla", naoLidas: 1 },
+    { nome: "Davi", naoLidas: 3 },
+    { nome: "Eva", naoLidas: 5 },
+    { nome: "Fábio", naoLidas: 7 },
+    { nome: "Gil", naoLidas: 4 },
+  ]);
+  assert.equal(estado.naoLidas, 1234 + 99 + 1 + 3 + 5 + 7 + 4);
+});
+
+test("interface em inglês e em espanhol", async () => {
+  const ingles = social.lerEstado("whatsapp", await pagina("whatsapp-ingles"));
+  assert.equal(ingles.formato, "conhecido");
+  assert.deepEqual(JSON.parse(JSON.stringify(ingles.conversas)), [{ nome: "Grace", naoLidas: 2 }]);
+  const espanhol = social.lerEstado("whatsapp", await pagina("whatsapp-espanhol"));
+  assert.equal(espanhol.formato, "conhecido");
+  assert.equal(espanhol.logado, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(espanhol.conversas)), [{ nome: "Inés", naoLidas: 1 }]);
+});
+
+test("contador que não se reconhece conta 1, dá a pista e uma amostra sem o nome de ninguém", async () => {
+  const estado = social.lerEstado("whatsapp", await pagina("whatsapp-contador-estranho"));
+  assert.equal(estado.formato, "conhecido");
+  assert.equal(estado.logado, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(estado.conversas)), [{ nome: "Zé Ninguém", naoLidas: 1 }]);
+  assert.equal(estado.pista, "contador_ilegivel");
+  assert.equal(estado.amostra, "1,5 mil | 1,5 mil mensagens nao lidas de x x");
+  assert.ok(estado.amostra.length <= 60);
+});
+
+test("o leitor de número: cada formato e o que fica ilegível", () => {
+  const casos = [
+    ["3", 3, "numero"],
+    ["1.234", 1234, "numero"],
+    ["1,234", 1234, "numero"],
+    ["1\u00a0234", 1234, "numero"],
+    ["2\u202f345", 2345, "numero"],
+    ["99+", 99, "minimo"],
+    ["+999", 999, "minimo"],
+    ["\u0663", 3, "numero"],
+    ["\u06f5\u06f2", 52, "numero"],
+    ["\u096a", 4, "numero"],
+    ["\uff15", 5, "numero"],
+    ["3 mensagens não lidas", 3, "numero"],
+    ["1 mensagem não lida", 1, "numero"],
+    ["2 unread messages", 2, "numero"],
+    ["2 mensajes no leídos", 2, "numero"],
+    ["", 0, "vazio"],
+    ["•", 0, "vazio"],
+    ["1,5 mil", 0, "ilegivel"],
+    ["2K", 0, "ilegivel"],
+    ["12:30", 0, "ilegivel"],
+    ["99999", 0, "ilegivel"],
+    ["Marcada como não lida", 0, "ilegivel"],
+  ];
+  for (const [texto, n, tipo] of casos) {
+    assert.deepEqual({ ...social.lerContador(texto) }, { n, tipo }, JSON.stringify(texto));
+  }
+});
+
+test("a amostra não leva nome, texto nem telefone", () => {
+  assert.equal(social.amostraSegura("(1,5 mil) Ana Paula | WhatsApp"), "(1,5 mil) x x | whatsapp");
+  assert.equal(social.amostraSegura("+55 11 98765-4321 mensagem"), "### mensagem");
+  assert.equal(social.amostraSegura("Bom dia 😀 <b>Sr. José</b>"), "x x x x. x /x");
+  assert.ok(social.amostraSegura("9".repeat(500)).length <= 60);
 });
 
 test("Discord, Instagram, Facebook e TikTok pelas páginas falsas", async () => {
@@ -228,6 +317,10 @@ test("o título só conta o número no começo", () => {
   assert.equal(social.contagemDoTitulo("WhatsApp"), 0);
   assert.equal(social.contagemDoTitulo("Grupo (3) amigos"), 0);
   assert.equal(social.contagemDoTitulo("(99999) X"), 0);
+  assert.equal(social.contagemDoTitulo("(1.234) WhatsApp"), 1234);
+  assert.equal(social.contagemDoTitulo("(99+) WhatsApp"), 99);
+  assert.equal(social.contagemDoTitulo("(\u00a03\u00a0) WhatsApp"), 3);
+  assert.equal(social.contagemDoTitulo("(\u0663) WhatsApp"), 3);
 });
 
 test("a rede sai do host exato; fora das cinco o script não faz nada", () => {
@@ -257,7 +350,10 @@ test("os seletores são só dados, versionados e sem classe CSS", () => {
   assert.equal(typeof dados.versao, "number");
   assert.deepEqual(Object.keys(dados.redes), ["whatsapp", "instagram", "facebook", "tiktok", "discord"]);
   for (const [id, rede] of Object.entries(dados.redes)) {
-    for (const chave of ["login", "essenciais", "conversa", "nome", "selo"]) {
+    for (const chave of ["login", "essenciais", "conversa", "nome", "selo", "carregando"]) {
+      if (chave === "carregando" && !(chave in rede)) {
+        continue; // opcional
+      }
       assert.ok(Array.isArray(rede[chave]) && rede[chave].length, `${id}.${chave}`);
       for (const seletor of rede[chave]) {
         assert.equal(/\[class|(^|\s)[a-z]*\.[\w-]/u.test(seletor), false, `${id}: ${seletor} usa classe`);
