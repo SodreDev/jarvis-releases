@@ -40,6 +40,8 @@ from typing import Any, Final
 from jarvis.memoryd.importacao import CAMINHO, redigir
 
 ARQUIVO: Final = "turnos.jsonl"
+PASTA: Final = "diagnostico"
+"""A subpasta da raiz de sessão onde a trilha mora (a do laço de voz e a do monitor das redes)."""
 TAMANHO_MAXIMO: Final = 512 * 1024
 COPIAS: Final = 3
 """Até ~2 MB no total: o arquivo vivo e três antigos."""
@@ -159,6 +161,9 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "nota": Forma.CODIGO,
     # As categorias de injeção suspeita no resultado de uma ferramenta (ADR-0065), nunca o texto.
     "injecao": Forma.CHAVES,
+    # O monitor das redes (ADR-0060): a rede e o estado dela, em códigos — nunca nome nem texto.
+    "rede": Forma.CODIGO,
+    "estado": Forma.CODIGO,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -262,6 +267,9 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     "tom": frozenset(
         {"volume", "entonacao", "som", "ritmo", "energia", "confianca", "fonte", "base_pronta"}
     ),
+    # O monitor das redes (ADR-0060): cada mudança de estado de uma rede ligada — o estado
+    # (`conectando`, `sem_extensao`…) e o código do que faltou (`sem_host`, `sem_resposta`…).
+    "rede.estado": frozenset({"rede", "estado", "codigo"}),
 }
 """Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
 dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""

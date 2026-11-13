@@ -146,6 +146,7 @@ from jarvis.tarefas.gestor import (
 )
 from jarvis.tarefas.motores import MotorDeAgente
 from jarvis.tela import Exibicao, PortaDaTela
+from jarvis.trilha import PASTA as PASTA_DA_TRILHA_DE_DIAGNOSTICO
 from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import (
@@ -210,7 +211,7 @@ o motor já parou de gerar (regra 9 da ADR-0025, ≤ 50 ms); isto é só o fim d
 PRAZO_DO_TOM_S: Final = 0.05
 """Quanto o laço espera pela análise do tom **depois** do ASR (ADR-0058). Ela roda ao lado do ASR
 e leva poucos ms; se não chegou neste prazo, o turno segue sem tom: ele nunca atrasa a resposta."""
-PASTA_DA_TRILHA: Final = "diagnostico"
+PASTA_DA_TRILHA: Final = PASTA_DA_TRILHA_DE_DIAGNOSTICO
 """Dentro da pasta da sessão: `turnos.jsonl` da trilha de diagnóstico (`jarvis.trilha`)."""
 PREFIXO_DA_PERGUNTA: Final = "pergunta-"
 """O `notif_id` do aviso que leva à voz a pergunta de uma tarefa: o resto é o id da pendência."""

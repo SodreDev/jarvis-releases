@@ -87,3 +87,46 @@ def test_sem_host_vivo_o_diagnostico_manda_abrir_o_navegador(tmp_path: Path) -> 
     assert relatorio["sockets"] == [] and relatorio["versoes"] == []
     assert any("nenhum host vivo" in passo for passo in relatorio["o_que_fazer"])
     assert any("--instalar" in passo for passo in relatorio["o_que_fazer"])
+
+
+def test_o_diagnostico_mostra_as_mudancas_do_monitor_das_redes_so_em_codigos(
+    tmp_path: Path,
+) -> None:
+    pasta = tmp_path / "run"
+    pasta.mkdir(mode=0o700)
+    trilha = tmp_path / "trilha"
+    trilha.mkdir()
+    eventos = [
+        {
+            "t": 1.0,
+            "turno": "",
+            "evento": "rede.estado",
+            "rede": "whatsapp",
+            "estado": "conectando",
+            "codigo": "sem_host",
+        },
+        {
+            "t": 9.0,
+            "turno": "",
+            "evento": "rede.estado",
+            "rede": "whatsapp",
+            "estado": "sem_extensao",
+            "codigo": "sem_host",
+            "nome": "Ana",
+        },
+    ]
+    (trilha / ARQUIVO).write_text("\n".join(json.dumps(e) for e in eventos), "utf-8")
+    relatorio = diagnostico.coletar(
+        home=tmp_path / "casa",
+        ambiente={"XDG_RUNTIME_DIR": str(pasta)},
+        pasta_da_trilha=trilha,
+        turnos=4,
+        proc=tmp_path / "proc",
+    )
+    mudancas = relatorio["redes"]["trilha"]
+    assert [m["estado"] for m in mudancas] == ["conectando", "sem_extensao"]
+    assert all(set(m) <= {"rede", "estado", "codigo", "hora"} for m in mudancas)
+    linhas: list[str] = []
+    diagnostico.imprimir({**relatorio, "configuracao": {}}, linhas.append)
+    assert any("sem_extensao" in linha for linha in linhas)
+    assert not any("Ana" in linha for linha in linhas)

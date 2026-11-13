@@ -1,6 +1,7 @@
 """A ponte do monitor das redes com o host do navegador (ADR-0060).
 
-Só dois pedidos passam por aqui, `social.abrir` e `social.estado`, e a assinatura de eventos. O
+Só dois pedidos passam por aqui, `social.abrir` e `social.estado`, a assinatura de eventos e a
+pergunta de versão (`host.versao`/`ponte.versao`, que não tocam aba nenhuma). O
 resto do vocabulário do navegador existe, mas o monitor não o usa: ele não age na página."""
 
 from __future__ import annotations
@@ -8,7 +9,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-from jarvis.navegador.cliente import AssinaturaUnix, ClienteDoNavegador, TransporteUnix
+from jarvis.navegador.cliente import (
+    AssinaturaUnix,
+    ClienteDoNavegador,
+    TransporteUnix,
+    VersaoDaPonte,
+)
 from jarvis.navegador.protocolo import validar_estado_social
 
 PEDIDOS_DO_MONITOR: Final = frozenset({"social.abrir", "social.estado"})
@@ -28,6 +34,12 @@ class PonteDoNavegador:
 
     def assinar(self, navegador: str = "") -> AssinaturaUnix:
         return self._transporte.assinar(navegador)
+
+    def versao(self, navegador: str) -> VersaoDaPonte:
+        """`host.versao` e `ponte.versao`: só números e permissões, nenhuma aba nem página."""
+        cliente = ClienteDoNavegador(self._transporte)
+        cliente.navegador = navegador
+        return cliente.versao()
 
     def pedir(self, metodo: str, navegador: str, **params: Any) -> dict[str, Any]:
         if metodo not in PEDIDOS_DO_MONITOR:

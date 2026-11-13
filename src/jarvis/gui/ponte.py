@@ -37,6 +37,7 @@ from PySide6.QtCore import (
     Slot,
 )
 
+from jarvis.executor.navegadores import familia_de_navegador, navegador_em_execucao
 from jarvis.gui import chaveiro, recursos, sistema
 from jarvis.gui.acesso import PonteDeAcesso
 from jarvis.gui.acoes import Acao, Area, Modo, Tipo
@@ -55,6 +56,8 @@ from jarvis.social.enviar import Enviador
 from jarvis.social.envio import ARQUIVO_DOS_ENVIOS, Guardiao, HistoricoDeEnvios
 from jarvis.social.monitor import MonitorSocial, Notificacao
 from jarvis.social.monitor import Ponte as PonteSocial
+from jarvis.trilha import PASTA as PASTA_DA_TRILHA
+from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.ui.atalhos import AtalhoIndisponivel
 from jarvis.ui.portal import AtalhoPortal, portal_disponivel
 from jarvis.voz import aferir
@@ -551,6 +554,19 @@ class Ponte(QObject):
                 redes.navegador_preferido or self._configuracao.navegador_principal
             )
 
+        def navegador_aberto() -> bool | None:
+            # O processo do navegador escolhido (só o executável em /proc): separa «abra o
+            # navegador» de «a extensão não está conectada». Família desconhecida: não se sabe.
+            nome = self._redes.configuracao.navegador_preferido or (
+                self._configuracao.navegador_principal
+            )
+            escolhida = familia_de_navegador(nome) if nome else None
+            if escolhida is None:
+                return None
+            return navegador_em_execucao(escolhida) is not None
+
+        trilha = TrilhaDeDiagnostico(self._raiz / PASTA_DA_TRILHA)
+
         def envio_armado() -> bool:
             envio = self._redes.configuracao.envio
             return envio.automatico and envio.ausente
@@ -571,6 +587,10 @@ class Ponte(QObject):
             ao_mudar=self.redesMudaram.emit,
             # Sinal de alerta (captcha, conta limitada, logout…): todo envio da rede para por 24 h.
             ao_alerta=lambda rede, alerta: self._redes.pausas.pausar(rede, alerta, time.time()),
+            navegador_aberto=navegador_aberto,
+            # Cada mudança de estado de uma rede, só em códigos, na trilha de diagnóstico: é o que
+            # o `tools/diagnostico_navegador.py` mostra quando o dono manda a saída.
+            ao_diagnostico=lambda dados: trilha.evento("rede.estado", **dados),
         )
 
         def resultado(feito: Resultado) -> None:

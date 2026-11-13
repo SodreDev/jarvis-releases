@@ -10,6 +10,19 @@
 4. Dê F5 na aba do WhatsApp Web, se ela já estava aberta.
 5. Abra o Jarvis e vá em **Configuração → redes sociais**. Tudo começa desligado.
 
+## O que o cartão diz quando não conecta
+
+O Jarvis espera até 30 s pelo host da extensão (o navegador partindo, ou o **Recarregar** relançando o host) e tenta de novo sozinho; nesse meio-tempo o cartão diz «procurando o navegador com a extensão do Jarvis…». Depois disso ele diz exatamente o que faltou:
+
+| O cartão diz | O que fazer |
+|---|---|
+| «o navegador não está aberto» | Abra o Brave. |
+| «a extensão do Jarvis não está conectada» | Em `brave://extensions`, confira se o Jarvis está **ativo neste perfil** e clique em **Recarregar**. |
+| «a extensão do Jarvis no navegador é de uma versão anterior» | **Recarregar** no card do Jarvis (isso relança o host). |
+| «a extensão não respondeu ao abrir a aba» | Nada: o Jarvis tenta de novo em 15 s. Se repetir, rode o diagnóstico abaixo. |
+
+Se continuar falhando, rode `uv run --frozen python tools/diagnostico_navegador.py` e me mande a saída inteira: ela lista os hosts, a versão da ponte e, na seção «redes», cada mudança de estado do monitor (só códigos).
+
 ## 1. Só leitura do WhatsApp
 
 1. Em «navegador preferido», deixe **o principal** (ou escolha o Brave).

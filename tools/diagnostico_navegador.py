@@ -17,6 +17,8 @@ com o mesmo código:
   (a extensão responde) — só versões e permissões: nenhuma aba, URL, título ou página;
 - da trilha de diagnóstico, só códigos: como os últimos turnos acabaram, ferramenta que começou e
   não terminou, o erro do motor (já redigido pela trilha);
+- as redes sociais (ADR-0060): cada mudança de estado do monitor que a trilha guardou (rede,
+  estado e o código do que faltou: `sem_host`, `navegador_fechado`, `extensao_v3`…);
 - no fim, **o que fazer**, em ordem.
 
 Só lê: não abre, não fecha e não mexe em aba nenhuma. Nada de chave nem de ambiente sai daqui.
@@ -255,6 +257,28 @@ def trilha(pasta: Path, turnos: int) -> dict[str, Any]:
     return {"eventos": linhas, "ferramentas_que_nao_terminaram": presas}
 
 
+CAMPOS_DAS_REDES: Final = ("rede", "estado", "codigo")
+"""O que sai de cada evento `rede.estado` da trilha (já só códigos)."""
+
+
+def redes_na_trilha(pasta: Path, quantos: int = 20) -> list[dict[str, Any]]:
+    """As últimas `quantos` mudanças de estado do monitor das redes, de todos os turnos."""
+    achados: list[dict[str, Any]] = []
+    for arquivo in (pasta / f"{ARQUIVO_DA_TRILHA}.1", pasta / ARQUIVO_DA_TRILHA):
+        for linha in _ler(arquivo).splitlines():
+            try:
+                dado = json.loads(linha)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(dado, dict) or dado.get("evento") != "rede.estado":
+                continue
+            enxuto = {c: dado[c] for c in CAMPOS_DAS_REDES if c in dado}
+            if isinstance(dado.get("t"), (int, float)):
+                enxuto["hora"] = time.strftime("%d/%m %H:%M:%S", time.localtime(dado["t"]))
+            achados.append(enxuto)
+    return achados[-quantos:]
+
+
 def o_que_fazer(relatorio: Mapping[str, Any]) -> list[str]:
     """Em ordem: o primeiro item destrava o próximo."""
     passos: list[str] = []
@@ -326,6 +350,7 @@ def coletar(
         "processos": processos_do_host(proc),
         "versoes": versoes(pasta, [s for s in lista if s["vivo"]]),
         "trilha": trilha(pasta_da_trilha, turnos),
+        "redes": {"trilha": redes_na_trilha(pasta_da_trilha)},
     }
     relatorio["o_que_fazer"] = o_que_fazer(relatorio)
     return relatorio
@@ -373,6 +398,10 @@ def imprimir(relatorio: Mapping[str, Any], escrever: Callable[[str], None]) -> N
     trilha_ = relatorio["trilha"]
     escrever(f"trilha (últimos turnos, só códigos): {len(trilha_['eventos'])} eventos")
     for evento in trilha_["eventos"][-40:]:
+        escrever(f"  {json.dumps(evento, ensure_ascii=False)}")
+    redes = relatorio.get("redes", {})
+    escrever(f"redes sociais (mudanças do monitor na trilha): {len(redes.get('trilha', []))}")
+    for evento in redes.get("trilha", []):
         escrever(f"  {json.dumps(evento, ensure_ascii=False)}")
     escrever("o que fazer:")
     for passo in relatorio["o_que_fazer"] or ["nada: a ponte está em dia"]:

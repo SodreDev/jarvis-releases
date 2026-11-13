@@ -13,9 +13,23 @@ from typing import Any
 
 import pytest
 
-from jarvis.navegador.protocolo import PedidoInvalido, validar_evento, validar_pedido
+from jarvis.navegador.cliente import (
+    ExtensaoDesatualizada,
+    NavegadorFalhou,
+    NavegadorIndisponivel,
+    SemResposta,
+    VersaoDaPonte,
+)
+from jarvis.navegador.protocolo import (
+    VERSAO_DA_PONTE,
+    PedidoInvalido,
+    validar_evento,
+    validar_pedido,
+)
 from jarvis.social.config import ConfiguracaoSocial
 from jarvis.social.monitor import (
+    REABRIR_APOS_FALHA_S,
+    REABRIR_S,
     SEM_NOTICIA_S,
     EstadoDaPagina,
     EstadoDoMonitor,
@@ -241,17 +255,29 @@ class PonteFalsa:
         self.fila: list[dict[str, Any]] = []
         self.pedidos: list[tuple[str, str, dict[str, Any]]] = []
         self.assinaturas: list[AssinaturaFalsa] = []
+        self.tentativas = 0
+        """Quantas vezes o monitor tentou assinar (com ou sem host)."""
+        self.falha_ao_abrir: Exception | None = None
+        self.versao_da_ponte: VersaoDaPonte | None = None
 
     def assinar(self, navegador: str = "") -> AssinaturaFalsa:
+        self.tentativas += 1
         if not self.aberta:
-            raise OSError("sem host")
+            raise NavegadorIndisponivel("nenhum navegador com a extensão do Jarvis está aberto")
         assinatura = AssinaturaFalsa(self.fila)
         self.assinaturas.append(assinatura)
         return assinatura
 
+    def versao(self, navegador: str) -> VersaoDaPonte:
+        if self.versao_da_ponte is None:
+            return VersaoDaPonte(host=VERSAO_DA_PONTE, extensao=VERSAO_DA_PONTE)
+        return self.versao_da_ponte
+
     def pedir(self, metodo: str, navegador: str, **params: Any) -> dict[str, Any]:
         validar_pedido({"id": "t1", "method": metodo, "params": params})
         self.pedidos.append((metodo, navegador, params))
+        if metodo == "social.abrir" and self.falha_ao_abrir is not None:
+            raise self.falha_ao_abrir
         if metodo == "social.estado":
             return {"logado": False, "naoLidas": 0, "conversas": [], "formato": "conhecido"}
         return {"tabId": 7, "reutilizada": False}
@@ -267,7 +293,12 @@ def _esperar(condicao: Callable[[], bool], segundos: float = 3.0) -> bool:
 
 
 def _monitor(
-    ponte: PonteFalsa, configuracao: list[ConfiguracaoSocial]
+    ponte: PonteFalsa,
+    configuracao: list[ConfiguracaoSocial],
+    *,
+    prazo_de_conexao_s: float = 0.0,
+    navegador_aberto: Callable[[], bool | None] | None = None,
+    diagnosticos: list[dict[str, str]] | None = None,
 ) -> tuple[MonitorSocial, list[Notificacao], threading.Event]:
     avisos: list[Notificacao] = []
     mudou = threading.Event()
@@ -278,6 +309,9 @@ def _monitor(
         ao_notificar=avisos.append,
         ao_mudar=mudou.set,
         intervalo_s=0.02,
+        prazo_de_conexao_s=prazo_de_conexao_s,
+        navegador_aberto=navegador_aberto,
+        ao_diagnostico=None if diagnosticos is None else (lambda d: diagnosticos.append(dict(d))),
     )
     return monitor, avisos, mudou
 
@@ -338,6 +372,7 @@ def test_sem_navegador_aberto_diz_isso_e_nao_abre_nada() -> None:
     try:
         assert _esperar(mudou.is_set)
         assert _esperar(lambda: monitor.estado.para_a_tela("discord")["estado"] == "sem_extensao")
+        assert "Recarregar" in monitor.estado.para_a_tela("discord")["frase"]
         assert ponte.pedidos == []
     finally:
         monitor.parar()
@@ -413,3 +448,119 @@ def test_nenhuma_rede_alem_do_whatsapp_tem_caminho_de_envio() -> None:
                 params["nome"] = "alguém"
             with pytest.raises(PedidoInvalido):
                 validar_pedido({"id": "z1", "method": metodo, "params": params})
+
+
+# --- a conexão com a extensão (bug do dono, 2026-11-13: «não há navegador com a extensão») ------
+def test_sem_host_dentro_do_prazo_e_conectando_e_pega_o_host_que_aparece_depois() -> None:
+    """A corrida da partida: o monitor pede antes de o fundo da extensão chamar o host. Dentro do
+    prazo de conexão ele diz «conectando», tenta de novo logo e abre a aba quando o host chega."""
+    ponte = PonteFalsa(aberta=False)
+    monitor, _, _ = _monitor(ponte, [ligado("whatsapp")], prazo_de_conexao_s=60.0)
+    monitor.iniciar()
+    try:
+        assert _esperar(lambda: monitor.estado.para_a_tela("whatsapp")["estado"] == "conectando")
+        assert _esperar(lambda: ponte.tentativas >= 3), "tenta de novo a cada intervalo"
+        assert ponte.pedidos == []
+        ponte.aberta = True
+        assert _esperar(lambda: any(p[0] == "social.abrir" for p in ponte.pedidos))
+        assert _esperar(
+            lambda: monitor.estado.para_a_tela("whatsapp")["estado"] == "esperando_login"
+        )
+    finally:
+        monitor.parar()
+
+
+@pytest.mark.parametrize(
+    ("aberto", "esperado"),
+    [(False, "sem_navegador"), (True, "sem_extensao"), (None, "sem_extensao")],
+)
+def test_fora_do_prazo_diz_o_que_faltou(aberto: bool | None, esperado: str) -> None:
+    ponte = PonteFalsa(aberta=False)
+    diagnosticos: list[dict[str, str]] = []
+    monitor, _, _ = _monitor(
+        ponte, [ligado("whatsapp")], navegador_aberto=lambda: aberto, diagnosticos=diagnosticos
+    )
+    monitor.iniciar()
+    try:
+        assert _esperar(lambda: monitor.estado.para_a_tela("whatsapp")["estado"] == esperado)
+        frase = monitor.estado.para_a_tela("whatsapp")["frase"]
+        assert ("abra-o" in frase) is (esperado == "sem_navegador")
+        assert ("Recarregar" in frase) is (esperado == "sem_extensao")
+        assert _esperar(lambda: bool(diagnosticos))
+        assert diagnosticos[-1]["estado"] == esperado
+        assert diagnosticos[-1]["codigo"] in {"navegador_fechado", "sem_host"}
+        quantos = len(diagnosticos)
+        time.sleep(0.2)
+        assert len(diagnosticos) == quantos, "a trilha só recebe a mudança, não cada tique"
+    finally:
+        monitor.parar()
+
+
+@pytest.mark.parametrize(
+    ("falha", "estado", "codigo"),
+    [
+        (ExtensaoDesatualizada("social.abrir"), "extensao_antiga", "extensao_desatualizada"),
+        (
+            SemResposta("a extensão não respondeu a social.abrir em 8 s"),
+            "sem_resposta",
+            "sem_resposta",
+        ),
+        (NavegadorFalhou("falha", "tabs.create recusou"), "sem_resposta", "falha"),
+        (NavegadorIndisponivel("o host fechou sem responder"), "conectando", "sem_host"),
+    ],
+)
+def test_falha_ao_abrir_a_aba_nao_vira_sem_extensao(
+    falha: Exception, estado: str, codigo: str
+) -> None:
+    """Antes, QUALQUER falha do `social.abrir` dizia «sem navegador com a extensão» e só tentava de
+    novo em 120 s — mesmo com a extensão conectada e a aba abrindo devagar."""
+    ponte = PonteFalsa()
+    ponte.falha_ao_abrir = falha
+    diagnosticos: list[dict[str, str]] = []
+    monitor, _, _ = _monitor(ponte, [ligado("whatsapp")], diagnosticos=diagnosticos)
+    monitor.iniciar()
+    try:
+        assert _esperar(lambda: monitor.estado.para_a_tela("whatsapp")["estado"] == estado)
+        assert _esperar(lambda: any(d["codigo"] == codigo for d in diagnosticos))
+    finally:
+        monitor.parar()
+
+
+def test_falha_ao_abrir_tenta_de_novo_logo_e_noticia_espera_o_normal() -> None:
+    relogio = Relogio()
+    estado = EstadoDoMonitor(relogio)
+    estado.ajustar(ligado("whatsapp"))
+    assert estado.precisa_abrir("whatsapp")
+    estado.pedida("whatsapp")
+    estado.falhou("whatsapp", "sem_resposta", "sem_resposta")
+    relogio.agora += REABRIR_APOS_FALHA_S - 1
+    assert not estado.precisa_abrir("whatsapp")
+    relogio.agora += 1
+    assert estado.precisa_abrir("whatsapp")
+    estado.pedida("whatsapp")  # deu certo desta vez: volta ao prazo de quem só ficou sem notícia
+    relogio.agora += REABRIR_APOS_FALHA_S
+    assert not estado.precisa_abrir("whatsapp")
+    relogio.agora += REABRIR_S
+    assert estado.precisa_abrir("whatsapp")
+    estado.reconectou(["whatsapp"])  # host novo: pede a aba de novo na hora
+    estado.pedida("whatsapp")
+    estado.reconectou(["whatsapp"])
+    assert estado.precisa_abrir("whatsapp")
+
+
+def test_extensao_de_antes_avisa_recarregar_mesmo_com_a_rede_conectada() -> None:
+    ponte = PonteFalsa()
+    ponte.versao_da_ponte = VersaoDaPonte(host=VERSAO_DA_PONTE, extensao=VERSAO_DA_PONTE - 1)
+    diagnosticos: list[dict[str, str]] = []
+    monitor, _, _ = _monitor(ponte, [ligado("whatsapp")], diagnosticos=diagnosticos)
+    monitor.iniciar()
+    try:
+        assert _esperar(
+            lambda: monitor.estado.para_a_tela("whatsapp")["estado"] == "esperando_login"
+        )
+        assert "Recarregar" in monitor.estado.para_a_tela("whatsapp")["frase"]
+        assert _esperar(
+            lambda: any(d["codigo"] == f"extensao_v{VERSAO_DA_PONTE - 1}" for d in diagnosticos)
+        )
+    finally:
+        monitor.parar()
