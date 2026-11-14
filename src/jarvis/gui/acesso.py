@@ -31,7 +31,7 @@ from jarvis.voz.acesso import (
     nome_de_app,
     separar,
 )
-from jarvis.voz.config import Configuracao
+from jarvis.voz.config import FRASE_DO_MODO, MODOS_DO_DONO, NOME_DO_MODO, Configuracao
 
 
 def estado_do_navegador(configuracao: Configuracao) -> EstadoDaPonte:
@@ -95,6 +95,24 @@ class PonteDeAcesso(QObject):
         return [
             {"id": id_, "nome": nome, "frase": frase, "ativo": id_ == atual}
             for id_, (nome, frase) in acesso.FRASE_DOS_MODOS.items()
+        ]
+
+    @Property(str, notify=mudou)
+    def permissao(self) -> str:
+        return self._obter().permissao
+
+    @Property(list, notify=mudou)
+    def permissoes(self) -> list[dict[str, Any]]:
+        """Os dois modos de permissão do dono (ADR-0066), com a frase do que cada um faz."""
+        atual = self._obter().permissao
+        return [
+            {
+                "id": str(modo),
+                "nome": f"modo {NOME_DO_MODO[modo]}",
+                "frase": FRASE_DO_MODO[modo],
+                "ativo": str(modo) == atual,
+            }
+            for modo in MODOS_DO_DONO
         ]
 
     @Property(bool, notify=mudou)
@@ -244,6 +262,18 @@ class PonteDeAcesso(QObject):
     @Slot(str, result=bool)
     def definirModo(self, modo: str) -> bool:
         return self._aplicar(lambda c: acesso.com_modo(c, modo), "nível de acesso trocado")
+
+    @Slot(str, result=bool)
+    def definirPermissao(self, modo: str) -> bool:
+        """Automático ou bypass (ADR-0066): grava na hora e vale no próximo passo."""
+
+        def mudar(configuracao: Configuracao) -> Configuracao:
+            if modo not in MODOS_DO_DONO:
+                raise AcessoRecusado(f"modo de permissão desconhecido: {modo}")
+            return configuracao.com(permissao=modo)
+
+        nome = NOME_DO_MODO.get(modo, modo)
+        return self._aplicar(mudar, f"modo {nome} de permissão")
 
     @Slot(str, result=bool)
     def adicionarRaiz(self, pasta: str) -> bool:

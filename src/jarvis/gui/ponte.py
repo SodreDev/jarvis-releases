@@ -661,10 +661,18 @@ class Ponte(QObject):
         resultado = self._gravar_campos(**mudancas)
         self._aviso = f"{frase} — {resultado}" if frase else resultado
 
+    def _permissao_pela_voz(self, modo: str) -> str:
+        """O dono trocou o modo de permissão falando (ADR-0066): vai ao arquivo como o clique no
+        painel, e o painel mostra o modo novo. Da thread de trabalho: só grava e emite."""
+        resultado = self._gravar_campos(permissao=modo)
+        self._acesso.mudou.emit()
+        return resultado
+
     def _gravar_acesso(self, nova: Configuracao) -> str:
         """Guarda os campos de acesso — no arquivo e na conversa aberta — e diz o que fez."""
         campos = (
             "acesso",
+            "permissao",
             "raizes",
             "raizes_escrita",
             "apps_autorizados",
@@ -893,6 +901,7 @@ class Ponte(QObject):
             ao_pedir_confirmacao=self._pedir_confirmacao,
             ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,
             ao_tom=self._mudar_tom,
+            ao_mudar_permissao=self._permissao_pela_voz,
             escuta=self._escuta,
             avisos_dados=self._avisos_dados,
             conversa=self._conversa,

@@ -39,6 +39,7 @@ from jarvis.politica.descritor import AberturaRecusada, Identidade, RaizAberta, 
 from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, decidir_memoria
 from jarvis.politica.modos import Modo, Raiz, motivo_de_negacao, raizes_do_modo
 from jarvis.politica.objetivo import Objetivo
+from jarvis.politica.permissao import NOME_DO_MODO, ModoDePermissao, dispensa_o_sim
 from jarvis.politica.preset import decidir_preset
 from jarvis.politica.vocabulario import decidir_vocabulario
 
@@ -81,6 +82,10 @@ class Pedido:
     ADR-0042): uma tarefa em andamento ao encerrar o Jarvis; trabalho que pode não estar salvo, mais
     de uma instância, o navegador do dono ou coisa do sistema ao encerrar um app. Vazio = o tier
     decide. Não há argumento do modelo que chegue aqui: o campo é do código, como `contaminado`."""
+    injecao: bool = False
+    """O fluxo leu conteúdo de terceiros que tenta dar ordens (ADR-0065) e esta ferramenta tem
+    efeito: a ordem pode não ser do dono. No modo automático o sim continua (o invariante de não
+    exfiltrar, ADR-0066); no bypass, não. Do executor, nunca do modelo."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +149,10 @@ class Pdp:
     """As famílias de navegador que o dono configurou: o grant estreito de `browser.launch`."""
     navegador_principal: str = ""
     """ADR-0026, M4: só vira verdade quando os seis gates da §6.6 passarem (aceite (a) da F3)."""
+    permissao: ModoDePermissao = ModoDePermissao.MATRIZ
+    """O modo de permissão do dono (ADR-0066): no `automatico`, o `confirm` vira `allow` fora das
+    ações destrutivas; no `bypass`, sempre. `deny` nunca muda. Solto (os testes da matriz), a
+    matriz inteira; o aplicativo passa o modo que o dono salvou."""
     _raizes: dict[str, RaizAberta] = field(default_factory=dict, repr=False)
     """Raiz aberta de cada grant vivo, por `grant_id`. É aqui que o descritor tem dono."""
     _trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
@@ -317,7 +326,17 @@ class Pdp:
         canonico: CaminhoCanonico | None,
         capacidade: Capacidade | None,
     ) -> Decisao:
-        """Escreve a decisão **antes** de devolver o grant (§5.5)."""
+        """Escreve a decisão **antes** de devolver o grant (§5.5).
+
+        O modo de permissão do dono (ADR-0066) age aqui, num lugar só: o `confirm` que ele dispensa
+        vira `allow`, com o motivo dizendo o modo — a auditoria guarda o porquê que pediria."""
+        if (
+            veredito is Veredito.CONFIRM
+            and dispensa_o_sim(self.permissao, pedido.tool_id)
+            and not (pedido.injecao and self.permissao is ModoDePermissao.AUTOMATICO)
+        ):
+            veredito = Veredito.ALLOW
+            motivo = f"modo {NOME_DO_MODO[self.permissao]}: sem pedir o sim — {motivo}"
         raiz = self._raiz_de(canonico) if canonico is not None else None
         aberta: RaizAberta | None = None
         if veredito is Veredito.ALLOW and raiz is not None:

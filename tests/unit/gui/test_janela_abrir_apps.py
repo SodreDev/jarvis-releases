@@ -192,8 +192,8 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
     sem_chaveiro: None,
 ) -> None:
     """Uma conversa, quatro pedidos: marcado abre sem faixa (inclusive por nome parcial, e pelo
-    caminho rápido, sem o motor), instalado e não marcado pergunta antes (ADR-0046) e sem o sim
-    não abre, e site abre sem faixa (abrir site é livre desde 2026-10-18)."""
+    caminho rápido, sem o motor), instalado e não marcado abre sem perguntar no modo automático
+    (ADR-0066), e site abre sem faixa (abrir site é livre desde 2026-10-18)."""
     vistos.clear()
     maquina = Maquina(tmp_path)
     laco, ponte = _montar(
@@ -212,11 +212,12 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
     assert not _falar(aplicativo, tela, laco, "abre o brave"), "nome parcial pediu confirmação"
     assert maquina.apps_abertos == ["discord", "brave-browser"]
 
-    # Instalado e fora da lista: pergunta (ADR-0046) — e, com o "não" do dono, nada abre.
-    assert _falar(aplicativo, tela, laco, "abre a calculadora", sim=False), "fora da lista pergunta"
-    assert maquina.apps_abertos == ["discord", "brave-browser"], "app não marcado abriu"
-    # O turno acaba na pergunta (ADR-0048), pelo caminho rápido; o "não" do clique a fecha.
-    assert _pendente(tela) is None, "com o não do dono, a faixa some"
+    # Instalado e fora da lista: no modo automático (o padrão, ADR-0066) o Jarvis decide sozinho
+    # e abre, sem faixa — a pergunta da ADR-0046 só existe na matriz completa.
+    assert not _falar(aplicativo, tela, laco, "abre a calculadora"), "automático não pergunta"
+    assert maquina.apps_abertos[:2] == ["discord", "brave-browser"]
+    assert len(maquina.apps_abertos) == 3, "o app instalado fora da lista abriu"
+    assert _pendente(tela) is None
 
     assert maquina.sites_abertos == []
     assert not _falar(aplicativo, tela, laco, "abre o exemplo"), "abrir site é livre: sem faixa"

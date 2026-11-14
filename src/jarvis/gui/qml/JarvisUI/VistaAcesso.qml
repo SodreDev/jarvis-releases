@@ -108,6 +108,32 @@ Item {
                     width: parent.width
                     spacing: 10
 
+                    // Permissões (ADR-0066): automático ou bypass, salvo na hora.
+                    Rotulo { text: "permissões" }
+                    Flow {
+                        width: parent.width
+                        spacing: 8
+                        Repeater {
+                            model: vista.acesso ? vista.acesso.permissoes : []
+                            Botao {
+                                objectName: "permissao-" + modelData.id
+                                texto: modelData.nome
+                                ativo: modelData.ativo
+                                onApertado: vista.acesso.definirPermissao(modelData.id)
+                            }
+                        }
+                    }
+                    Repeater {
+                        model: vista.acesso ? vista.acesso.permissoes : []
+                        Nota {
+                            width: parent.width
+                            visible: modelData.ativo
+                            text: modelData.frase + " Também muda pela voz: “ativa o modo bypass”."
+                            color: Tema.texto
+                        }
+                    }
+
+                    Rotulo { text: "até onde o Jarvis lê" }
                     Flow {
                         width: parent.width
                         spacing: 8

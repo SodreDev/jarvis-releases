@@ -849,6 +849,7 @@ class ExecutorDeFerramentas:
             contaminado=marca.valor,
             objetivo=self.objetivo_de(marca),
             exige_o_sim=exige_o_sim,
+            injecao=bool(marca.injecao) and self._com_efeito(tool_id),
         )
         return Avaliacao(tool_id, argumentos, caminho, pedido, self.pdp.decidir(pedido), julgamento)
 

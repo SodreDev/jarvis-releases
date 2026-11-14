@@ -2069,6 +2069,35 @@ Testes: `TMPDIR=~/.cache/jt uv run --frozen pytest tests/unit/memoria`.
 
 **Não provado:** a latência na sua máquina com voz, ASR e TTS dividindo a CPU.
 
+### 0.55 Sem pedido de permissão: modo automático e modo bypass (2026-11-14, ADR-0066)
+
+**O que mudou.** O Jarvis não pergunta mais «posso rodar JavaScript?», «posso abrir?», «quer que
+eu mande?». Há dois modos, salvos no `jarvis-voz.toml` (`permissao = "automatico" | "bypass"`):
+
+- **automático** (o padrão): ele decide sozinho; só pede o seu sim para **encerrar programa ou
+  processo** (encerrar app, fechar janela com trabalho não salvo, encerrar o Jarvis com tarefa no
+  ar) e **apagar** (lixeira, memória) — e para ação com efeito logo depois de ler texto que tenta
+  dar ordens (ADR-0065);
+- **bypass**: nada pede o sim. Tudo continua na trilha e na auditoria.
+
+Chaves, cofres e perfis de navegador continuam negados nos dois modos.
+
+1. Painel: **Acesso → pastas e arquivos → permissões**. Clique em «modo bypass»: a frase diz
+   «salvo»; reabra o Jarvis e o botão continua marcado.
+2. Voz (ou digitado): «ativa o modo bypass» → «Modo bypass. Não peço permissão para nada…»; «volta
+   pro modo automático» → «Modo automático…». O painel muda junto. Pergunta («o que é o modo
+   bypass?») não troca nada.
+3. No automático, «abre o youtube e procura lofi», «roda um script na página que conta os links»:
+   nenhuma pergunta. «Fecha o Kate todo» com arquivo não salvo: pergunta (é destrutivo).
+4. Trilha (`uv run jarvis-voz --diagnostico`): a decisão dispensada aparece como `ferramenta …
+   pdp allow` e, na auditoria, o motivo «modo automático: sem pedir o sim — …»; a troca pela voz,
+   como `modo de permissão: bypass`.
+
+Testes: `tests/unit/politica/test_permissao.py`, `tests/unit/s2/test_portao_de_acao.py` (os do
+fim).
+
+**Não provado:** o painel e a voz na sua máquina (só testes offscreen e com fakes).
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

@@ -109,6 +109,7 @@ from jarvis.politica.modos import Modo as ModoDeAcesso
 from jarvis.politica.modos import Raiz
 from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Pdp
+from jarvis.politica.permissao import ModoDePermissao, frase_da_troca, modo_de_permissao
 from jarvis.provedores.nucleo import Provedores
 from jarvis.provedores.presets import FonteDePresets, TrocaPorVoz
 from jarvis.provedores.roteador import MotorDosPresets
@@ -530,6 +531,9 @@ class Aplicativo:
     Chamada da linha de quem pediu: emite e volta."""
     ao_fechar_conteudo: Callable[[str], None] | None = None
     ao_tom: Callable[[str], None] | None = None
+    ao_mudar_permissao: Callable[[str], str] | None = None
+    """Grava o modo de permissão que o dono trocou pela voz (ADR-0066) e devolve «salvo» ou o
+    porquê de não ter salvo. A janela liga (o mesmo arquivo do painel); sem ela, vale na sessão."""
     """O tom do último turno, curto («entonação de pergunta · voz baixa»; vazio no neutro), para o
     indicador da janela (ADR-0058). Mesmas regras do `ao_mudar_estado`: emite e volta."""
 
@@ -764,6 +768,8 @@ class Aplicativo:
         # motor — pelo mesmo PDP, Jev e pergunta da proposta do modelo.
         self._cerebro.caminho_rapido = self.configuracao.caminho_rapido
         self._cerebro.confirmar = self._confirmar
+        # Trocar o modo de permissão pela voz (ADR-0066): lido pelo código na fala do dono.
+        self._cerebro.ao_mudar_permissao = self._mudar_permissao
         self._cerebro.ao_status = self._status_do_laco
         # O replanejamento da tarefa quando um passo falha: na tela, nunca na voz (ADR-0031).
         self._cerebro.ao_raciocinio = lambda linha: self.escrever_na_tela(f"  ↻ {linha}")
@@ -798,6 +804,21 @@ class Aplicativo:
         )
         self._aquecer()
         self._conferir_a_extensao_em_segundo_plano()
+
+    def _mudar_permissao(self, modo: ModoDePermissao) -> str:
+        """O dono mandou trocar o modo de permissão (ADR-0066): vale já no próximo passo — o PDP
+        vivo muda — e vai ao arquivo pela janela. Devolve a frase que o Jarvis diz."""
+        self.configuracao = self.configuracao.com(permissao=str(modo))
+        if self.ferramentas is not None:
+            self.ferramentas.pdp.permissao = modo
+        frase = frase_da_troca(modo)
+        if self.ao_mudar_permissao is not None:
+            salvo = self.ao_mudar_permissao(str(modo))
+            if salvo != "salvo":
+                frase = f"{frase} Vale agora, mas não consegui salvar no arquivo."
+        if self.trilha is not None:
+            self.trilha.evento("permissao.modo", modo=str(modo))
+        return frase
 
     def _conferir_a_extensao_em_segundo_plano(self) -> None:
         """Uma vez por sessão, fora da linha da voz e da janela: a extensão conectada é da versão
@@ -1484,6 +1505,8 @@ class Aplicativo:
             sites_sem_confirmar=frozenset(self.configuracao.sites_sem_confirmar),
             navegadores=frozenset(separar(self.configuracao.navegadores)),
             navegador_principal=self.configuracao.navegador_principal,
+            # O modo de permissão do dono (ADR-0066): automático ou bypass, do arquivo dele.
+            permissao=modo_de_permissao(self.configuracao.permissao),
         )
         executor = ExecutorDeFerramentas(
             pdp=pdp,
@@ -1724,6 +1747,7 @@ class Aplicativo:
         da configuração — motores, voz, escuta — só muda na conversa seguinte."""
         self.configuracao = self.configuracao.com(
             acesso=configuracao.acesso,
+            permissao=configuracao.permissao,
             raizes=configuracao.raizes,
             raizes_escrita=configuracao.raizes_escrita,
             apps_autorizados=configuracao.apps_autorizados,

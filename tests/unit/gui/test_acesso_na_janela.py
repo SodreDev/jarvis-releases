@@ -385,3 +385,23 @@ def test_a_chave_do_navegador_controlado_liga_pelo_mouse_grava_e_diz_o_estado(
     _clicar(janela, aplicativo, _item(janela, "navegadorControlado-desligado"))
     assert ler(maquina["config"]).navegador_controlado is False
     assert recarregou == [True, False]
+
+
+def test_o_modo_de_permissao_troca_com_o_mouse_e_fica_salvo(
+    tela_de_acesso: tuple[QQuickView, Any, Ponte],
+    aplicativo: QGuiApplication,
+    maquina: dict[str, Path],
+) -> None:
+    """ADR-0066: automático (padrão) e bypass, no painel, gravados no clique."""
+    janela, tela, ponte = tela_de_acesso
+    _aba(janela, aplicativo, "Pastas")
+    assert tela.acesso.permissao == "automatico"
+    _clicar(janela, aplicativo, _item(janela, "permissao-bypass"))
+    assert ler(maquina["config"]).permissao == "bypass"
+    assert [p["ativo"] for p in tela.acesso.permissoes] == [False, True]
+    _capturar(janela, "acesso-permissao-bypass.png")
+    # Pela voz (a sessão chama a ponte): o arquivo e o painel mudam juntos.
+    assert ponte._permissao_pela_voz("automatico") == "salvo"
+    assert ler(maquina["config"]).permissao == "automatico"
+    assert tela.acesso.permissao == "automatico"
+    assert not tela.acesso.definirPermissao("tudo")

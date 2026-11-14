@@ -250,6 +250,8 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     # cache — nunca o script, a URL nem texto de página.
     "guarda": frozenset({"tool_id", "decisao", "regra", "categoria", "ms", "cache", "jev"}),
     "permissao": frozenset({"tool_id", "origem", "motivo", "resposta"}),
+    # O modo de permissão que o dono escolheu pela voz (ADR-0066): só o modo.
+    "permissao.modo": frozenset({"modo"}),
     # A delegação ao Claude Code (ADR-0054): como terminou (código), quanto demorou, quantos
     # turnos e negações — nunca a tarefa nem o que o Claude Code devolveu.
     "delegacao": frozenset({"tool_id", "status", "ms", "turnos", "negacoes", "cortada"}),
@@ -694,6 +696,8 @@ def _linha(evento: Mapping[str, Any]) -> str:
             f"método {evento.get('metodo')} ({evento.get('motivo')})"
             f" · {evento.get('de_fora', 0)} ferramenta(s) de fora"
         )
+    if tipo == "permissao.modo":
+        return f"modo de permissão: {evento.get('modo')}"
     if tipo == "permissao":
         return (
             f"pediu permissão para {evento.get('tool_id')} ({evento.get('origem')}): "

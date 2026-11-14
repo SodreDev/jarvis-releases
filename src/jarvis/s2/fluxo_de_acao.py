@@ -40,6 +40,7 @@ from jarvis.politica.atalho import frase_da_ferramenta
 from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Veredito
+from jarvis.politica.permissao import dispensa_o_sim
 from jarvis.s2.motor import Mensagem, PedidoDeTool
 from jarvis.s2.pendencias import Espera, Pendencia, PendenciaOcupada, RegistroDePendencias
 from jarvis.s2.portao import (
@@ -325,7 +326,12 @@ class FluxoDeAcao:
                     call_id=chamada,
                 )
             if classe is Classe.PEDIR_PERMISSAO and veredito is Veredito.ALLOW:
-                if cabe_no_objetivo(
+                if dispensa_o_sim(executor.pdp.permissao, tool_id):
+                    # O modo do dono (ADR-0066): o «pedir permissão» do Jev não vira pergunta — o
+                    # Jarvis decide sozinho. O «não fazer» continua vetando.
+                    classe = Classe.FAZER
+                    trilhar("modo")
+                elif cabe_no_objetivo(
                     objetivo,
                     tool_id,
                     avaliacao.argumentos,

@@ -30,6 +30,12 @@ from pathlib import Path
 from typing import Any, Final
 
 from jarvis.ambiente import ambiente_ou_os
+
+# Os modos de permissão (ADR-0066), reexportados para a janela ler sem importar a política.
+from jarvis.politica.permissao import FRASE_DO_MODO as FRASE_DO_MODO
+from jarvis.politica.permissao import MODOS_DO_DONO as MODOS_DO_DONO
+from jarvis.politica.permissao import NOME_DO_MODO as NOME_DO_MODO
+from jarvis.politica.permissao import PERMISSAO_PADRAO
 from jarvis.provedores.registro import ARQUIVO as ARQUIVO_DE_PROVEDORES
 from jarvis.voz.chaves import proibir_segredo_na_configuracao
 from jarvis.voz.escuta import MODOS, CombinacaoInvalida, exigir_combinacao
@@ -171,6 +177,10 @@ class Configuracao:
     """Motores que ele aceita usar **sem termos publicados** (hoje: `tts-edge`)."""
     acesso: str = ACESSO_PADRAO
     """O modo de acesso da §5.5 (P12: escolha do dono). `jarvis` = só a área do Jarvis."""
+    permissao: str = str(PERMISSAO_PADRAO)
+    """O modo de permissão (ADR-0066): `automatico` (o padrão — o Jarvis decide sozinho, e só
+    encerrar processo e apagar pedem o sim) ou `bypass` (nada pede o sim). Muda no painel e pela
+    voz do dono («ativa o modo bypass»), e fica salvo."""
     raizes: tuple[str, ...] = ()
     """Pastas concedidas uma a uma, **só leitura**, que valem no modo `concedido`."""
     raizes_escrita: tuple[str, ...] = ()
@@ -265,6 +275,7 @@ class Configuracao:
             "nuvem_ligada": list(self.nuvem_ligada),
             "nuvem_sem_termos": list(self.nuvem_sem_termos),
             "acesso": self.acesso,
+            "permissao": self.permissao,
             "raizes": list(self.raizes),
             "raizes_escrita": list(self.raizes_escrita),
             "apps_autorizados": list(self.apps_autorizados),
@@ -391,6 +402,9 @@ nuvem_sem_termos = {lista(configuracao.nuvem_sem_termos)}
 # "concedido" (+ as `raizes`, só leitura) ou "total". Chaves, cofres e perfis de navegador
 # ficam negados em qualquer modo. Escrever, só rascunho na pasta do Jarvis, com confirmação.
 acesso = {aspas(configuracao.acesso)}
+# Permissões (ADR-0066): "automatico" (o Jarvis decide sozinho; só encerrar processo e apagar
+# pedem o seu sim) ou "bypass" (nada pede o sim; tudo fica na trilha). Muda também pela voz.
+permissao = {aspas(configuracao.permissao)}
 raizes = {lista(configuracao.raizes)}
 # As que, entre as `raizes`, também podem ser escritas (as outras são só de leitura).
 raizes_escrita = {lista(configuracao.raizes_escrita)}
@@ -619,6 +633,11 @@ def validar(configuracao: Configuracao) -> Configuracao:
         raise ConfiguracaoInvalida(
             f"acesso = {configuracao.acesso!r} não existe. Válidos: {', '.join(ACESSOS)}"
         )
+    if configuracao.permissao not in MODOS_DO_DONO:
+        raise ConfiguracaoInvalida(
+            f"permissao = {configuracao.permissao!r} não existe. Válidos: "
+            f"{', '.join(MODOS_DO_DONO)}"
+        )
     for raiz in configuracao.raizes:
         if not Path(raiz).expanduser().is_absolute():
             raise ConfiguracaoInvalida(f"raizes tem {raiz!r}: use o caminho inteiro (~/Projetos)")
@@ -715,6 +734,7 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         nuvem_ligada=_lista(dados, "nuvem_ligada"),
         nuvem_sem_termos=_lista(dados, "nuvem_sem_termos"),
         acesso=_texto(dados, "acesso", ACESSO_PADRAO),
+        permissao=_texto(dados, "permissao", str(PERMISSAO_PADRAO)),
         raizes=_lista(dados, "raizes"),
         raizes_escrita=_lista(dados, "raizes_escrita"),
         apps_autorizados=_lista(dados, "apps_autorizados"),

@@ -92,6 +92,9 @@ class SessaoDeVoz:
     """O laço quer a confirmação do dono para uma ferramenta (ADR-0028). Da thread de trabalho."""
     ao_fim_da_confirmacao: Callable[[str], None] = _nada
     ao_tom: Callable[[str], None] = _nada
+    ao_mudar_permissao: Callable[[str], str] | None = None
+    """O dono trocou o modo de permissão pela voz (ADR-0066): a janela grava no arquivo e devolve
+    «salvo» ou o porquê de não ter salvo. Da thread de trabalho."""
     """O tom de voz do último turno, curto e só quando foge do neutro (ADR-0058). Da thread de
     trabalho, como as outras."""
     """A resposta em stream: o texto acumulado a cada pedaço de fala (ADR-0025). Da thread de
@@ -170,6 +173,8 @@ class SessaoDeVoz:
         aplicativo.ao_pedir_confirmacao = self.ao_pedir_confirmacao
         aplicativo.ao_fim_da_confirmacao = self.ao_fim_da_confirmacao
         aplicativo.ao_tom = self.ao_tom
+        if self.ao_mudar_permissao is not None:
+            aplicativo.ao_mudar_permissao = self.ao_mudar_permissao
         # A porta do dedo fica **sempre** ligada: o modo troca com a sessão aberta, e quem
         # decide se o dedo manda é o laço, pelo modo vivo — não esta montagem.
         aplicativo.pressionado = self._pressionado

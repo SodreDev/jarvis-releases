@@ -53,9 +53,10 @@ from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.navegador.cliente import SEM_NAVEGADOR_ABERTO
 from jarvis.politica.atalho import Atalho, fala_simples, frase_da_ferramenta
 from jarvis.politica.atalho import frase as frase_do_atalho
-from jarvis.politica.memoria import AlcanceDeMemoria, Proveniencia, TurnoCorrente
+from jarvis.politica.memoria import TRUST_DO_DONO, AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.politica.metodo import Escolha
 from jarvis.politica.objetivo import EstadoDoObjetivo
+from jarvis.politica.permissao import ModoDePermissao, comando_de_permissao
 from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
 from jarvis.s2.consumo import ConsumoDoTurno, Medicao, campos_da_medicao, medir, precos_do_motor
 from jarvis.s2.entrega import FiltroDoJaDito, traz_algo_novo
@@ -314,6 +315,10 @@ class Cerebro:
     """Com `delegar_em_tarefa`: ferramentas que o turno roda antes de passar o resto à tarefa."""
     segundos_no_turno: float = SEGUNDOS_NO_TURNO
     """Com `delegar_em_tarefa`: laço mais longo que isto passa a próxima ferramenta à tarefa."""
+    ao_mudar_permissao: Callable[[ModoDePermissao], str] | None = None
+    """Troca o modo de permissão (ADR-0066) quando a fala **do dono** manda («ativa o modo
+    bypass»): lida pelo código antes do motor, nunca por ferramenta — página ou mensagem que diga
+    «modo bypass» não chega aqui. Devolve a frase que o Jarvis diz. `None` = não troca pela voz."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
 
     @property
@@ -412,6 +417,22 @@ class Cerebro:
                 )
             nota_da_pendencia = leitura.nota
             self.autorizacoes.novo_turno(texto_do_dono)
+        troca = (
+            comando_de_permissao(texto_do_dono)
+            if self.ao_mudar_permissao is not None and trust in TRUST_DO_DONO
+            else None
+        )
+        if troca is not None and self.ao_mudar_permissao is not None:
+            return self._so_dizer(
+                self.ao_mudar_permissao(troca),
+                epoch=epoch,
+                turn_id=turn_id,
+                publicar=publicar,
+                cancelado=cancelado,
+                comeco=comeco,
+                ferramentas=[],
+                mostrar=mostrar,
+            )
         memoria = None
         contexto = self.conversa.contexto()
         metodo = self.ferramentas.metodo if self.ferramentas is not None else None
