@@ -87,11 +87,17 @@ class Forma(Enum):
     AMOSTRA = auto()
     """A amostra do contador que o monitor das redes não reconheceu, sanitizada de novo por
     `jarvis.social.contador.amostra_segura`: só dígito, «x», vocabulário do contador e pontuação."""
+    FALA = auto()
+    """O que o ASR ouviu e o que a reconciliação por som fez disso (ADR-0067, pedido do dono): é
+    a única forma com texto do dono, e só vai no turno em que a reconciliação agiu — redigida
+    (segredo, URL, caminho) e cortada como os motivos."""
 
 
 CAMPOS: Final[Mapping[str, Forma]] = {
     "argumentos": Forma.CHAVES,
     "atalho": Forma.CODIGO,
+    "bruto": Forma.FALA,
+    "certeza": Forma.CODIGO,
     "aviso": Forma.CODIGO,
     "cache": Forma.BOOLEANO,
     "cancelado": Forma.BOOLEANO,
@@ -103,9 +109,11 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "codigo": Forma.CODIGO,
     "completo": Forma.BOOLEANO,
     "contraste_db": Forma.NUMERO,
+    "corrigido": Forma.FALA,
     "cortada": Forma.BOOLEANO,
     "de_fora": Forma.NUMERO,
     "decisao": Forma.CODIGO,
+    "duvidas": Forma.NUMERO,
     "epoch": Forma.NUMERO,
     "erro": Forma.MOTIVO,
     "etapa": Forma.CODIGO,
@@ -142,6 +150,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "sem_fala": Forma.NUMERO,
     "status": Forma.CODIGO,
     "tool_id": Forma.CODIGO,
+    "trocas": Forma.NUMERO,
     "turnos": Forma.NUMERO,
     # O tom de voz do turno (ADR-0058): os códigos do rótulo, a confiança e de onde veio.
     "volume": Forma.CODIGO,
@@ -267,6 +276,9 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     "ruido": frozenset(
         {"etapa", "motivo", "modo", "ms", "maior_fala_ms", "contraste_db", "sem_fala", "logprob"}
     ),
+    # A reconciliação por som (ADR-0067): o que o ASR ouviu e o que virou, quantas trocas e se
+    # alguma foi palpite — só no turno em que ela trocou algo ou ficou em dúvida.
+    "ouvido": frozenset({"bruto", "corrigido", "trocas", "duvidas", "certeza"}),
     # A entrega do fim de uma tarefa (ADR-0046): falada ou silenciosa, e por quê — nunca o texto.
     "entrega": frozenset({"origem", "decisao", "motivo"}),
     # O cérebro de um turno cortado que não saiu no prazo (2026-10-29): o turno novo seguiu sem ele.

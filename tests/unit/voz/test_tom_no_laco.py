@@ -21,6 +21,7 @@ from tools.sinais_de_tom import AFIRMACAO, PERGUNTA, sussurro, trecho, voz
 from jarvis.s2.cerebro import Cerebro
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.escuta import Escuta, ModoDeEscuta
+from jarvis.voz.reconciliar import NOTA_DA_VOZ
 from jarvis.voz.tom import AnalisadorDeTom, MedidaDoTom
 from tests.unit.voz.test_app import aplicativo_de
 from tests.unit.voz.test_app_escuta import VadComRajadas
@@ -94,7 +95,8 @@ def test_a_pergunta_pela_entonacao_chega_com_o_ponto_e_a_nota(
     assert "Você: Vai chover amanhã de manhã?" in linhas
     (chamada,) = cerebro_espiado
     assert chamada["texto"] == "Vai chover amanhã de manhã?"
-    assert chamada["tom"] == "[tom da voz do dono: entonação de pergunta]"
+    # Depois da linha do tom vem a nota geral da voz (ADR-0067), no mesmo canal do turno falado.
+    assert chamada["tom"] == f"[tom da voz do dono: entonação de pergunta]\n\n{NOTA_DA_VOZ}"
     (evento,) = _eventos(app, "tom")
     assert evento["entonacao"] == "pergunta" and evento["fonte"] == "dsp"
     # Na trilha, só os códigos do rótulo: nunca a F0, o nível ou o áudio.
@@ -117,7 +119,7 @@ def test_a_afirmacao_nao_custa_nada_no_prompt(
 
     assert "Você: Vou sair um pouco mais tarde hoje." in linhas
     (chamada,) = cerebro_espiado
-    assert chamada["tom"] == ""
+    assert chamada["tom"] == NOTA_DA_VOZ  # só a nota da voz (ADR-0067): o tom não pôs nada
     (evento,) = _eventos(app, "tom")
     assert evento["entonacao"] == "afirmacao"
 
@@ -192,6 +194,6 @@ def test_a_analise_atrasada_nao_atrasa_o_turno(
     gasto = time.monotonic() - comeco
 
     (chamada,) = cerebro_espiado
-    assert chamada == {"texto": "Vai chover amanhã de manhã.", "tom": ""}
+    assert chamada == {"texto": "Vai chover amanhã de manhã.", "tom": NOTA_DA_VOZ}
     assert _eventos(app, "tom") == []
     assert gasto < 5.0  # o laço não esperou os 0,6 s da análise (só o prazo de 50 ms)

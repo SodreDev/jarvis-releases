@@ -165,6 +165,8 @@ from jarvis.voz.interrupcao import Acao as AcaoDaVigia
 from jarvis.voz.interrupcao import Motivo as MotivoDaVigia
 from jarvis.voz.interrupcao import VigiaDeInterrupcao, so_ordem_de_parar
 from jarvis.voz.prontidao import o_que_falta
+from jarvis.voz.reconciliar import Candidato as CandidatoDeSom
+from jarvis.voz.reconciliar import Reconciliacao, Reconciliador
 from jarvis.voz.registro import MotorRecusado, motor_registrado
 from jarvis.voz.resposta import TipoDaResposta, ler_resposta
 from jarvis.voz.ruido import (
@@ -1369,6 +1371,43 @@ class Aplicativo:
         """A dica do ASR (ADR-0043): a palavra de ativação e os termos do dono — curta."""
         return dica_do_asr(self.configuracao.palavra, self._vocabulario_lido.termos_da_dica())
 
+    # --- a reconciliação por som (ADR-0067) -----------------------------------------------------
+    def _reconciliador(self) -> Reconciliador:
+        """Os candidatos do contexto do dono, montados a cada turno (são poucos e mudam: a aba
+        das memórias grava na hora): o vocabulário dele, os contatos das memórias fixas, os apps
+        autorizados e o léxico base. A suíte, sem o repositório do vocabulário, não lê a pasta
+        do dono."""
+        termos = [CandidatoDeSom(t.escrita, t.tipo, t.fala) for t in self._vocabulario_lido.termos]
+        apps = (
+            [a.nome for a in self.ferramentas.registro_de_apps.autorizados.values()]
+            if self.ferramentas is not None
+            else []
+        )
+        pessoas: list[str] = []
+        if self.vocabulario is not None:
+            try:
+                memorias = ler_as_memorias(self.vocabulario.pasta / ARQUIVO_DAS_MEMORIAS)
+            except (MemoriaInvalida, OSError):
+                memorias = ()
+            pessoas = [m.nome for m in memorias if m.tipo in {"contato", "servico"}]
+        return Reconciliador.do_contexto(termos=termos, apps=apps, pessoas=pessoas)
+
+    def _reconciliar(self, texto: str) -> Reconciliacao:
+        """O texto com o som trocado corrigido; quando agiu, a trilha leva o antes e o depois
+        (pedido do dono, 2026-11-14) — redigidos e cortados, só nesse turno."""
+        reconciliacao = self._reconciliador().reconciliar(texto)
+        if reconciliacao.agiu:
+            palpite = any(not t.certa for t in reconciliacao.trocas)
+            self.trilha.evento(
+                "ouvido",
+                bruto=reconciliacao.bruto,
+                corrigido=reconciliacao.texto,
+                trocas=len(reconciliacao.trocas),
+                duvidas=len(reconciliacao.duvidas),
+                certeza="palpite" if palpite else ("certa" if reconciliacao.trocas else "duvida"),
+            )
+        return reconciliacao
+
     # --- o vocabulário do dono (ADR-0044) -------------------------------------------------------
     def redigir_para_ausente(self, nome: str) -> str:
         """O texto curto da resposta automática no WhatsApp (ADR-0060, fatia D), pelo motor desta
@@ -1921,8 +1960,13 @@ class Aplicativo:
         ms_ouvido: float | None = None,
         ms_asr: float | None = None,
         tom: Tom | None = None,
+        nota_do_ouvido: str = "",
     ) -> Turno:
         """Texto → cérebro em stream → áudio no sumidouro, falando enquanto o motor gera.
+
+        `nota_do_ouvido` é a nota da reconciliação por som (ADR-0067) num turno falado: a
+        transcrição pode ter palavra trocada, e o que foi corrigido. Vai junto com a linha do tom,
+        no fim do sistema do turno — não na persona (o teto da ADR-0047 é do prompt-base).
 
         O cérebro (`jarvis.s2.cerebro`, ADR-0025) roda numa linha de execução própria e publica
         um pedaço de fala por fronteira; este laço — que é o dono do epoch e da fila — sintetiza
@@ -1965,6 +2009,7 @@ class Aplicativo:
             self.trilha.evento("tom", **tom.codigos())
             linha_do_tom = tom.linha(self.dimensoes_do_tom)
             self._ganho_da_fala_db = ganho_da_resposta_db(tom) if self.tom_na_voz else 0.0
+        linha_do_tom = "\n\n".join(linha for linha in (linha_do_tom, nota_do_ouvido) if linha)
 
         def geracao_cancelada() -> bool:
             return parar_geracao.is_set() or cancelado()
@@ -2794,6 +2839,11 @@ class Aplicativo:
         hipotese = transcricao.hipotese._replace(
             texto=self._vocabulario_lido.corrigir(veredito.texto)
         )
+        # A palavra que o ASR trocou por outra de som parecido (ADR-0067): «ma i» → «mãe», «note
+        # pad» depois de «mensagem no» → «WhatsApp» — pelo som e pela vaga da frase, só com
+        # confiança. Antes do caminho rápido e da palavra de ativação: eles leem o texto certo.
+        reconciliacao = self._reconciliar(hipotese.texto)
+        hipotese = hipotese._replace(texto=reconciliacao.texto)
         # Uma pergunta de confirmação aberta (ADR-0048): a janela da resposta é um turno próprio.
         # "Sim"/"não" valem sem a palavra de ativação, com ela ou cortando a pergunta; o eco da
         # própria pergunta não responde nem a cancela; e "para"/"cancela" são o "não".
@@ -2864,7 +2914,15 @@ class Aplicativo:
         if tom is not None and self.tom_no_texto and not pergunta:
             # A entonação de pergunta põe o `?` que o ASR não pôs — nunca numa confirmação no ar.
             pedido = com_pergunta(pedido, tom)
-        self._responder_ao_dono(pedido, pedido, fila, ouvido_ms=ouvido_ms, asr_ms=asr_ms, tom=tom)
+        self._responder_ao_dono(
+            pedido,
+            pedido,
+            fila,
+            ouvido_ms=ouvido_ms,
+            asr_ms=asr_ms,
+            tom=tom,
+            nota_do_ouvido=reconciliacao.nota(),
+        )
 
     def _parar_o_turno_cortado(self) -> int:
         """O dono cortou um turno e mandou parar: as tarefas que aquele turno delegou (ADR-0038)
@@ -2890,12 +2948,20 @@ class Aplicativo:
         ouvido_ms: float,
         asr_ms: float,
         tom: Tom | None = None,
+        nota_do_ouvido: str = "",
     ) -> None:
         """O turno do dono: `dito` é o que a tela mostra; `pedido`, o que vai ao cérebro (o
         «sim» lido de «Jarvis, sim», ADR-0048). `tom` só muda o jeito da resposta (ADR-0058): a
-        resposta a uma confirmação chega aqui sem ele."""
+        resposta a uma confirmação chega aqui sem ele, e sem a nota do ouvido (ADR-0067)."""
         self.escrever_na_tela(f"Você: {dito}")
-        turno = self.responder(pedido, fila=fila, ms_ouvido=ouvido_ms, ms_asr=asr_ms, tom=tom)
+        turno = self.responder(
+            pedido,
+            fila=fila,
+            ms_ouvido=ouvido_ms,
+            ms_asr=asr_ms,
+            tom=tom,
+            nota_do_ouvido=nota_do_ouvido,
+        )
         completo = Turno(
             falou=pedido,
             respondeu=turno.respondeu,

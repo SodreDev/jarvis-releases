@@ -42,6 +42,7 @@ from jarvis.s2.motor import Contexto, Mensagem, Modo, MotorDeConversa, PedidoDeT
 from jarvis.s2.nota_do_dono import nota_na_fala
 from jarvis.s2.portao import ler_continuacao, resposta_literal
 from jarvis.voz.interface import nunca_cancelado
+from jarvis.voz.reconciliar import Reconciliador
 
 PASTA: Final = Path(__file__).parent
 CENARIOS: Final = PASTA / "cenarios.toml"
@@ -63,6 +64,9 @@ class Tipo(StrEnum):
     CONTINUAR = "continuar"
     NOTA = "nota"
     MOTOR = "motor"
+    OUVIDO = "ouvido"
+    """A fala é o que o ASR devolveu; a `decisao`, o texto que a reconciliação por som (ADR-0067)
+    tem de entregar ao resto — igual à fala quando nada deve mudar."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +109,14 @@ class Ambiente:
     )
     navegador: bool = True
     entrada: bool = True
+    reconciliar: bool = True
+    """Cada fala passa pela reconciliação por som antes, como no laço de voz (ADR-0067): os
+    cenários de sempre provam que ela não estraga o pedido certo."""
+
+    def ouvir(self, fala: str) -> str:
+        if not self.reconciliar:
+            return fala
+        return Reconciliador.do_contexto(apps=self.apps.values()).reconciliar(fala).texto
 
     def metodo(self) -> ContextoDoMetodo:
         return ContextoDoMetodo(
@@ -156,7 +168,9 @@ def pontuar_ferramenta(cenario: Cenario, tool_id: str | None, args: Mapping[str,
 
 
 def _decisao(cenario: Cenario, ambiente: Ambiente) -> str:
-    fala = cenario.fala
+    fala = ambiente.ouvir(cenario.fala)
+    if cenario.tipo is Tipo.OUVIDO:
+        return fala
     if cenario.tipo is Tipo.METODO:
         return str(escolher_metodo(fala, ambiente.metodo()).metodo)
     if cenario.tipo is Tipo.RESPOSTA:
@@ -199,8 +213,9 @@ def avaliar(
 ) -> Resultado | None:
     """Um cenário, uma vez. `None` = o cenário é de motor e não há motor."""
     if cenario.tipo is Tipo.ATALHO:
-        escolha = escolher_metodo(cenario.fala, ambiente.metodo())
-        atalho = achar(cenario.fala, ambiente.atalho(escolha.motivo))
+        fala = ambiente.ouvir(cenario.fala)
+        escolha = escolher_metodo(fala, ambiente.metodo())
+        atalho = achar(fala, ambiente.atalho(escolha.motivo))
         tool_id = atalho.tool_id if atalho else None
         args = atalho.args if atalho else {}
         obtido = _texto(atalho.tool_id, atalho.args) if atalho else NENHUMA
@@ -208,12 +223,15 @@ def avaliar(
     if cenario.tipo is Tipo.MOTOR:
         if motor is None:
             return None
-        pedido = primeira_proposta(motor, cenario.fala, ferramentas)
+        pedido = primeira_proposta(motor, ambiente.ouvir(cenario.fala), ferramentas)
         tool_id = pedido.tool_id if pedido else None
         args = pedido.args if pedido else {}
         obtido = _texto(pedido.tool_id, pedido.args) if pedido else NENHUMA
         return Resultado(cenario, pontuar_ferramenta(cenario, tool_id, args), obtido)
     decisao = _decisao(cenario, ambiente)
+    if cenario.tipo is Tipo.OUVIDO:
+        certo = decisao.casefold() == cenario.decisao.casefold()
+        return Resultado(cenario, 2 if certo else 0, decisao)
     return Resultado(cenario, 2 if decisao == cenario.decisao else 0, decisao)
 
 

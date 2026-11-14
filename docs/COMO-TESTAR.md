@@ -2098,6 +2098,46 @@ fim).
 
 **Não provado:** o painel e a voz na sua máquina (só testes offscreen e com fakes).
 
+### 0.57 O STT em português: o modelo, a placa e a palavra trocada achada pelo som (2026-11-14, ADR-0067)
+
+**O que mudou.** (1) O whisper local tenta a placa de vídeo sozinho (CUDA, float16) e volta à CPU
+se ela não roda — hoje falta a cuBLAS nesta máquina; (2) o modelo local passou a `auto`: o **large-v3-turbo** na placa (265 ms por trecho e metade
+dos erros do small, medido com voz sintética) e o **small** na CPU (o turbo leva 9 s lá) — o seu
+`jarvis-voz.toml` já está em `modelo_do_asr = "auto"` (a cópia antiga é `jarvis-voz.toml.bak-stt`); (3) quando o ASR troca
+uma palavra por outra de som parecido, o Jarvis corrige pelo som e pelo contexto: «abre o contato
+da minha ma i» → «mãe», «manda mensagem no note pad» → «WhatsApp» (e ele diz o que entendeu),
+«abre o jemini» → «Gemini». Palavra comum («navegador», «minha mana») não muda.
+
+1. **A sua voz, sem o Jarvis aberto.** Grave duas frases e rode o diagnóstico (o áudio fica com
+   você; nada vai à rede):
+
+   ```sh
+   arecord -f S16_LE -r 16000 -c 1 -d 3 ~/mae.wav   # «abre o contato da minha mãe»
+   arecord -f S16_LE -r 16000 -c 1 -d 3 ~/zap.wav   # «manda mensagem no WhatsApp»
+   nice -n 19 uv run --frozen python -m tools.diagnostico_stt ~/mae.wav ~/zap.wav
+   ```
+
+   A 1ª linha diz se a placa pode rodar o whisper e o que falta; depois, o que cada modelo ouviu e
+   em quantos ms, e a frase depois da reconciliação.
+2. **A placa (opcional, recomendado).** Se o diagnóstico disser «falta a cuBLAS 12»:
+   `uv pip install nvidia-cublas-cu12` (no venv do repositório) e rode o diagnóstico de novo — a
+   1ª linha passa a «GPU pronta». O Jarvis usa a placa sozinho na próxima abertura.
+3. **No Jarvis.** Diga «Jarvis, manda mensagem no WhatsApp pra minha mãe» algumas vezes. Se o ASR
+   errar o nome, a resposta diz o que ele entendeu. A trilha (`uv run jarvis-voz --diagnostico`)
+   mostra o evento `ouvido` com o que o ASR ouviu e o que virou — **só** nos turnos em que algo foi
+   trocado (é a única linha da trilha com o que você disse).
+4. **O que o som não acha** («gp mad»): ensine uma vez — «Jarvis, o certo é GPMad» (ou
+   `escrita = "GPMad"` no `vocabulario.toml`). A sigla é soletrada sozinha; «gepe madi» passa a
+   virar «GPMad».
+
+Testes: `tests/unit/voz/test_reconciliar.py`, `tests/unit/voz/test_reconciliacao_no_laco.py`,
+`tests/unit/agentd/test_asr_placa.py`, e o harness pt-BR (`uv run python tools/harness_acerto.py
+--gate`, categoria `ouvido`). Medição: `nice -n 19 uv run --frozen python -m tools.harness_stt`
+(voz sintética) → `docs/medicoes/stt-pt-br.md`.
+
+**Não provado:** a sua voz e o seu microfone (só voz sintética), a Groq (sem chave aqui) e a placa
+rodando o whisper (a cuBLAS não está instalada).
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

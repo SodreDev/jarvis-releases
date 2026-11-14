@@ -437,3 +437,93 @@ categoria = "motor"
 tipo = "motor"
 fala = "me conta uma piada"
 ferramenta = "nenhuma"
+
+# --- ouvido: a palavra que o ASR trocou por outra de som parecido (ADR-0067) ---------------------
+# A fala é o que o ASR devolveu; a decisão, o texto que segue ao resto (sem caixa: o nome do app vem
+# do catálogo do ambiente, em minúsculas). Os quatro primeiros são os
+# exemplos do dono (2026-11-14); os outros, palavra comum e nome certo que não podem mudar.
+[[cenario]]
+id = "ouvido-mae-sozinha"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "Ma i."
+decisao = "Mãe."
+
+[[cenario]]
+id = "ouvido-contato-da-mae"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "abre o contato da minha ma i"
+decisao = "abre o contato da minha mãe"
+
+[[cenario]]
+id = "ouvido-whatsapp-virou-note-pad"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "manda mensagem no note pad pra minha mãe"
+decisao = "manda mensagem no WhatsApp pra minha mãe"
+
+[[cenario]]
+id = "ouvido-whatsapp-virou-whats-up"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "manda mensagem no what's up"
+decisao = "manda mensagem no WhatsApp"
+
+[[cenario]]
+id = "ouvido-gemini-soletrado"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "abre o jemini"
+decisao = "abre o Gemini"
+
+[[cenario]]
+id = "ouvido-gpt-pelo-som"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "pergunta pro gepetê"
+decisao = "pergunta pro GPT"
+
+[[cenario]]
+id = "ouvido-spotify-partido"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "abre o spot fai"
+decisao = "abre o Spotify"
+
+[[cenario]]
+id = "ouvido-minha-mana-fica"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "o que você acha da minha mana"
+decisao = "o que você acha da minha mana"
+
+[[cenario]]
+id = "ouvido-navegador-fica"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "abre o navegador"
+decisao = "abre o navegador"
+
+[[cenario]]
+id = "ouvido-grupo-fica"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "manda mensagem no grupo"
+decisao = "manda mensagem no grupo"
+
+[[cenario]]
+id = "ouvido-disco-fica"
+categoria = "ouvido"
+tipo = "ouvido"
+fala = "abre o disco"
+decisao = "abre o disco"
+
+# --- apps pelo som: o atalho recebe o nome já reconciliado -----------------------------------------
+[[cenario]]
+id = "apps-fecha-steam-pelo-som"
+categoria = "apps"
+tipo = "atalho"
+fala = "fecha o stim"
+ferramenta = "window.close"
+args = { app = "steam" }
