@@ -65,7 +65,9 @@ ASR_PADRAO: Final = "asr-whisper-local"
 TTS_PADRAO: Final = "tts-piper-epitran"
 S2_PADRAO: Final = "eco"
 VOZ_PADRAO: Final = "pt_BR-faber-medium"
-MODELO_DO_ASR_PADRAO: Final = "small"
+MODELO_DO_ASR_PADRAO: Final = "auto"
+"""`auto` (ADR-0067): o turbo na placa de vídeo quando ela roda o whisper, o small na CPU. Um
+tamanho escrito (`small`, `medium`, `large-v3-turbo`…) vale nos dois."""
 ESCUTAS: Final[tuple[str, ...]] = MODOS
 """`ptt` (atalho de teclas), `palavra` (palavra de ativação) e `vad` (escuta contínua)."""
 TTS_ELEVENLABS: Final = "tts-elevenlabs"

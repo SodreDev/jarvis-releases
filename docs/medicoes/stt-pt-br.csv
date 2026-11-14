@@ -1,0 +1,561 @@
+config,cena,tipo,esperado,ouvido,wer,chave,descartado,asr_ms
+small-b1-atual@cpu,Mãe.#0,fala,Mãe.,Naí.,1.0,0,0,2180
+small-b1-atual@cpu,Mãe.#1,fala,Mãe.,Não.,1.0,0,0,2299
+small-b1-atual@cpu,Mãe.#2,fala,Mãe.,Vai!,1.0,0,1,11000
+small-b1-atual@cpu,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,1920
+small-b1-atual@cpu,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,2098
+small-b1-atual@cpu,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,1905
+small-b1-atual@cpu,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,2425
+small-b1-atual@cpu,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,2396
+small-b1-atual@cpu,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,1853
+small-b1-atual@cpu,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Higa pra minha mãe.,0.25,1,0,2439
+small-b1-atual@cpu,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Iga pra minha mãe.,0.25,1,0,2388
+small-b1-atual@cpu,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,2416
+small-b1-atual@cpu,WhatsApp.#0,fala,WhatsApp.,What's Happy?,3.0,0,0,2404
+small-b1-atual@cpu,WhatsApp.#1,fala,WhatsApp.,WhatsApp.,0.0,1,0,2091
+small-b1-atual@cpu,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,0,1717
+small-b1-atual@cpu,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1794
+small-b1-atual@cpu,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre WhatsApp.,0.333,1,0,1876
+small-b1-atual@cpu,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1712
+small-b1-atual@cpu,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,1932
+small-b1-atual@cpu,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,3647
+small-b1-atual@cpu,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,2799
+small-b1-atual@cpu,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pergunta pro GPT.,0.0,1,0,2634
+small-b1-atual@cpu,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pregunta para o GPT.,1.0,1,0,1686
+small-b1-atual@cpu,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta pro GPT.,0.0,1,0,2016
+small-b1-atual@cpu,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,1610
+small-b1-atual@cpu,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,1639
+small-b1-atual@cpu,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,1570
+small-b1-atual@cpu,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,1546
+small-b1-atual@cpu,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,1517
+small-b1-atual@cpu,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,1580
+small-b1-atual@cpu,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,1888
+small-b1-atual@cpu,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,2008
+small-b1-atual@cpu,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,1893
+small-b1-atual@cpu,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,1865
+small-b1-atual@cpu,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,1785
+small-b1-atual@cpu,Abre o Spotify.#2,fala,Abre o Spotify.,Abre Spotify.,0.333,1,0,2078
+small-b1-atual@cpu,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,2015
+small-b1-atual@cpu,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,2215
+small-b1-atual@cpu,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,1561
+small-b1-atual@cpu,Fecha o Steam.#0,fala,Fecha o Steam.,Fechos de...,1.0,0,1,4652
+small-b1-atual@cpu,Fecha o Steam.#1,fala,Fecha o Steam.,Fecham-se-te!,1.0,0,0,1672
+small-b1-atual@cpu,Fecha o Steam.#2,fala,Fecha o Steam.,Fecho os chinos.,1.0,0,0,2090
+small-b1-atual@cpu,Sim.#0,fala,Sim.,Tchau.,1.0,0,1,1367
+small-b1-atual@cpu,Sim.#1,fala,Sim.,Tchau.,1.0,0,0,1319
+small-b1-atual@cpu,Sim.#2,fala,Sim.,Tchau.,1.0,0,1,1369
+small-b1-atual@cpu,Não.#0,fala,Não.,Não.,0.0,1,0,1678
+small-b1-atual@cpu,Não.#1,fala,Não.,Não.,0.0,1,0,1621
+small-b1-atual@cpu,Não.#2,fala,Não.,Não.,0.0,1,0,1470
+small-b1-atual@cpu,silencio_sala,ruido,,,,,1,17623
+small-b1-atual@cpu,clique_do_mouse,ruido,,,,,1,2521
+small-b1-atual@cpu,teclado,ruido,,,,,1,2224
+small-b1-atual@cpu,respiracao,ruido,,,,,1,2292
+small-b1-atual@cpu,respiracao_forte,ruido,,,,,1,3343
+small-b1-atual@cpu,tosse,ruido,,,,,1,13738
+small-b1-atual@cpu,ventilador,ruido,,,,,1,3117
+small-b1-atual@cpu,chiado,ruido,,Graças a todos!,,,1,2372
+small-b1-nenhuma@cpu,Mãe.#0,fala,Mãe.,Naí.,1.0,0,0,3751
+small-b1-nenhuma@cpu,Mãe.#1,fala,Mãe.,Não.,1.0,0,0,1952
+small-b1-nenhuma@cpu,Mãe.#2,fala,Mãe.,Mãe.,0.0,1,1,6179
+small-b1-nenhuma@cpu,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,1877
+small-b1-nenhuma@cpu,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,1736
+small-b1-nenhuma@cpu,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,2056
+small-b1-nenhuma@cpu,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,1648
+small-b1-nenhuma@cpu,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,1742
+small-b1-nenhuma@cpu,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,1740
+small-b1-nenhuma@cpu,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Higa pra minha mãe.,0.25,1,0,1481
+small-b1-nenhuma@cpu,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Iga pra minha mãe.,0.25,1,0,1460
+small-b1-nenhuma@cpu,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,1595
+small-b1-nenhuma@cpu,WhatsApp.#0,fala,WhatsApp.,Se inscreva no canal e me siga no canal para ver mais vídeos de vídeo.  Se inscreva no canal e me siga no canal para ver mais vídeos de vídeo.,30.0,0,1,1994
+small-b1-nenhuma@cpu,WhatsApp.#1,fala,WhatsApp.,What's Happy?,3.0,0,0,1562
+small-b1-nenhuma@cpu,WhatsApp.#2,fala,WhatsApp.,What's up?,3.0,0,0,2675
+small-b1-nenhuma@cpu,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1992
+small-b1-nenhuma@cpu,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1443
+small-b1-nenhuma@cpu,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1434
+small-b1-nenhuma@cpu,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,1622
+small-b1-nenhuma@cpu,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,1456
+small-b1-nenhuma@cpu,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,1506
+small-b1-nenhuma@cpu,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pergunta pro GPT.,0.0,1,0,1650
+small-b1-nenhuma@cpu,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pregunta pro GPT.,0.333,1,0,1430
+small-b1-nenhuma@cpu,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta pro GPT.,0.0,1,0,1486
+small-b1-nenhuma@cpu,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat de PT.,1.0,0,0,1409
+small-b1-nenhuma@cpu,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat de PT.,1.0,0,0,1429
+small-b1-nenhuma@cpu,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat de PT.,1.0,0,0,1467
+small-b1-nenhuma@cpu,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gimny.,0.333,0,0,1527
+small-b1-nenhuma@cpu,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gimini.,0.333,0,0,1454
+small-b1-nenhuma@cpu,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o de anime.,0.667,0,0,1508
+small-b1-nenhuma@cpu,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,1576
+small-b1-nenhuma@cpu,Abre o Discord.#1,fala,Abre o Discord.,Abra o Discord.,0.333,1,0,1470
+small-b1-nenhuma@cpu,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord,0.0,1,0,1795
+small-b1-nenhuma@cpu,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,1756
+small-b1-nenhuma@cpu,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,1685
+small-b1-nenhuma@cpu,Abre o Spotify.#2,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,1843
+small-b1-nenhuma@cpu,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?",É visto que horas são.,0.5,0,0,1775
+small-b1-nenhuma@cpu,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?",erve isso que horas são,0.5,0,0,1531
+small-b1-nenhuma@cpu,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Eu vi isso aqui, oração.",1.25,0,0,2039
+small-b1-nenhuma@cpu,Fecha o Steam.#0,fala,Fecha o Steam.,Fechou-se-te!,1.0,0,0,4214
+small-b1-nenhuma@cpu,Fecha o Steam.#1,fala,Fecha o Steam.,Fecham-se-te!,1.0,0,0,2510
+small-b1-nenhuma@cpu,Fecha o Steam.#2,fala,Fecha o Steam.,Peixe os chinos.,1.0,0,0,1636
+small-b1-nenhuma@cpu,Sim.#0,fala,Sim.,Tchau.,1.0,0,0,1843
+small-b1-nenhuma@cpu,Sim.#1,fala,Sim.,Tchau.,1.0,0,0,1696
+small-b1-nenhuma@cpu,Sim.#2,fala,Sim.,Tchau.,1.0,0,1,2058
+small-b1-nenhuma@cpu,Não.#0,fala,Não.,Não.,0.0,1,0,1564
+small-b1-nenhuma@cpu,Não.#1,fala,Não.,Não.,0.0,1,0,1727
+small-b1-nenhuma@cpu,Não.#2,fala,Não.,Não.,0.0,1,0,1710
+small-b1-nenhuma@cpu,silencio_sala,ruido,,,,,1,1665
+small-b1-nenhuma@cpu,clique_do_mouse,ruido,,,,,1,1681
+small-b1-nenhuma@cpu,teclado,ruido,,,,,1,1447
+small-b1-nenhuma@cpu,respiracao,ruido,,,,,1,1543
+small-b1-nenhuma@cpu,respiracao_forte,ruido,,,,,1,1410
+small-b1-nenhuma@cpu,tosse,ruido,,,,,1,1379
+small-b1-nenhuma@cpu,ventilador,ruido,,,,,1,1296
+small-b1-nenhuma@cpu,chiado,ruido,,,,,1,1266
+small-b5-atual@cpu,Mãe.#0,fala,Mãe.,Naí.,1.0,0,0,1348
+small-b5-atual@cpu,Mãe.#1,fala,Mãe.,Não.,1.0,0,0,1890
+small-b5-atual@cpu,Mãe.#2,fala,Mãe.,Naí.,1.0,0,1,9057
+small-b5-atual@cpu,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,2233
+small-b5-atual@cpu,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,2135
+small-b5-atual@cpu,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,1963
+small-b5-atual@cpu,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,2527
+small-b5-atual@cpu,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,2575
+small-b5-atual@cpu,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,2107
+small-b5-atual@cpu,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Higa pra minha mãe.,0.25,1,0,1999
+small-b5-atual@cpu,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Iga pra minha mãe.,0.25,1,0,2083
+small-b5-atual@cpu,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,1623
+small-b5-atual@cpu,WhatsApp.#0,fala,WhatsApp.,What's Happy?,3.0,0,0,1575
+small-b5-atual@cpu,WhatsApp.#1,fala,WhatsApp.,WhatsApp.,0.0,1,0,1588
+small-b5-atual@cpu,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,0,1538
+small-b5-atual@cpu,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1660
+small-b5-atual@cpu,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1494
+small-b5-atual@cpu,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1809
+small-b5-atual@cpu,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp pra minha mãe.,0.143,1,0,1947
+small-b5-atual@cpu,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,3256
+small-b5-atual@cpu,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp pra minha mãe.,0.143,1,0,2669
+small-b5-atual@cpu,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,2596
+small-b5-atual@cpu,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pergunta pro GPT.,0.0,1,0,2162
+small-b5-atual@cpu,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,2636
+small-b5-atual@cpu,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,2428
+small-b5-atual@cpu,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,2030
+small-b5-atual@cpu,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,2264
+small-b5-atual@cpu,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,2864
+small-b5-atual@cpu,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,2089
+small-b5-atual@cpu,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,3580
+small-b5-atual@cpu,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,2580
+small-b5-atual@cpu,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,2484
+small-b5-atual@cpu,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,3148
+small-b5-atual@cpu,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,3555
+small-b5-atual@cpu,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,2986
+small-b5-atual@cpu,Abre o Spotify.#2,fala,Abre o Spotify.,Abre Spotify.,0.333,1,0,2555
+small-b5-atual@cpu,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,3077
+small-b5-atual@cpu,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,2862
+small-b5-atual@cpu,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,1946
+small-b5-atual@cpu,Fecha o Steam.#0,fala,Fecha o Steam.,Fecham-se-te.,1.0,0,0,10815
+small-b5-atual@cpu,Fecha o Steam.#1,fala,Fecha o Steam.,Fecham-se-te!,1.0,0,0,3271
+small-b5-atual@cpu,Fecha o Steam.#2,fala,Fecha o Steam.,Fecho os chinos.,1.0,0,0,3229
+small-b5-atual@cpu,Sim.#0,fala,Sim.,Tchau.,1.0,0,1,2151
+small-b5-atual@cpu,Sim.#1,fala,Sim.,Tchau!,1.0,0,0,4564
+small-b5-atual@cpu,Sim.#2,fala,Sim.,Tchau.,1.0,0,1,5660
+small-b5-atual@cpu,Não.#0,fala,Não.,Não.,0.0,1,0,1824
+small-b5-atual@cpu,Não.#1,fala,Não.,Não.,0.0,1,0,1732
+small-b5-atual@cpu,Não.#2,fala,Não.,Não.,0.0,1,0,2135
+small-b5-atual@cpu,silencio_sala,ruido,,Legendas pela comunidade de Amara.org,,,1,2061
+small-b5-atual@cpu,clique_do_mouse,ruido,,,,,1,1871
+small-b5-atual@cpu,teclado,ruido,,Legendas pela comunidade de Amara.org,,,1,2101
+small-b5-atual@cpu,respiracao,ruido,,,,,1,1771
+small-b5-atual@cpu,respiracao_forte,ruido,,,,,1,5278
+small-b5-atual@cpu,tosse,ruido,,,,,1,1834
+small-b5-atual@cpu,ventilador,ruido,,Legendas pela comunidade de Amara.org,,,1,1892
+small-b5-atual@cpu,chiado,ruido,,Graças a todos!,,,1,1883
+small-b5-frase@cpu,Mãe.#0,fala,Mãe.,Naí.,1.0,0,0,2338
+small-b5-frase@cpu,Mãe.#1,fala,Mãe.,Não.,1.0,0,0,2011
+small-b5-frase@cpu,Mãe.#2,fala,Mãe.,Mãe.,0.0,1,0,4394
+small-b5-frase@cpu,Minha mãe.#0,fala,Minha mãe.,Minha mãe!,0.0,1,0,2061
+small-b5-frase@cpu,Minha mãe.#1,fala,Minha mãe.,Minha mãe!,0.0,1,0,1948
+small-b5-frase@cpu,Minha mãe.#2,fala,Minha mãe.,Minha mãe!,0.0,1,0,2679
+small-b5-frase@cpu,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,2632
+small-b5-frase@cpu,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,2658
+small-b5-frase@cpu,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,2526
+small-b5-frase@cpu,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Higa pra minha mãe!,0.25,1,0,2331
+small-b5-frase@cpu,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Iga pra minha mãe.,0.25,1,0,2722
+small-b5-frase@cpu,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,3892
+small-b5-frase@cpu,WhatsApp.#0,fala,WhatsApp.,What's Happy?,3.0,0,0,2632
+small-b5-frase@cpu,WhatsApp.#1,fala,WhatsApp.,WhatsApp.,0.0,1,0,2687
+small-b5-frase@cpu,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,0,2981
+small-b5-frase@cpu,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,2563
+small-b5-frase@cpu,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre o WhatsApp e...,0.333,1,0,2298
+small-b5-frase@cpu,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,1905
+small-b5-frase@cpu,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,1999
+small-b5-frase@cpu,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,2063
+small-b5-frase@cpu,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,1810
+small-b5-frase@cpu,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,1810
+small-b5-frase@cpu,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pregunta para o GPT.,1.0,1,0,1931
+small-b5-frase@cpu,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,2493
+small-b5-frase@cpu,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,3316
+small-b5-frase@cpu,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,3020
+small-b5-frase@cpu,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,2798
+small-b5-frase@cpu,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,1907
+small-b5-frase@cpu,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,2083
+small-b5-frase@cpu,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,1955
+small-b5-frase@cpu,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,2044
+small-b5-frase@cpu,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,2152
+small-b5-frase@cpu,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,2168
+small-b5-frase@cpu,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,2005
+small-b5-frase@cpu,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify!,0.0,1,0,9334
+small-b5-frase@cpu,Abre o Spotify.#2,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,2852
+small-b5-frase@cpu,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?",É visto que horas são.,0.5,0,0,6892
+small-b5-frase@cpu,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?",Serviço que horas são!,0.25,0,0,7960
+small-b5-frase@cpu,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,6058
+small-b5-frase@cpu,Fecha o Steam.#0,fala,Fecha o Steam.,Fechos de...,1.0,0,1,14255
+small-b5-frase@cpu,Fecha o Steam.#1,fala,Fecha o Steam.,Fecha hoje em dia!,1.0,0,0,2528
+small-b5-frase@cpu,Fecha o Steam.#2,fala,Fecha o Steam.,Fechou-se-te.,1.0,0,0,15438
+small-b5-frase@cpu,Sim.#0,fala,Sim.,Tchau.,1.0,0,0,2162
+small-b5-frase@cpu,Sim.#1,fala,Sim.,Tchau!,1.0,0,0,1681
+small-b5-frase@cpu,Sim.#2,fala,Sim.,Tchau!,1.0,0,1,1812
+small-b5-frase@cpu,Não.#0,fala,Não.,Não.,0.0,1,0,6676
+small-b5-frase@cpu,Não.#1,fala,Não.,Não.,0.0,1,0,6985
+small-b5-frase@cpu,Não.#2,fala,Não.,Não.,0.0,1,0,5631
+small-b5-frase@cpu,silencio_sala,ruido,,,,,1,7864
+small-b5-frase@cpu,clique_do_mouse,ruido,,,,,1,5138
+small-b5-frase@cpu,teclado,ruido,,www.multi-multi.com,,,1,4126
+small-b5-frase@cpu,respiracao,ruido,,,,,1,3791
+small-b5-frase@cpu,respiracao_forte,ruido,,,,,1,4193
+small-b5-frase@cpu,tosse,ruido,,,,,1,2886
+small-b5-frase@cpu,ventilador,ruido,,www.multi-multi.com,,,1,6873
+small-b5-frase@cpu,chiado,ruido,,Graças a todos!,,,1,5405
+small-b1-atual@cuda,Mãe.#0,fala,Mãe.,Naí.,1.0,0,0,91
+small-b1-atual@cuda,Mãe.#1,fala,Mãe.,Não.,1.0,0,0,113
+small-b1-atual@cuda,Mãe.#2,fala,Mãe.,Mãe.,0.0,1,0,391
+small-b1-atual@cuda,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,151
+small-b1-atual@cuda,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,154
+small-b1-atual@cuda,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,135
+small-b1-atual@cuda,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,182
+small-b1-atual@cuda,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,179
+small-b1-atual@cuda,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,173
+small-b1-atual@cuda,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,157
+small-b1-atual@cuda,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,141
+small-b1-atual@cuda,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,197
+small-b1-atual@cuda,WhatsApp.#0,fala,WhatsApp.,Watsappi!,1.0,0,0,134
+small-b1-atual@cuda,WhatsApp.#1,fala,WhatsApp.,WhatsApp.,0.0,1,0,120
+small-b1-atual@cuda,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,0,123
+small-b1-atual@cuda,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,134
+small-b1-atual@cuda,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre WhatsApp.,0.333,1,0,133
+small-b1-atual@cuda,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,139
+small-b1-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,199
+small-b1-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,171
+small-b1-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,197
+small-b1-atual@cuda,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pregunta para o GPT.,1.0,1,0,144
+small-b1-atual@cuda,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pregunta para o GPT.,1.0,1,0,159
+small-b1-atual@cuda,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta pro GPT.,0.0,1,0,152
+small-b1-atual@cuda,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,140
+small-b1-atual@cuda,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,171
+small-b1-atual@cuda,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,135
+small-b1-atual@cuda,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,172
+small-b1-atual@cuda,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,134
+small-b1-atual@cuda,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,138
+small-b1-atual@cuda,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,140
+small-b1-atual@cuda,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,119
+small-b1-atual@cuda,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,115
+small-b1-atual@cuda,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,144
+small-b1-atual@cuda,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,130
+small-b1-atual@cuda,Abre o Spotify.#2,fala,Abre o Spotify.,Abre Spotify.,0.333,1,0,113
+small-b1-atual@cuda,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,156
+small-b1-atual@cuda,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,125
+small-b1-atual@cuda,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,154
+small-b1-atual@cuda,Fecha o Steam.#0,fala,Fecha o Steam.,Fechou-se-te!,1.0,0,0,148
+small-b1-atual@cuda,Fecha o Steam.#1,fala,Fecha o Steam.,Cachos de Ti.,1.0,0,0,405
+small-b1-atual@cuda,Fecha o Steam.#2,fala,Fecha o Steam.,Fecho os chinos.,1.0,0,0,101
+small-b1-atual@cuda,Sim.#0,fala,Sim.,Tchau.,1.0,0,0,117
+small-b1-atual@cuda,Sim.#1,fala,Sim.,Tchau.,1.0,0,0,114
+small-b1-atual@cuda,Sim.#2,fala,Sim.,Tchau.,1.0,0,0,154
+small-b1-atual@cuda,Não.#0,fala,Não.,Não.,0.0,1,0,194
+small-b1-atual@cuda,Não.#1,fala,Não.,Não.,0.0,1,0,106
+small-b1-atual@cuda,Não.#2,fala,Não.,Não.,0.0,1,0,92
+small-b1-atual@cuda,silencio_sala,ruido,,,,,1,106
+small-b1-atual@cuda,clique_do_mouse,ruido,,,,,1,102
+small-b1-atual@cuda,teclado,ruido,,,,,1,105
+small-b1-atual@cuda,respiracao,ruido,,,,,1,83
+small-b1-atual@cuda,respiracao_forte,ruido,,,,,1,91
+small-b1-atual@cuda,tosse,ruido,,,,,1,92
+small-b1-atual@cuda,ventilador,ruido,,,,,1,96
+small-b1-atual@cuda,chiado,ruido,,,,,1,87
+small-b5-atual@cuda,Mãe.#0,fala,Mãe.,Nãe.,1.0,0,0,112
+small-b5-atual@cuda,Mãe.#1,fala,Mãe.,Nãe.,1.0,0,0,101
+small-b5-atual@cuda,Mãe.#2,fala,Mãe.,Mãe.,0.0,1,0,115
+small-b5-atual@cuda,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,123
+small-b5-atual@cuda,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,111
+small-b5-atual@cuda,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,110
+small-b5-atual@cuda,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,128
+small-b5-atual@cuda,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,132
+small-b5-atual@cuda,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,121
+small-b5-atual@cuda,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,120
+small-b5-atual@cuda,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,123
+small-b5-atual@cuda,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Figa pra minha mãe.,0.25,1,0,135
+small-b5-atual@cuda,WhatsApp.#0,fala,WhatsApp.,What's Happy?,3.0,0,0,130
+small-b5-atual@cuda,WhatsApp.#1,fala,WhatsApp.,WhatsApp.,0.0,1,0,119
+small-b5-atual@cuda,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,0,116
+small-b5-atual@cuda,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,109
+small-b5-atual@cuda,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,128
+small-b5-atual@cuda,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,113
+small-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,144
+small-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,140
+small-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para minha mãe.,0.286,1,0,155
+small-b5-atual@cuda,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pregunta para o GPT.,1.0,1,0,151
+small-b5-atual@cuda,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pregunta pro GPT.,0.333,1,0,123
+small-b5-atual@cuda,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,134
+small-b5-atual@cuda,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,139
+small-b5-atual@cuda,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,188
+small-b5-atual@cuda,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat de GPT.,1.0,0,0,167
+small-b5-atual@cuda,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,133
+small-b5-atual@cuda,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,160
+small-b5-atual@cuda,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,158
+small-b5-atual@cuda,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,147
+small-b5-atual@cuda,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,199
+small-b5-atual@cuda,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,139
+small-b5-atual@cuda,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,148
+small-b5-atual@cuda,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,122
+small-b5-atual@cuda,Abre o Spotify.#2,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,137
+small-b5-atual@cuda,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,147
+small-b5-atual@cuda,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,141
+small-b5-atual@cuda,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,136
+small-b5-atual@cuda,Fecha o Steam.#0,fala,Fecha o Steam.,Fechou-se-te!,1.0,0,0,177
+small-b5-atual@cuda,Fecha o Steam.#1,fala,Fecha o Steam.,Fecham-se-te!,1.0,0,0,168
+small-b5-atual@cuda,Fecha o Steam.#2,fala,Fecha o Steam.,Fecho os chinos.,1.0,0,0,182
+small-b5-atual@cuda,Sim.#0,fala,Sim.,Tchau.,1.0,0,0,170
+small-b5-atual@cuda,Sim.#1,fala,Sim.,Tchau.,1.0,0,0,143
+small-b5-atual@cuda,Sim.#2,fala,Sim.,Tchau.,1.0,0,0,159
+small-b5-atual@cuda,Não.#0,fala,Não.,Não.,0.0,1,0,137
+small-b5-atual@cuda,Não.#1,fala,Não.,Não.,0.0,1,0,119
+small-b5-atual@cuda,Não.#2,fala,Não.,Não.,0.0,1,0,129
+small-b5-atual@cuda,silencio_sala,ruido,,,,,1,224
+small-b5-atual@cuda,clique_do_mouse,ruido,,,,,1,119
+small-b5-atual@cuda,teclado,ruido,,,,,1,108
+small-b5-atual@cuda,respiracao,ruido,,,,,1,118
+small-b5-atual@cuda,respiracao_forte,ruido,,,,,1,118
+small-b5-atual@cuda,tosse,ruido,,,,,1,106
+small-b5-atual@cuda,ventilador,ruido,,,,,1,113
+small-b5-atual@cuda,chiado,ruido,,Graças a todos!,,,1,106
+medium-b5-atual@cuda,Mãe.#0,fala,Mãe.,Né?,1.0,0,0,230
+medium-b5-atual@cuda,Mãe.#1,fala,Mãe.,Não é.,2.0,0,0,226
+medium-b5-atual@cuda,Mãe.#2,fala,Mãe.,Né?,1.0,0,0,210
+medium-b5-atual@cuda,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,219
+medium-b5-atual@cuda,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,236
+medium-b5-atual@cuda,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,215
+medium-b5-atual@cuda,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,246
+medium-b5-atual@cuda,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,309
+medium-b5-atual@cuda,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,256
+medium-b5-atual@cuda,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Fica pra minha mãe.,0.25,1,0,255
+medium-b5-atual@cuda,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Fica pra minha mãe.,0.25,1,0,223
+medium-b5-atual@cuda,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Fica pra minha mãe.,0.25,1,0,237
+medium-b5-atual@cuda,WhatsApp.#0,fala,WhatsApp.,WhatsApp.,0.0,1,0,233
+medium-b5-atual@cuda,WhatsApp.#1,fala,WhatsApp.,WhatsApp.,0.0,1,0,217
+medium-b5-atual@cuda,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,0,203
+medium-b5-atual@cuda,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,250
+medium-b5-atual@cuda,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre WhatsApp.,0.333,1,0,240
+medium-b5-atual@cuda,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre WhatsApp.,0.333,1,0,277
+medium-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp pra minha mãe.,0.143,1,0,290
+medium-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,276
+medium-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda a mensagem no WhatsApp para a minha mãe.,0.429,1,0,287
+medium-b5-atual@cuda,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,237
+medium-b5-atual@cuda,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,245
+medium-b5-atual@cuda,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,256
+medium-b5-atual@cuda,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,312
+medium-b5-atual@cuda,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,303
+medium-b5-atual@cuda,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,243
+medium-b5-atual@cuda,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,252
+medium-b5-atual@cuda,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,248
+medium-b5-atual@cuda,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,237
+medium-b5-atual@cuda,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,259
+medium-b5-atual@cuda,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,248
+medium-b5-atual@cuda,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,254
+medium-b5-atual@cuda,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,244
+medium-b5-atual@cuda,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,252
+medium-b5-atual@cuda,Abre o Spotify.#2,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,235
+medium-b5-atual@cuda,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,267
+medium-b5-atual@cuda,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,321
+medium-b5-atual@cuda,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,254
+medium-b5-atual@cuda,Fecha o Steam.#0,fala,Fecha o Steam.,Fecha os tios.,0.667,0,0,240
+medium-b5-atual@cuda,Fecha o Steam.#1,fala,Fecha o Steam.,Fechamos de ti.,1.0,0,0,260
+medium-b5-atual@cuda,Fecha o Steam.#2,fala,Fecha o Steam.,Fechou os tios.,1.0,0,0,261
+medium-b5-atual@cuda,Sim.#0,fala,Sim.,Tchau.,1.0,0,1,259
+medium-b5-atual@cuda,Sim.#1,fala,Sim.,Tchau!,1.0,0,1,233
+medium-b5-atual@cuda,Sim.#2,fala,Sim.,Tchau!,1.0,0,0,221
+medium-b5-atual@cuda,Não.#0,fala,Não.,Não.,0.0,1,0,215
+medium-b5-atual@cuda,Não.#1,fala,Não.,Não.,0.0,1,0,232
+medium-b5-atual@cuda,Não.#2,fala,Não.,Não.,0.0,1,0,216
+medium-b5-atual@cuda,silencio_sala,ruido,,Obrigado por assistir.,,,1,248
+medium-b5-atual@cuda,clique_do_mouse,ruido,,Obrigado por assistir.,,,1,240
+medium-b5-atual@cuda,teclado,ruido,,Legendas pela comunidade Amara.org,,,1,287
+medium-b5-atual@cuda,respiracao,ruido,,,,,1,217
+medium-b5-atual@cuda,respiracao_forte,ruido,,JORNALISTA,,,1,245
+medium-b5-atual@cuda,tosse,ruido,,JORNALISTA,,,1,221
+medium-b5-atual@cuda,ventilador,ruido,,Obrigado!,,,1,203
+medium-b5-atual@cuda,chiado,ruido,,Obrigado por assistir.,,,1,224
+turbo-b1-atual@cuda,Mãe.#0,fala,Mãe.,Não.,1.0,0,0,303
+turbo-b1-atual@cuda,Mãe.#1,fala,Mãe.,Não.,1.0,0,0,256
+turbo-b1-atual@cuda,Mãe.#2,fala,Mãe.,Não.,1.0,0,0,247
+turbo-b1-atual@cuda,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,288
+turbo-b1-atual@cuda,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,310
+turbo-b1-atual@cuda,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,264
+turbo-b1-atual@cuda,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,280
+turbo-b1-atual@cuda,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,268
+turbo-b1-atual@cuda,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,277
+turbo-b1-atual@cuda,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,287
+turbo-b1-atual@cuda,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,262
+turbo-b1-atual@cuda,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,272
+turbo-b1-atual@cuda,WhatsApp.#0,fala,WhatsApp.,WhatsApp.,0.0,1,0,252
+turbo-b1-atual@cuda,WhatsApp.#1,fala,WhatsApp.,WhatsApp.,0.0,1,1,254
+turbo-b1-atual@cuda,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,0,270
+turbo-b1-atual@cuda,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,259
+turbo-b1-atual@cuda,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,246
+turbo-b1-atual@cuda,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,253
+turbo-b1-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,266
+turbo-b1-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,263
+turbo-b1-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,269
+turbo-b1-atual@cuda,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,253
+turbo-b1-atual@cuda,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,318
+turbo-b1-atual@cuda,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,264
+turbo-b1-atual@cuda,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,267
+turbo-b1-atual@cuda,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,263
+turbo-b1-atual@cuda,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,270
+turbo-b1-atual@cuda,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,261
+turbo-b1-atual@cuda,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,273
+turbo-b1-atual@cuda,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,259
+turbo-b1-atual@cuda,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,248
+turbo-b1-atual@cuda,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,254
+turbo-b1-atual@cuda,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,274
+turbo-b1-atual@cuda,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,263
+turbo-b1-atual@cuda,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,266
+turbo-b1-atual@cuda,Abre o Spotify.#2,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,311
+turbo-b1-atual@cuda,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,299
+turbo-b1-atual@cuda,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,300
+turbo-b1-atual@cuda,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,305
+turbo-b1-atual@cuda,Fecha o Steam.#0,fala,Fecha o Steam.,Fecha o estinho.,0.333,0,0,276
+turbo-b1-atual@cuda,Fecha o Steam.#1,fala,Fecha o Steam.,Fecha os ti.,0.667,0,0,306
+turbo-b1-atual@cuda,Fecha o Steam.#2,fala,Fecha o Steam.,Fecha o chitinho.,0.333,0,0,269
+turbo-b1-atual@cuda,Sim.#0,fala,Sim.,Sim.,0.0,1,0,248
+turbo-b1-atual@cuda,Sim.#1,fala,Sim.,Sim.,0.0,1,0,261
+turbo-b1-atual@cuda,Sim.#2,fala,Sim.,Tchau.,1.0,0,0,260
+turbo-b1-atual@cuda,Não.#0,fala,Não.,Não.,0.0,1,0,257
+turbo-b1-atual@cuda,Não.#1,fala,Não.,Não.,0.0,1,0,260
+turbo-b1-atual@cuda,Não.#2,fala,Não.,Não.,0.0,1,0,252
+turbo-b1-atual@cuda,silencio_sala,ruido,,E aí,,,0,261
+turbo-b1-atual@cuda,clique_do_mouse,ruido,,E aí,,,0,262
+turbo-b1-atual@cuda,teclado,ruido,,"Tchau, tchau.",,,1,312
+turbo-b1-atual@cuda,respiracao,ruido,,Tchau.,,,1,970
+turbo-b1-atual@cuda,respiracao_forte,ruido,,Sigh.,,,1,1973
+turbo-b1-atual@cuda,tosse,ruido,,Transcrição e Legendas Pedro Negri,,,1,603
+turbo-b1-atual@cuda,ventilador,ruido,,E aí,,,1,355
+turbo-b1-atual@cuda,chiado,ruido,,E aí,,,0,361
+turbo-b5-atual@cuda,Mãe.#0,fala,Mãe.,Não.,1.0,0,0,439
+turbo-b5-atual@cuda,Mãe.#1,fala,Mãe.,Não.,1.0,0,0,399
+turbo-b5-atual@cuda,Mãe.#2,fala,Mãe.,Não é?,2.0,0,0,414
+turbo-b5-atual@cuda,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,454
+turbo-b5-atual@cuda,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,481
+turbo-b5-atual@cuda,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,472
+turbo-b5-atual@cuda,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,432
+turbo-b5-atual@cuda,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,476
+turbo-b5-atual@cuda,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,466
+turbo-b5-atual@cuda,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,420
+turbo-b5-atual@cuda,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,454
+turbo-b5-atual@cuda,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,448
+turbo-b5-atual@cuda,WhatsApp.#0,fala,WhatsApp.,WhatsApp.,0.0,1,0,349
+turbo-b5-atual@cuda,WhatsApp.#1,fala,WhatsApp.,Whatsappi.,1.0,0,0,478
+turbo-b5-atual@cuda,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,0,543
+turbo-b5-atual@cuda,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,492
+turbo-b5-atual@cuda,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,495
+turbo-b5-atual@cuda,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,519
+turbo-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,540
+turbo-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,655
+turbo-b5-atual@cuda,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,585
+turbo-b5-atual@cuda,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,511
+turbo-b5-atual@cuda,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,587
+turbo-b5-atual@cuda,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,543
+turbo-b5-atual@cuda,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,555
+turbo-b5-atual@cuda,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,597
+turbo-b5-atual@cuda,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,504
+turbo-b5-atual@cuda,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,490
+turbo-b5-atual@cuda,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,525
+turbo-b5-atual@cuda,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,479
+turbo-b5-atual@cuda,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,479
+turbo-b5-atual@cuda,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,565
+turbo-b5-atual@cuda,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,385
+turbo-b5-atual@cuda,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,395
+turbo-b5-atual@cuda,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,443
+turbo-b5-atual@cuda,Abre o Spotify.#2,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,375
+turbo-b5-atual@cuda,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,371
+turbo-b5-atual@cuda,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,412
+turbo-b5-atual@cuda,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,390
+turbo-b5-atual@cuda,Fecha o Steam.#0,fala,Fecha o Steam.,Fecha os ti.,0.667,0,0,462
+turbo-b5-atual@cuda,Fecha o Steam.#1,fala,Fecha o Steam.,Fecha os ti.,0.667,0,0,397
+turbo-b5-atual@cuda,Fecha o Steam.#2,fala,Fecha o Steam.,Fecha o chitinho.,0.333,0,0,457
+turbo-b5-atual@cuda,Sim.#0,fala,Sim.,Sim.,0.0,1,0,442
+turbo-b5-atual@cuda,Sim.#1,fala,Sim.,Sim.,0.0,1,0,452
+turbo-b5-atual@cuda,Sim.#2,fala,Sim.,Tchau.,1.0,0,0,382
+turbo-b5-atual@cuda,Não.#0,fala,Não.,Não.,0.0,1,0,378
+turbo-b5-atual@cuda,Não.#1,fala,Não.,Não.,0.0,1,0,398
+turbo-b5-atual@cuda,Não.#2,fala,Não.,Não.,0.0,1,0,354
+turbo-b5-atual@cuda,silencio_sala,ruido,,Obrigado.,,,0,418
+turbo-b5-atual@cuda,clique_do_mouse,ruido,,Thank you.,,,0,400
+turbo-b5-atual@cuda,teclado,ruido,,Thank you.,,,1,386
+turbo-b5-atual@cuda,respiracao,ruido,,Thank you.,,,1,633
+turbo-b5-atual@cuda,respiracao_forte,ruido,,Sigh.,,,1,830
+turbo-b5-atual@cuda,tosse,ruido,,E aí,,,1,763
+turbo-b5-atual@cuda,ventilador,ruido,,Thank you.,,,0,356
+turbo-b5-atual@cuda,chiado,ruido,,Thank you.,,,0,399
+large-v3-b5-frase@cuda,Mãe.#0,fala,Mãe.,Néi.,1.0,0,0,499
+large-v3-b5-frase@cuda,Mãe.#1,fala,Mãe.,Não é.,2.0,0,0,478
+large-v3-b5-frase@cuda,Mãe.#2,fala,Mãe.,É isso aí.  Tchau.,4.0,0,0,471
+large-v3-b5-frase@cuda,Minha mãe.#0,fala,Minha mãe.,Minha mãe.,0.0,1,0,466
+large-v3-b5-frase@cuda,Minha mãe.#1,fala,Minha mãe.,Minha mãe.,0.0,1,0,442
+large-v3-b5-frase@cuda,Minha mãe.#2,fala,Minha mãe.,Minha mãe.,0.0,1,0,416
+large-v3-b5-frase@cuda,Abre o contato da minha mãe.#0,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,455
+large-v3-b5-frase@cuda,Abre o contato da minha mãe.#1,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,519
+large-v3-b5-frase@cuda,Abre o contato da minha mãe.#2,fala,Abre o contato da minha mãe.,Abre o contato da minha mãe.,0.0,1,0,452
+large-v3-b5-frase@cuda,Liga pra minha mãe.#0,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,439
+large-v3-b5-frase@cuda,Liga pra minha mãe.#1,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,408
+large-v3-b5-frase@cuda,Liga pra minha mãe.#2,fala,Liga pra minha mãe.,Liga pra minha mãe.,0.0,1,0,450
+large-v3-b5-frase@cuda,WhatsApp.#0,fala,WhatsApp.,WhatsApp.,0.0,1,0,364
+large-v3-b5-frase@cuda,WhatsApp.#1,fala,WhatsApp.,WhatsApp.,0.0,1,1,368
+large-v3-b5-frase@cuda,WhatsApp.#2,fala,WhatsApp.,WhatsApp.,0.0,1,1,370
+large-v3-b5-frase@cuda,Abre o WhatsApp.#0,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,478
+large-v3-b5-frase@cuda,Abre o WhatsApp.#1,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,415
+large-v3-b5-frase@cuda,Abre o WhatsApp.#2,fala,Abre o WhatsApp.,Abre o WhatsApp.,0.0,1,0,438
+large-v3-b5-frase@cuda,Manda mensagem no WhatsApp pra minha mãe.#0,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,543
+large-v3-b5-frase@cuda,Manda mensagem no WhatsApp pra minha mãe.#1,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,494
+large-v3-b5-frase@cuda,Manda mensagem no WhatsApp pra minha mãe.#2,fala,Manda mensagem no WhatsApp pra minha mãe.,Manda mensagem no WhatsApp pra minha mãe.,0.0,1,0,625
+large-v3-b5-frase@cuda,Pergunta pro GPT.#0,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,489
+large-v3-b5-frase@cuda,Pergunta pro GPT.#1,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,462
+large-v3-b5-frase@cuda,Pergunta pro GPT.#2,fala,Pergunta pro GPT.,Pergunta para o GPT.,0.667,1,0,469
+large-v3-b5-frase@cuda,Abre o ChatGPT.#0,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,443
+large-v3-b5-frase@cuda,Abre o ChatGPT.#1,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,492
+large-v3-b5-frase@cuda,Abre o ChatGPT.#2,fala,Abre o ChatGPT.,Abre o chat GPT.,0.667,0,0,447
+large-v3-b5-frase@cuda,Abre o Gemini.#0,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,411
+large-v3-b5-frase@cuda,Abre o Gemini.#1,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,398
+large-v3-b5-frase@cuda,Abre o Gemini.#2,fala,Abre o Gemini.,Abre o Gemini.,0.0,1,0,433
+large-v3-b5-frase@cuda,Abre o Discord.#0,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,437
+large-v3-b5-frase@cuda,Abre o Discord.#1,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,481
+large-v3-b5-frase@cuda,Abre o Discord.#2,fala,Abre o Discord.,Abre o Discord.,0.0,1,0,399
+large-v3-b5-frase@cuda,Abre o Spotify.#0,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,409
+large-v3-b5-frase@cuda,Abre o Spotify.#1,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,404
+large-v3-b5-frase@cuda,Abre o Spotify.#2,fala,Abre o Spotify.,Abre o Spotify.,0.0,1,0,404
+large-v3-b5-frase@cuda,"Jarvis, que horas são?#0",fala,"Jarvis, que horas são?",Já viste que horas são?,0.5,0,0,471
+large-v3-b5-frase@cuda,"Jarvis, que horas são?#1",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,408
+large-v3-b5-frase@cuda,"Jarvis, que horas são?#2",fala,"Jarvis, que horas são?","Jarvis, que horas são?",0.0,1,0,461
+large-v3-b5-frase@cuda,Fecha o Steam.#0,fala,Fecha o Steam.,Fecha o Steam.,0.0,1,0,395
+large-v3-b5-frase@cuda,Fecha o Steam.#1,fala,Fecha o Steam.,Fecha os dias.,0.667,0,0,406
+large-v3-b5-frase@cuda,Fecha o Steam.#2,fala,Fecha o Steam.,Fecha os dias.,0.667,0,0,416
+large-v3-b5-frase@cuda,Sim.#0,fala,Sim.,Tchau!,1.0,0,1,375
+large-v3-b5-frase@cuda,Sim.#1,fala,Sim.,Sim.,0.0,1,0,382
+large-v3-b5-frase@cuda,Sim.#2,fala,Sim.,Tchau!,1.0,0,0,384
+large-v3-b5-frase@cuda,Não.#0,fala,Não.,Não.,0.0,1,0,391
+large-v3-b5-frase@cuda,Não.#1,fala,Não.,Não.,0.0,1,0,383
+large-v3-b5-frase@cuda,Não.#2,fala,Não.,Não.,0.0,1,0,355
+large-v3-b5-frase@cuda,silencio_sala,ruido,,.,,,1,3398
+large-v3-b5-frase@cuda,clique_do_mouse,ruido,,Tchau!,,,1,1422
+large-v3-b5-frase@cuda,teclado,ruido,,.,,,1,1443
+large-v3-b5-frase@cuda,respiracao,ruido,,Tchau!,,,1,2514
+large-v3-b5-frase@cuda,respiracao_forte,ruido,,Inscreva-se no Canal.,,,1,2456
+large-v3-b5-frase@cuda,tosse,ruido,,INSCREVA-SE NO CANAL,,,1,1046
+large-v3-b5-frase@cuda,ventilador,ruido,,.,,,1,617
+large-v3-b5-frase@cuda,chiado,ruido,,Acesse o nosso site www.gmail.com.br,,,0,971

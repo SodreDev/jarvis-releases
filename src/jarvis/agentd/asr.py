@@ -39,11 +39,20 @@ PASSO_PADRAO_MS: Final = 200.0
 ESTABILIDADE_MINIMA: Final = 0.6
 """Limiar de "utilizável" do SLO-3, escrito **antes** de medir (aceite (b) do F1-06)."""
 IDIOMA: Final = IDIOMA_PADRAO
+TAMANHO_AUTOMATICO: Final = "auto"
+"""`modelo_do_asr = "auto"` (ADR-0067): o melhor que esta máquina roda ao vivo."""
+MODELO_NA_PLACA: Final = "large-v3-turbo"
+"""Com a placa de vídeo: o turbo (o mesmo da Groq) em float16."""
+MODELO_NA_CPU: Final = "small"
+"""Sem a placa: o que cabe no tempo de um turno na CPU (`docs/medicoes/stt-pt-br.md`)."""
 
 __all__ = [
     "ESTABILIDADE_MINIMA",
     "IDIOMA",
+    "MODELO_NA_CPU",
+    "MODELO_NA_PLACA",
     "PASSO_PADRAO_MS",
+    "TAMANHO_AUTOMATICO",
     "Hipotese",
     "MotorDeAsr",
     "MotorDeReferencia",
@@ -95,6 +104,11 @@ class MotorWhisper:
     pasta: str = ""
     idioma: str = "pt"
     beam: int = 1
+    dispositivo: str = "auto"
+    """`auto` (o padrão, ADR-0067): a placa de vídeo em float16 quando o CTranslate2 a enxerga **e**
+    uma conta de teste passa — a falta da cuBLAS só aparece na primeira conta, não ao carregar —;
+    senão a CPU em int8, como sempre. `cpu`/`cuda` forçam. `em_uso` diz qual ficou."""
+    em_uso: str = ""
     nome: str = ""
     modelo: str = ""
     licenca: str = "Apache-2.0"
@@ -128,12 +142,44 @@ class MotorWhisper:
                 "faster-whisper não está instalado: é o runtime de medição do ASR (grupo "
                 "opcional `asr`). Rode `uv sync --group asr`."
             ) from erro
-        self._modelo = WhisperModel(
-            self.tamanho,
-            device="cpu",
-            compute_type="int8",
-            download_root=self.pasta or None,
-        )
+        self._modelo = None
+        automatico = self.tamanho == TAMANHO_AUTOMATICO
+        if self.dispositivo in {"auto", "cuda"} and _cuda_visivel():
+            try:
+                tamanho = MODELO_NA_PLACA if automatico else self.tamanho
+                modelo = WhisperModel(
+                    tamanho,
+                    device="cuda",
+                    compute_type="float16",
+                    download_root=self.pasta or None,
+                )
+                # A conta de teste: sem a libcublas, é aqui que a placa falha (0,1 s de silêncio).
+                import numpy as np
+
+                silencio = np.zeros(1600, dtype=np.float32)
+                list(modelo.transcribe(silencio, language=self.idioma, beam_size=1)[0])
+                self._modelo, self.em_uso = modelo, "cuda/float16"
+                self._resolver(tamanho, automatico)
+            except Exception:
+                if self.dispositivo == "cuda":
+                    raise
+        if self._modelo is None:
+            tamanho = MODELO_NA_CPU if automatico else self.tamanho
+            self._modelo = WhisperModel(
+                tamanho,
+                device="cpu",
+                compute_type="int8",
+                download_root=self.pasta or None,
+            )
+            self.em_uso = "cpu/int8"
+            self._resolver(tamanho, automatico)
+
+    def _resolver(self, tamanho: str, automatico: bool) -> None:
+        """O `auto` vira o tamanho que carregou: o relatório e o diagnóstico dizem qual."""
+        if automatico:
+            self.tamanho = tamanho
+            self.nome = f"faster-whisper@{tamanho}"
+            self.modelo = f"openai/whisper-{tamanho}"
 
     def transcrever(self, amostras: bytes) -> Hipotese:
         return self.transcrever_com_sinais(amostras).hipotese
@@ -165,6 +211,44 @@ class MotorWhisper:
             compressao=max(float(t.compression_ratio) for t in partes),
         )
         return Transcricao(Hipotese(texto, float(min(1.0, max(0.0, 2.718281828**media)))), sinais)
+
+
+def _cuda_visivel() -> bool:
+    try:
+        import ctranslate2  # type: ignore[import-untyped]
+    except ImportError:  # pragma: no cover — vem junto com o faster-whisper
+        return False
+    try:
+        visivel = int(ctranslate2.get_cuda_device_count()) > 0
+    except Exception:
+        return False
+    if visivel:
+        _carregar_cublas_do_pip()
+    return visivel
+
+
+def _carregar_cublas_do_pip() -> None:
+    """A cuBLAS 12 do pacote `nvidia-cublas-cu12`, quando ele está no Python: o CTranslate2 a abre
+    pelo nome (`libcublas.so.12`), e a pasta do pacote não está no caminho do carregador — então
+    ela é aberta aqui antes, com RTLD_GLOBAL. Sem o pacote, nada muda: a conta de teste decide."""
+    import ctypes
+    import importlib.util
+    from pathlib import Path
+
+    try:
+        especificacao = importlib.util.find_spec("nvidia.cublas")
+    except (ImportError, ValueError):
+        return
+    if especificacao is None or not especificacao.submodule_search_locations:
+        return
+    for pasta in especificacao.submodule_search_locations:
+        for nome in ("libcublasLt.so.12", "libcublas.so.12"):
+            caminho = Path(pasta) / "lib" / nome
+            if caminho.exists():
+                try:
+                    ctypes.CDLL(str(caminho), mode=ctypes.RTLD_GLOBAL)
+                except OSError:
+                    return
 
 
 @dataclass(frozen=True, slots=True)

@@ -349,7 +349,10 @@ class TelaDeConfiguracao:
         elif escolha == "3":
             self._trocar_texto("voz", "Voz local do piper (ex.: pt_BR-faber-medium)")
         elif escolha == "4":
-            self._trocar_texto("modelo_do_asr", "Modelo do whisper local (tiny/base/small/…)")
+            self._trocar_texto(
+                "modelo_do_asr",
+                "Modelo do whisper local (auto = turbo na placa, small na CPU; ou small/medium/…)",
+            )
         elif escolha == "5":
             escolhido = self._escolher_da_lista(
                 "Quem responde (provisório até a F2):",
