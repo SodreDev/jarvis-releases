@@ -22,6 +22,15 @@
 - **Pela voz:** «ativa o modo bypass», «volta pro modo automático», «modo bypass». Quem lê é o **código** (`comando_de_permissao`), antes do motor, só na fala ou digitação do dono (`TRUST_DO_DONO`). Nenhuma ferramenta troca o modo: texto de página ou de mensagem que diga «modo bypass» não chega lá. O PDP solto (testes) usa `MATRIZ`, a matriz inteira da §5.5; o aplicativo sempre passa o modo do dono.
 - **Persona:** «pedido direto é para executar»; quem pede o sim é o sistema, só no destrutivo; se um caminho travar, tente outro antes de desistir.
 
+### 2. O bug do relato falso: causa raiz e conserto
+
+Reproduzido com fakes (`tests/unit/s2/test_relato_verdadeiro.py`: WhatsApp falso pela `PaginaFalsa`, motor roteirizado, guarda sem classificador):
+
+- **Causa 1 — a pergunta:** o guarda de contexto (ADR-0049), sem classificador ou na zona cinza, julga `browser.avaliar` como «pedir confirmação»; isso vira `exige_o_sim` → `confirm` do PDP → pendência, e o passo não roda. Consertado pelo modo (§1): no automático o script roda.
+- **Causa 2 — o relato:** o texto que o motor escreve **antes** de propor a ferramenta («Abri o contato da sua mãe.») ia direto para a voz na primeira rodada; nada conferia se alguma ferramenta tinha aberto alguma coisa. E o fim do motor («quer que eu mande?») era aceito como resposta final.
+- **Conserto — o relato verdadeiro** (`jarvis.s2.verdade`): frase a frase, antes da voz **e** da tela, a afirmação de efeito só passa se um resultado deste pedido a confirma — «abri/está aberto»: uma ferramenta que abre, navega, clica ou roda script deu `ok`; «mandei/enviei/a mensagem foi enviada»: um envio deu `ok` **e** foi conferido (o `social.enviar` leu a mensagem no chat, ou houve leitura da página depois do envio). A pergunta de permissão sobre o próprio pedido («quer que eu mande?», «posso rodar o script?») também não vai ao dono. O que foi cortado fica em `Resposta.sem_confirmacao`.
+- **Iterar até o objetivo (ADR-0038):** quando a rodada do motor termina sem ferramenta e com frase cortada, o turno (e a tarefa) **cobra** o motor — nota «continue até o objetivo; se travar, tente outro caminho do navegador» — até duas vezes. Se ainda assim não houver confirmação, quem fala é o código: «A mensagem ainda não foi enviada: não consegui confirmar o envio no chat.» (ou «Não consegui confirmar que ficou feito.»). Na tarefa, envio não conferido é objetivo não cumprido (`falhou`).
+
 ## Alternativas descartadas
 
 - **Desligar as regras uma a uma (guarda, escopo, portão, risco do navegador):** seis lugares, e o sétimo esquecido voltaria a perguntar. O modo age no ponto por onde todo `confirm` passa.
@@ -36,4 +45,4 @@
 
 ## Como testar
 
-`docs/COMO-TESTAR.md`, «Modos de permissão (ADR-0066)». Testes: `tests/unit/politica/test_permissao.py`, `tests/unit/s2/test_portao_de_acao.py` (os do fim).
+`docs/COMO-TESTAR.md` §0.55 e §0.56. Testes: `tests/unit/politica/test_permissao.py`, `tests/unit/s2/test_portao_de_acao.py` (os do fim), `tests/unit/s2/test_relato_verdadeiro.py` (o bug do dono reproduzido com o WhatsApp falso).

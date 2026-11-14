@@ -2098,6 +2098,24 @@ fim).
 
 **Não provado:** o painel e a voz na sua máquina (só testes offscreen e com fakes).
 
+### 0.56 Só o que as ferramentas confirmaram: o relato verdadeiro e o «vai até o fim» (2026-11-14, ADR-0066)
+
+**O bug.** «Abre o contato da minha mãe e diz eu te amo»: o Jarvis pediu para rodar JavaScript,
+não rodou, e disse que tinha aberto o contato, perguntando se mandava. Agora:
+
+1. Peça de novo (WhatsApp Web aberto no navegador com a extensão). Não há pergunta de JavaScript;
+   o Jarvis segue até enviar. A frase «abri o contato» só sai se alguma ferramenta abriu de fato;
+   «mandei» só sai se o envio foi conferido (o chat mostra a mensagem).
+2. Se ele parar no meio («quer que eu mande?»), o código cobra o motor e ele continua (até duas
+   vezes). Se mesmo assim não confirmar, você ouve, do código: «A mensagem ainda não foi enviada:
+   não consegui confirmar o envio no chat.» — nunca o relato falso.
+3. A frase cortada não aparece nem na tela; o turno guarda em `sem_confirmacao`.
+
+Testes: `tests/unit/s2/test_relato_verdadeiro.py` (o bug reproduzido com o WhatsApp falso, o motor
+roteirizado e o guarda sem classificador).
+
+**Não provado:** o WhatsApp Web real no seu navegador.
+
 ### 0.57 O STT em português: o modelo, a placa e a palavra trocada achada pelo som (2026-11-14, ADR-0067)
 
 **O que mudou.** (1) O whisper local tenta a placa de vídeo sozinho (CUDA, float16) e volta à CPU

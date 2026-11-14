@@ -31,6 +31,7 @@ para o contrato ser testado inteiro em memória:
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -85,6 +86,7 @@ from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.receitas import receitas_do_turno
 from jarvis.s2.recuperacao import nota_do_turno
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
+from jarvis.s2.verdade import NOTA_DE_SEGUIR, FiltroDaVerdade, Relato, frase_do_que_falta
 from jarvis.tarefas.gestor import (
     FORA_DA_ALLOWLIST,
     ChamarNaTarefa,
@@ -130,6 +132,8 @@ ESPERA_DA_EXTENSAO_S: Final = 12.0
 """Quanto se espera a extensão conectar depois de o Jarvis abrir o navegador (o Brave frio leva
 alguns segundos para carregar a extensão)."""
 INTERVALO_DA_EXTENSAO_S: Final = 0.25
+COBRANCAS_DO_OBJETIVO: Final = 2
+"""Quantas vezes o turno cobra o motor que parou antes do objetivo (ADR-0066)."""
 SEGUNDOS_NO_TURNO: Final = 12.0
 """Laço que já passou disto é trabalho longo: a próxima ferramenta vai para a tarefa."""
 ACOES_DE_UM_PASSO: Final = frozenset(
@@ -238,6 +242,11 @@ class Resposta:
     caladas: list[str] = field(default_factory=list)
     """Frases do motor que repetiam o que o dono já tinha ouvido neste turno (o aviso, a frase do
     código): foram à tela e não à voz (`jarvis.s2.entrega`, dono, 2026-10-25)."""
+    sem_confirmacao: list[str] = field(default_factory=list)
+    """Frases do motor que afirmavam o que nenhuma ferramenta confirmou, ou pediam permissão para o
+    que o dono já pediu (`jarvis.s2.verdade`, ADR-0066): nem voz nem tela."""
+    cobrancas: int = 0
+    """Quantas vezes o laço cobrou o motor a seguir até o objetivo, depois de um relato cortado."""
 
     @property
     def cancelada(self) -> bool:
@@ -578,6 +587,7 @@ class Cerebro:
                     sistema=f"{contexto.sistema}\n\n{NOTA_DO_ATALHO}", mensagens=contexto.mensagens
                 )
         resposta.motor_chamado = not pular_o_motor
+        falta = ""  # a frase do código quando o motor parou afirmando sem confirmar (ADR-0066)
         passos = range(0) if pular_o_motor else range(1, self.maximo_de_passos + 1)
         for passo in passos:
             if visto_cancelamento is not None:
@@ -625,7 +635,15 @@ class Cerebro:
             dito = _dito_no_turno(resposta)
             filtro = (
                 FiltroDoJaDito(ditos=[dito] if dito else [], ids=self._ids_das_ferramentas())
-                if resposta.ferramentas
+                if resposta.ferramentas or resposta.cobrancas
+                else None
+            )
+            # O relato verdadeiro (ADR-0066): frase que afirma o que nenhuma ferramenta confirmou,
+            # ou que pede permissão para o que o dono já pediu, não sai — nem na narração do
+            # primeiro passo, que era onde o «abri o contato» do bug do dono escapava.
+            verdade = (
+                FiltroDaVerdade(lambda: resposta.ferramentas)
+                if self.ferramentas is not None
                 else None
             )
             pedidos, visto_cancelamento = self._rodada(
@@ -640,6 +658,7 @@ class Cerebro:
                 segurar=passo > 1 or bool(resposta.ferramentas),
                 orcamento=orcamento,
                 filtro=filtro,
+                verdade=verdade,
             )
             if prazo_esgotado() and not cancelado():
                 visto_cancelamento = None
@@ -648,6 +667,30 @@ class Cerebro:
                     f"o laço de ferramentas passou de {self.prazo_do_laco_de_ferramentas_s:.0f} s"
                 )
                 break
+            if (
+                not pedidos
+                and verdade is not None
+                and verdade.cortadas
+                and visto_cancelamento is None
+                and resposta.fim is MotivoDoFim.CONCLUIDO
+                and resposta.cobrancas < COBRANCAS_DO_OBJETIVO
+                and passo < self.maximo_de_passos
+                and not cancelado_no_laco()
+            ):
+                # Parou antes do objetivo (afirmou sem confirmar, ou perguntou «quer que eu
+                # mande?»): o motor é cobrado e segue (ADR-0038: objetivo pendente não encerra).
+                resposta.cobrancas += 1
+                contexto = Contexto(
+                    sistema=f"{contexto.sistema}\n\n{NOTA_DE_SEGUIR}", mensagens=contexto.mensagens
+                )
+                continue
+            if (
+                not pedidos
+                and verdade is not None
+                and verdade.cortadas
+                and visto_cancelamento is None
+            ):
+                falta = frase_do_que_falta(Relato("", tuple(verdade.cortadas), verdade.perguntou))
             if (
                 visto_cancelamento is not None
                 or not pedidos
@@ -733,6 +776,12 @@ class Cerebro:
                 )
         if visto_cancelamento is None and cancelado():
             visto_cancelamento = time.monotonic()
+        if falta and visto_cancelamento is None and not cancelado():
+            # O relato que não se confirmou não foi dito: o dono ouve o que falta, do código.
+            resposta.gerado += falta + " "
+            crescer()
+            for pedaco in fatiador.alimentar(falta + " ") + fatiador.descarregar():
+                self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
         if visto_cancelamento is not None or resposta.fim is MotivoDoFim.CANCELADO:
             resposta.fim = MotivoDoFim.CANCELADO
             parado = time.monotonic()
@@ -1209,6 +1258,7 @@ class Cerebro:
         segurar: bool = False,
         orcamento: OrcamentoDaFala | None = None,
         filtro: FiltroDoJaDito | None = None,
+        verdade: FiltroDaVerdade | None = None,
     ) -> tuple[list[PedidoDeTool], float | None]:
         """Uma chamada ao motor: publica o texto em pedaços e junta os pedidos de ferramenta.
 
@@ -1235,11 +1285,34 @@ class Cerebro:
         )
 
         def falar(texto: str) -> bool:
-            """Tela e fala; devolve se o cancelamento chegou no meio. A tela recebe tudo; a voz, o
-            que traz algo novo e cabe no orçamento."""
+            """Tela e fala; devolve se o cancelamento chegou no meio. A tela recebe tudo já (e
+            perde a frase que o relato verdadeiro cortou, ADR-0066); a voz, frase a frase, o que
+            não afirma sem confirmação, traz algo novo e cabe no orçamento."""
             resposta.gerado += texto
             crescer()  # a tela, já: o lote de fala pode levar 14 palavras para fechar
+            if verdade is not None:
+                texto = verdade.passar(texto)
+                tirar_da_tela()
+                if not texto:
+                    return cancelado()
+            return falar_na_voz(texto)
+
+        def falar_na_voz(texto: str) -> bool:
             return dizer(filtro.passar(texto) if filtro is not None else texto)
+
+        tiradas = 0
+
+        def tirar_da_tela() -> None:
+            """A frase cortada sai também da tela (o relato verdadeiro vale para os dois)."""
+            nonlocal tiradas
+            if verdade is None:
+                return
+            for frase in verdade.cortadas[tiradas:]:
+                corpo = " ".join(resposta.gerado.split())
+                if frase in corpo:
+                    resposta.gerado = _sem_a_frase(resposta.gerado, frase)
+                    crescer()
+            tiradas = len(verdade.cortadas)
 
         def dizer(texto: str) -> bool:
             falado = orcamento.passar(texto) if orcamento is not None else texto
@@ -1311,6 +1384,21 @@ class Cerebro:
         # A rodada acabou sem proposta: o que estava seguro era a resposta.
         if retido.strip() and visto_cancelamento is None and not cancelado() and falar(retido):
             visto_cancelamento = time.monotonic()
+        if verdade is not None:
+            # A última frase, sem ponto, passa pelo mesmo crivo; com proposta, o pedaço que sobrou
+            # era narração do passo (vai ao raciocínio, nunca à voz).
+            resto = verdade.fechar()
+            tirar_da_tela()
+            if (
+                resto.strip()
+                and visto_cancelamento is None
+                and not cancelado()
+                and falar_na_voz(resto)
+            ):
+                visto_cancelamento = time.monotonic()
+            resposta.sem_confirmacao.extend(
+                c for c in verdade.cortadas if c not in resposta.sem_confirmacao
+            )
         if filtro is not None:
             # A última frase, sem ponto no fim, também passa pelo crivo do já dito — e o que ele
             # calou fica registrado (a trilha conta; a tela já mostrou).
@@ -1533,6 +1621,17 @@ def _estado_final(resposta: Resposta) -> EstadoDoObjetivo:
     ):
         return EstadoDoObjetivo.FALHOU
     return EstadoDoObjetivo.CONCLUIDO
+
+
+def _sem_a_frase(texto: str, frase: str) -> str:
+    """O texto sem a última ocorrência da frase (comparada sem espaços repetidos)."""
+    palavras = frase.split()
+    padrao = r"\s+".join(re.escape(p) for p in palavras)
+    achados = list(re.finditer(padrao, texto))
+    if not achados:
+        return texto
+    ultimo = achados[-1]
+    return (texto[: ultimo.start()] + texto[ultimo.end() :]).replace("  ", " ")
 
 
 def _guardar_raciocinio(resposta: Resposta, texto: str, *, separado: bool = False) -> None:

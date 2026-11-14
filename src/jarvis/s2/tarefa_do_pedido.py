@@ -46,6 +46,8 @@ from jarvis.s2.motor import (
 from jarvis.s2.protocolo import LeitorDoProtocolo, sem_protocolo
 from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.recuperacao import Recuperacao, Tentativa, assinatura
+from jarvis.s2.verdade import FALTA_ENVIAR, NOTA_DE_SEGUIR, frase_do_que_falta
+from jarvis.s2.verdade import conferir as conferir_relato
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ErroDeTarefa, FimDaTarefa, Passo, Tarefa
 from jarvis.voz.interface import Onde
 
@@ -81,6 +83,8 @@ CAUSAS_DE_DENTRO: Final = frozenset(
     {"fora_do_contrato", "ferramenta_desligada", "argumento_recusado", "metodo_de_fora"}
 )
 """Falhas que são do caminho interno (contrato, catálogo, método): o dono ouve a frase geral."""
+COBRANCAS_DO_OBJETIVO: Final = 2
+"""Quantas vezes a tarefa cobra o motor que parou antes do objetivo (ADR-0066)."""
 RODADAS_POR_PASSO: Final = 4
 """Rodadas do motor dentro de um mesmo passo (cobrar a conferência, recusar a ação repetida,
 tentar de novo a rodada que caiu): o teto de custo de um passo."""
@@ -124,6 +128,10 @@ class MotorDoObjetivo:
     nome: str = "objetivo"
     raciocinio_descartado: int = 0
     cobrou_conferencia: bool = False
+    cobrancas_do_objetivo: int = 0
+    """Quantas vezes o motor que parou antes do objetivo (relato sem confirmação, «quer que eu
+    mande?») foi cobrado a seguir (ADR-0066)."""
+    _cobrar_objetivo: bool = False
     recuperacao: Recuperacao = field(default_factory=Recuperacao)
     """As falhas desta tarefa e o orçamento de tentativas (recuperação de falha, emenda de
     2026-10-30 à ADR-0038)."""
@@ -206,6 +214,14 @@ class MotorDoObjetivo:
                 self._mostrar(recuperacao.linha_na_tela())
                 continue
             ids = self.ids | set(disponiveis)
+            relato = conferir_relato(texto, (*self.feitos_antes, *feitos))
+            if relato.cortadas and self.cobrancas_do_objetivo < COBRANCAS_DO_OBJETIVO:
+                # Parou antes do objetivo (ADR-0038/0066): afirmou o que nada confirmou ou pediu
+                # permissão para o que o dono já pediu. O motor é cobrado e segue.
+                self.cobrancas_do_objetivo += 1
+                self._cobrar_objetivo = True
+                self._mostrar("a resposta afirmava sem confirmar: cobrei o objetivo")
+                continue
             pode_ler = any(i in FERRAMENTAS_DE_LEITURA for i in disponiveis)
             if objetivo is not None and objetivo.falta_conferir and pode_ler and not cobrar:
                 self.cobrou_conferencia = True  # uma vez: o motor lê, ou a resposta diz que não
@@ -286,6 +302,9 @@ class MotorDoObjetivo:
             )
         if conferir:
             notas.append(NOTA_DE_CONFERIR)
+        if self._cobrar_objetivo:
+            notas.append(NOTA_DE_SEGUIR)
+            self._cobrar_objetivo = False
         if recuperar:
             notas.append(recuperar)
         contexto = Contexto(
@@ -375,7 +394,14 @@ class MotorDoObjetivo:
                     motivo, resposta=explicacao_para_ouvir(self.recuperacao, ids), falhou=True
                 )
             return FimDaTarefa(motivo, resposta=f"Não consegui: {motivo}.", falhou=True)
-        resposta = sem_etapas_internas(texto, ids) or "Terminei o que você pediu."
+        relato = conferir_relato(sem_etapas_internas(texto, ids), todos)
+        if relato.cortadas:
+            # O relato verdadeiro (ADR-0066): o que nada confirmou não é dito; o código diz o que
+            # falta. Envio não conferido é objetivo não cumprido.
+            falta = frase_do_que_falta(relato)
+            resposta = f"{relato.texto} {falta}".strip()
+            return FimDaTarefa(resposta, resposta=resposta, falhou=falta == FALTA_ENVIAR)
+        resposta = relato.texto or "Terminei o que você pediu."
         if objetivo is not None and objetivo.falta_conferir:
             resposta = f"{resposta} {SEM_CONFERIR}"
         return FimDaTarefa(resposta, resposta=resposta)

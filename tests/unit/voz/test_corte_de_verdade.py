@@ -150,7 +150,9 @@ def test_na_continua_falar_por_cima_corta_e_o_pedido_novo_e_atendido(tmp_path: P
     """Sem o detector, toda fala na contínua é com o Jarvis — com ele calado, vira pedido; por cima
     da fala dele, corta e vira pedido. Antes: pausava, retomava em 2,5 s e o pedido sumia."""
     asr = AsrRoteirizado("me conta uma história", "abre o spotify")
-    motor = MotorRoteirizado(resposta=_respostas(LONGA, "Abri o Spotify."), nome="roteiro")
+    # O motor roteirizado não chama ferramenta: «Abri o Spotify.» seria cortado pelo relato
+    # verdadeiro (ADR-0066), e este teste é do corte da fala, não do relato.
+    motor = MotorRoteirizado(resposta=_respostas(LONGA, "Tocando o Spotify."), nome="roteiro")
     app, _tela, _estados = _aplicativo(
         tmp_path,
         "vad",
@@ -167,7 +169,7 @@ def test_na_continua_falar_por_cima_corta_e_o_pedido_novo_e_atendido(tmp_path: P
     assert [t.falou for t in app.turnos] == ["me conta uma história", "abre o spotify"]
     historia, pedido = app.turnos
     assert historia.cancelado, "a história não foi cortada: o pedido por cima se perdeu"
-    assert pedido.respondeu == "Abri o Spotify." and not pedido.cancelado
+    assert pedido.respondeu == "Tocando o Spotify." and not pedido.cancelado
     decisoes = [(e["decisao"], e["motivo"]) for e in _trilha(app) if e["evento"] == "interrupcao"]
     assert ("cortar", "fala_do_dono") in decisoes, decisoes
     assert all(d != "retomar" for d, _m in decisoes), "retomou a história por cima do dono"
@@ -184,7 +186,7 @@ def test_na_continua_o_corte_e_a_fala_contida_nao_impedem_o_segundo_corte(
     dono fala por cima de novo e corta. Antes, o prazo da pausa retomava e o resto da fala dele não
     pausava nem perguntava mais nada — «não deixa cortar de novo»."""
     asr = AsrRoteirizado("me conta uma história", "", "abre o spotify")
-    motor = MotorRoteirizado(resposta=_respostas(LONGA, "Abri o Spotify."), nome="roteiro")
+    motor = MotorRoteirizado(resposta=_respostas(LONGA, "Tocando o Spotify."), nome="roteiro")
     app, _tela, _estados = _aplicativo(
         tmp_path,
         "vad",
@@ -201,7 +203,7 @@ def test_na_continua_o_corte_e_a_fala_contida_nao_impedem_o_segundo_corte(
     app.rodar_audio(limite_de_turnos=2)
 
     assert [t.falou for t in app.turnos] == ["me conta uma história", "abre o spotify"]
-    assert app.turnos[0].cancelado and app.turnos[1].respondeu == "Abri o Spotify."
+    assert app.turnos[0].cancelado and app.turnos[1].respondeu == "Tocando o Spotify."
 
 
 # --- o aviso cortado não volta (os dois modos) ------------------------------------------------
