@@ -97,7 +97,7 @@ def _dizer(cerebro: Cerebro, texto: str) -> tuple[Any, str]:
     return resposta, falado
 
 
-ENVIO_COMPLETO = (
+ENVIO_COMPLETO: tuple[list[str | PedidoDeTool], ...] = (
     ["Abri o contato da sua mãe. ", PedidoDeTool("browser.avaliar", {"codigo": CLICAR_NA_MAE})],
     [PedidoDeTool("browser.type", {"alvo": "Mensagem", "texto": "eu te amo"})],
     [PedidoDeTool("browser.acionar", {"alvo": "Mensagem", "acao": "tecla", "tecla": "Enter"})],
