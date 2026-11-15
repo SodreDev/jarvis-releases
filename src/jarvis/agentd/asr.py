@@ -144,7 +144,14 @@ class MotorWhisper:
             ) from erro
         self._modelo = None
         automatico = self.tamanho == TAMANHO_AUTOMATICO
-        if self.dispositivo in {"auto", "cuda"} and _cuda_visivel():
+        # A placa só é tentada quando a cuBLAS **abre** (o dono recusou instalar a lib da NVIDIA,
+        # 2026-11-14): sem ela, a tentativa só gastava memória da placa e tempo. E o `auto` nunca
+        # baixa o turbo sozinho (1,6 GB): na placa, só o que já está no cache; o turbo novo é
+        # quando o dono o escreve à mão. Forçar `cuda` tenta sempre, para o erro aparecer.
+        placa = self.dispositivo == "cuda" or (
+            self.dispositivo == "auto" and _cuda_visivel() and _cublas_carrega()
+        )
+        if placa:
             try:
                 tamanho = MODELO_NA_PLACA if automatico else self.tamanho
                 modelo = WhisperModel(
@@ -152,6 +159,7 @@ class MotorWhisper:
                     device="cuda",
                     compute_type="float16",
                     download_root=self.pasta or None,
+                    **({"local_files_only": True} if automatico else {}),
                 )
                 # A conta de teste: sem a libcublas, é aqui que a placa falha (0,1 s de silêncio).
                 import numpy as np
@@ -225,6 +233,19 @@ def _cuda_visivel() -> bool:
     if visivel:
         _carregar_cublas_do_pip()
     return visivel
+
+
+def _cublas_carrega() -> bool:
+    """A cuBLAS 12 abre neste processo (a do pacote pip, aberta antes, ou a do sistema)? Sem ela
+    a placa não faz conta nenhuma — e o CTranslate2 só descobre na primeira."""
+    import ctypes
+
+    for nome in ("libcublas.so.12", "libcublasLt.so.12"):
+        try:
+            ctypes.CDLL(nome)
+        except OSError:
+            return False
+    return True
 
 
 def _carregar_cublas_do_pip() -> None:

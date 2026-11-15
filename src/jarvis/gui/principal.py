@@ -19,7 +19,7 @@ import argparse
 import os
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -172,7 +172,35 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.capturar is not None:
         _preparar_ambiente_sem_tela()
+        return _abrir_a_janela(args)
 
+    # A janela de verdade grava o log da abertura (bug do dono, 2026-11-14: «o Jarvis não abre»
+    # sem rastro nenhum): o que ficou de fora e o traceback do que derrubou, sem segredo.
+    from jarvis.gui import abertura
+
+    log = abertura.ligar(abertura.caminho_do_log())
+    abertura.instalar_ganchos()
+    abertura.registrar_na_abertura(f"abrindo {NOME} {versao()}")
+    try:
+        return _abrir_a_janela(args)
+    except Exception as erro:  # a última rede: diz o porquê numa janela, em vez de sumir calado
+        abertura.registrar_na_abertura("a janela não abriu", erro)
+        abertura.mostrar_erro_fatal(abertura.frase_do_erro_fatal(erro, log))
+        return 1
+
+
+def _parte_opcional[T](nome: str, fazer: Callable[[], T], reserva: T) -> T:
+    """Conversa salva, vocabulário, ponte do navegador: falhou, a janela abre sem e o log diz."""
+    from jarvis.gui.abertura import registrar_na_abertura
+
+    try:
+        return fazer()
+    except Exception as erro:  # parte opcional: nunca impede a janela de abrir
+        registrar_na_abertura(f"{nome}: ficou de fora ({type(erro).__name__}: {erro})", erro)
+        return reserva
+
+
+def _abrir_a_janela(args: argparse.Namespace) -> int:
     from PySide6.QtCore import QTimer, QUrl
     from PySide6.QtGui import QGuiApplication, QIcon
     from PySide6.QtQuick import QQuickView
@@ -192,19 +220,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     raiz = _raiz_de_sessao()
     # Capturar telas não toca o histórico do dono: o chaveiro e o disco ficam fora do ensaio.
-    conversa = None if args.capturar is not None else abrir_conversa(raiz)
+    conversa = (
+        None
+        if args.capturar is not None
+        else _parte_opcional("histórico da conversa", lambda: abrir_conversa(raiz), None)
+    )
     ponte = Ponte(
         raiz=raiz,
         caminho_da_configuracao=args.config,
         conversa=conversa,
         # O vocabulário do dono (ADR-0044), na pasta de configuração dele; a captura não o lê.
-        vocabulario=None if args.capturar is not None else RepositorioDoVocabulario.padrao(),
+        vocabulario=(
+            None
+            if args.capturar is not None
+            else _parte_opcional("vocabulário", RepositorioDoVocabulario.padrao, None)
+        ),
         # A tela de acesso diz se a extensão está conectada; a captura não sonda a sessão do dono.
         sondar_navegador=None if args.capturar is not None else estado_do_navegador,
         # O monitor das redes (ADR-0060) fala com o host do navegador do dono: só a janela de
         # verdade monta a ponte; a captura e os testes nunca.
         ponte_das_redes=(
-            None if args.capturar is not None else PonteDoNavegador.do_ambiente(os.environ)
+            None
+            if args.capturar is not None
+            else _parte_opcional(
+                "ponte do navegador", lambda: PonteDoNavegador.do_ambiente(os.environ), None
+            )
         ),
     )
     janela = QQuickView()
@@ -219,8 +259,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     )
     if janela.status() is QQuickView.Status.Error:
-        for erro in janela.errors():
+        erros = [str(erro) for erro in janela.errors()]
+        for erro in erros:
             print(f"QML: {erro}", file=sys.stderr)
+        if args.capturar is None:
+            from jarvis.gui import abertura
+
+            abertura.registrar_na_abertura("a tela (QML) não carregou: " + " | ".join(erros))
+            abertura.mostrar_erro_fatal(
+                abertura.frase_do_erro_fatal(
+                    "a tela (QML) não carregou: " + "; ".join(erros[:3]),
+                    abertura.caminho_do_log(),
+                )
+            )
         return 3
     janela.resize(*TAMANHO)
     foco.ligar(janela)

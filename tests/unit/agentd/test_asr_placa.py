@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from jarvis.agentd import asr
 from jarvis.agentd.asr import MODELO_NA_CPU, MODELO_NA_PLACA, TAMANHO_AUTOMATICO, MotorWhisper
 
 
@@ -27,13 +28,26 @@ class _Modelo:
 
 
 def _runtime_falso(
-    monkeypatch: pytest.MonkeyPatch, *, placas: int, cuda_quebra: bool
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    placas: int,
+    cuda_quebra: bool,
+    cublas: bool | None = None,
+    turbo_no_cache: bool = True,
 ) -> list[dict[str, Any]]:
+    """`cuda_quebra`: a conta de teste falha. `cublas`: a lib abre (padrão: o contrário de
+    `cuda_quebra`). `turbo_no_cache`: o turbo já foi baixado (o `auto` não baixa)."""
     criados: list[dict[str, Any]] = []
 
     def whisper_model(tamanho: str, **opcoes: Any) -> _Modelo:
         criados.append({"tamanho": tamanho, **opcoes})
+        if opcoes.get("local_files_only") and not turbo_no_cache:
+            raise RuntimeError("modelo fora do cache e local_files_only")
         return _Modelo(opcoes["device"], opcoes["device"] == "cuda" and cuda_quebra)
+
+    monkeypatch.setattr(
+        asr, "_cublas_carrega", lambda: not cuda_quebra if cublas is None else cublas
+    )
 
     faster = types.ModuleType("faster_whisper")
     faster.WhisperModel = whisper_model  # type: ignore[attr-defined]
@@ -55,12 +69,30 @@ def test_com_a_placa_pronta_o_whisper_roda_nela_em_float16(monkeypatch: pytest.M
 def test_sem_a_cublas_a_placa_falha_na_conta_de_teste_e_volta_a_cpu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A falta da libcublas só aparece na primeira conta, não ao carregar — caso desta máquina."""
-    criados = _runtime_falso(monkeypatch, placas=1, cuda_quebra=True)
+    """A lib abre, mas a conta de teste falha (versão errada da cuBLAS): volta à CPU."""
+    criados = _runtime_falso(monkeypatch, placas=1, cuda_quebra=True, cublas=True)
     motor = MotorWhisper()
     motor.abrir()
     assert motor.em_uso == "cpu/int8"
     assert [c["device"] for c in criados] == ["cuda", "cpu"]
+
+
+def test_sem_a_cublas_a_placa_nem_e_tentada(monkeypatch: pytest.MonkeyPatch) -> None:
+    """O caso desta máquina (o dono recusou a lib da NVIDIA): direto à CPU, sem tocar a placa."""
+    criados = _runtime_falso(monkeypatch, placas=1, cuda_quebra=True, cublas=False)
+    motor = MotorWhisper(tamanho=TAMANHO_AUTOMATICO)
+    motor.abrir()
+    assert (motor.em_uso, motor.tamanho) == ("cpu/int8", MODELO_NA_CPU)
+    assert [(c["device"], c["tamanho"]) for c in criados] == [("cpu", MODELO_NA_CPU)]
+
+
+def test_auto_nunca_baixa_o_turbo_sozinho(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Placa pronta mas turbo fora do cache: o `auto` não baixa 1,6 GB; fica no small da CPU."""
+    criados = _runtime_falso(monkeypatch, placas=1, cuda_quebra=False, turbo_no_cache=False)
+    motor = MotorWhisper(tamanho=TAMANHO_AUTOMATICO)
+    motor.abrir()
+    assert criados[0]["local_files_only"] is True
+    assert (motor.em_uso, motor.tamanho) == ("cpu/int8", MODELO_NA_CPU)
 
 
 def test_sem_placa_vai_direto_a_cpu_e_cuda_forcado_nao_esconde_o_erro(
@@ -85,7 +117,7 @@ def test_auto_e_o_turbo_na_placa_e_o_modelo_da_cpu_sem_ela(monkeypatch: pytest.M
     assert (criados[-1]["tamanho"], na_placa.tamanho) == (MODELO_NA_PLACA, MODELO_NA_PLACA)
     assert na_placa.nome == f"faster-whisper@{MODELO_NA_PLACA}"
 
-    criados = _runtime_falso(monkeypatch, placas=1, cuda_quebra=True)
+    criados = _runtime_falso(monkeypatch, placas=1, cuda_quebra=True, cublas=True)
     na_cpu = MotorWhisper(tamanho=TAMANHO_AUTOMATICO)
     na_cpu.abrir()
     assert [c["tamanho"] for c in criados] == [MODELO_NA_PLACA, MODELO_NA_CPU]
@@ -93,7 +125,7 @@ def test_auto_e_o_turbo_na_placa_e_o_modelo_da_cpu_sem_ela(monkeypatch: pytest.M
 
 
 def test_tamanho_escolhido_a_mao_vale_nos_dois(monkeypatch: pytest.MonkeyPatch) -> None:
-    criados = _runtime_falso(monkeypatch, placas=1, cuda_quebra=True)
+    criados = _runtime_falso(monkeypatch, placas=1, cuda_quebra=True, cublas=True)
     motor = MotorWhisper(tamanho="medium")
     motor.abrir()
     assert [c["tamanho"] for c in criados] == ["medium", "medium"]

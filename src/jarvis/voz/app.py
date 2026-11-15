@@ -450,6 +450,43 @@ def motor_de_tts(
     return piper
 
 
+def motor_de_tts_com_reserva(
+    configuracao: Configuracao,
+    *,
+    raiz: Path,
+    cancelado: Callable[[], bool],
+    ambiente: Mapping[str, str] | None = None,
+) -> tuple[MotorDeTts, str]:
+    """O TTS escolhido ou, se ele não abre (chave da ElevenLabs ausente, nuvem desligada, voz
+    não baixada), quem fala no lugar — e a frase curta do porquê (vazia quando é o escolhido).
+
+    Bug do dono (2026-11-14): sem a chave da ElevenLabs a conversa **parava**. A voz não pode
+    impedir a conversa: cai no endpoint de voz (ADR-0068) quando ele está ligado, senão no motor
+    local padrão. Só quando nem o padrão abre o erro sobe, como antes."""
+    recusas = (AplicativoIndisponivel, MotorRecusado, SegredoAusente, ErroDeRede)
+    try:
+        return motor_de_tts(configuracao, raiz=raiz, cancelado=cancelado, ambiente=ambiente), ""
+    except recusas as erro:
+        if configuracao.tts == TTS_PADRAO:
+            raise
+        motivo = str(erro)
+    alternativas: list[str] = []
+    if configuracao.tts != TTS_ENDPOINT and TTS_ENDPOINT in configuracao.nuvem_ligada:
+        alternativas.append(TTS_ENDPOINT)
+    alternativas.append(TTS_PADRAO)
+    for alvo in alternativas:
+        try:
+            motor = motor_de_tts(
+                configuracao.com(tts=alvo), raiz=raiz, cancelado=cancelado, ambiente=ambiente
+            )
+        except recusas:
+            if alvo == TTS_PADRAO:
+                raise
+            continue
+        return motor, f"{configuracao.tts} não abriu ({motivo}); falo com {alvo} por enquanto"
+    raise AplicativoIndisponivel(motivo)  # pragma: no cover — o padrão sempre levanta antes
+
+
 def _reserva_do_endpoint(
     configuracao: Configuracao,
     *,
@@ -775,9 +812,12 @@ class Aplicativo:
             if com_asr and self._asr is None:
                 self._asr = self._abrir_o_ouvido(cancelado)
             if self._tts is None:
-                self._tts = motor_de_tts(
+                self._tts, troca = motor_de_tts_com_reserva(
                     self.configuracao, raiz=self.raiz, cancelado=cancelado, ambiente=self.ambiente
                 )
+                if troca:
+                    self.escrever_na_tela(f"  ({troca})")
+                    self.registrar_aviso("evento", "voz", troca)
         except (MotorRecusado, SegredoAusente, ErroDeRede) as erro:
             # As três recusas chegam ao dono como a mesma coisa — "não deu para começar, e
             # aqui está o porquê" —, porque para ele são: motor desligado, chave ausente e

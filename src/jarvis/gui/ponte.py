@@ -17,6 +17,7 @@ Duas coisas importam na implementação, e as duas são sobre thread:
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -39,6 +40,7 @@ from PySide6.QtCore import (
 
 from jarvis.executor.navegadores import familia_de_navegador, navegador_em_execucao
 from jarvis.gui import chaveiro, recursos, sistema
+from jarvis.gui.abertura import registrar_na_abertura
 from jarvis.gui.acesso import PonteDeAcesso
 from jarvis.gui.acoes import Acao, Area, Modo, Tipo
 from jarvis.gui.componentes import CATALOGO
@@ -62,15 +64,14 @@ from jarvis.ui.atalhos import AtalhoIndisponivel
 from jarvis.ui.portal import AtalhoPortal, portal_disponivel
 from jarvis.voz import aferir
 from jarvis.voz.app import Aplicativo
-from jarvis.voz.chaves import VARIAVEIS
+from jarvis.voz.chaves import VARIAVEIS, redigir_do_ambiente
 from jarvis.voz.cli import diagnosticar
 from jarvis.voz.config import (
     TTS_ENDPOINT,
     Configuracao,
-    ConfiguracaoInvalida,
     caminho_padrao,
     escrever,
-    ler,
+    ler_tolerante,
     validar,
 )
 from jarvis.voz.conversa import ConversaPersistente
@@ -263,7 +264,14 @@ class Ponte(QObject):
         super().__init__(parent)
         self._raiz = raiz
         self._caminho = caminho_da_configuracao or caminho_padrao()
-        self._configuracao = configuracao or ler(self._caminho)
+        self._avisos_da_abertura: list[str] = []
+        """O que a abertura deixou de fora e por quê (bug do dono, 2026-11-14: «o Jarvis não
+        abre»): configuração recusada vira padrão, parte opcional que falhou vira aviso — a janela
+        abre sempre, e a frase fica na linha de aviso e no log de abertura."""
+        if configuracao is None:
+            configuracao, avisos = ler_tolerante(self._caminho)
+            self._avisos_da_abertura.extend(avisos)
+        self._configuracao = configuracao
         self._controlador = controlador or RoteiroDeDemonstracao()
         self._ambiente_base = dict(ambiente) if ambiente is not None else None
         self._aplicativo = aplicativo
@@ -286,7 +294,11 @@ class Ponte(QObject):
         self._espaco.escuta = self._escuta
         self._espaco.asr_na_nuvem = self._asr_na_nuvem
         self._portal: AtalhoPortal | None = None
-        self._portal_ok, self._portal_frase = portal_disponivel(ambiente=self._ambiente_base)
+        self._portal_ok, self._portal_frase = self._na_abertura(
+            "atalho global",
+            lambda: portal_disponivel(ambiente=self._ambiente_base),
+            (False, "o portal do atalho global não respondeu ao abrir"),
+        )
         self.dedoGlobal.connect(self._aplicar_dedo)
         self.avisoDoAtalho.connect(self._avisar_do_atalho)
         self.avisosMudaram.connect(self._ligar_card_de_avisos)
@@ -314,7 +326,9 @@ class Ponte(QObject):
         self._estado = Estado.PARADO
         self._tom_da_voz = ""
         """O tom do último turno (ADR-0058), curto: o indicador ao lado do estado."""
-        self._transcricao: list[dict[str, str]] = self._transcricao_salva()
+        self._transcricao: list[dict[str, str]] = self._na_abertura(
+            "histórico da conversa", self._transcricao_salva, []
+        )
         self._avisos_dados: set[str] = set()  # privacidade já dita: só uma vez por execução
         self._diagnostico = ""
         self._nivel = 0.0
@@ -353,7 +367,9 @@ class Ponte(QObject):
         """O monitor das redes (ADR-0060): só com a ponte do navegador de verdade, que só a
         janela de verdade passa (`principal.py`). Sem ela (os testes), a aba só grava os ajustes."""
         if ponte_das_redes is not None:
-            self._ligar_o_monitor_das_redes(ponte_das_redes)
+            self._na_abertura(
+                "monitor das redes", lambda: self._ligar_o_monitor_das_redes(ponte_das_redes), None
+            )
         self._modelos = PonteDeModelos.da_janela(
             obter=lambda: self._configuracao,
             raiz=raiz,
@@ -375,7 +391,27 @@ class Ponte(QObject):
         # (bug do dono, 2026-10-16 — antes ele sumia a cada reinício e ninguém dizia).
         if self._configuracao.atalho_global and self._portal_ok:
             self._portal_frase = "religando o atalho global que você salvou…"
-            self.ativarAtalhoGlobal(religando=True)
+            self._na_abertura(
+                "atalho global", lambda: self.ativarAtalhoGlobal(religando=True), None
+            )
+        if self._avisos_da_abertura:
+            self._aviso = "abri com ajustes: " + "; ".join(self._avisos_da_abertura)
+        for frase in self._avisos_da_abertura:
+            registrar_na_abertura(frase)
+
+    def _na_abertura[T](self, parte: str, fazer: Callable[[], T], reserva: T) -> T:
+        """Uma parte **opcional** da abertura: falhou, a janela abre sem ela e diz o quê."""
+        try:
+            return fazer()
+        except Exception as erro:  # a janela abre sempre; o porquê vai ao aviso e ao log
+            frase = f"{parte}: ficou de fora ({type(erro).__name__}: {erro})"
+            self._avisos_da_abertura.append(redigir_do_ambiente(frase))
+            registrar_na_abertura(frase, erro)
+            return reserva
+
+    @Property(list, constant=True)
+    def avisosDaAbertura(self) -> list[str]:
+        return list(self._avisos_da_abertura)
 
     # --- o que o QML lê -------------------------------------------------------------------
     @Property(QObject, constant=True)
@@ -659,10 +695,14 @@ class Ponte(QObject):
         por cima do que está no disco: o arquivo editado à mão, ou por outra janela, não perde o
         resto. Devolve "salvo" ou o motivo de não ter salvo (vale na sessão do mesmo jeito)."""
         self._configuracao = self._configuracao.com(**mudancas)
-        try:
-            no_disco = ler(self._caminho)
-        except ConfiguracaoInvalida as erro:
-            return f"vale agora, mas não deu para salvar ({erro})"
+        # Arquivo com chave recusada: o resto dele vale, e a chave ruim volta ao padrão ao
+        # salvar (a cópia `.recusado` guarda o original para o dono conferir).
+        no_disco, recusas = ler_tolerante(self._caminho)
+        if recusas:
+            with contextlib.suppress(OSError):
+                copia = self._caminho.with_name(self._caminho.name + ".recusado")
+                if not copia.exists():
+                    copia.write_bytes(self._caminho.read_bytes())
         try:
             escrever(validar(no_disco.com(**mudancas)), self._caminho)
         except (ValueError, OSError) as erro:

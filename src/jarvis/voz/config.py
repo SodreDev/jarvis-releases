@@ -37,7 +37,7 @@ from jarvis.politica.permissao import MODOS_DO_DONO as MODOS_DO_DONO
 from jarvis.politica.permissao import NOME_DO_MODO as NOME_DO_MODO
 from jarvis.politica.permissao import PERMISSAO_PADRAO
 from jarvis.provedores.registro import ARQUIVO as ARQUIVO_DE_PROVEDORES
-from jarvis.voz.chaves import proibir_segredo_na_configuracao
+from jarvis.voz.chaves import SegredoNaConfiguracao, proibir_segredo_na_configuracao
 from jarvis.voz.escuta import MODOS, CombinacaoInvalida, exigir_combinacao
 from jarvis.voz.interface import Onde
 from jarvis.voz.omnivoice import FORMA_DO_NOME_DE_VOZ
@@ -736,11 +736,61 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
     alvo = caminho if caminho is not None else caminho_padrao(ambiente)
     if not alvo.exists():
         return Configuracao()
+    return _da_tabela(_tabela_do_arquivo(alvo), arquivo=str(alvo))
+
+
+def ler_tolerante(
+    caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = None
+) -> tuple[Configuracao, tuple[str, ...]]:
+    """A configuração do dono **sem nunca impedir a janela de abrir** (bug do dono, 2026-11-14:
+    «o Jarvis não abre»). Arquivo bom = o mesmo que `ler`. Arquivo ruim = cada chave que a
+    validação recusa volta ao padrão dela, e o porquê vai nos avisos (uma frase curta por chave,
+    sem valor de segredo: o portão do segredo não ecoa o valor). TOML que nem analisa = todos os
+    padrões. **O arquivo não é mexido aqui**: o dono conserta à mão ou a janela regrava ao salvar.
+    """
+    alvo = caminho if caminho is not None else caminho_padrao(ambiente)
     try:
-        dados = tomllib.loads(alvo.read_text(encoding="utf-8"))
-    except (tomllib.TOMLDecodeError, OSError) as erro:
+        return ler(alvo), ()
+    except (ConfiguracaoInvalida, SegredoNaConfiguracao):
+        pass
+    try:
+        dados = _tabela_do_arquivo(alvo)
+    except ConfiguracaoInvalida as erro:
+        return Configuracao(), (f"{erro} — abri com os padrões e não mexi no arquivo",)
+    aceitos: dict[str, Any] = {}
+    recusados: dict[str, str] = {}
+    pendentes = list(dados)
+    # Duas voltas: uma chave que só vale junto de outra (a reserva do endpoint depois do `tts`,
+    # por exemplo) é recusada na primeira se vier antes no arquivo, e aceita na segunda.
+    for _volta in range(2):
+        for chave in pendentes:
+            tentativa = {**aceitos, chave: dados[chave]}
+            try:
+                _da_tabela(tentativa, arquivo=alvo.name)
+            except (ConfiguracaoInvalida, SegredoNaConfiguracao) as erro:
+                recusados[chave] = str(erro)
+            else:
+                aceitos = tentativa
+                recusados.pop(chave, None)
+        pendentes = [chave for chave in pendentes if chave in recusados]
+        if not pendentes:
+            break
+    avisos = tuple(
+        f"{alvo.name}: «{chave}» recusado ({motivo}) — usei o padrão"
+        for chave, motivo in recusados.items()
+    )
+    return _da_tabela(aceitos, arquivo=alvo.name), avisos
+
+
+def _tabela_do_arquivo(alvo: Path) -> dict[str, Any]:
+    try:
+        return tomllib.loads(alvo.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as erro:
         raise ConfiguracaoInvalida(f"{alvo} não deu para ler: {erro}") from None
-    proibir_segredo_na_configuracao(dados, arquivo=str(alvo))
+
+
+def _da_tabela(dados: Mapping[str, Any], *, arquivo: str) -> Configuracao:
+    proibir_segredo_na_configuracao(dados, arquivo=arquivo)
     tts = _texto(dados, "tts", TTS_PADRAO)
     voz = _texto(dados, "voz", VOZ_PADRAO)
     voz_elevenlabs = _texto(dados, "voz_elevenlabs", "")

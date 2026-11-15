@@ -176,43 +176,65 @@ def test_o_que_esta_ligado_aparece_antes_do_primeiro_turno(tmp_path: Path) -> No
     assert "local" in texto
 
 
-def test_nuvem_sem_chave_vira_frase_e_nao_traceback(tmp_path: Path) -> None:
-    """Motor desligado e chave ausente chegam ao dono como a mesma coisa: "não deu, e por quê".
+@pytest.fixture
+def reserva_parametrica(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A voz de reserva destes testes é a paramétrica: não depende de voz baixada (o CI não tem)."""
+    import jarvis.voz.app as modulo
 
-    Sem `CI` no ambiente deste aplicativo — é o caso do dono. Nenhum socket é aberto: a chave
-    é conferida antes, e é ela que falta.
-    """
+    monkeypatch.setattr(modulo, "TTS_PADRAO", "tts-parametrico")
+
+
+def _falou_pela_reserva(app: Aplicativo) -> list[str]:
+    """Roda um turno e devolve as linhas da tela: a voz que não abriu não para a conversa."""
+    linhas: list[str] = []
+    app.escrever_na_tela = linhas.append
+    app.rodar_texto(["oi"])
+    return linhas
+
+
+def test_nuvem_sem_chave_vira_frase_e_a_conversa_segue_na_voz_local(
+    tmp_path: Path, reserva_parametrica: None
+) -> None:
+    """Chave ausente chega ao dono como frase, não como traceback — e não para mais a conversa
+    (bug do dono, 2026-11-14): a voz local fala no lugar. Nenhum socket é aberto: a chave é
+    conferida antes, e é ela que falta."""
     app = aplicativo_de(tmp_path)
     app.ambiente = {}
     app.configuracao = app.configuracao.com(
         tts="tts-elevenlabs", voz_elevenlabs="voz-do-dono", nuvem_ligada=("tts-elevenlabs",)
     )
 
-    with pytest.raises(AplicativoIndisponivel) as erro:
-        app.rodar_texto(["oi"])
-    assert "JARVIS_ELEVENLABS_API_KEY" in str(erro.value)
-    assert "export" in str(erro.value)
+    linhas = _falou_pela_reserva(app)
+
+    troca = next(linha for linha in linhas if "tts-elevenlabs não abriu" in linha)
+    assert "JARVIS_ELEVENLABS_API_KEY" in troca and "export" in troca
+    assert type(app._tts).__name__ == "MotorParametrico"
 
 
-def test_sob_ci_a_nuvem_de_verdade_nem_e_tentada(tmp_path: Path) -> None:
-    """A trava estrutural também chega ao dono como frase, não como traceback."""
+def test_sob_ci_a_nuvem_de_verdade_nem_e_tentada(tmp_path: Path, reserva_parametrica: None) -> None:
+    """A trava estrutural também chega ao dono como frase; quem fala é a voz local."""
     app = aplicativo_de(tmp_path)
     app.ambiente = {"CI": "1", "JARVIS_ELEVENLABS_API_KEY": "sk_chave_de_teste_1234567890"}
     app.configuracao = app.configuracao.com(
         tts="tts-elevenlabs", voz_elevenlabs="voz-do-dono", nuvem_ligada=("tts-elevenlabs",)
     )
 
-    with pytest.raises(AplicativoIndisponivel, match="não é local"):
-        app.rodar_texto(["oi"])
+    linhas = _falou_pela_reserva(app)
+
+    assert any("não é local" in linha for linha in linhas)
+    assert all("sk_chave_de_teste" not in linha for linha in linhas)
 
 
-def test_nuvem_desligada_recusa_citando_a_configuracao(tmp_path: Path) -> None:
+def test_nuvem_desligada_cita_a_configuracao_e_fala_pela_voz_local(
+    tmp_path: Path, reserva_parametrica: None
+) -> None:
     app = aplicativo_de(tmp_path)
     app.ambiente = {"CI": "1"}
     app.configuracao = app.configuracao.com(tts="tts-elevenlabs", voz_elevenlabs="voz-do-dono")
 
-    with pytest.raises(AplicativoIndisponivel, match="desligado"):
-        app.rodar_texto(["oi"])
+    linhas = _falou_pela_reserva(app)
+
+    assert any("desligado" in linha for linha in linhas)
 
 
 # --- epoch e barge-in ------------------------------------------------------------------------
