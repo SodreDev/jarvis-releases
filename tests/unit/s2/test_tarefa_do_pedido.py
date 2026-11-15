@@ -333,9 +333,9 @@ def test_abrir_video_no_youtube_encadeia_ate_a_aba_mudar_e_conferir(
     assert tarefa.resposta == f"Abri «{TITULO}» na aba atual."
     assert any(NOTA_DE_CONFERIR in c.sistema for c in motor.pedidos), "o código cobrou a leitura"
     assert "Pronto, abri o vídeo" not in tarefa.resposta + _falado(publicados)
-    # A tarefa recebe os passos concretos montados pelo código, não só o objetivo (ADR-0066).
-    rodadas = [c.sistema for c in motor.pedidos if "ROTEIRO (montado pelo Jarvis)" in c.sistema]
-    assert rodadas and "browser.read" in rodadas[0] and "Pronto quando" in rodadas[0]
+    # A tarefa recebe a orientação de como trabalhar na página, não um roteiro (ADR-0070).
+    rodadas = [c.sistema for c in motor.pedidos if "COMO TRABALHAR NO NAVEGADOR" in c.sistema]
+    assert rodadas and "LEIA A PÁGINA" in rodadas[0]
     objetivo = tarefa.contaminacao.objetivo
     assert objetivo is not None and not objetivo.falta_conferir
 

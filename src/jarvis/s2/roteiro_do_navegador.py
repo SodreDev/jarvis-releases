@@ -1,10 +1,11 @@
-"""Os PASSOS concretos de uma tarefa de navegador, montados pelo próprio Jarvis (ADR-0066; dono,
-2026-11-14: «subagentes recebem a TAREFA concreta definida pelo Jarvis, não só um objetivo»).
+"""A ORIENTAÇÃO de uma tarefa de navegador (ADR-0066; revista pela ADR-0070: não é roteiro).
 
-A tarefa recebia só o pedido e o critério de pronto, e o motor improvisava o caminho — às vezes
-parando em «quer que eu mande?» ou dizendo que abriu o contato sem ter aberto. Aqui o **código**
-lê a fala do dono e escreve o roteiro: o que abrir, o que ler, o que digitar, como conferir e
-quando está pronto, com as ferramentas `browser.*` que o catálogo de agora tem.
+Antes, o código escrevia um roteiro de passos numerados (abra isto, digite aquilo, clique ali)
+e o subagente o seguia: era automação. Agora vai ao subagente só o que ele precisa para decidir —
+como trabalhar numa página (ler antes de agir, escolher o alvo pelo que está nela, reler para
+conferir, depurar no erro) e, num envio, os FATOS que o código resolveu (a rede e o endereço, o
+contato das memórias, o que o dono quer dizer, se ditou literal) e as travas de segurança (conferir
+o contato no cabeçalho antes de digitar, conferir o envio depois). O caminho é ele quem escolhe.
 
 - **Envio direto** («abre o contato da minha mãe e diz eu te amo»): a rede, o contato e a
   mensagem saem da fala; o contato é conferido no cabeçalho da conversa antes de digitar — se o
@@ -178,19 +179,19 @@ def _ferramentas(ids: Iterable[str]) -> list[str]:
 
 
 def roteiro(fala: str, ids: Iterable[str], contatos: Sequence[Contato] = ()) -> str:
-    """O roteiro para as notas da tarefa, ou vazio quando não há ferramenta de navegador."""
+    """A orientação para as notas da tarefa, ou vazio quando não há ferramenta de navegador."""
     disponiveis = _ferramentas(ids)
     if not disponiveis:
         return ""
-    cabeca = f"Ferramentas do navegador disponíveis: {', '.join(disponiveis)}."
     envio = pedido_de_envio(fala, contatos)
     if envio is not None:
         tom = tuple(c.texto or c.nome for c in contatos if c.tipo == "instrucao")
-        return f"{cabeca}\n{_roteiro_do_envio(envio, tom)}"
-    return f"{cabeca}\n{_roteiro_geral()}"
+        return f"{ORIENTACAO}\n{_fatos_do_envio(envio, tom)}"
+    return ORIENTACAO
 
 
-def _roteiro_do_envio(envio: PedidoDeEnvio, tom: Sequence[str] = ()) -> str:
+def _fatos_do_envio(envio: PedidoDeEnvio, tom: Sequence[str] = ()) -> str:
+    """Os fatos que o código resolveu da fala e das memórias, e as travas do envio — sem passos."""
     site, url = REDES[envio.rede]
     outro_nome = (
         f" (o dono disse «{envio.contato_dito}»; nas memórias é «{envio.contato}»)"
@@ -198,33 +199,19 @@ def _roteiro_do_envio(envio: PedidoDeEnvio, tom: Sequence[str] = ()) -> str:
         else ""
     )
     return (
-        f"ROTEIRO (montado pelo Jarvis; é pedido DIRETO do dono: execute sem perguntar e sem "
-        f"exigir lista permitida nem modo ausente — isso é só da resposta autônoma):\n"
-        f"1. browser.tabs: ache a aba do {site}. Sem ela, browser.navigate {url} (e espere "
-        f"carregar com browser.read).\n"
-        f"2. browser.inspecionar: LEIA a página — confirme que está logada e ache, no mapa, a "
-        f"busca de conversas (papel, rótulo, estado e o `ref` dela).\n"
-        f"3. browser.type na busca, pelo `ref`: «{envio.contato}»{outro_nome}. browser.inspecionar "
-        f"de novo: escolha o resultado cujo nome bate com «{envio.contato}».\n"
-        f"4. browser.click no resultado. browser.read no cabeçalho da conversa: o nome TEM de "
-        f"bater com «{envio.contato}». Se não bater, volte ao passo 3 e procure o contato certo; "
-        f"nunca digite na conversa errada.\n"
-        f"{_passo_da_mensagem(envio, tom)}\n"
-        f"6. browser.read: confira que a última mensagem enviada na conversa de «{envio.contato}» "
-        f"é a que você digitou.\n"
-        f"{_DEPURAR}\n"
-        f"Pronto quando: o passo 6 confirmou. Só então diga ao dono que mandou; se algo falhou, "
-        f"diga o que falhou."
+        "O PEDIDO É UM ENVIO DIRETO do dono (execute sem perguntar; lista permitida e modo ausente "
+        f"são só da resposta autônoma). Rede: {site} ({url}). Contato: «{envio.contato}»"
+        f"{outro_nome}. {_mensagem(envio, tom)} Travas: antes de digitar, o cabeçalho da conversa "
+        f"aberta TEM de mostrar «{envio.contato}» — nunca digite na conversa errada; depois de "
+        "enviar, leia a conversa e só diga que mandou se a última mensagem for a sua."
     )
 
 
-def _passo_da_mensagem(envio: PedidoDeEnvio, tom: Sequence[str]) -> str:
-    """O passo 5: o texto ditado vai como está; o pedido («manda pra X que …») é redigido pelo
-    Jarvis, no tom do dono com essa pessoa (ADR-0069 §3)."""
-    caixa = "browser.inspecionar: ache a caixa de mensagem (o `ref`). browser.type nela "
-    enviar = "e envie com browser.acionar (Enter ou o botão de enviar)."
+def _mensagem(envio: PedidoDeEnvio, tom: Sequence[str]) -> str:
+    """O texto ditado vai como está; o pedido («manda pra X que …») é redigido pelo Jarvis, no tom
+    do dono com essa pessoa (ADR-0069 §3)."""
     if envio.literal:
-        return f"5. {caixa}«{envio.mensagem}» — EXATAMENTE isso, que o dono ditou o texto; {enviar}"
+        return f"A mensagem, EXATAMENTE como o dono ditou: «{envio.mensagem}»."
     sobre = (
         f" O que ele anotou sobre «{envio.contato}»: «{_curto(envio.nota)}»." if envio.nota else ""
     )
@@ -236,12 +223,10 @@ def _passo_da_mensagem(envio: PedidoDeEnvio, tom: Sequence[str]) -> str:
         else ""
     )
     return (
-        f"5. REDIJA a mensagem: você é o assistente pessoal do dono, não um repetidor. Ele quer "
-        f"dizer a «{envio.contato}»: «{envio.mensagem}». Escreva com as suas palavras, como ele "
-        f"escreveria (em primeira pessoa, em nome dele), no tom dele com essa pessoa — curta e "
-        f"natural, sem citar o Jarvis, sem inventar fato, horário ou promessa que ele não disse "
-        f"e sem copiar a fala dele palavra por palavra.{sobre}{jeito} {caixa}o texto que você "
-        f"redigiu, {enviar}"
+        f"O que ele quer dizer a «{envio.contato}»: «{envio.mensagem}». REDIJA a mensagem: você é "
+        "o assistente pessoal dele, não um repetidor — em primeira pessoa, em nome dele, no tom "
+        "dele com essa pessoa, curta, sem citar o Jarvis, sem inventar fato, horário ou promessa "
+        f"e sem copiar a fala dele palavra por palavra.{sobre}{jeito}"
     )
 
 
@@ -274,37 +259,12 @@ TONS_NO_ROTEIRO: Final = 3
 """Quantas instruções de tom das memórias fixas vão no passo da mensagem."""
 
 
-_DEPURAR: Final = (
-    f"SE UM PASSO FALHAR: não desista nem repita às cegas — browser.inspecionar de novo (o mapa "
-    f"atual da página), ache o campo ou botão certo (outro rótulo, outro `ref`, role a página com "
-    f"browser.scroll, feche o aviso que cobre o elemento) e tente outra vez; até "
-    f"{TENTATIVAS_POR_PASSO} tentativas por passo, e só então diga ao dono o que falhou e por quê."
+ORIENTACAO: Final = (
+    "COMO TRABALHAR NO NAVEGADOR (orientação, não roteiro: o caminho é você quem escolhe): veja "
+    "as abas antes de abrir outra; LEIA A PÁGINA antes de agir (browser.inspecionar dá o mapa dos "
+    "elementos, com papel, rótulo, estado e `ref`) e escolha o alvo pelo que está nela, nunca por "
+    "palpite; aja pelo `ref`, um passo por vez, e releia depois de uma ação que muda a página; se "
+    "um passo falhar, releia e depure (outro rótulo, outro `ref`, rolar, fechar o aviso por cima) "
+    f"antes de tentar de novo — até {TENTATIVAS_POR_PASSO} vezes por passo; só diga que ficou "
+    "feito quando uma leitura confirmar."
 )
-
-
-def _roteiro_geral() -> str:
-    return (
-        "ROTEIRO (montado pelo Jarvis):\n"
-        "1. browser.tabs: veja a aba atual (URL e título) antes de abrir outra.\n"
-        "2. Se o site do pedido não está aberto, browser.navigate nele; senão, use a aba que já "
-        "está.\n"
-        "3. LEIA A PÁGINA ANTES DE AGIR: browser.inspecionar devolve o mapa dos elementos (campos, "
-        "botões, links, com papel, rótulo, estado e o `ref` de cada um); browser.read, o texto "
-        "visível. Escolha nele o que clicar ou onde digitar.\n"
-        "4. Aja pelo `ref` do mapa com browser.click / browser.type / browser.acionar, um passo "
-        "por vez; depois de um clique que muda a página, leia de novo antes da próxima ação.\n"
-        "5. browser.read de novo: confira que o efeito aconteceu na página.\n"
-        f"{_DEPURAR}\n"
-        "Pronto quando: a leitura do passo 5 mostra o que o dono pediu."
-    )
-
-
-__all__ = [
-    "NOTA_DE_REDIGIR",
-    "REDES",
-    "Contato",
-    "PedidoDeEnvio",
-    "copia_da_mensagem",
-    "pedido_de_envio",
-    "roteiro",
-]

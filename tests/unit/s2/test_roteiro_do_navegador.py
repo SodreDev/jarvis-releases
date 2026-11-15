@@ -48,20 +48,21 @@ def test_sem_par_nas_memorias_procura_pelo_que_o_dono_disse() -> None:
     assert envio is not None and envio.contato == "mãe"
 
 
-def test_o_roteiro_do_envio_tem_os_passos_e_a_conferencia_do_contato() -> None:
+def test_o_envio_leva_fatos_e_travas_sem_passos_numerados() -> None:
+    """ADR-0070: orientação, não roteiro — os fatos resolvidos e as travas; o caminho é do motor."""
     texto = roteiro("abre o contato da minha mãe e diz eu te amo", FERRAMENTAS, CONTATOS)
 
-    assert "browser.tabs" in texto and "https://web.whatsapp.com/" in texto
+    assert "https://web.whatsapp.com/" in texto
     assert "«Maria Sodré»" in texto and "«eu te amo»" in texto
-    assert "TEM de bater" in texto and "procure o contato certo" in texto
+    assert "TEM de mostrar «Maria Sodré»" in texto and "nunca digite na conversa errada" in texto
     assert "sem perguntar" in texto and "modo ausente" in texto
-    assert "Pronto quando" in texto
-    assert "system.clock.now" not in texto  # só as do navegador são listadas
+    assert "LEIA A PÁGINA antes de agir" in texto and "não roteiro" in texto
+    assert not any(f"\n{n}. " in texto for n in range(1, 7)), "sem passos numerados"
 
 
-def test_pedido_de_navegador_que_nao_e_envio_ganha_o_roteiro_geral() -> None:
+def test_pedido_de_navegador_que_nao_e_envio_ganha_so_a_orientacao() -> None:
     texto = roteiro("abre o youtube e procura música", FERRAMENTAS)
-    assert "aba atual" in texto and "Pronto quando" in texto
+    assert "COMO TRABALHAR NO NAVEGADOR" in texto and "releia" in texto
     assert "whatsapp" not in texto.lower()
 
 
@@ -85,7 +86,7 @@ def test_texto_ditado_vai_literal(fala: str, mensagem: str) -> None:
     envio = pedido_de_envio(fala, CONTATOS)
     assert envio is not None and envio.literal and envio.mensagem == mensagem
     texto = roteiro(fala, FERRAMENTAS, CONTATOS)
-    assert f"«{mensagem}» — EXATAMENTE isso" in texto and "REDIJA" not in texto
+    assert f"EXATAMENTE como o dono ditou: «{mensagem}»" in texto and "REDIJA" not in texto
 
 
 def test_pedido_de_envio_e_redigido_no_tom_do_dono_com_o_contato() -> None:

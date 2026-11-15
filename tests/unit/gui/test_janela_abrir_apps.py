@@ -225,12 +225,14 @@ def test_abrir_app_e_site_pelo_que_o_dono_pre_autorizou_ponta_a_ponta(
 
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
-    # O caminho rápido (ADR-0045): «abre o discord» e «abre o brave» vão ao apps.launch pela regra
-    # do código — pelo mesmo PDP —, e o motor nem é chamado; o que não cabe numa regra (o site que
-    # não está na tabela, o app não marcado) continua com ele.
-    # O que o motor abriu foi ao subagente (ADR-0070), que vê o resultado e escreve o fim.
-    assert [f for f, r in vistos if r["status"] == "ok"] == ["abre a calculadora", "abre o exemplo"]
-    assert "abre o discord" not in dict(vistos) and "abre o brave" not in dict(vistos)
+    # O caminho rápido virou dica (ADR-0070): a regra não executa; o motor decide e o que ele
+    # abriu foi ao subagente, que vê o resultado e escreve o fim — em todos os pedidos.
+    assert [f for f, r in vistos if r["status"] == "ok"] == [
+        "abre o discord",
+        "abre o brave",
+        "abre a calculadora",
+        "abre o exemplo",
+    ]
 
 
 def test_o_modelo_ve_quais_apps_estao_autorizados(

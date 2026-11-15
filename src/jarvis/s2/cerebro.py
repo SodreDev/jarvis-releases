@@ -31,6 +31,7 @@ para o contrato ser testado inteiro em memória:
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from collections.abc import Callable, Sequence
@@ -53,7 +54,6 @@ from jarvis.imagem import Imagem
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.navegador.cliente import SEM_NAVEGADOR_ABERTO
 from jarvis.politica.atalho import Atalho, fala_simples, frase_da_ferramenta
-from jarvis.politica.atalho import frase as frase_do_atalho
 from jarvis.politica.memoria import TRUST_DO_DONO, AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.politica.metodo import Escolha
 from jarvis.politica.objetivo import EstadoDoObjetivo
@@ -136,10 +136,18 @@ LIMITE_DO_JA_DITO: Final = 300
 """Caracteres do que o dono já ouviu no turno que voltam ao motor (o fim, que é o mais novo)."""
 """O que o dono ouve quando o pedido vira tarefa e o motor não disse nada antes da ferramenta
 (ADR-0038): curto, e a resposta de verdade vem quando a tarefa acabar."""
-NOTA_DO_ATALHO: Final = (
-    "O primeiro passo deste pedido o código já fez, pelo caminho rápido: o resultado está entre os "
-    "das ferramentas. Siga daí, sem repetir esse passo."
-)
+
+
+def nota_do_atalho(atalho: Atalho) -> str:
+    """A dica do caminho rápido para o motor (ADR-0070): o que a regra acharia, como contexto."""
+    argumentos = json.dumps(dict(atalho.args), ensure_ascii=False)
+    return (
+        f"DICA DO CÓDIGO (a regra «{atalho.regra}» reconheceu a fala; é sugestão, não ordem): este "
+        f"pedido parece ser {atalho.tool_id} com {argumentos}. Use se for mesmo o que o dono "
+        "pediu; se não, siga o seu caminho."
+    )
+
+
 PASSOS_NO_TURNO: Final = 0
 """Ferramentas de execução que o próprio turno roda antes de passar o pedido a uma tarefa. Zero
 (ADR-0070, dono, 2026-11-15): toda execução — clicar, digitar, abrir app, enviar, pesquisar, rodar
@@ -618,65 +626,24 @@ class Cerebro:
         def cancelado_no_laco() -> bool:
             return cancelado() or prazo_esgotado()
 
-        # O caminho rápido (dono, 2026-10-21): o comando simples vai à ferramenta pela regra do
-        # código, sem esperar o motor — pelo mesmo `_chamar` (PDP, Jev, objetivo, pergunta) que a
-        # proposta do modelo. Pronto e certo, a frase é do código e o motor nem é chamado; erro,
-        # pergunta ou pedido que continua (abrir o canal de alguém): o motor segue dali.
+        # O caminho rápido (dono, 2026-10-21) virou DICA (ADR-0070): a regra do código reconhece o
+        # comando simples e diz ao motor qual ferramenta e quais argumentos ela acharia — como
+        # contexto. Ela não executa nem fala: quem decide o passo, e o que dizer, é o Jarvis.
         pular_o_motor = False
         atalho = self._atalho(texto_do_dono) if visto_cancelamento is None else None
         if atalho is not None:
             resposta.atalho = str(atalho.regra)
-            _marcar_a_primeira_ferramenta(resposta, comeco)
-            resultado = self._chamar(
-                PedidoDeTool(atalho.tool_id, dict(atalho.args)), cancelado_no_laco, texto_do_dono
+            contexto = Contexto(
+                sistema=f"{contexto.sistema}\n\n{nota_do_atalho(atalho)}",
+                mensagens=contexto.mensagens,
             )
-            resposta.ferramentas.append(resultado)
-            # Nenhum navegador com a extensão (o Brave fechado): o Jarvis abre o do dono — o
-            # sites.open já com a página (ADR-0036, emenda (2); ADR-0046).
-            extras = self._abrir_o_navegador(
-                PedidoDeTool(atalho.tool_id, dict(atalho.args)),
-                resultado,
-                lambda p: self._chamar(p, cancelado_no_laco, texto_do_dono),
-                lambda p: self._chamar(p, cancelado_no_laco, texto_do_dono, self._sem_o_metodo()),
-            )
-            resposta.ferramentas.extend(extras)
-            resultado = extras[-1] if extras else resultado
             if self.ferramentas is not None and self.ferramentas.trilha is not None:
                 self.ferramentas.trilha.evento(
                     "atalho",
                     regra=str(atalho.regra),
                     tool_id=atalho.tool_id,
-                    status=resultado.status,
+                    status="dica",
                     completo=atalho.completo,
-                )
-            if resultado.aviso:  # o de uma moderada, ou a pergunta: do código, já em voz
-                resposta.gerado += resultado.aviso + " "
-                crescer()
-                for pedaco in fatiador.alimentar(resultado.aviso + " ") + fatiador.descarregar():
-                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
-            if cancelado():
-                visto_cancelamento = time.monotonic()
-            elif resultado.status == "pendente":
-                pular_o_motor = True  # a pergunta é a última coisa do turno, como no laço
-            elif resultado.status == "ok":
-                # Pronto e certo, a frase é do código. No primeiro passo à vista ("Abri a busca do
-                # YouTube por …") ela sai já, e o motor segue — sem o "Certo, já cuido disso."
-                # Frase do código: não passa pelo orçamento da fala (como o aviso) e sai já.
-                dita = frase_do_atalho(atalho, resultado.dados)
-                if dita:
-                    resposta.gerado += dita
-                    crescer()
-                    for pedaco in fatiador.alimentar(dita + " ") + fatiador.descarregar():
-                        self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
-                pular_o_motor = atalho.completo
-                if not atalho.completo:
-                    contexto = Contexto(
-                        sistema=f"{contexto.sistema}\n\n{NOTA_DO_ATALHO}",
-                        mensagens=contexto.mensagens,
-                    )
-            else:
-                contexto = Contexto(
-                    sistema=f"{contexto.sistema}\n\n{NOTA_DO_ATALHO}", mensagens=contexto.mensagens
                 )
         resposta.motor_chamado = not pular_o_motor
         falta = ""  # a frase do código quando o motor parou afirmando sem confirmar (ADR-0066)

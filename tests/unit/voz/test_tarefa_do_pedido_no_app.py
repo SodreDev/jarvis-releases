@@ -63,10 +63,10 @@ def test_a_tarefa_trabalha_a_conversa_segue_e_a_resposta_chega_em_voz(tmp_path: 
     app.rodar_texto(dono())
 
     falas = [linha for linha in linhas if linha.startswith("Jarvis: ")]
-    # O caminho rápido (ADR-0045): a busca do YouTube é o primeiro passo, do código e à vista, com
-    # a frase dele; o modelo segue dali na tarefa (sem o "Certo, já cuido disso.").
+    # O caminho rápido virou dica (ADR-0070): quem fala primeiro é o motor, com as palavras dele,
+    # e a execução vai ao subagente; a conversa segue e o resultado chega como evento.
     assert falas == [
-        "Jarvis: Abri a busca do YouTube por canal X.",
+        "Jarvis: Vou procurar no YouTube.",
         "Jarvis: São dez horas.",
         final,
     ]

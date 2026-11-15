@@ -93,9 +93,10 @@ def test_no_turno_o_jarvis_le_a_pagina_antes_da_acao_que_veio_sem_leitura(tmp_pa
     assert any(NOTA_DA_LEITURA in s for s in vistos[1:])
 
 
-def test_o_roteiro_manda_ler_antes_e_depurar_no_erro() -> None:
+def test_a_orientacao_manda_ler_antes_e_depurar_no_erro() -> None:
+    """ADR-0070: a orientação (não um roteiro de passos) diz ao subagente como trabalhar."""
     texto = roteiro("abre o youtube e procura música", ("browser.inspecionar", "browser.click"))
-    assert "LEIA A PÁGINA ANTES DE AGIR" in texto and "browser.inspecionar" in texto
-    assert "SE UM PASSO FALHAR" in texto and f"até {TENTATIVAS_POR_PASSO} tentativas" in texto
+    assert "LEIA A PÁGINA antes de agir" in texto and "browser.inspecionar" in texto
+    assert "releia e depure" in texto and f"até {TENTATIVAS_POR_PASSO} vezes por passo" in texto
     envio = roteiro("abre o contato da minha mãe e diz eu te amo", ("browser.inspecionar",))
-    assert envio.count("browser.inspecionar") >= 3 and "SE UM PASSO FALHAR" in envio
+    assert "LEIA A PÁGINA antes de agir" in envio and "releia e depure" in envio
