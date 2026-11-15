@@ -1561,14 +1561,21 @@ class Aplicativo:
         return Reconciliador.do_contexto(termos=termos, apps=apps, pessoas=pessoas)
 
     def _contatos_das_memorias(self) -> list[CandidatoDeContato]:
-        """Nome e nota dos contatos das memórias fixas — nunca o telefone, que é só do código."""
+        """Nome e nota dos contatos das memórias fixas, e as instruções de tom — nunca o telefone,
+        que é só do código."""
         if self.vocabulario is None:
             return []
         try:
             memorias = ler_as_memorias(self.vocabulario.pasta / ARQUIVO_DAS_MEMORIAS)
         except (MemoriaInvalida, OSError):
             return []
-        return [CandidatoDeContato(m.nome, m.texto) for m in memorias if m.tipo == "contato"]
+        # O contato (nome e nota) e as instruções de tom: a mensagem pedida é redigida no jeito do
+        # dono com aquela pessoa (ADR-0069 §3).
+        return [
+            CandidatoDeContato(m.nome, m.texto, m.tipo)
+            for m in memorias
+            if m.tipo in {"contato", "instrucao"}
+        ]
 
     def _reconciliar(self, texto: str) -> Reconciliacao:
         """O texto com o som trocado corrigido; quando agiu, a trilha leva o antes e o depois

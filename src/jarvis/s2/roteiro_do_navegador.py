@@ -13,14 +13,16 @@ quando está pronto, com as ferramentas `browser.*` que o catálogo de agora tem
 - **Navegação em geral**: aba atual, site citado, ler, agir, ler de novo para conferir.
 
 Nada aqui executa: é texto para as notas da rodada. Só a fala do dono entra (nunca o texto de uma
-página), e a mensagem vai entre «» exatamente como ele disse.
+página). A mensagem é **redigida** pelo Jarvis, no tom do dono com aquela pessoa (ADR-0069 §3: ele
+é assistente, não repetidor); só vai palavra por palavra quando o dono ditou o texto — entre aspas,
+ou com «exatamente», «literalmente», «palavra por palavra».
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -59,16 +61,29 @@ _MENSAGEM_DEPOIS_DO_VERBO: Final = re.compile(
     r"(?:\s+(?:que|assim)\b:?)?\s+(?P<mensagem>.+)$",
     re.IGNORECASE,
 )
+_ENTRE_ASPAS: Final = re.compile(r"[«\"“”]([^«»\"“”]{1,1000})[»\"“”]")
+_LITERAL: Final = re.compile(
+    r"\b(?:exatamente|literalmente|palavra por palavra|ao p[eé] da letra|com essas palavras|"
+    r"sem mudar nada)\b",
+    re.IGNORECASE,
+)
+_SOBRA_DO_LITERAL: Final = re.compile(
+    r"(?:^|(?<=[\s,]))(?:exatamente|literalmente|palavra por palavra|ao p[eé] da letra|"
+    r"com essas palavras|sem mudar nada)(?:\s+(?:isso|assim))?\s*:?",
+    re.IGNORECASE,
+)
 _POSSESSIVO: Final = re.compile(r"^(?:minha|meu|o|a)\s+", re.IGNORECASE)
 _PALAVRAS_DE_ENVIO: Final = re.compile(rf"\b(?:{_VERBO}|{_GERUNDIO})\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
 class Contato:
-    """Um contato das memórias fixas: o nome e o que o dono escreveu sobre ele («minha mãe»)."""
+    """Uma memória fixa útil ao envio: o contato (nome e o que o dono escreveu sobre ele, «minha
+    mãe») ou uma instrução de tom (`tipo="instrucao"`: como o dono escreve)."""
 
     nome: str
     texto: str = ""
+    tipo: str = "contato"
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +93,12 @@ class PedidoDeEnvio:
     contato: str
     """O nome a procurar: o das memórias quando «minha mãe» bate com uma, senão o dito."""
     mensagem: str
+    """O que o dono quer dizer. Redigido pelo Jarvis, salvo quando `literal` (ADR-0069 §3)."""
+    literal: bool = False
+    """O dono ditou o texto: entre aspas, ou «diga exatamente», «literalmente», «palavra por
+    palavra». Só aí a mensagem vai como ele disse."""
+    nota: str = ""
+    """O que o dono escreveu sobre esse contato nas memórias fixas (o tom com essa pessoa)."""
 
 
 def _normal(texto: str) -> str:
@@ -129,11 +150,26 @@ def pedido_de_envio(fala: str, contatos: Iterable[Contato] = ()) -> PedidoDeEnvi
     # «diz eu te amo pra minha mãe»: o destinatário no fim sai da mensagem.
     if achado.start() >= mensagem_achada.start("mensagem"):
         mensagem = mensagem[: achado.start() - mensagem_achada.start("mensagem")]
+    literal = bool(_LITERAL.search(limpa))
+    aspas = _ENTRE_ASPAS.search(limpa)
+    if aspas is not None:
+        # O texto ditado entre aspas é a mensagem, palavra por palavra (ADR-0069 §3).
+        mensagem, literal = aspas.group(1), True
+    elif literal:
+        mensagem = " ".join(_SOBRA_DO_LITERAL.sub(" ", mensagem).split())
     mensagem = mensagem.strip(" \"'«»“”:,")
     if not mensagem or not dito:
         return None
+    lista = [c for c in contatos if c.tipo == "contato"]
+    contato = _resolver(dito, lista)
+    nota = next((c.texto for c in lista if c.nome == contato), "")
     return PedidoDeEnvio(
-        rede=rede, contato_dito=dito, contato=_resolver(dito, contatos), mensagem=mensagem
+        rede=rede,
+        contato_dito=dito,
+        contato=contato,
+        mensagem=mensagem,
+        literal=literal,
+        nota=nota,
     )
 
 
@@ -149,11 +185,12 @@ def roteiro(fala: str, ids: Iterable[str], contatos: Sequence[Contato] = ()) -> 
     cabeca = f"Ferramentas do navegador disponíveis: {', '.join(disponiveis)}."
     envio = pedido_de_envio(fala, contatos)
     if envio is not None:
-        return f"{cabeca}\n{_roteiro_do_envio(envio)}"
+        tom = tuple(c.texto or c.nome for c in contatos if c.tipo == "instrucao")
+        return f"{cabeca}\n{_roteiro_do_envio(envio, tom)}"
     return f"{cabeca}\n{_roteiro_geral()}"
 
 
-def _roteiro_do_envio(envio: PedidoDeEnvio) -> str:
+def _roteiro_do_envio(envio: PedidoDeEnvio, tom: Sequence[str] = ()) -> str:
     site, url = REDES[envio.rede]
     outro_nome = (
         f" (o dono disse «{envio.contato_dito}»; nas memórias é «{envio.contato}»)"
@@ -172,15 +209,69 @@ def _roteiro_do_envio(envio: PedidoDeEnvio) -> str:
         f"4. browser.click no resultado. browser.read no cabeçalho da conversa: o nome TEM de "
         f"bater com «{envio.contato}». Se não bater, volte ao passo 3 e procure o contato certo; "
         f"nunca digite na conversa errada.\n"
-        f"5. browser.inspecionar: ache a caixa de mensagem (o `ref`). browser.type nela: "
-        f"«{envio.mensagem}» (exatamente isso), e envie com browser.acionar (Enter ou o botão de "
-        f"enviar).\n"
+        f"{_passo_da_mensagem(envio, tom)}\n"
         f"6. browser.read: confira que a última mensagem enviada na conversa de «{envio.contato}» "
-        f"é «{envio.mensagem}».\n"
+        f"é a que você digitou.\n"
         f"{_DEPURAR}\n"
         f"Pronto quando: o passo 6 confirmou. Só então diga ao dono que mandou; se algo falhou, "
         f"diga o que falhou."
     )
+
+
+def _passo_da_mensagem(envio: PedidoDeEnvio, tom: Sequence[str]) -> str:
+    """O passo 5: o texto ditado vai como está; o pedido («manda pra X que …») é redigido pelo
+    Jarvis, no tom do dono com essa pessoa (ADR-0069 §3)."""
+    caixa = "browser.inspecionar: ache a caixa de mensagem (o `ref`). browser.type nela "
+    enviar = "e envie com browser.acionar (Enter ou o botão de enviar)."
+    if envio.literal:
+        return f"5. {caixa}«{envio.mensagem}» — EXATAMENTE isso, que o dono ditou o texto; {enviar}"
+    sobre = (
+        f" O que ele anotou sobre «{envio.contato}»: «{_curto(envio.nota)}»." if envio.nota else ""
+    )
+    jeito = (
+        " O jeito dele escrever, das memórias: "
+        + "; ".join(f"«{_curto(t)}»" for t in tom[:TONS_NO_ROTEIRO])
+        + "."
+        if tom
+        else ""
+    )
+    return (
+        f"5. REDIJA a mensagem: você é o assistente pessoal do dono, não um repetidor. Ele quer "
+        f"dizer a «{envio.contato}»: «{envio.mensagem}». Escreva com as suas palavras, como ele "
+        f"escreveria (em primeira pessoa, em nome dele), no tom dele com essa pessoa — curta e "
+        f"natural, sem citar o Jarvis, sem inventar fato, horário ou promessa que ele não disse "
+        f"e sem copiar a fala dele palavra por palavra.{sobre}{jeito} {caixa}o texto que você "
+        f"redigiu, {enviar}"
+    )
+
+
+def _curto(texto: str, limite: int = 200) -> str:
+    texto = " ".join(texto.split())
+    return texto if len(texto) <= limite else texto[:limite] + "…"
+
+
+def copia_da_mensagem(
+    tool_id: str, args: Mapping[str, object], envio: PedidoDeEnvio | None
+) -> bool:
+    """O `browser.type` de um envio que não é literal leva a fala do dono copiada (a mensagem que
+    ele pediu, sem redigir)? É o que a tarefa e o turno cobram uma vez (ADR-0069 §3)."""
+    if envio is None or envio.literal or tool_id != "browser.type":
+        return False
+    digitado = _sem_pontuacao(str(args.get("texto", "")))
+    return bool(digitado) and digitado == _sem_pontuacao(envio.mensagem)
+
+
+def _sem_pontuacao(texto: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", _normal(texto)).split())
+
+
+NOTA_DE_REDIGIR: Final = (
+    "REDIJA A MENSAGEM: o texto que você ia digitar é a fala do dono copiada. Ele pediu para você "
+    "dizer isso à pessoa, não para repetir as palavras dele: escreva a mensagem com as suas "
+    "palavras, como ele escreveria para essa pessoa, e digite essa."
+)
+TONS_NO_ROTEIRO: Final = 3
+"""Quantas instruções de tom das memórias fixas vão no passo da mensagem."""
 
 
 _DEPURAR: Final = (
@@ -208,4 +299,12 @@ def _roteiro_geral() -> str:
     )
 
 
-__all__ = ["REDES", "Contato", "PedidoDeEnvio", "pedido_de_envio", "roteiro"]
+__all__ = [
+    "NOTA_DE_REDIGIR",
+    "REDES",
+    "Contato",
+    "PedidoDeEnvio",
+    "copia_da_mensagem",
+    "pedido_de_envio",
+    "roteiro",
+]

@@ -26,6 +26,7 @@ from jarvis.politica.permissao import ModoDePermissao
 from jarvis.s2.cerebro import Cerebro
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
+from jarvis.s2.roteiro_do_navegador import NOTA_DE_REDIGIR
 from jarvis.s2.verdade import (
     FALTA_ENVIAR,
     Afirmacao,
@@ -227,3 +228,32 @@ def test_conferir_corta_so_o_que_nao_se_confirma() -> None:
     relato = conferir("Abri o WhatsApp. Mandei a mensagem. Até mais.", [_ok("sites.open")])
     assert relato.texto == "Abri o WhatsApp. Até mais."
     assert relato.cortadas == ("Mandei a mensagem.",)
+
+
+def test_a_mensagem_pedida_e_redigida_e_a_copia_e_cobrada_uma_vez(
+    tmp_path: Path, pagina: PaginaFalsa
+) -> None:
+    """ADR-0069 §3: «diz eu te amo» é pedido para o Jarvis escrever. A fala copiada na caixa de
+    mensagem volta ao motor (sem rodar) com a nota de redigir; a redigida é a que vai."""
+    vistos: list[str] = []
+
+    def resposta(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
+        vistos.append(contexto.sistema)
+        feitas = sum(1 for m in contexto.mensagens if m.papel == "ferramenta")
+        if feitas == 0:
+            return [PedidoDeTool("browser.avaliar", {"codigo": CLICAR_NA_MAE})]
+        if feitas == 1:
+            return [PedidoDeTool("browser.inspecionar", {})]
+        if feitas == 2:
+            texto = "Te amo, mãezinha!" if NOTA_DE_REDIGIR in contexto.sistema else "eu te amo"
+            return [PedidoDeTool("browser.type", {"alvo": "Mensagem", "texto": texto})]
+        return ["Pronto."]
+
+    for executor in _executor(tmp_path, pagina, ModoDePermissao.AUTOMATICO):
+        cerebro = Cerebro(motor=MotorRoteirizado(resposta=resposta), ferramentas=executor)
+        resultado, _falado = _dizer(cerebro, PEDIDO)
+    digitados = [r for r in resultado.ferramentas if r.tool_id == "browser.type"]
+    assert len(digitados) == 1 and resultado.cobrou_redacao
+    assert any(NOTA_DE_REDIGIR in s for s in vistos)
+    digitado = [params for metodo, params in pagina.chamadas if metodo == "page.type"]
+    assert len(digitado) == 1 and "Te amo, mãezinha!" in str(digitado[0])

@@ -14,13 +14,21 @@ O dono viu o Jarvis agir como automação: repassar a fala dele literal ao subag
 - **`delegar.claude_code` v2:** o contrato exige o pedido formulado — `tarefa` (o objetivo nas palavras do Jarvis), `passos` (1 a 12), `pronto_quando`, `devolver`; `contexto` e `site` opcionais. O subagente recebe o pedido em seções (`OBJETIVO`, `CONTEXTO`, `COMECE POR`, `PASSOS`, `PRONTO QUANDO`, `DEVOLVA`), montado por `jarvis.delegacao.pedido.texto`; o guarda de contexto (ADR-0049) julga esse mesmo texto.
 - **A cópia não sai:** `pedido.recusa` compara o objetivo e cada passo com a fala do dono (texto normalizado: igual, `SequenceMatcher` ≥ 0,8, ou a fala recortada). Cópia volta ao motor como `erro` com causa `pedido_nao_formulado` e a instrução de formular — o `claude` nem é chamado. Fala curta (menos de 3 palavras) só conta quando igual.
 - **Responder depois do retorno:** a delegação roda na tarefa do pedido (nunca é o 1º passo, `delegar_cedo`), e a resposta ao dono é a rodada seguinte do motor, com o resultado na mão; o relato verdadeiro (ADR-0066 §2) continua cortando o que nada confirmou.
-- **Persona v18:** «Ao delegar, formule o pedido … sem copiar o dono; responda com o que voltou» — vale também para `tarefa.iniciar` (só na instrução: a descrição dela é curta demais para a régua da cópia).
+- **Persona v18:** «Ao delegar, formule o pedido … sem copiar o dono; responda com o retorno» — vale também para `tarefa.iniciar` (só na instrução: a descrição dela é curta demais para a régua da cópia).
 
 ### 2. Ler a página antes de agir, e reler depois do erro
 
 - **O código garante a ordem** (`jarvis.s2.leitura_da_pagina`): a ação na página (`browser.click`, `browser.type`, `browser.acionar`, `browser.gesto`) só roda depois de uma leitura que ainda vale (`browser.inspecionar`, `browser.read`, `browser.tela`). A leitura deixa de valer quando a página muda (`browser.navigate`, `sites.open`, `browser.launch`, ou um clique/acionamento/gesto que deu certo — digitar não muda) e quando um passo na página **falha**. Faltando a leitura, o passo vira a inspeção da mesma aba e o motor decide de novo com o mapa na mão (`NOTA_DA_LEITURA`). Vale no turno (`Cerebro`) e na tarefa (`MotorDoObjetivo`), até `LEITURAS_FORCADAS` (6) por pedido; depois, o orçamento da recuperação (ADR-0038) e a guarda de laço (ADR-0062).
 - **O roteiro (985ffb1)** manda `browser.inspecionar` antes de cada ação e, quando um passo falha, reler, achar o campo ou botão certo e tentar de novo — até `TENTATIVAS_POR_PASSO` (3) por passo antes de dizer o que falhou.
 - **As ferramentas** dizem isso a quem as lê: o `quando` da `browser.inspecionar` («ler a página antes de agir e depois de um erro») e a descrição de `browser.click`/`type`/`acionar`. O subagente do navegador (Claude Code, ADR-0054) recebe a mesma regra nas regras fixas dele.
+
+### 3. A mensagem é redigida pelo Jarvis
+
+- **«manda pra X que …»** é pedido para o assistente escrever: o roteiro do envio leva o que o dono quer dizer, o que ele anotou sobre o contato e as instruções de tom das memórias fixas (`tipo = "instrucao"`), e manda redigir em primeira pessoa, em nome dele, curto, sem inventar fato, horário ou promessa e sem copiar a fala palavra por palavra.
+- **Literal só quando ditado:** entre aspas («…», "…") ou com «exatamente», «literalmente», «palavra por palavra», «ao pé da letra», «com essas palavras», «sem mudar nada» (`PedidoDeEnvio.literal`). Aí o texto vai como ele disse.
+- **A cópia é cobrada uma vez:** o `browser.type` que leva a fala do dono copiada num envio que não é literal volta ao motor com `NOTA_DE_REDIGIR`, sem rodar (turno e tarefa). Se o motor insistir, segue — a mensagem curta às vezes é mesmo a melhor.
+- **O que não muda:** a conferência do contato no cabeçalho antes de digitar, a leitura que confere o envio (relato verdadeiro, ADR-0066 §2) e o pedido direto sem pedir permissão. As travas do envio autônomo (ADR-0060) continuam só no `Enviador`.
+- **Persona:** «a mensagem você redige no tom dele e envia» (no lugar de «a mensagem que ele ditou você envia»).
 
 ## Alternativas descartadas
 
@@ -29,4 +37,4 @@ O dono viu o Jarvis agir como automação: repassar a fala dele literal ao subag
 
 ## Como testar
 
-`tests/unit/delegacao/test_pedido_formulado.py` (a régua da cópia e as seções) e, em `tests/unit/delegacao/test_delegar_claude_code.py`, os testes do fim (a cópia não chega ao `claude` falso; a entrada padrão chega em seções; sem `passos`/`pronto_quando`/`devolver` é fora do contrato). `tests/unit/s2/test_leitura_da_pagina.py` (a regra pura, a inspeção que o turno põe antes da ação sem leitura, o roteiro com ler e depurar) e o `test_relato_verdadeiro` (o envio do WhatsApp falso lê antes de digitar).
+`tests/unit/delegacao/test_pedido_formulado.py` (a régua da cópia e as seções) e, em `tests/unit/delegacao/test_delegar_claude_code.py`, os testes do fim (a cópia não chega ao `claude` falso; a entrada padrão chega em seções; sem `passos`/`pronto_quando`/`devolver` é fora do contrato). `tests/unit/s2/test_leitura_da_pagina.py` (a regra pura, a inspeção que o turno põe antes da ação sem leitura, o roteiro com ler e depurar) e o `test_relato_verdadeiro` (o envio do WhatsApp falso lê antes de digitar). Para a §3: os testes do fim de `tests/unit/s2/test_roteiro_do_navegador.py` (literal com aspas/«exatamente», o passo de redigir com a nota e o tom, a cópia reconhecida) e `test_a_mensagem_pedida_e_redigida_e_a_copia_e_cobrada_uma_vez` (o WhatsApp falso recebe a mensagem redigida, não a fala copiada).

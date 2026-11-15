@@ -86,7 +86,13 @@ from jarvis.s2.protocolo import LeitorDoProtocolo
 from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.receitas import receitas_do_turno
 from jarvis.s2.recuperacao import nota_do_turno
-from jarvis.s2.roteiro_do_navegador import Contato
+from jarvis.s2.roteiro_do_navegador import (
+    NOTA_DE_REDIGIR,
+    Contato,
+    PedidoDeEnvio,
+    copia_da_mensagem,
+    pedido_de_envio,
+)
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
 from jarvis.s2.verdade import NOTA_DE_SEGUIR, FiltroDaVerdade, Relato, frase_do_que_falta
 from jarvis.tarefas.gestor import (
@@ -247,6 +253,9 @@ class Resposta:
     sem_confirmacao: list[str] = field(default_factory=list)
     """Frases do motor que afirmavam o que nenhuma ferramenta confirmou, ou pediam permissão para o
     que o dono já pediu (`jarvis.s2.verdade`, ADR-0066): nem voz nem tela."""
+    cobrou_redacao: bool = False
+    """A mensagem que ia ser digitada era a fala do dono copiada e o motor foi cobrado (ADR-0069
+    §3): uma vez por turno."""
     leituras_forcadas: int = 0
     """Quantas vezes o código leu a página no lugar de uma ação proposta sem leitura (ADR-0069)."""
     cobrancas: int = 0
@@ -734,6 +743,16 @@ class Cerebro:
             # Uma por vez: o próximo pedido só pode nascer depois que o modelo viu este
             # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
             pedido = pedidos[0]
+            if not resposta.cobrou_redacao and copia_da_mensagem(
+                pedido.tool_id, pedido.args, self._envio_do_pedido(texto_do_dono)
+            ):
+                # O envio pedido é redigido pelo Jarvis, no tom do dono (ADR-0069 §3): a fala dele
+                # copiada na caixa de mensagem volta ao motor, uma vez, sem rodar.
+                resposta.cobrou_redacao = True
+                contexto = Contexto(
+                    sistema=f"{contexto.sistema}\n\n{NOTA_DE_REDIGIR}", mensagens=contexto.mensagens
+                )
+                continue
             # Ler a página antes de agir nela, e reler depois do erro (ADR-0069 §2): sem leitura
             # que valha, o passo é a inspeção e o motor decide de novo com o mapa na mão.
             ler_antes = leitura_antes(
@@ -958,6 +977,11 @@ class Cerebro:
         if not self.caminho_rapido or self.ferramentas is None:
             return None
         return self.ferramentas.atalho(texto_do_dono)
+
+    def _envio_do_pedido(self, texto_do_dono: str) -> PedidoDeEnvio | None:
+        """O pedido de envio na fala do dono («manda pra X que …»), com os contatos das memórias."""
+        contatos = tuple(self.contatos()) if self.contatos is not None else ()
+        return pedido_de_envio(texto_do_dono, contatos)
 
     def _delegavel(self, pedido: PedidoDeTool) -> bool:
         """A proposta pode ir para a tarefa do pedido? `tarefa.*` e `acao.desfazer` não rodam em

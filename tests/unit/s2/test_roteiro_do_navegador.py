@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from jarvis.s2.roteiro_do_navegador import Contato, pedido_de_envio, roteiro
+from jarvis.s2.roteiro_do_navegador import Contato, copia_da_mensagem, pedido_de_envio, roteiro
 
 CONTATOS = (Contato("Maria Sodré", "minha mãe"), Contato("Ana", "amiga da faculdade"))
 FERRAMENTAS = (
@@ -67,3 +67,46 @@ def test_pedido_de_navegador_que_nao_e_envio_ganha_o_roteiro_geral() -> None:
 
 def test_sem_ferramenta_de_navegador_nao_ha_roteiro() -> None:
     assert roteiro("abre o contato da minha mãe e diz eu te amo", ("system.clock.now",)) == ""
+
+
+# --- a mensagem é redigida pelo Jarvis (ADR-0069 §3) ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("fala", "mensagem"),
+    [
+        ("manda pra Ana exatamente: vou atrasar", "vou atrasar"),
+        ("diz pra minha mãe «chego às 8»", "chego às 8"),
+        ('manda pra Ana "bom dia, flor"', "bom dia, flor"),
+        ("manda pra Ana dizendo literalmente bom dia flor", "bom dia flor"),
+    ],
+)
+def test_texto_ditado_vai_literal(fala: str, mensagem: str) -> None:
+    envio = pedido_de_envio(fala, CONTATOS)
+    assert envio is not None and envio.literal and envio.mensagem == mensagem
+    texto = roteiro(fala, FERRAMENTAS, CONTATOS)
+    assert f"«{mensagem}» — EXATAMENTE isso" in texto and "REDIJA" not in texto
+
+
+def test_pedido_de_envio_e_redigido_no_tom_do_dono_com_o_contato() -> None:
+    contatos = (*CONTATOS, Contato("tom", "escrevo curto, sem ponto final", "instrucao"))
+    envio = pedido_de_envio("manda pra minha mãe que chego tarde", contatos)
+    assert envio is not None and not envio.literal and envio.nota == "minha mãe"
+    texto = roteiro("manda pra minha mãe que chego tarde", FERRAMENTAS, contatos)
+    assert "REDIJA a mensagem" in texto and "«chego tarde»" in texto
+    assert "em primeira pessoa, em nome dele" in texto and "sem copiar a fala dele" in texto
+    assert "O que ele anotou sobre «Maria Sodré»: «minha mãe»" in texto
+    assert "«escrevo curto, sem ponto final»" in texto
+    assert "EXATAMENTE" not in texto
+    # A instrução de tom não vira contato.
+    assert pedido_de_envio("manda pro tom que oi", contatos) is not None
+
+
+def test_a_fala_copiada_na_caixa_de_mensagem_e_reconhecida() -> None:
+    envio = pedido_de_envio("manda pra minha mãe que chego tarde", CONTATOS)
+    assert copia_da_mensagem("browser.type", {"texto": "Chego tarde!"}, envio)
+    assert not copia_da_mensagem("browser.type", {"texto": "Mãe, vou chegar tarde hoje"}, envio)
+    assert not copia_da_mensagem("browser.click", {"texto": "chego tarde"}, envio)
+    literal = pedido_de_envio("manda pra minha mãe exatamente: chego tarde", CONTATOS)
+    assert not copia_da_mensagem("browser.type", {"texto": "chego tarde"}, literal)
+    assert not copia_da_mensagem("browser.type", {"texto": "chego tarde"}, None)
