@@ -99,7 +99,7 @@ def test_a_persona_v15_tem_as_secoes_na_ordem() -> None:
         ("pedido direto executa, sem pedir permissão", "PEDIDO DIRETO É PARA EXECUTAR"),
         ("não pergunta se manda a mensagem ditada", 'sem "quer que eu mande?"'),
         ("travou: tenta outro caminho antes de desistir", "tente outro antes de desistir"),
-        ("terminal e arquivos do sistema vão para tarefa", "delegue com tarefa.iniciar"),
+        ("execução vai ao subagente (ADR-0070)", "Ações no computador vão a um subagente"),
         ("não narra passo a passo", "não narre o que vai fazer nem o que acabou de fazer"),
         ("fala o resultado ou a pergunta necessária", "Fale o resultado, ou uma pergunta"),
         ("no máximo um aviso curto, uma vez", 'uma frase curta ("vou ver"), uma vez só'),

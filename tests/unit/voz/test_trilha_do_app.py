@@ -55,7 +55,9 @@ def test_o_turno_deixa_so_metadados_na_trilha(tmp_path: Path) -> None:
     assert tipos[:2] == ["turno.inicio", "metodo"]
     # O consumo (ADR-0061): cada rodada do motor deixa um `motor.chamada`, só números, e o
     # `turno.fim` soma as do turno.
+    # A listagem é execução: vai ao subagente (ADR-0070), e o fim dele deixa a `entrega`.
     assert sorted(t for t in tipos[2:] if t != "motor.chamada") == [
+        "entrega",
         "ferramenta",
         "ferramenta.inicio",
         "turno.fim",

@@ -36,7 +36,7 @@ from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo
 from jarvis.politica.pdp import Pdp
-from jarvis.s2.cerebro import FRASE_AO_DELEGAR, Cerebro
+from jarvis.s2.cerebro import Cerebro
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.s2.pendencias import RegistroDePendencias
@@ -195,11 +195,11 @@ def _roteiro_da_nota(contexto: Contexto) -> Sequence[Parte]:
     return ["Usei files.read_text para ler a nota. Na sua nota tem comprar café."]
 
 
-def test_protocolo_escrito_como_texto_nao_vai_a_fala_no_turno(
+def test_protocolo_escrito_como_texto_nao_vai_a_fala_ao_delegar(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    """Dois passos cabem no turno (ADR-0046): o JSON solto e a marca viram propostas (rodam pelo
-    PDP), a narração vira raciocínio e a frase que cita a ferramenta não chega à voz."""
+    """O JSON solto e a marca viram propostas, que vão ao subagente (ADR-0070); no turno, só a
+    frase do motor chega à voz, sem protocolo."""
     motor = MotorRoteirizado(resposta=_roteiro_da_nota)
     publicados: list[dict[str, Any]] = []
 
@@ -207,10 +207,11 @@ def test_protocolo_escrito_como_texto_nao_vai_a_fala_no_turno(
         "o que tem na minha nota?", epoch=0, publicar=publicados.append
     )
 
-    assert not resposta.tarefa_id and [r.status for r in resposta.ferramentas] == ["ok", "ok"]
-    assert _falado(publicados) == "Deixa eu ver. Na sua nota tem comprar café."
+    assert resposta.tarefa_id and resposta.ferramentas == []
+    assert _falado(publicados) == "Deixa eu ver."
     _sem_protocolo(_falado(publicados))
-    assert executor.tarefas is not None and executor.tarefas.tarefas == {}
+    tarefa = _tarefa(executor, resposta.tarefa_id)
+    assert tarefa.resposta == "Na sua nota tem comprar café."
 
 
 def test_protocolo_escrito_como_texto_nao_vai_a_resposta_da_tarefa(
@@ -234,9 +235,11 @@ def test_protocolo_escrito_como_texto_nao_vai_a_resposta_da_tarefa(
     _sem_protocolo(tarefa.resposta)
 
 
-def test_pedido_de_um_passo_responde_no_turno_sem_tarefa(executor: ExecutorDeFerramentas) -> None:
-    """Dono, 2026-10-25: pedido de um passo não vira tarefa — a ferramenta roda no turno e a
-    resposta sai nele, uma vez."""
+def test_toda_execucao_vai_ao_subagente_desde_o_primeiro_passo(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """ADR-0070 (dono, 2026-11-15): o Jarvis não executa — até o pedido de um passo vira tarefa
+    do subagente, e o turno fica livre para conversar."""
     motor = MotorRoteirizado(
         resposta=lambda c: (
             [PedidoDeTool("files.list_dir", {"path": "~/Documentos"})]
@@ -248,12 +251,30 @@ def test_pedido_de_um_passo_responde_no_turno_sem_tarefa(executor: ExecutorDeFer
     resposta = _cerebro(executor, motor).responder(
         "lista Documentos", epoch=0, publicar=publicados.append
     )
-    assert not resposta.tarefa_id and FRASE_AO_DELEGAR not in _falado(publicados)
-    assert _falado(publicados) == "Tem só o arquivo de notas."
+    assert resposta.tarefa_id and resposta.ferramentas == []
+    assert _falado(publicados) == "", "o código não fala nada ao delegar"
+    tarefa = _tarefa(executor, resposta.tarefa_id)
+    assert tarefa.resposta == "Tem só o arquivo de notas."
+
+
+def test_a_consulta_do_proprio_jarvis_fica_no_turno(executor: ExecutorDeFerramentas) -> None:
+    """Ler a hora é consulta do Jarvis, não execução no computador do dono: roda no turno."""
+    motor = MotorRoteirizado(
+        resposta=lambda c: (
+            [PedidoDeTool("system.clock.now", {})] if not _feitas(c) else ["São dez horas."]
+        )
+    )
+    publicados: list[dict[str, Any]] = []
+    resposta = _cerebro(executor, motor).responder(
+        "que horas são", epoch=0, publicar=publicados.append
+    )
+    assert not resposta.tarefa_id and [r.tool_id for r in resposta.ferramentas] == [
+        "system.clock.now"
+    ]
     assert executor.tarefas is not None and executor.tarefas.tarefas == {}
 
 
-def test_sem_frase_do_motor_o_trabalho_longo_diz_a_frase_curta_do_codigo(
+def test_sem_frase_do_motor_o_codigo_nao_fala_ao_delegar(
     executor: ExecutorDeFerramentas,
 ) -> None:
     def roteiro(contexto: Contexto) -> Sequence[Parte]:
@@ -268,10 +289,10 @@ def test_sem_frase_do_motor_o_trabalho_longo_diz_a_frase_curta_do_codigo(
     resposta = _cerebro(executor, MotorRoteirizado(resposta=roteiro), passos_no_turno=1).responder(
         "lê a nota de Documentos", epoch=0, publicar=publicados.append
     )
-    assert _falado(publicados) == FRASE_AO_DELEGAR
+    assert _falado(publicados) == "", "sem «Certo, já cuido disso.» do código (ADR-0070)"
     tarefa = _tarefa(executor, resposta.tarefa_id)
     assert tarefa.resposta == "Na sua nota tem comprar café."
-    assert tarefa.ja_dito == FRASE_AO_DELEGAR and tarefa.turno == resposta.turn_id
+    assert tarefa.ja_dito == "" and tarefa.turno == resposta.turn_id
 
 
 # --- várias ferramentas, uma tarefa; a conversa segue ---------------------------------------
@@ -301,14 +322,13 @@ def test_abrir_video_no_youtube_encadeia_ate_a_aba_mudar_e_conferir(
     resposta = _cerebro(executor, motor).responder(PEDIDO, epoch=0, publicar=publicados.append)
     tarefa = _tarefa(executor, resposta.tarefa_id)
 
-    # O primeiro passo é do turno; o objetivo de navegador precisa conferir (agir e depois ler),
-    # então a segunda ferramenta já é trabalho longo e vai para a tarefa (ADR-0046).
-    assert [r.tool_id for r in resposta.ferramentas] == ["browser.navigate"]
+    # Execução é do subagente desde o primeiro passo (ADR-0070): o turno só fala e delega.
+    assert resposta.ferramentas == []
     assert _falado(publicados) == "Vou procurar no YouTube."
     assert extensao.url == VIDEO, "a aba do dono mudou de verdade"
     navegou = extensao.metodos.count("tabs.navigate") + extensao.metodos.count("tabs.open")
     assert navegou == 2 and extensao.metodos.count("page.read") == 2
-    assert tarefa.passo == 3, "as outras três ferramentas na mesma tarefa, uma depois da outra"
+    assert tarefa.passo == 4, "as quatro ferramentas na mesma tarefa, uma depois da outra"
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
     assert tarefa.resposta == f"Abri «{TITULO}» na aba atual."
     assert any(NOTA_DE_CONFERIR in c.sistema for c in motor.pedidos), "o código cobrou a leitura"
@@ -358,8 +378,8 @@ def test_navegador_fechado_o_jarvis_abre_ele_mesmo_e_nao_finge_conferir(
     executor: ExecutorDeFerramentas, extensao: ExtensaoFalsa
 ) -> None:
     """Dono, 2026-10-25: «abre um vídeo no YouTube» com o navegador fechado mandava o dono abrir.
-    Agora o Jarvis abre o navegador dele já na página (`sites.open`), e a tarefa continua; sem ter
-    lido a página, a resposta diz que não conferiu."""
+    Agora o subagente abre o navegador dele já na página (`sites.open`) e segue; sem ter lido a
+    página, a resposta diz que não conferiu."""
     extensao.fora_do_ar = True
     abertos: list[str] = []
     executor.abrir_site = abertos.append
@@ -369,10 +389,7 @@ def test_navegador_fechado_o_jarvis_abre_ele_mesmo_e_nao_finge_conferir(
     resposta = _cerebro(executor, motor).responder(PEDIDO, epoch=0, publicar=publicados.append)
     tarefa = _tarefa(executor, resposta.tarefa_id)
 
-    assert [(r.tool_id, r.status) for r in resposta.ferramentas] == [
-        ("browser.navigate", "erro"),
-        ("sites.open", "ok"),
-    ]
+    assert resposta.ferramentas == [], "a execução é do subagente (ADR-0070)"
     assert abertos == [BUSCA], "o navegador do dono abriu, já na busca"
     assert _falado(publicados) == "Vou abrir.", "nada de mandar o dono abrir o navegador"
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
@@ -396,7 +413,6 @@ def test_sem_como_abrir_o_navegador_a_falha_e_frase_de_gente_sem_fingir_sucesso(
     )
     tarefa = _tarefa(executor, resposta.tarefa_id)
 
-    assert [r.status for r in resposta.ferramentas] == ["erro", "erro"]
     assert tarefa.estado is EstadoDaTarefa.FALHOU
     assert tarefa.resposta == NAO_ABRIU and "Pronto" not in tarefa.resposta
     _sem_protocolo(tarefa.resposta)

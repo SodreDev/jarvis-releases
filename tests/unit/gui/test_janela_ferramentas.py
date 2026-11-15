@@ -271,13 +271,14 @@ def test_listar_a_pasta_e_responder_em_voz(
     tela.iniciarConversa()
     _esperar(aplicativo, 1.0, ate=lambda: laco.estado.value != "parado")
     tela.enviarTexto("o que tem na minha pasta Documentos?")
-    resultado = "Jarvis: Deixa eu ver. Na sua pasta Documentos tem notas.txt e orcamento.ods."
+    resultado = "Jarvis: Na sua pasta Documentos tem notas.txt e orcamento.ods."
     _esperar(aplicativo, 8.0, ate=lambda: resultado in _respostas(tela))
     _esperar(aplicativo, 0.5)
     _capturar(janela, "pasta-listada.png")
     tela.pararConversa()
     _esperar(aplicativo, 0.8)
 
-    # Um passo: a frase curta e o resultado no mesmo turno, uma resposta só (ADR-0046).
-    assert _respostas(tela) == [resultado]
+    # Listar é execução: vai ao subagente (ADR-0070). O turno diz a frase do motor; o resultado
+    # volta como evento e o Jarvis o conta num turno dele — uma vez cada.
+    assert _respostas(tela) == ["Jarvis: Deixa eu ver.", resultado]
     assert _pendente(tela) is None, "leitura não pede confirmação"

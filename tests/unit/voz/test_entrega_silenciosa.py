@@ -21,7 +21,6 @@ import pytest
 from jarvis.agentd.fila_de_avisos import Entrega
 from jarvis.executor.desfazer import Contaminacao
 from jarvis.executor.lancador import RegistroDeApps
-from jarvis.s2.cerebro import FRASE_AO_DELEGAR
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.tarefas.gestor import EstadoDaTarefa, Tarefa
@@ -30,6 +29,8 @@ from jarvis.voz.config import Configuracao
 from tests.unit.executor.test_fechar_e_encerrar import CATALOGO, _ligar
 
 PRAZO_S = 10.0
+FRASE_AO_DELEGAR = "Vou cuidar disso."
+"""O que o motor de teste diz ao delegar (ADR-0070: o código não diz nada)."""
 
 
 @pytest.fixture
@@ -174,12 +175,13 @@ def test_a_tarefa_que_so_repete_o_aviso_nao_fala_de_novo(app: Aplicativo) -> Non
     falas, linhas = _rodar(
         app, "Pronto, o Discord foi encerrado.", "(Pronto, o Discord foi encerrado.)"
     )
-    assert falas == [f"Jarvis: {FRASE_AO_DELEGAR}", "Jarvis: Encerrei o Discord."], falas
+    # O código não fala ao delegar (ADR-0070): o dono ouve o aviso do encerramento, uma vez.
+    assert falas == ["Jarvis: Encerrei o Discord."], falas
     assert "  (Pronto, o Discord foi encerrado.)" in linhas, "o fim foi à tela, calado"
 
 
 def test_a_tarefa_com_resultado_novo_fala_o_resultado_uma_vez(app: Aplicativo) -> None:
     final = "Encerrei o Discord; ficaram abertas só a Konsole e o Steam."
     falas, _linhas = _rodar(app, final, "a Konsole e o Steam")
-    assert falas[:2] == [f"Jarvis: {FRASE_AO_DELEGAR}", "Jarvis: Encerrei o Discord."], falas
-    assert len(falas) == 3 and "Konsole" in falas[2], falas
+    assert falas[:1] == ["Jarvis: Encerrei o Discord."], falas
+    assert len(falas) == 2 and "Konsole" in falas[1], falas

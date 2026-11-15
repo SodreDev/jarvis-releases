@@ -21,6 +21,7 @@ própria —, devolve o id na hora e o Jarvis segue falando. O que a ADR manda, 
 
 from __future__ import annotations
 
+import contextlib
 import math
 import threading
 import time
@@ -286,6 +287,9 @@ class GestorDeTarefas:
     ao_avisar: AvisarDaTarefa = lambda _t, _i, _tipo, _f: None
     """A tarefa tem algo para o dono antes do fim (a pergunta que ela espera, o aviso de uma
     moderada): chamada da linha da tarefa."""
+    ao_progresso: Callable[[Tarefa, ResultadoDeFerramenta], None] = lambda _t, _r: None
+    """Cada passo que a tarefa deu (ADR-0070): o progresso do subagente volta ao Jarvis como
+    evento — ele decide se conta ao dono. Chamada da linha da tarefa."""
     ao_retirar_aviso: Callable[[Tarefa, str], None] = lambda _t, _i: None
     """O aviso deste id perdeu a vez (a pergunta foi respondida antes de tocar): se ainda não
     saiu, não sai mais."""
@@ -598,6 +602,8 @@ class GestorDeTarefas:
                 # Chegou depois do cancelamento: vai para a auditoria, não para o estado.
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             feitos.append(resultado)
+            with contextlib.suppress(Exception):  # o progresso que falha não derruba a tarefa
+                self.ao_progresso(tarefa, resultado)
             if guarda is not None and self._no_laco(
                 tarefa, motor, feitos, guarda, passo, resultado, numero, bloco, comeco
             ):

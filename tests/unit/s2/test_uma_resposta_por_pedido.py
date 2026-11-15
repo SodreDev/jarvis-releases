@@ -79,8 +79,10 @@ def _feitas(contexto: Contexto) -> int:
 
 
 def _cerebro(executor: ExecutorDeFerramentas, motor: MotorRoteirizado) -> Cerebro:
-    # O caminho rápido desligado: quem propõe é o motor, como na fala que a regra não pega.
-    return Cerebro(motor=motor, ferramentas=executor, delegar_em_tarefa=True)
+    # O caminho rápido desligado: quem propõe é o motor, como na fala que a regra não pega. Estes
+    # testes são do caminho NO TURNO (as primeiras ferramentas rodam nele), que segue no código
+    # para quem o escolhe (`passos_no_turno` > 0); o padrão, desde a ADR-0070, é delegar tudo.
+    return Cerebro(motor=motor, ferramentas=executor, delegar_em_tarefa=True, passos_no_turno=2)
 
 
 def _falado(publicados: Sequence[dict[str, Any]]) -> str:
@@ -212,7 +214,7 @@ def test_o_terceiro_passo_e_trabalho_longo_e_vai_para_a_tarefa(
         if feitas < 2:
             return [PedidoDeTool("apps.launch", {"nome": ("discord", "steam")[feitas]})]
         if feitas == 2:
-            return [PedidoDeTool("window.list", {})]
+            return [PedidoDeTool("files.list_dir", {"path": "~"})]
         return ["Abri os dois; agora há três janelas."]
 
     motor = MotorRoteirizado(resposta=roteiro)

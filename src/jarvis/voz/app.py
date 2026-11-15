@@ -82,7 +82,12 @@ from jarvis.entrada.foco import foco_do_ambiente
 from jarvis.entrada.limite import Interruptor
 from jarvis.executor import desktop
 from jarvis.executor.alarmes import Alarme, agenda_compartilhada
-from jarvis.executor.ferramentas import Confirmacao, Encerramento, ExecutorDeFerramentas
+from jarvis.executor.ferramentas import (
+    Confirmacao,
+    Encerramento,
+    ExecutorDeFerramentas,
+    ResultadoDeFerramenta,
+)
 from jarvis.executor.janelas import focar_o_navegador, janelas_do_ambiente
 from jarvis.executor.lancador import RegistroDeApps
 from jarvis.executor.navegadores import AbridorDeNavegador, navegador_em_execucao, separar
@@ -224,6 +229,9 @@ PASTA_DA_TRILHA: Final = PASTA_DA_TRILHA_DE_DIAGNOSTICO
 """Dentro da pasta da sessão: `turnos.jsonl` da trilha de diagnóstico (`jarvis.trilha`)."""
 PREFIXO_DA_PERGUNTA: Final = "pergunta-"
 """O `notif_id` do aviso que leva à voz a pergunta de uma tarefa: o resto é o id da pendência."""
+PROGRESSO_A_CADA_S: Final = 45.0
+"""De quanto em quanto tempo o progresso de um subagente vai à fila como evento (ADR-0070): o
+Jarvis decide se fala; a cada passo seria uma rodada do motor por passo."""
 ERRO_CRU: Final = r"^[A-Z]\w*(?:Error|Exception)\b"
 """O motivo que é nome de exceção (a tarefa caiu num erro inesperado): não vai cru para a voz."""
 MOTOR_DO_FOCO: Final = "foco"
@@ -730,6 +738,8 @@ class Aplicativo:
     """O que cada tarefa de um pedido já pôs na voz (o aviso de um passo, a pergunta): o fim dela
     não repete (dono, 2026-10-25)."""
     _tarefas_entregues: set[str] = field(default_factory=set, repr=False)
+    _progresso_avisado: dict[str, float] = field(default_factory=dict, repr=False)
+    """Quando o progresso de cada subagente foi à fila pela última vez (ADR-0070)."""
     """As tarefas cujo fim já foi entregue: o fim de uma tarefa sai uma vez só, por id."""
 
     def __post_init__(self) -> None:
@@ -1060,8 +1070,43 @@ class Aplicativo:
             ao_concluir=self._tarefa_concluida,
             ao_avisar=self._aviso_da_tarefa,
             ao_retirar_aviso=self._retirar_aviso,
+            ao_progresso=self._progresso_da_tarefa,
             passos_por_bloco=self.configuracao.laco_max_passos,
         )
+
+    def _progresso_da_tarefa(self, tarefa: Tarefa, resultado: ResultadoDeFerramenta) -> None:
+        """Um passo do subagente volta ao Jarvis como evento (ADR-0070). Sempre vai à nota do
+        andamento (o Jarvis sabe o que está acontecendo quando o dono perguntar); a cada
+        `PROGRESSO_A_CADA_S`, vai também à fila como evento do pedido, e o Jarvis decide se conta
+        ao dono agora ou fica calado. O código não escreve fala nenhuma."""
+        motivo = " ".join(resultado.motivo.split())[:120]
+        passo = f"{resultado.tool_id} → {resultado.status}" + (f" ({motivo})" if motivo else "")
+        cerebro = self._cerebro
+        if cerebro is not None:
+            cerebro.anotar_progresso(tarefa.id, tarefa.descricao, passo)
+        if not tarefa.de_objetivo:
+            return
+        agora = time.monotonic()
+        with self._trava_dos_avisos:
+            ultimo = self._progresso_avisado.get(tarefa.id)
+            if ultimo is None:
+                self._progresso_avisado[tarefa.id] = agora  # o primeiro passo não é notícia
+                return
+            if agora - ultimo < PROGRESSO_A_CADA_S:
+                return
+            self._progresso_avisado[tarefa.id] = agora
+            resumo = cerebro.nota_do_andamento() if cerebro is not None else passo
+            self.avisos.receber(
+                notificacao(
+                    self.session_id,
+                    f"progresso-{tarefa.id}-{int(agora)}",
+                    tipo="evento",
+                    origem=f"{ORIGEM_DO_PEDIDO}{tarefa.descricao}"[:80],
+                    resumo=f"(progresso do subagente, a tarefa segue) {resumo}"[:280],
+                ),
+                self.relogio_dos_avisos(),
+            )
+        self._avisos_mudaram()
 
     def _tarefas_mudaram(self) -> None:
         if self.ao_mudar_tarefas is not None:
@@ -1108,6 +1153,9 @@ class Aplicativo:
             if tarefa.id in self._tarefas_entregues:
                 return
             self._tarefas_entregues.add(tarefa.id)
+            self._progresso_avisado.pop(tarefa.id, None)
+        if self._cerebro is not None:
+            self._cerebro.esquecer_andamento(tarefa.id)
         if tarefa.de_objetivo:
             self._resposta_da_tarefa(tarefa)
             return

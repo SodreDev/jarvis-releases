@@ -29,8 +29,8 @@ from jarvis.tarefas.laco import GuardaDeLaco
 from jarvis.tarefas.limite import MARCA_DA_NOTIFICACAO
 
 BLOCO = 3
-NO_TURNO = 2
-"""Os passos que cabem no turno antes de delegar (ADR-0046): o primeiro bloco os desconta."""
+NO_TURNO = 0
+"""Os passos que o turno roda antes de delegar: nenhum — execução é do subagente (ADR-0070)."""
 PRIMEIRA_PARADA = BLOCO - NO_TURNO
 SEGUNDA_PARADA = PRIMEIRA_PARADA + BLOCO
 PEDIDO = "organize a pasta de documentos"
@@ -264,7 +264,7 @@ def test_com_outra_pergunta_aberta_a_do_teto_espera_a_vez(executor: ExecutorDeFe
         """Outra pergunta abre já com a tarefa rodando: a do turno que a criou a teria cancelado."""
 
         def __call__(self, contexto: Contexto) -> Sequence[Parte]:
-            if self.chamadas == NO_TURNO:
+            if self.chamadas == NO_TURNO + 1:  # a primeira rodada do motor já dentro da tarefa
                 pendencias.abrir(outra)
             return super().__call__(contexto)
 

@@ -73,11 +73,15 @@ if TYPE_CHECKING:
 LIMITE_DO_RACIOCINIO: Final = 2000
 """O mesmo teto do turno (`jarvis.s2.cerebro`): o raciocínio não cresce o prompt sem fim."""
 NOTA_DA_TAREFA: Final = (
-    "Este pedido do dono está sendo cumprido em segundo plano e a conversa com ele segue. "
-    "Continue com as ferramentas, uma por vez, até o objetivo estar cumprido e conferido; entre "
-    "um passo e outro, nada em voz. Quando terminar, responda ao dono em uma ou duas frases, sem "
-    "markdown, com o resultado que a ferramenta confirmou — ou com o que deu errado e o que dá "
-    "para fazer. Não cite o nome das ferramentas nem os argumentos delas."
+    "Você é o subagente que executa este pedido do dono em segundo plano; a conversa com ele "
+    "segue com o Jarvis. Continue com as ferramentas, uma por vez, até o objetivo estar cumprido "
+    "e conferido; entre um passo e outro, nada em voz. No navegador: antes do primeiro clique ou "
+    "digitação, LEIA a página (browser.inspecionar) e escolha o alvo pelo que está nela — o "
+    "texto e o papel do elemento que existe, nunca um palpite; depois de agir, leia de novo para "
+    "conferir; se um passo falhar, releia e depure antes de tentar outra vez. Quando terminar, "
+    "responda ao dono em uma ou duas frases, sem markdown, com o resultado que a leitura "
+    "confirmou — ou com o que deu errado e o que dá para fazer. Não cite o nome das ferramentas "
+    "nem os argumentos delas."
 )
 NOTA_DE_CONFERIR: Final = (
     "O que foi feito ainda NÃO foi conferido: antes de responder, leia o resultado (a aba, a "
