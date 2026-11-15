@@ -98,7 +98,7 @@ O caminho de hoje: `extensao/social.js` (`lerEstado` `:300-362`, `informar` `:38
 
 ## Estado (2026-11-15, depois das rodadas 1 e 2)
 
-**Rodada 1** (ADR-0070): `a0bc7a7` caminho comum, `530fc62` limites, `2d55f21` execução delegada, `7ff9a17` redes por agente monitor, `73a1c58` caminho rápido como dica e roteiro como orientação, `8afc8a2` a ADR. **Rodada 2:** `c16d79a` grupo A, `649061f` grupo B, `a9d499f` grupo C.
+**Rodada 1** (ADR-0070): `a0bc7a7` caminho comum, `530fc62` limites, `2d55f21` execução delegada, `7ff9a17` redes por agente monitor, `73a1c58` caminho rápido como dica e roteiro como orientação, `8afc8a2` a ADR. **Rodada 2:** `c16d79a` grupo A, `649061f` grupo B, `a9d499f` grupo C. **Rodada final:** `560fc85` (a17, a19, sai o `passos_no_turno`, varredura de frases) e `1a4e51c` (suíte de ponta a ponta e consertos) — o fim do caminho `passos_no_turno`, a varredura de frases e a suíte de ponta a ponta `tests/e2e/` (que achou e consertou dois buracos: a releitura depois do erro e o envio pelo botão «Enviar»).
 
 | Item | Estado | Onde foi resolvido |
 |---|---|---|
@@ -108,9 +108,9 @@ O caminho de hoje: `extensao/social.js` (`lerEstado` `:300-362`, `informar` `:38
 | a8–a11 (nada feito, sem confirmação, vazio, falta conferir, prazo da pergunta) | **resolvido** | `530fc62`: `_explicar` com o fato |
 | a12–a15 (prazo, teto de tarefas, exceção crua, fallback do app) | **resolvido** | `a0bc7a7`/`2d55f21`: viram dado do evento e a recusa volta ao motor |
 | a16 (respostas fixas à pendência) | **resolvido** | `c16d79a`: `LeituraDaResposta.evento` e `_responder_ao_evento` |
-| a17 (prazo do turno sem rodada final) | **parcial** | Com a execução no subagente o turno quase não usa ferramenta; o corte por prazo do turno ainda acaba sem rodada final |
+| a17 (prazo do turno sem rodada final) | **resolvido** | Rodada final: o teto do turno (prazo ou passos) vira notificação (`NOTA_DO_LIMITE_DO_TURNO`) numa rodada do motor (`Cerebro._rodada_do_limite`); ele responde, pergunta ou propõe o passo, que vai ao subagente |
 | a18 (status do clique) | **resolvido** | `c16d79a`: vai à fila como dado |
-| a19 (subagente sem devolver o estado no último turno) | **parcial** | `d7` traz os parciais; o `--max-turns` esgotado ainda volta como falha |
+| a19 (subagente sem devolver o estado no último turno) | **resolvido** | Rodada final: `error_max_turns` vira `Codigo.LIMITE_DE_TURNOS`, com `o_que_fez` (os últimos parciais do stream) e `limite.decida` nos dados; as regras do subagente pedem o estado no fim |
 | b1–b8, b10, b11 (redes) | **resolvido** | `7ff9a17`: agente monitor e evento estruturado |
 | b9 («não perturbe» filtra) | **resolvido** | `a9d499f`: vira contexto do aviso; só a privacidade segura a voz |
 | b12 (frases do cartão) | **fica** | Só tela |
@@ -132,7 +132,7 @@ O caminho de hoje: `extensao/social.js` (`lerEstado` `:300-362`, `informar` `:38
 | d7 (parciais do Claude Code) | **resolvido** | `a9d499f`: `stream-json`, cada passo vira parcial |
 | D (agente monitor ler a página por CDP) | **não feito, de propósito** | Anexar o depurador à aba da rede, a cada notificação, é o risco de detecção e banimento que a ADR-0060 restringe ao envio (CDP só durante o envio, sem ligar domínio nenhum). O agente usa a leitura do content script (prévia e ícones de cada linha). Volta se o dono aceitar esse risco explicitamente. |
 
-**Ainda pendente, honesto:** a17 (o corte por prazo do turno não tem rodada final), a19 (`--max-turns` esgotado volta como falha, sem o estado parcial além dos parciais já enviados) e o caminho no turno com `passos_no_turno > 0`, que existe no código e nos testes, mas a produção não usa para execução. Nada disto foi testado no navegador, nas contas, no microfone nem no áudio reais do dono.
+**Rodada final (o que faltava):** a17 e a19 resolvidos (acima); o caminho no turno com `passos_no_turno > 0` saiu do código (só existia nos testes: com o subagente ligado, toda execução vai a ele desde o primeiro passo; sem ele, o laço inteiro roda no turno, como no harness); a varredura de frases tirou o código morto `Recuperacao.explicacao` («Não consegui…») e `frase_do_estilo` («Certo, estilo…»), e o fim cancelado pelo dono no card virou fato («(cancelada pelo dono: …)») em vez de «Parei o que você tinha pedido.». A suíte `tests/e2e/` prova os cinco casos do dono com fakes e achou dois buracos, consertados: (1) depois de um passo que falhou na página, a guarda de repetição recusava a nova tentativa **antes** da releitura obrigatória — o subagente desistia sem reler (`MotorDoObjetivo.proximo` agora relê primeiro); (2) enviar pelo botão «Enviar» não contava como envio, e o filtro da verdade não deixava o Jarvis dizer que mandou mesmo com a mensagem no chat (`browser.click` agora marca `enviado` quando o clique é o de enviar). **Fica, com motivo:** b12 (frases do cartão, só tela), c6 (ler antes de agir é guarda pedida pelo dono), c10 (política de segurança) e D (CDP na aba da rede). Nada disto foi testado no navegador, nas contas, no microfone nem no áudio reais do dono: o roteiro está em [teste-real-dono.md](../teste-real-dono.md).
 
 ## O que a Fase B tratou (registro original)
 

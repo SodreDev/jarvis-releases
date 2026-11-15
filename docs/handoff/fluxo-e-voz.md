@@ -14,9 +14,10 @@ e o que **não** foi provado.
 
 ## A — Uma resposta por pedido (ADR-0046)
 
-- `src/jarvis/s2/cerebro.py` — `passos_no_turno` (2) e `segundos_no_turno` (12 s): a primeira
-  ferramenta roda no turno; `_vai_para_tarefa` decide. O objetivo que precisa conferir passa à
-  tarefa depois do primeiro passo.
+- `src/jarvis/s2/cerebro.py` — `_vai_para_tarefa`: com o subagente ligado, toda execução vai à
+  tarefa desde a primeira ferramenta; no turno ficam só as consultas do Jarvis (`FICAM_NO_TURNO`).
+  (Antes, ADR-0046: `passos_no_turno` (2) e `segundos_no_turno` (12 s) — saíram na rodada final da
+  ADR-0070.)
 - `src/jarvis/s2/entrega.py` — `so_o_novo`: a frase do motor que repete o já dito vai à tela.
 - `src/jarvis/voz/app.py` — `_resposta_da_tarefa`: entrega uma vez por id; calada se repete,
   cancelada ou recusada; evento `entrega` na trilha (`src/jarvis/trilha.py`).

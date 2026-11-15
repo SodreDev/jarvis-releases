@@ -1,0 +1,46 @@
+# Teste real do dono: os cinco casos (Jarvis agente, ADR-0070)
+
+**Ligado a:** [ADR-0070](adr/0070-o-jarvis-e-agente-o-codigo-entrega-eventos.md), [auditoria](estudos/auditoria-automacao.md) e [redes-sociais-teste-real.md](redes-sociais-teste-real.md) (como preparar o navegador e as redes). A prova sem a sua máquina está em `tests/e2e/` — motor, extensão e Claude Code falsos. Este roteiro é o que só a sua máquina prova.
+
+## Antes
+
+1. Instale o pacote de `dist-teste/` (no Nobara, o `.rpm`), reinstale o host do navegador e clique em **Recarregar** na extensão do Jarvis (passos 0.1–0.4 de [redes-sociais-teste-real.md](redes-sociais-teste-real.md)).
+2. Abra o Jarvis. Se ele não abrir, o motivo está em `~/.local/state/jarvis/abertura.log` (mande o fim desse arquivo).
+3. O que olhar em todos os casos: a tela do Jarvis (as linhas `Jarvis:` são o que ele falou), o card de tarefas e a trilha `~/.local/state/jarvis/voz/diagnostico/turnos.jsonl` (só códigos, nenhum texto seu).
+
+**A regra que vale para os cinco:** toda fala é do Jarvis, com as palavras dele, e **uma por estímulo**. Se você ouvir duas respostas ao mesmo pedido, ou uma frase que soa pronta («Pronto.», «Não consegui.», «Parei o que você tinha pedido.»), anote a hora e mande a trilha.
+
+## (a) «Jarvis, clica na conversa do Bruno» (WhatsApp Web aberto)
+
+- **Deve:** ele não responde nada logo (o pedido foi ao subagente); na trilha, `browser.inspecionar` **antes** do primeiro `browser.click`; a conversa certa abre; só então ele diz que abriu.
+- **Erro de passo:** se um aviso cobrir a lista, a trilha mostra `browser.click` com erro, **outra** `browser.inspecionar` e outro `browser.click` — ele relê e tenta de novo, não desiste no primeiro erro.
+- **Não deve:** clicar pelo texto chutado sem ler; dizer «abri» antes de a leitura confirmar.
+
+## (b) «Jarvis, manda pro Bruno no zap que vou atrasar uns dez minutos»
+
+- **Deve:** a mensagem enviada é **escrita por ele** (algo como «Oi, Bruno! Vou me atrasar uns dez minutinhos, já chego.»), não a sua fala copiada; antes de digitar, a conversa aberta é a do Bruno (o cabeçalho); depois de enviar, ele lê a conversa e só então diz que mandou.
+- **Se você ditar entre aspas** («manda pro Bruno "chego às 8"»), vai exatamente o que você ditou.
+- **Não deve:** digitar em outra conversa; dizer «mandei» sem a mensagem aparecer no chat.
+
+## (c) Alerta de rede social
+
+1. Com o WhatsApp **monitorado** ([redes-sociais-teste-real.md](redes-sociais-teste-real.md) §1), peça a alguém para (i) mandar uma mensagem comum num grupo e (ii) te ligar pelo WhatsApp sem você atender.
+- **Deve:** a mensagem comum do grupo pode ficar só no card (ele decide calar — a trilha mostra `entrega` com `jarvis_calou`); a ligação perdida ele avisa, com as palavras dele, **uma vez**.
+- **Não deve:** a frase antiga «WhatsApp: 2 mensagens novas — Ana (1)»; o mesmo alerta dito duas vezes.
+
+## (d) Limites: tentativas, passos, prazo e o Claude Code
+
+- Peça algo que não tem como dar certo, sem risco (ex.: «clica no botão Exportar do WhatsApp Web», que não existe).
+- **Deve:** depois das tentativas, ele **decide** — explica o que tentou e o erro real, ou pergunta se segue. Na trilha, `tarefa.limite` com `decisao=` (`continuar`, `perguntar` ou `encerrar`).
+- **Prazo do turno:** se ele demorar mais de 90 s pensando, ele mesmo diz algo (segue em segundo plano, pergunta ou explica) — nunca silêncio com «(sem resposta: o laço de ferramentas passou de 90 s)» na tela.
+- **Claude Code (se a delegação estiver ligada):** numa tarefa longa, quando ele esgotar os turnos, o Jarvis conta o que o Claude chegou a fazer e decide; nada de «o Claude Code terminou com erro».
+
+## (e) Delegação e conversa livre
+
+1. «Jarvis, abre o YouTube e procura o último vídeo do canal X» — e, **enquanto ele trabalha**, pergunte «que horas são?».
+- **Deve:** a hora vem na hora (a conversa não espera o subagente); o resultado do vídeo vem **depois**, quando o subagente terminar, uma vez.
+- **Com a delegação ao Claude Code ligada:** na tela aparece «Delegando ao Claude Code…» com um **objetivo escrito pelo Jarvis**, não a sua frase copiada; a resposta só chega depois do retorno do Claude.
+
+## O que mandar se algo der errado
+
+O horário, o que você disse, o que ouviu, e os arquivos `turnos.jsonl` (só códigos) e `abertura.log` (sem segredos: as chaves saem redigidas).

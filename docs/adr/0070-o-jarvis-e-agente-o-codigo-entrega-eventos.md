@@ -55,7 +55,7 @@ As correções anteriores trocavam um comportamento por outro **roteirizado**: f
 
 - Cada aviso e cada fim de tarefa custa uma rodada do motor a mais (o turno de eventos); o pedido de um passo («abre o Discord») passa pelo subagente e chega ao dono como evento: mais latência que o caminho rápido de antes, em troca de o Jarvis decidir.
 - O teto de continuações sozinho (2) e o teto de tarefas ao mesmo tempo seguram o custo sem escrever frase.
-- Os testes do caminho no turno fixam `passos_no_turno=2` de propósito: o caminho existe no código, mas a produção não o usa mais para execução.
+- O caminho intermediário (`passos_no_turno`: as primeiras ferramentas no turno, o resto em tarefa) saiu na rodada final: com o subagente ligado, toda execução vai a ele; sem ele (o harness), o laço inteiro roda no turno.
 
 ## Pendências (cabem na regra; não feitas aqui)
 
@@ -63,7 +63,7 @@ Da auditoria, com o motivo de cada uma estar fora: abrir o navegador fechado ain
 
 ## Como testar
 
-`tests/unit/s2/test_avisos.py`, `test_andamento.py`, `test_teto_da_tarefa.py`, `test_caminho_rapido.py`, `test_roteiro_do_navegador.py`; `tests/unit/tarefas/test_limite.py`, `test_gestor.py`; `tests/unit/social/test_agente.py`, `test_monitor.py`, `social.test.mjs` (página falsa com ligação perdida); `tests/unit/voz/test_app.py` (evento de rede na fila com o contexto). Tudo com fakes: nenhum teste abre navegador, conta, microfone ou áudio reais.
+`tests/e2e/` (os cinco casos do dono, de ponta a ponta, com motor, extensão com DOM e Claude Code falsos — roteiro do teste real em [teste-real-dono.md](../teste-real-dono.md)); `tests/unit/s2/test_avisos.py`, `test_andamento.py`, `test_teto_da_tarefa.py`, `test_caminho_rapido.py`, `test_roteiro_do_navegador.py`; `tests/unit/tarefas/test_limite.py`, `test_gestor.py`; `tests/unit/social/test_agente.py`, `test_monitor.py`, `social.test.mjs` (página falsa com ligação perdida); `tests/unit/voz/test_app.py` (evento de rede na fila com o contexto). Tudo com fakes: nenhum teste abre navegador, conta, microfone ou áudio reais.
 
 ## Como invalidar esta decisão
 
@@ -73,5 +73,5 @@ Se a trilha mostrar o Jarvis calando (`jarvis_calou`) a resposta de um pedido qu
 
 - **2026-11-15 — rodada 2** (pedido do dono: «sua lista de pendentes é exatamente o tipo de automação que o dono não quer»). Grupo A (`c16d79a`): sem frase do código depois da ação de um passo e sem o código encerrar o turno; a resposta à pendência, a troca de estilo e a de modo viram evento e o Jarvis responde (`Cerebro._responder_ao_evento`); a pergunta da pendência é escrita por ele (`Cerebro._perguntar_ao_dono`); o filtro `_PEDE` não corta mais a pergunta dele. Grupo B (`649061f`): o método e as receitas viram dica (nenhuma ferramenta recusada nem tirada do motor), saiu o veto por regex da mensagem copiada, e o «sim» falado manda a ação ao subagente. Grupo C (`a9d499f`): o código não abre mais o navegador fechado (o motor recebe o fato e decide), os parciais do Claude Code delegado vêm em `stream-json` e vão ao Jarvis como eventos, e «não perturbe» vira contexto do aviso (só a privacidade segura a voz).
 - **Não feito, de propósito: o agente monitor ler a página das redes por CDP.** Anexar o depurador à aba da rede a cada notificação é o risco de detecção e banimento que a ADR-0060 restringe ao envio (CDP só durante o envio, sem ligar domínio nenhum). O agente segue com a leitura do content script (a prévia e os ícones de cada linha). Volta se o dono aceitar esse risco explicitamente.
-- **Ainda pendente:** o corte por prazo do turno acaba sem rodada final do motor; o `--max-turns` esgotado do Claude Code volta como falha (os parciais já enviados ficam com o Jarvis); e o caminho no turno com `passos_no_turno > 0` existe no código e nos testes, mas a produção não o usa para execução.
+- **2026-11-15 — rodada final** (`560fc85`, `1a4e51c`). (1) O teto do turno (prazo de 90 s ou 50 passos) não corta o Jarvis calado: vira notificação numa rodada final do motor (`Cerebro._rodada_do_limite`), que responde, pergunta ou propõe o próximo passo — e o passo vai ao subagente. (2) O `--max-turns` esgotado do Claude Code vira `claude_code_limite_de_turnos`, com o que ele fez (os últimos parciais) e o limite nos dados; o Jarvis decide. (3) Saiu o `passos_no_turno`. (4) A suíte `tests/e2e/` prova os cinco casos do dono e consertou dois buracos: a releitura vem antes de a guarda de repetição recusar a nova tentativa, e o clique no botão de enviar conta como envio (o filtro da verdade deixa dizer «mandei» depois de a leitura do chat confirmar).
 
