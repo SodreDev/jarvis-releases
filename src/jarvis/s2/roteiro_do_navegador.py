@@ -33,6 +33,8 @@ REDES: Final[dict[str, tuple[str, str]]] = {
 }
 REDE_PADRAO: Final = "whatsapp"
 """Sem rede dita, o mensageiro do dono é o WhatsApp (o que o monitor da ADR-0060 acompanha)."""
+TENTATIVAS_POR_PASSO: Final = 3
+"""Quantas vezes o roteiro manda reler e tentar o mesmo passo antes de dizer que falhou."""
 
 _VERBO: Final = (
     r"(?:diz|diga|dizer|fala|fale|falar|manda|mande|mandar|envia|envie|enviar|escreve|escreva|"
@@ -163,19 +165,30 @@ def _roteiro_do_envio(envio: PedidoDeEnvio) -> str:
         f"exigir lista permitida nem modo ausente — isso é só da resposta autônoma):\n"
         f"1. browser.tabs: ache a aba do {site}. Sem ela, browser.navigate {url} (e espere "
         f"carregar com browser.read).\n"
-        f"2. browser.read: confirme que a página está logada e ache a busca de conversas.\n"
-        f"3. browser.type na busca: «{envio.contato}»{outro_nome}. browser.read: escolha o "
-        f"resultado cujo nome bate com «{envio.contato}».\n"
+        f"2. browser.inspecionar: LEIA a página — confirme que está logada e ache, no mapa, a "
+        f"busca de conversas (papel, rótulo, estado e o `ref` dela).\n"
+        f"3. browser.type na busca, pelo `ref`: «{envio.contato}»{outro_nome}. browser.inspecionar "
+        f"de novo: escolha o resultado cujo nome bate com «{envio.contato}».\n"
         f"4. browser.click no resultado. browser.read no cabeçalho da conversa: o nome TEM de "
         f"bater com «{envio.contato}». Se não bater, volte ao passo 3 e procure o contato certo; "
         f"nunca digite na conversa errada.\n"
-        f"5. browser.type na caixa de mensagem: «{envio.mensagem}» (exatamente isso), e envie com "
-        f"browser.acionar (Enter ou o botão de enviar).\n"
+        f"5. browser.inspecionar: ache a caixa de mensagem (o `ref`). browser.type nela: "
+        f"«{envio.mensagem}» (exatamente isso), e envie com browser.acionar (Enter ou o botão de "
+        f"enviar).\n"
         f"6. browser.read: confira que a última mensagem enviada na conversa de «{envio.contato}» "
         f"é «{envio.mensagem}».\n"
+        f"{_DEPURAR}\n"
         f"Pronto quando: o passo 6 confirmou. Só então diga ao dono que mandou; se algo falhou, "
         f"diga o que falhou."
     )
+
+
+_DEPURAR: Final = (
+    f"SE UM PASSO FALHAR: não desista nem repita às cegas — browser.inspecionar de novo (o mapa "
+    f"atual da página), ache o campo ou botão certo (outro rótulo, outro `ref`, role a página com "
+    f"browser.scroll, feche o aviso que cobre o elemento) e tente outra vez; até "
+    f"{TENTATIVAS_POR_PASSO} tentativas por passo, e só então diga ao dono o que falhou e por quê."
+)
 
 
 def _roteiro_geral() -> str:
@@ -184,9 +197,13 @@ def _roteiro_geral() -> str:
         "1. browser.tabs: veja a aba atual (URL e título) antes de abrir outra.\n"
         "2. Se o site do pedido não está aberto, browser.navigate nele; senão, use a aba que já "
         "está.\n"
-        "3. browser.read: leia a página antes de agir (o que clicar, onde digitar).\n"
-        "4. Aja com browser.click / browser.type / browser.acionar, um passo por vez.\n"
+        "3. LEIA A PÁGINA ANTES DE AGIR: browser.inspecionar devolve o mapa dos elementos (campos, "
+        "botões, links, com papel, rótulo, estado e o `ref` de cada um); browser.read, o texto "
+        "visível. Escolha nele o que clicar ou onde digitar.\n"
+        "4. Aja pelo `ref` do mapa com browser.click / browser.type / browser.acionar, um passo "
+        "por vez; depois de um clique que muda a página, leia de novo antes da próxima ação.\n"
         "5. browser.read de novo: confira que o efeito aconteceu na página.\n"
+        f"{_DEPURAR}\n"
         "Pronto quando: a leitura do passo 5 mostra o que o dono pediu."
     )
 

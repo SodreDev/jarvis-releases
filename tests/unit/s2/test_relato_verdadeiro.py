@@ -99,6 +99,8 @@ def _dizer(cerebro: Cerebro, texto: str) -> tuple[Any, str]:
 
 ENVIO_COMPLETO: tuple[list[str | PedidoDeTool], ...] = (
     ["Abri o contato da sua mãe. ", PedidoDeTool("browser.avaliar", {"codigo": CLICAR_NA_MAE})],
+    # Ler a página antes de digitar (ADR-0069 §2).
+    [PedidoDeTool("browser.inspecionar", {})],
     [PedidoDeTool("browser.type", {"alvo": "Mensagem", "texto": "eu te amo"})],
     [PedidoDeTool("browser.acionar", {"alvo": "Mensagem", "acao": "tecla", "tecla": "Enter"})],
     [PedidoDeTool("browser.read", {})],
@@ -127,6 +129,7 @@ def test_no_automatico_executa_ate_o_fim_e_so_afirma_o_confirmado(
         resposta, falado = _dizer(cerebro, PEDIDO)
         assert [r.tool_id for r in resposta.ferramentas] == [
             "browser.avaliar",
+            "browser.inspecionar",
             "browser.type",
             "browser.acionar",
             "browser.read",
@@ -149,6 +152,7 @@ def test_parar_perguntando_quer_que_eu_mande_e_cobrado_e_segue(
         ["Abri o contato da sua mãe. Quer que eu mande a mensagem?"],
     )
     cobrado = (
+        [PedidoDeTool("browser.inspecionar", {})],
         [PedidoDeTool("browser.type", {"alvo": "Mensagem", "texto": "eu te amo"})],
         [PedidoDeTool("browser.acionar", {"alvo": "Mensagem", "acao": "enviar"})],
         [PedidoDeTool("browser.read", {})],

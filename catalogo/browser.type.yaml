@@ -2,6 +2,7 @@
 id: browser.type
 title: Digitar num campo da página
 description: >-
+  Leia a página antes (browser.inspecionar); se falhar, releia e depure.
   Digita `texto` num campo de uma aba aberta, achado pelo `ref` de browser.inspecionar (preferível) ou pelo
   rótulo dito em `alvo` — um dos dois (`limpar` troca o que já havia). Use para preencher busca ou formulário
   comum. Não digita senha, código de verificação nem cartão (isso é do dono), não aperta Enter nem envia: para

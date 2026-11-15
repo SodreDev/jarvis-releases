@@ -2,6 +2,7 @@
 id: browser.acionar
 title: Acionar um elemento da página
 description: >-
+  Leia a página antes (browser.inspecionar); se falhar, releia e depure.
   Faz uma ação de uma lista fechada num elemento de uma aba aberta, achado pelo `ref` de browser.inspecionar
   (preferível) ou pelo texto em `alvo`: clicar (com a sequência inteira de mouse, quando browser.click não faz
   efeito), focar, passar_o_mouse, tecla (Enter, Escape, Tab, ArrowDown, ArrowUp — Enter num campo de busca

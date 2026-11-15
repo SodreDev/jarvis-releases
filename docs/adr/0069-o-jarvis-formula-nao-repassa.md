@@ -16,6 +16,12 @@ O dono viu o Jarvis agir como automação: repassar a fala dele literal ao subag
 - **Responder depois do retorno:** a delegação roda na tarefa do pedido (nunca é o 1º passo, `delegar_cedo`), e a resposta ao dono é a rodada seguinte do motor, com o resultado na mão; o relato verdadeiro (ADR-0066 §2) continua cortando o que nada confirmou.
 - **Persona v18:** «Ao delegar, formule o pedido … sem copiar o dono; responda com o que voltou» — vale também para `tarefa.iniciar` (só na instrução: a descrição dela é curta demais para a régua da cópia).
 
+### 2. Ler a página antes de agir, e reler depois do erro
+
+- **O código garante a ordem** (`jarvis.s2.leitura_da_pagina`): a ação na página (`browser.click`, `browser.type`, `browser.acionar`, `browser.gesto`) só roda depois de uma leitura que ainda vale (`browser.inspecionar`, `browser.read`, `browser.tela`). A leitura deixa de valer quando a página muda (`browser.navigate`, `sites.open`, `browser.launch`, ou um clique/acionamento/gesto que deu certo — digitar não muda) e quando um passo na página **falha**. Faltando a leitura, o passo vira a inspeção da mesma aba e o motor decide de novo com o mapa na mão (`NOTA_DA_LEITURA`). Vale no turno (`Cerebro`) e na tarefa (`MotorDoObjetivo`), até `LEITURAS_FORCADAS` (6) por pedido; depois, o orçamento da recuperação (ADR-0038) e a guarda de laço (ADR-0062).
+- **O roteiro (985ffb1)** manda `browser.inspecionar` antes de cada ação e, quando um passo falha, reler, achar o campo ou botão certo e tentar de novo — até `TENTATIVAS_POR_PASSO` (3) por passo antes de dizer o que falhou.
+- **As ferramentas** dizem isso a quem as lê: o `quando` da `browser.inspecionar` («ler a página antes de agir e depois de um erro») e a descrição de `browser.click`/`type`/`acionar`. O subagente do navegador (Claude Code, ADR-0054) recebe a mesma regra nas regras fixas dele.
+
 ## Alternativas descartadas
 
 - **Uma chamada extra ao motor só para reescrever o pedido antes de delegar:** mais uma ida ao modelo em cada delegação, e o motor que já está no laço tem o mesmo contexto. O contrato estruturado obriga a formulação na própria proposta, e a régua da cópia pega quem não formulou.
@@ -23,4 +29,4 @@ O dono viu o Jarvis agir como automação: repassar a fala dele literal ao subag
 
 ## Como testar
 
-`tests/unit/delegacao/test_pedido_formulado.py` (a régua da cópia e as seções) e, em `tests/unit/delegacao/test_delegar_claude_code.py`, os testes do fim (a cópia não chega ao `claude` falso; a entrada padrão chega em seções; sem `passos`/`pronto_quando`/`devolver` é fora do contrato).
+`tests/unit/delegacao/test_pedido_formulado.py` (a régua da cópia e as seções) e, em `tests/unit/delegacao/test_delegar_claude_code.py`, os testes do fim (a cópia não chega ao `claude` falso; a entrada padrão chega em seções; sem `passos`/`pronto_quando`/`devolver` é fora do contrato). `tests/unit/s2/test_leitura_da_pagina.py` (a regra pura, a inspeção que o turno põe antes da ação sem leitura, o roteiro com ler e depurar) e o `test_relato_verdadeiro` (o envio do WhatsApp falso lê antes de digitar).

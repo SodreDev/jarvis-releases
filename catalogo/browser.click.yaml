@@ -2,6 +2,7 @@
 id: browser.click
 title: Clicar num elemento da página
 description: >-
+  Leia a página antes (browser.inspecionar); se falhar, releia e depure.
   Clica no botão ou link de uma aba aberta: pelo `ref` que browser.inspecionar devolveu (preferível) ou pelo
   texto exato (ou rótulo) em `alvo` — um dos dois. Não aceita seletor, coordenada nem script. Enviar mensagem,
   finalizar pagamento, entrar com senha e apagar pedem o sim do dono a cada vez, e banco, pagamento e senha
