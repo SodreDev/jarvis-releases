@@ -125,7 +125,8 @@ class Escolha:
     motivo: str
     """Código curto e estável (`cita_site`, `pede_terminal`…): é o que vai para a trilha."""
     evitar: frozenset[str] = frozenset()
-    """Ferramentas fora deste turno: o executor as recusa dizendo o caminho certo."""
+    """As ferramentas que a regra acha que não são o caminho deste pedido. Desde a ADR-0070 é só
+    DICA, na nota do prompt: nenhuma é recusada nem some do catálogo — quem decide é o motor."""
     caminho: str = ""
     """O que usar em vez delas, para a frase da recusa e para a nota do prompt."""
 
@@ -133,7 +134,10 @@ class Escolha:
         """A linha do prompt do turno; vazia quando o modelo escolhe sozinho."""
         if self.metodo is Metodo.CONVERSA or not self.caminho:
             return ""
-        return f"Método deste pedido: {self.metodo} ({self.motivo}) — {self.caminho}."
+        return (
+            f"DICA DO CÓDIGO sobre o método (sugestão, não ordem; todas as ferramentas estão "
+            f"disponíveis): {self.metodo} ({self.motivo}) — {self.caminho}."
+        )
 
     def recusa(self, tool_id: str) -> str:
         return (

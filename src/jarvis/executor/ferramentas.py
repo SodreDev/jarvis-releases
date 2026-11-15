@@ -739,19 +739,7 @@ class ExecutorDeFerramentas:
     ) -> Avaliacao | ResultadoDeFerramenta:
         marca = contaminacao if contaminacao is not None else self.turno
         chamada = call_id or f"c-{uuid7()}"
-        do_turno = contaminacao is None or contaminacao is self.turno
-        # A chamada do turno segue o método do pedido de agora; a tarefa em segundo plano (que traz
-        # a contaminação dela) segue o do pedido que ela cumpre, se ele veio junto (ADR-0038) —
-        # nunca o do pedido de agora, que pode ser outro.
-        metodo = self.metodo if do_turno else marca.metodo
-        if metodo is not None and tool_id in metodo.evitar:
-            return ResultadoDeFerramenta(
-                tool_id,
-                "negado",
-                motivo=metodo.recusa(tool_id),
-                call_id=chamada,
-                causa="metodo_de_fora",
-            )
+        # O método do pedido é dica para o motor (ADR-0070): nenhuma ferramenta é recusada por ele.
         if not self._ligada(tool_id):
             sem_imagem = tool_id == FERRAMENTA_DA_TELA and self.navegador is not None
             return ResultadoDeFerramenta(

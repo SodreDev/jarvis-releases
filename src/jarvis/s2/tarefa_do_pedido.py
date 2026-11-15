@@ -48,10 +48,7 @@ from jarvis.s2.protocolo import LeitorDoProtocolo, sem_protocolo
 from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.recuperacao import Recuperacao, Tentativa, assinatura
 from jarvis.s2.roteiro_do_navegador import (
-    NOTA_DE_REDIGIR,
     Contato,
-    copia_da_mensagem,
-    pedido_de_envio,
     roteiro,
 )
 from jarvis.s2.verdade import FALTA_ENVIAR, NOTA_DE_SEGUIR, frase_do_que_falta
@@ -68,7 +65,6 @@ from jarvis.voz.interface import Onde
 
 if TYPE_CHECKING:
     from jarvis.executor.ferramentas import ResultadoDeFerramenta
-    from jarvis.politica.objetivo import Objetivo
 
 LIMITE_DO_RACIOCINIO: Final = 2000
 """O mesmo teto do turno (`jarvis.s2.cerebro`): o raciocínio não cresce o prompt sem fim."""
@@ -169,9 +165,6 @@ class MotorDoObjetivo:
     leituras_forcadas: int = 0
     """Quantas vezes o código leu a página no lugar de uma ação proposta sem leitura (ADR-0069)."""
     _nota_da_leitura: bool = False
-    _cobrou_redacao: bool = False
-    """A mensagem digitada era a fala do dono copiada e o motor já foi cobrado (uma vez)."""
-    _nota_de_redigir: bool = False
 
     @property
     def na_nuvem(self) -> bool:
@@ -228,13 +221,6 @@ class MotorDoObjetivo:
                     return self._sem_motor(tarefa, feitos, erro)
                 self._mostrar(f"o motor não respondeu a esta rodada ({erro.detalhe[:80]}); de novo")
                 _esperar(self.pausa_depois_do_erro_s * recuperacao.motor_falhou, cancelado)
-                continue
-            if pedido is not None and self._copiou_a_mensagem(pedido, objetivo):
-                # O envio pedido («manda pra X que …») é redigido pelo Jarvis (ADR-0069 §3): a
-                # fala do dono copiada na caixa de mensagem volta ao motor, uma vez.
-                self._cobrou_redacao = True
-                self._nota_de_redigir = True
-                self._mostrar("a mensagem era a fala do dono copiada: pedi para redigir")
                 continue
             if pedido is not None:
                 repetida = recuperacao.repetida(pedido)
@@ -336,12 +322,6 @@ class MotorDoObjetivo:
         fala = conferir_relato(fala, todos).texto
         return FimDaTarefa(fala or evento, resposta=fala, falhou=falhou)
 
-    def _copiou_a_mensagem(self, pedido: PedidoDeTool, objetivo: Objetivo | None) -> bool:
-        if self._cobrou_redacao or objetivo is None:
-            return False
-        envio = pedido_de_envio(objetivo.pedido, self.contatos)
-        return copia_da_mensagem(pedido.tool_id, pedido.args, envio)
-
     def _com_leitura(
         self,
         pedido: PedidoDeTool,
@@ -420,9 +400,6 @@ class MotorDoObjetivo:
         if self._nota_da_leitura:
             notas.append(NOTA_DA_LEITURA)
             self._nota_da_leitura = False
-        if self._nota_de_redigir:
-            notas.append(NOTA_DE_REDIGIR)
-            self._nota_de_redigir = False
         if self._cobrar_objetivo:
             notas.append(NOTA_DE_SEGUIR)
             self._cobrar_objetivo = False

@@ -431,8 +431,10 @@ class FluxoDeAcao:
             # assunto, como antes.
             resposta = resposta_literal(fala) or RespostaDoDono.OUTRA_COISA
         if resposta is RespostaDoDono.SIM:
+            # O «sim» não roda a ação no turno do Jarvis (ADR-0070): ela vai ao subagente, como o
+            # clique, e o resultado chega como evento.
             resultado = self.resolver(
-                executor, pendencia.id, sim=True, na_hora=True, cancelado=cancelado, origem="voz"
+                executor, pendencia.id, sim=True, na_hora=False, cancelado=cancelado, origem="voz"
             )
             if resultado is None:  # venceu entre a leitura e o tomar: o "sim" não vale mais
                 return LeituraDaResposta(

@@ -611,20 +611,20 @@ def _pendencia_de_site(
     return cerebro, motor
 
 
-def test_sim_falado_resolve_a_pendencia_e_roda_a_acao_no_turno(
+def test_sim_falado_resolve_a_pendencia_e_a_acao_vai_ao_subagente(
     executor: ExecutorDeFerramentas, abertos: list[str], concluidas: list[Tarefa]
 ) -> None:
-    """A ação rápida confirmada pela voz roda no turno do "sim", e o dono ouve o resultado numa
-    frase só (dono, 2026-10-25: pedido de um passo não vira tarefa nem fala duas vezes)."""
+    """ADR-0070 (d5): a ação confirmada pela voz não roda no turno do Jarvis — vai ao subagente,
+    como a do clique, e o resultado chega como evento; o Jarvis responde ao «sim» com o fato."""
     cerebro, motor = _pendencia_de_site(executor, _jev("pedir_permissao", 0.9))
     resposta, falado = _dizer(cerebro, "Sim, pode.")
     assert _propostas(motor) == 1, "o motor não propõe a mesma ação de novo"
-    assert [r.status for r in resposta.ferramentas] == ["ok"]
-    # O que aconteceu vai ao Jarvis como evento, e a fala é dele (ADR-0070).
-    assert "foi feito" in falado and "exemplo.com.br" in falado
+    assert [r.status for r in resposta.ferramentas] == ["despachado"]
+    assert "passado a um subagente" in falado
+    _esperar_tarefas(executor)
     assert abertos == ["https://exemplo.com.br"]
-    assert executor.tarefas is not None and executor.tarefas.tarefas == {}, "não virou tarefa"
-    assert concluidas == []
+    assert executor.tarefas is not None and len(executor.tarefas.tarefas) == 1
+    assert [t.estado for t in concluidas] == [EstadoDaTarefa.CONCLUIDA]
     # Consumida: outro "sim" não autoriza mais nada.
     resposta, _ = _dizer(cerebro, "sim")
     assert resposta.motor != "portao" and resposta.ferramentas == []
@@ -661,7 +661,8 @@ def test_sim_contextual_pelo_jev_resolve(
     jev = _jev("pedir_permissao", 0.9, resposta="sim", p_resposta=0.95)
     cerebro, _motor = _pendencia_de_site(executor, jev)
     resposta, _ = _dizer(cerebro, "manda bala, pode abrir esse aí")
-    assert [r.status for r in resposta.ferramentas] == ["ok"]
+    assert [r.status for r in resposta.ferramentas] == ["despachado"]
+    _esperar_tarefas(executor)
     estado, perguntas = jev.chamadas[-1]
     assert set(perguntas) == {"resposta"}
     assert "exemplo.com.br" in estado["acao_pendente"]
@@ -723,7 +724,8 @@ def test_sim_depois_de_confirm_do_pdp_roda_com_o_pdp_de_novo(
     cerebro = _cerebro(executor, motor, _jev("fazer", 0.99))
     _dizer(cerebro, "lê as notas e abre o site que estiver nelas")
     resposta, _ = _dizer(cerebro, "sim")
-    assert [r.status for r in resposta.ferramentas] == ["ok"]
+    assert [r.status for r in resposta.ferramentas] == ["despachado"]
+    _esperar_tarefas(executor)
     assert abertos == ["https://exemplo.com.br"]
 
 

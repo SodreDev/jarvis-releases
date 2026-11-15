@@ -127,7 +127,7 @@ def test_o_que_cada_metodo_deixa_de_fora() -> None:
     navegador = escolher_metodo("abre o Brave", TUDO)
     assert {"apps.launch", "browser.launch"}.isdisjoint(navegador.evitar)
     assert "traz para a frente o que já está aberto" in navegador.nota()
-    assert "Método deste pedido: navegador (cita_site)" in site.nota()
+    assert "DICA DO CÓDIGO sobre o método" in site.nota() and "navegador (cita_site)" in site.nota()
     # Site específico: a busca é a do site, no navegador do dono — o web.buscar fica de fora.
     assert "web.buscar" in site.evitar
     generica = escolher_metodo("busca na internet o que é um eclipse", TUDO)
@@ -174,7 +174,7 @@ def executor(tmp_path: Path) -> Iterator[ExecutorDeFerramentas]:
         yield executor
 
 
-def test_o_executor_recusa_no_turno_o_que_o_metodo_deixa_de_fora_mas_nao_na_tarefa(
+def test_o_metodo_e_dica_e_o_executor_nao_recusa_nada_por_ele(
     executor: ExecutorDeFerramentas, tmp_path: Path
 ) -> None:
     assert executor.trilha is not None
@@ -190,10 +190,9 @@ def test_o_executor_recusa_no_turno_o_que_o_metodo_deixa_de_fora_mas_nao_na_tare
         contaminacao=Contaminacao(),  # a chamada de uma tarefa em segundo plano
     )
 
-    assert recusado.status == "negado"
-    assert "método subagente (pede_terminal)" in recusado.motivo
-    assert "tarefa.iniciar" in recusado.motivo
-    assert isinstance(da_tarefa, Avaliacao), "a tarefa segue o PDP, não o método do turno"
+    # ADR-0070: o método é dica no prompt; quem decide a ferramenta é o motor.
+    assert recusado.causa != "metodo_de_fora", "o método não recusa ferramenta"
+    assert isinstance(da_tarefa, Avaliacao), "a tarefa segue o PDP"
     (metodo,) = [e for e in eventos_do_ultimo_turno(tmp_path / "t") if e["evento"] == "metodo"]
     assert (metodo["metodo"], metodo["motivo"]) == ("subagente", "pede_terminal")
     assert "roda esse script" not in str(metodo)  # só metadados: a fala não vai para a trilha
@@ -206,4 +205,5 @@ def test_o_cerebro_diz_o_metodo_ao_modelo_no_prompt_do_turno(
     Cerebro(motor=motor, ferramentas=executor).responder(
         "roda esse script no terminal", epoch=0, publicar=lambda _: None
     )
-    assert "Método deste pedido: subagente (pede_terminal)" in motor.pedidos[0].sistema
+    assert "DICA DO CÓDIGO sobre o método" in motor.pedidos[0].sistema
+    assert "subagente (pede_terminal)" in motor.pedidos[0].sistema

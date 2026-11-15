@@ -87,10 +87,8 @@ from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.receitas import receitas_do_turno
 from jarvis.s2.recuperacao import nota_do_turno
 from jarvis.s2.roteiro_do_navegador import (
-    NOTA_DE_REDIGIR,
     Contato,
     PedidoDeEnvio,
-    copia_da_mensagem,
     pedido_de_envio,
 )
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
@@ -782,16 +780,6 @@ class Cerebro:
             # Uma por vez: o próximo pedido só pode nascer depois que o modelo viu este
             # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
             pedido = pedidos[0]
-            if not resposta.cobrou_redacao and copia_da_mensagem(
-                pedido.tool_id, pedido.args, self._envio_do_pedido(texto_do_dono)
-            ):
-                # O envio pedido é redigido pelo Jarvis, no tom do dono (ADR-0069 §3): a fala dele
-                # copiada na caixa de mensagem volta ao motor, uma vez, sem rodar.
-                resposta.cobrou_redacao = True
-                contexto = Contexto(
-                    sistema=f"{contexto.sistema}\n\n{NOTA_DE_REDIGIR}", mensagens=contexto.mensagens
-                )
-                continue
             # Ler a página antes de agir nela, e reler depois do erro (ADR-0069 §2): sem leitura
             # que valha, o passo é a inspeção e o motor decide de novo com o mapa na mão.
             ler_antes = leitura_antes(
@@ -1022,11 +1010,9 @@ class Cerebro:
         )
 
     def _pode(self, tool_id: str) -> bool:
-        """A ferramenta existe nesta sessão e o método do pedido não a tirou (ADR-0035)."""
+        """A ferramenta existe nesta sessão (o método do pedido é só dica, ADR-0070)."""
         executor = self.ferramentas
-        if executor is None or not executor.disponivel(tool_id):
-            return False
-        return executor.metodo is None or tool_id not in executor.metodo.evitar
+        return executor is not None and executor.disponivel(tool_id)
 
     def _atalho(self, texto_do_dono: str) -> Atalho | None:
         if not self.caminho_rapido or self.ferramentas is None:
@@ -1045,9 +1031,9 @@ class Cerebro:
         executor = self.ferramentas
         if not self.delegar_em_tarefa or executor is None or executor.tarefas is None:
             return False
-        if pedido.tool_id.startswith(FORA_DA_ALLOWLIST) or not executor.disponivel(pedido.tool_id):
-            return False
-        return executor.metodo is None or pedido.tool_id not in executor.metodo.evitar
+        return not pedido.tool_id.startswith(FORA_DA_ALLOWLIST) and executor.disponivel(
+            pedido.tool_id
+        )
 
     def _vai_para_tarefa(self, pedido: PedidoDeTool, resposta: Resposta, comeco: float) -> bool:
         """A proposta vai para a tarefa, ou roda no turno? (ADR-0070, dono, 2026-11-15)

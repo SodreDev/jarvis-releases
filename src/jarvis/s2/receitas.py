@@ -347,7 +347,11 @@ def receitas_do_turno(
             break
     if not blocos:
         return ""
-    texto = "\n".join(blocos) + f"\n- {RECUPERAR.texto}"
+    # Dica, não ordem (ADR-0070): o motor vê todas as ferramentas e escolhe o caminho.
+    texto = (
+        "DICAS DE USO (sugestões do código para este assunto; todas as ferramentas continuam "
+        "disponíveis e quem escolhe é você):\n" + "\n".join(blocos) + f"\n- {RECUPERAR.texto}"
+    )
     return texto[:LIMITE_DO_BLOCO]
 
 
