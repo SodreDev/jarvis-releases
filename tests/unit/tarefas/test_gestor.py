@@ -35,6 +35,7 @@ from jarvis.tarefas.gestor import (
     Tarefa,
     TarefaRecusada,
 )
+from jarvis.tarefas.limite import DecisaoNoLimite, MotivoDoLimite, NotificacaoDoLimite
 from jarvis.tarefas.motores import MotorDeAgente
 
 NUNCA = lambda: False  # noqa: E731
@@ -501,9 +502,9 @@ def test_o_prazo_e_o_aviso_da_tarefa_sao_do_codigo_que_a_criou(
     assert de_sempre.estado is EstadoDaTarefa.FALHOU and "passou de 0 s" in de_sempre.motivo
 
 
-# --- o teto de passos e de tempo: quem decide é o dono (ADR-0059) ----------------------------
+# --- o limite (passos, tempo, laço): o motor recebe o estado e decide (ADR-0059, 0062, 0070) ---
 class _MotorSemFim:
-    """Propõe a mesma leitura para sempre: só o teto o para."""
+    """Propõe a mesma leitura para sempre e não sabe decidir: só o limite o para."""
 
     nome = "agente"
     na_nuvem = False
@@ -513,8 +514,43 @@ class _MotorSemFim:
 
     def proximo(
         self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
-    ) -> PedidoDeTool:
+    ) -> PedidoDeTool | FimDaTarefa:
         return PedidoDeTool(self.proposta, {})
+
+
+class _MotorQueDecide(_MotorSemFim):
+    """Propõe sempre a mesma leitura e, no limite, decide pelo roteiro; guarda cada notificação."""
+
+    def __init__(self, *decisoes: DecisaoNoLimite, proposta: str = "system.clock.now") -> None:
+        super().__init__(proposta)
+        self.decisoes = list(decisoes)
+        self.avisos: list[NotificacaoDoLimite] = []
+        self.notas: list[str] = []
+        self.retomadas: list[MotivoDoLimite] = []
+
+    def proximo(
+        self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
+    ) -> PedidoDeTool | FimDaTarefa:
+        if tarefa.nota_de_laco:
+            self.notas.append(tarefa.nota_de_laco)
+            tarefa.nota_de_laco = ""
+        return super().proximo(tarefa, feitos, cancelado)
+
+    def decidir_no_limite(
+        self,
+        tarefa: Tarefa,
+        aviso: NotificacaoDoLimite,
+        feitos: Sequence[Any],
+        cancelado: Callable[[], bool],
+    ) -> DecisaoNoLimite | None:
+        self.avisos.append(aviso)
+        return self.decisoes.pop(0) if len(self.decisoes) > 1 else self.decisoes[0]
+
+    def retomar(self, motivo: MotivoDoLimite) -> None:
+        self.retomadas.append(motivo)
+
+
+ENCERRAR = DecisaoNoLimite("encerrar", texto="Li a hora três vezes e parei por aqui.")
 
 
 def _so_teto(executor: ExecutorDeFerramentas, painel: Painel, **extra: Any) -> GestorDeTarefas:
@@ -527,23 +563,50 @@ def _sem_fim(gestor: GestorDeTarefas, motor: Any = None) -> Tarefa:
     tarefa = gestor.iniciar(
         "ver a hora", "system.clock.now", {}, motor=motor if motor is not None else _MotorSemFim()
     )
-    assert gestor.esperar(tarefa.id, 10.0), "a tarefa não parou no teto"
+    assert gestor.esperar(tarefa.id, 10.0), "a tarefa não parou no limite"
     return tarefa
 
 
-def test_no_teto_o_nao_do_dono_encerra_com_o_resumo_do_codigo(
+def test_no_teto_o_motor_recebe_o_estado_real_e_encerra_com_as_palavras_dele(
     executor: ExecutorDeFerramentas,
 ) -> None:
     painel = Painel()
-    tarefa = _sem_fim(_so_teto(executor, painel, passos_por_bloco=3))
+    motor = _MotorQueDecide(ENCERRAR)
+    tarefa = _sem_fim(_so_teto(executor, painel, passos_por_bloco=3), motor)
 
-    assert [p.tool_id for p in painel.perguntas] == [TOOL_DO_TETO]
-    assert painel.perguntas[0].continuar_por == 3
+    assert not painel.perguntas, "o código não pergunta nada: quem decide é o motor"
+    (aviso,) = motor.avisos
+    assert aviso.motivo is MotivoDoLimite.PASSOS
+    assert aviso.passos_dados == 3 and aviso.certos == 3 and aviso.falhos == 0
+    assert aviso.proximo == "system.clock.now"
+    assert all(p.startswith("system.clock.now → ok") for p in aviso.passos)
+    texto = aviso.para_o_motor()
+    assert "continuar" in texto and "perguntar" in texto and "encerrar" in texto
     assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.passo == 3
-    assert tarefa.motivo == "Parei sem terminar, depois de 3 passos; 3 deram certo."
+    assert tarefa.resposta == ENCERRAR.texto, "o fim é a fala do motor"
+    assert "Parei sem terminar" not in tarefa.motivo
 
 
-def test_no_teto_o_sim_do_dono_da_mais_um_bloco_e_pergunta_de_novo(
+def test_o_motor_continua_sozinho_no_maximo_duas_vezes_e_depois_so_pergunta_ou_encerra(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    painel = Painel()
+    motor = _MotorQueDecide(DecisaoNoLimite("continuar", 2, "ler de outro jeito"))
+    tarefa = _sem_fim(_so_teto(executor, painel, passos_por_bloco=3), motor)
+
+    assert tarefa.passo == 7, "3 do bloco, mais 2 e mais 2 que o motor decidiu"
+    assert [a.opcoes for a in motor.avisos] == [
+        ("continuar", "perguntar", "encerrar"),
+        ("continuar", "perguntar", "encerrar"),
+        ("perguntar", "encerrar"),
+    ]
+    assert motor.retomadas == [MotivoDoLimite.PASSOS, MotivoDoLimite.PASSOS]
+    assert motor.notas and "ler de outro jeito" in motor.notas[0]
+    assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.resposta == ""
+    assert not painel.perguntas
+
+
+def test_o_motor_pergunta_com_as_palavras_dele_e_o_nao_do_dono_volta_a_ele(
     executor: ExecutorDeFerramentas,
 ) -> None:
     class SimUmaVez(Painel):
@@ -551,18 +614,22 @@ def test_no_teto_o_sim_do_dono_da_mais_um_bloco_e_pergunta_de_novo(
             self.perguntas.append(pergunta)
             return len(self.perguntas) == 1
 
+    pergunta = DecisaoNoLimite("perguntar", texto="Já li a hora três vezes; sigo lendo?")
+    fim = DecisaoNoLimite("encerrar", texto="Tudo bem, deixei a hora de lado.")
+    motor = _MotorQueDecide(pergunta, pergunta, fim)
     painel = SimUmaVez()
-    tarefa = _sem_fim(_so_teto(executor, painel, passos_por_bloco=3))
+    tarefa = _sem_fim(_so_teto(executor, painel, passos_por_bloco=3), motor)
 
     assert len(painel.perguntas) == 2 and tarefa.passo == 6
+    assert painel.perguntas[0].tool_id == TOOL_DO_TETO and painel.perguntas[0].continuar_por == 3
+    assert painel.perguntas[0].pergunta_falada == pergunta.texto
     assert len({p.id for p in painel.perguntas}) == 2, "cada pergunta tem o id dela"
+    assert motor.avisos[-1].resposta_do_dono and motor.avisos[-1].opcoes == ("encerrar",)
+    assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.resposta == fim.texto
 
 
 def test_ate_terminar_tira_o_teto_de_passos_e_o_de_tempo(executor: ExecutorDeFerramentas) -> None:
-    class Ate:
-        nome = "agente"
-        na_nuvem = False
-
+    class Ate(_MotorQueDecide):
         def proximo(
             self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
         ) -> PedidoDeTool | FimDaTarefa:
@@ -578,8 +645,9 @@ def test_ate_terminar_tira_o_teto_de_passos_e_o_de_tempo(executor: ExecutorDeFer
         return RespostaAoTeto.ATE_TERMINAR
 
     gestor = _so_teto(executor, painel, passos_por_bloco=2, prazo_s=0.0)
+    motor = Ate(DecisaoNoLimite("perguntar", texto="O tempo do bloco acabou; sigo até o fim?"))
     tarefa = gestor.iniciar_objetivo(
-        "ver a hora", Ate(), contaminacao=Contaminacao(), prazo_s=0.001, no_teto=no_teto
+        "ver a hora", motor, contaminacao=Contaminacao(), prazo_s=0.001, no_teto=no_teto
     )
     time.sleep(0.01)
 
@@ -588,14 +656,15 @@ def test_ate_terminar_tira_o_teto_de_passos_e_o_de_tempo(executor: ExecutorDeFer
     assert len(perguntas) == 1 and not painel.perguntas
 
 
-def test_o_motor_que_so_propoe_fora_da_allowlist_tambem_chega_ao_teto(
+def test_o_motor_que_so_propoe_fora_da_allowlist_tambem_chega_ao_limite(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    """O passo recusado conta: sem isso, um motor teimoso rodaria para sempre sem perguntar."""
+    """O passo recusado conta: sem isso, um motor teimoso rodaria para sempre."""
     painel = Painel()
-    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=3), _MotorSemFim("tarefa.iniciar"))
+    motor = _MotorQueDecide(ENCERRAR, proposta="tarefa.iniciar")
+    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=3), motor)
 
-    assert len(painel.perguntas) == 1
+    assert len(motor.avisos) == 1 and motor.avisos[0].falhos == 3
     assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.passo == 0
 
 
@@ -613,49 +682,32 @@ def test_a_acao_de_um_passo_nao_pergunta_no_prazo_e_acaba_nele(
     assert tarefa.estado is EstadoDaTarefa.FALHOU and "passou de 0 s" in tarefa.motivo
 
 
-def test_o_motor_agente_pergunta_no_prazo_em_vez_de_morrer_nele(
+def test_o_motor_agente_no_prazo_recebe_o_limite_de_tempo_em_vez_de_morrer_nele(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    painel = Painel()
-    tarefa = _sem_fim(_so_teto(executor, painel, prazo_s=0.0))
+    motor = _MotorQueDecide(ENCERRAR)
+    tarefa = _sem_fim(_so_teto(executor, Painel(), prazo_s=0.0), motor)
 
-    assert len(painel.perguntas) == 1
-    assert "O tempo acabou" in painel.perguntas[0].pergunta_falada
-    assert tarefa.motivo.startswith("Parei sem terminar")
+    assert [a.motivo for a in motor.avisos] == [MotivoDoLimite.TEMPO]
+    assert tarefa.resposta == ENCERRAR.texto
 
 
-def test_o_resumo_que_falha_nao_derruba_o_fim_da_tarefa(executor: ExecutorDeFerramentas) -> None:
-    class ResumoQuebrado(_MotorSemFim):
-        def resumir_no_teto(
-            self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
-        ) -> str:
+def test_o_motor_que_cai_ou_nao_decide_nao_vira_frase_do_codigo(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    class Quebrado(_MotorQueDecide):
+        def decidir_no_limite(self, *_a: Any, **_k: Any) -> DecisaoNoLimite | None:
             raise RuntimeError("o motor caiu")
 
-    tarefa = _sem_fim(_gestor(executor, Painel(), passos_por_bloco=2), ResumoQuebrado())
-
-    assert tarefa.motivo == "Parei sem terminar, depois de 2 passos; 2 deram certo."
-
-
-# --- a guarda de laço: repetir sem avançar avisa e depois para (ADR-0062) ---------------------
-class _MotorQueRepete:
-    """Propõe sempre a mesma ação e guarda as notas de laço que recebeu."""
-
-    nome = "agente"
-    na_nuvem = False
-
-    def __init__(self) -> None:
-        self.notas: list[str] = []
-
-    def proximo(
-        self, tarefa: Tarefa, feitos: Sequence[Any], cancelado: Callable[[], bool]
-    ) -> PedidoDeTool:
-        if tarefa.nota_de_laco:
-            self.notas.append(tarefa.nota_de_laco)
-            tarefa.nota_de_laco = ""
-        return PedidoDeTool("system.clock.now", {})
+    for motor in (Quebrado(ENCERRAR), _MotorSemFim()):
+        tarefa = _sem_fim(_so_teto(executor, Painel(), passos_por_bloco=2), motor)
+        assert tarefa.estado is EstadoDaTarefa.FALHOU
+        assert tarefa.resposta == "", "sem motor, ninguém escreve a fala: o fim vai como evento"
+        assert tarefa.motivo.startswith("limite: teto_de_passos: 2 passo(s)")
 
 
-def test_a_mesma_acao_com_o_mesmo_resultado_avisa_o_motor_e_depois_para_a_tarefa(
+# --- a guarda de laço: repetir sem avançar avisa, e na parada o motor decide (ADR-0062/0070) ---
+def test_a_mesma_acao_com_o_mesmo_resultado_avisa_o_motor_e_depois_ele_decide(
     executor: ExecutorDeFerramentas, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from jarvis.executor import sistema
@@ -663,18 +715,20 @@ def test_a_mesma_acao_com_o_mesmo_resultado_avisa_o_motor_e_depois_para_a_tarefa
     hora_fixa = {"iso": "2026-11-12T10:00:00-03:00", "hora": "10:00"}
     monkeypatch.setattr(sistema, "hora_agora", lambda _agora: dict(hora_fixa))
     painel = Painel()
-    motor = _MotorQueRepete()
+    fim = DecisaoNoLimite("encerrar", texto="Eu estava repetindo a leitura da hora; parei.")
+    motor = _MotorQueDecide(fim)
     gestor = _gestor(executor, painel, passos_por_bloco=50)
     tarefa = gestor.iniciar_objetivo(
         "ver a hora", motor, contaminacao=Contaminacao(), no_teto=lambda *_: RespostaAoTeto.PARAR
     )
 
     assert gestor.esperar(tarefa.id, 10.0)
-    assert tarefa.passo == 4, "três iguais avisam; a quarta, depois do aviso, para"
+    assert tarefa.passo == 4, "três iguais avisam; a quarta, depois do aviso, vai ao motor"
     assert len(motor.notas) == 1 and "LAÇO" in motor.notas[0]
-    assert tarefa.estado is EstadoDaTarefa.FALHOU
-    assert tarefa.resposta.startswith("Parei sem terminar: eu estava repetindo")
-    assert not painel.perguntas, "o laço não vira pergunta ao dono"
+    assert [a.motivo for a in motor.avisos] == [MotivoDoLimite.LACO]
+    assert "system.clock.now" in motor.avisos[0].detalhe
+    assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.resposta == fim.texto
+    assert not painel.perguntas, "o laço não vira pergunta do código ao dono"
 
 
 def test_com_o_resultado_mudando_a_cada_passo_so_o_teto_para(
@@ -685,8 +739,7 @@ def test_com_o_resultado_mudando_a_cada_passo_so_o_teto_para(
 
     contador = iter(range(1000))
     monkeypatch.setattr(sistema, "hora_agora", lambda _agora: {"iso": str(next(contador))})
-    painel = Painel()
-    tarefa = _sem_fim(_gestor(executor, painel, passos_por_bloco=6))
+    motor = _MotorQueDecide(ENCERRAR)
+    tarefa = _sem_fim(_gestor(executor, Painel(), passos_por_bloco=6), motor)
 
-    assert tarefa.passo == 6 and len(painel.perguntas) == 1
-    assert tarefa.motivo.startswith("Parei sem terminar, depois de 6 passos")
+    assert tarefa.passo == 6 and [a.motivo for a in motor.avisos] == [MotivoDoLimite.PASSOS]

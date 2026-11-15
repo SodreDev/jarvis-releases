@@ -1,11 +1,13 @@
-"""ADR-0059: a tarefa de um pedido chega ao teto, pergunta ao dono, e ele decide.
+"""ADR-0059 e ADR-0070: a tarefa de um pedido chega ao limite, o motor recebe o estado e decide.
 
 Sem rede nem áudio: motor roteirizado e a pendência de sempre. Cada passo é uma leitura de pasta,
-que roda sem pedir o sim; a única pergunta ao dono nestes testes é a do teto.
+que roda sem pedir o sim. No limite, o roteiro decide perguntar ao dono (com as palavras dele); a
+resposta do dono volta ao motor, que escreve o fim.
 """
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -22,9 +24,9 @@ from jarvis.s2.cerebro import Cerebro
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.s2.pendencias import Pendencia, RegistroDePendencias
-from jarvis.s2.tarefa_do_pedido import NOTA_DO_TETO
 from jarvis.tarefas.gestor import TOOL_DO_TETO, EstadoDaTarefa, GestorDeTarefas, Tarefa
 from jarvis.tarefas.laco import GuardaDeLaco
+from jarvis.tarefas.limite import MARCA_DA_NOTIFICACAO
 
 BLOCO = 3
 NO_TURNO = 2
@@ -32,6 +34,8 @@ NO_TURNO = 2
 PRIMEIRA_PARADA = BLOCO - NO_TURNO
 SEGUNDA_PARADA = PRIMEIRA_PARADA + BLOCO
 PEDIDO = "organize a pasta de documentos"
+PERGUNTA = "Li a pasta algumas vezes e ainda falta organizar; quer que eu siga?"
+REPETINDO = "Eu estava relendo a mesma pasta sem avançar."
 
 
 @pytest.fixture
@@ -66,9 +70,15 @@ class Roteiro:
         self.chamadas = 0
 
     def __call__(self, contexto: Contexto) -> Sequence[Parte]:
-        if NOTA_DO_TETO in contexto.sistema:
-            assert not contexto.ferramentas, "o resumo do teto é sem ferramentas"
-            return [self.resumo] if self.resumo else [PedidoDeTool("files.list_dir", {})]
+        if MARCA_DA_NOTIFICACAO in contexto.sistema:
+            assert not contexto.ferramentas, "a decisão no limite é sem ferramentas"
+            nota = contexto.sistema.split(MARCA_DA_NOTIFICACAO, 1)[1]
+            if "O dono respondeu" in nota:  # a resposta dele voltou: o fim é do motor
+                fim = {"decisao": "encerrar", "texto": self.resumo}
+                return [json.dumps(fim)] if self.resumo else [PedidoDeTool("files.list_dir", {})]
+            if "guarda de laço" in nota:
+                return [json.dumps({"decisao": "encerrar", "texto": f"{REPETINDO} {self.resumo}"})]
+            return [json.dumps({"decisao": "perguntar", "texto": PERGUNTA})]
         self.chamadas += 1
         if self.chamadas > self.passos:
             return ["Organizei a pasta."]
@@ -123,11 +133,8 @@ def test_no_teto_a_tarefa_para_e_pergunta_com_a_conversa_livre(
 
     assert pergunta.tool_id == TOOL_DO_TETO and pergunta.continuar_por == BLOCO
     assert tarefa.estado is EstadoDaTarefa.ESPERANDO_O_DONO
-    assert pergunta.pergunta_falada.startswith(f"Posso continuar por mais {BLOCO} passos")
-    assert "até terminar" in pergunta.pergunta_falada
-    assert pergunta.pergunta_falada.endswith("ainda falta.")
-    assert "tarefa.continuar" not in pergunta.pergunta_falada
-    assert f"Já dei {BLOCO} passos" in pergunta.pergunta_falada, "os do turno contam"
+    assert pergunta.pergunta_falada == PERGUNTA, "a pergunta é a que o motor escreveu"
+    assert f"{BLOCO} passo(s)" in pergunta.detalhe, "os do turno contam"
     assert tarefa.passo == PRIMEIRA_PARADA
     assert _dizer(cerebro, "não") == "Tudo bem, paro por aqui."
     _fim(executor, tarefa)
@@ -194,7 +201,7 @@ def test_nao_encerra_com_o_resumo_do_que_foi_feito(executor: ExecutorDeFerrament
 
     _fim(executor, tarefa)
     assert tarefa.estado is EstadoDaTarefa.FALHOU
-    assert tarefa.resposta == "Parei sem terminar. Li a pasta, faltou organizar."
+    assert tarefa.resposta == "Li a pasta, faltou organizar.", "o fim é do motor, sem prefixo"
     assert tarefa.aviso != "", "o resumo vai à voz: o dono pediu para ouvir o que foi feito"
 
 
@@ -209,21 +216,22 @@ def test_sem_resposta_tambem_encerra_com_o_resumo(executor: ExecutorDeFerramenta
 
     _fim(executor, tarefa)
     assert tarefa.estado is EstadoDaTarefa.FALHOU
-    assert tarefa.resposta.startswith("Parei sem terminar.")
+    assert tarefa.resposta == "Li a pasta, faltou organizar."
 
 
-def test_o_motor_que_nao_resume_nao_deixa_o_dono_sem_resumo(
+def test_o_motor_que_nao_escreve_o_fim_nao_vira_frase_do_codigo(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    """Pediu outra ferramenta em vez de contar: o resumo é do código, sem nome de ferramenta."""
+    """Pediu outra ferramenta em vez de escrever o fim: a resposta fica vazia e o fim vai ao Jarvis
+    do turno como evento, com o estado em números (ADR-0070)."""
     cerebro, tarefa = _comecar(executor, Roteiro(resumo=""))
     _pergunta(cerebro)
 
     _dizer(cerebro, "não")
 
     _fim(executor, tarefa)
-    assert tarefa.resposta.startswith("Parei sem terminar, depois de")
-    assert "deram certo" in tarefa.resposta and "files." not in tarefa.resposta
+    assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.resposta == ""
+    assert tarefa.motivo.startswith("limite: teto_de_passos:")
 
 
 def test_o_fim_exato_no_teto_nao_pergunta(executor: ExecutorDeFerramentas) -> None:
@@ -284,18 +292,18 @@ def test_o_prazo_do_bloco_tambem_pergunta_e_o_do_turno_nao_vale_para_a_tarefa(
 
     pergunta = _pergunta(cerebro).pergunta
 
-    assert "O tempo acabou" in pergunta.pergunta_falada
+    assert "teto_de_tempo" in pergunta.detalhe
     assert tarefa.passo == 0
     _dizer(cerebro, "não")
     _fim(executor, tarefa)
-    assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.resposta.startswith("Parei")
+    assert tarefa.estado is EstadoDaTarefa.FALHOU and tarefa.resposta == Roteiro().resumo
 
 
-def test_com_a_guarda_o_laco_avisa_o_motor_e_para_sem_perguntar(
+def test_com_a_guarda_o_laco_avisa_o_motor_e_na_parada_ele_decide(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    """ADR-0062: reler a mesma pasta vazia é laço. A nota vai ao motor uma vez; se ele insiste, a
-    tarefa acaba com o resumo, sem a pergunta do teto."""
+    """ADR-0062: reler a mesma pasta vazia é laço. A nota vai ao motor uma vez; se ele insiste, ele
+    recebe a notificação do laço e decide (aqui, encerrar com as palavras dele)."""
     assert executor.tarefas is not None
     executor.tarefas.guarda_de_laco = GuardaDeLaco
     executor.tarefas.passos_por_bloco = 50
@@ -318,6 +326,5 @@ def test_com_a_guarda_o_laco_avisa_o_motor_e_para_sem_perguntar(
 
     assert sum("LAÇO" in s for s in vistos) == 1, "a nota vai uma vez, no passo seguinte"
     assert tarefa.estado is EstadoDaTarefa.FALHOU
-    assert tarefa.resposta.startswith("Parei sem terminar: eu estava repetindo")
-    assert "Li a pasta, faltou organizar." in tarefa.resposta
-    assert cerebro.pendencias.valida() is None, "o laço não vira pergunta"
+    assert tarefa.resposta == f"{REPETINDO} Li a pasta, faltou organizar."
+    assert cerebro.pendencias.valida() is None, "o motor decidiu encerrar: ninguém pergunta"

@@ -25,7 +25,7 @@ import math
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
 
@@ -37,6 +37,14 @@ from jarvis.politica.atalho import frase_da_ferramenta
 from jarvis.politica.objetivo import EstadoDoObjetivo, Objetivo
 from jarvis.s2.motor import PedidoDeTool
 from jarvis.tarefas.laco import AcaoDoLaco, GuardaDeLaco, Laco, campos_na_trilha
+from jarvis.tarefas.limite import (
+    CONTINUACOES_SEM_O_DONO,
+    DecisaoNoLimite,
+    LimiteDaTarefa,
+    MotivoDoLimite,
+    NotificacaoDoLimite,
+    notificacao,
+)
 
 if TYPE_CHECKING:
     from jarvis.executor.ferramentas import (
@@ -53,8 +61,6 @@ PRAZO_DA_PERGUNTA_DO_TETO_S: Final = 120.0
 """Quanto a pergunta do teto espera: tarefa longa roda com o dono longe, e o que se perde sem a
 resposta é o resto do trabalho (o `PRAZO_DE_CONFIRMACAO_S`, de 30 s, é o de uma ação na hora)."""
 TOOL_DO_TETO: Final = "tarefa.continuar"
-ABERTURA_DO_LACO: Final = "Parei sem terminar: eu estava repetindo os mesmos passos sem avançar."
-"""O começo da frase quando a guarda de laço para a tarefa (ADR-0062)."""
 """O nome da pergunta do teto na pendência e na trilha. Não é ferramenta: não está no catálogo, e
 o "sim" a ela não roda nada, só acorda a tarefa que espera."""
 TAREFAS_NO_CARD: Final = 8
@@ -107,7 +113,7 @@ class FimDaTarefa:
     `resumo` como motivo, e a `resposta` diz isso ao dono."""
 
 
-Passo = PedidoDeTool | FimDaTarefa
+Passo = PedidoDeTool | FimDaTarefa | LimiteDaTarefa
 PerguntarNoTeto = Callable[["Tarefa", "Confirmacao"], RespostaAoTeto]
 """Faz a pergunta do teto e espera: a tarefa, a pergunta, e o que o dono decidiu."""
 
@@ -127,12 +133,23 @@ class MotorDeTarefa(Protocol):
 
 
 @runtime_checkable
-class MotorQueResume(Protocol):
-    """O motor que sabe contar, em frase de gente, o que a tarefa fez até o teto (ADR-0059)."""
+class MotorQueDecide(Protocol):
+    """O motor que, no limite da tarefa, recebe a notificação do estado e decide (ADR-0070)."""
 
-    def resumir_no_teto(
-        self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
-    ) -> str: ...
+    def decidir_no_limite(
+        self,
+        tarefa: Tarefa,
+        aviso: NotificacaoDoLimite,
+        feitos: Sequence[ResultadoDeFerramenta],
+        cancelado: Callable[[], bool],
+    ) -> DecisaoNoLimite | None:
+        """A decisão dele, numa rodada sem ferramentas; `None` = o motor caiu."""
+        ...
+
+    def retomar(self, motivo: MotivoDoLimite) -> None:
+        """A tarefa segue depois do limite (ele decidiu, ou o dono disse sim): o motor renova o
+        que for dele (o orçamento de falhas)."""
+        ...
 
 
 @dataclass(slots=True)
@@ -181,7 +198,10 @@ class Tarefa:
     turno: str = ""
     """O turno que criou a tarefa: a trilha liga a entrega do fim ao pedido."""
     nota_de_laco: str = ""
-    """O aviso da guarda de laço para o próximo passo do motor (ADR-0062): quem o lê o apaga."""
+    """A nota do gestor ao próximo passo do motor — o aviso da guarda de laço (ADR-0062), a
+    estratégia que o próprio motor escolheu no limite (ADR-0070): quem a lê a apaga."""
+    continuacoes_sem_o_dono: int = 0
+    """Quantas vezes seguidas o motor decidiu continuar no limite sem perguntar (ADR-0070)."""
 
     @property
     def progresso(self) -> int:
@@ -488,6 +508,7 @@ class GestorDeTarefas:
         bloco = tarefa.bloco_de_passos or self.passos_por_bloco
         teto: float = tarefa.maximo_de_passos or self.passos_por_bloco
         numero = 0
+        comeco = time.monotonic()
         # A guarda de laço (ADR-0062) vive a tarefa inteira: «mais 50» e «até terminar» não a
         # zeram. Só na tarefa que planeja passos: a ação de um passo não tem laço.
         planeja = tarefa.de_objetivo or motor.nome == "agente"
@@ -501,13 +522,31 @@ class GestorDeTarefas:
                 if not (tarefa.de_objetivo or motor.nome == "agente"):
                     prazo = tarefa.prazo_s or self.prazo_s
                     raise ErroDeTarefa(f"passou de {prazo:.0f} s: o prazo é nosso")
-                renovado = self._no_teto(tarefa, motor, feitos, numero, bloco, por_tempo=True)
+                renovado = self._no_limite(
+                    tarefa, motor, feitos, numero, bloco, MotivoDoLimite.TEMPO, comeco=comeco
+                )
                 if renovado is None:
                     return None
                 teto, limite = renovado
             passo = motor.proximo(tarefa, feitos, tarefa.cancelada.is_set)
             if tarefa.cancelada.is_set():
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+            if isinstance(passo, LimiteDaTarefa):
+                # Um limite do próprio motor (o orçamento de falhas): ele decide, com o estado.
+                renovado = self._no_limite(
+                    tarefa,
+                    motor,
+                    feitos,
+                    numero,
+                    bloco,
+                    passo.motivo,
+                    comeco=comeco,
+                    detalhe=passo.detalhe,
+                )
+                if renovado is None:
+                    return None
+                teto, limite = max(teto, renovado[0]), max(limite, renovado[1])
+                continue
             if isinstance(passo, FimDaTarefa):
                 tarefa.resumo, tarefa.de_terceiros = passo.resumo, passo.de_terceiros
                 tarefa.aviso, tarefa.resposta = passo.aviso, passo.resposta
@@ -515,8 +554,17 @@ class GestorDeTarefas:
                     return self._terminar(tarefa, EstadoDaTarefa.FALHOU, motivo=passo.resumo)
                 return self._terminar(tarefa, EstadoDaTarefa.CONCLUIDA)
             if numero >= teto:
-                # A pergunta vem com o próximo passo na mão: tarefa que acabaria aqui não pergunta.
-                renovado = self._no_teto(tarefa, motor, feitos, numero, bloco, por_tempo=False)
+                # O limite vem com o próximo passo na mão: tarefa que acabaria aqui não chega a ele.
+                renovado = self._no_limite(
+                    tarefa,
+                    motor,
+                    feitos,
+                    numero,
+                    bloco,
+                    MotivoDoLimite.PASSOS,
+                    comeco=comeco,
+                    proximo=passo.tool_id,
+                )
                 if renovado is None:
                     return None
                 teto, limite = renovado
@@ -526,7 +574,7 @@ class GestorDeTarefas:
                 negado = _negado(passo.tool_id, "tarefa não roda isto (allowlist da tarefa)")
                 feitos.append(negado)
                 if guarda is not None and self._no_laco(
-                    tarefa, motor, feitos, guarda, passo, negado
+                    tarefa, motor, feitos, guarda, passo, negado, numero, bloco, comeco
                 ):
                     return None
                 continue
@@ -551,7 +599,7 @@ class GestorDeTarefas:
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             feitos.append(resultado)
             if guarda is not None and self._no_laco(
-                tarefa, motor, feitos, guarda, passo, resultado
+                tarefa, motor, feitos, guarda, passo, resultado, numero, bloco, comeco
             ):
                 return None
 
@@ -563,9 +611,13 @@ class GestorDeTarefas:
         guarda: GuardaDeLaco,
         passo: PedidoDeTool,
         resultado: ResultadoDeFerramenta,
+        numero: int,
+        bloco: int,
+        comeco: float,
     ) -> bool:
         """O passo entra na guarda de laço (ADR-0062). No aviso, a nota vai ao próximo passo do
-        motor; na parada, a tarefa acaba como no «não» do teto. Devolve se a tarefa acabou."""
+        motor; na parada, o motor recebe a notificação do laço e decide (ADR-0070). Devolve se a
+        tarefa acabou."""
         laco: Laco | None = guarda.observar(passo, resultado)
         if laco is None:
             return False
@@ -574,23 +626,83 @@ class GestorDeTarefas:
         if laco.acao is AcaoDoLaco.AVISO:
             tarefa.nota_de_laco = laco.nota_ao_motor()
             return False
-        self._parar_no_teto(tarefa, motor, feitos, abertura=ABERTURA_DO_LACO)
-        return True
+        detalhe = f"{laco.tipo}, período {laco.periodo}: {' → '.join(laco.ferramentas)}"
+        renovado = self._no_limite(
+            tarefa,
+            motor,
+            feitos,
+            numero,
+            bloco,
+            MotivoDoLimite.LACO,
+            comeco=comeco,
+            detalhe=detalhe,
+        )
+        return renovado is None
 
-    def _no_teto(
+    def _no_limite(
         self,
         tarefa: Tarefa,
         motor: MotorDeTarefa,
         feitos: Sequence[ResultadoDeFerramenta],
         numero: int,
         bloco: int,
+        motivo: MotivoDoLimite,
         *,
-        por_tempo: bool,
+        comeco: float,
+        detalhe: str = "",
+        proximo: str = "",
     ) -> tuple[float, float] | None:
-        """A tarefa chegou ao teto (de passos ou de tempo) sem terminar: o dono decide (ADR-0059).
-        Devolve o novo `(teto, limite)` para seguir; `None` = ela acabou aqui, com o resumo."""
-        total = numero + len(tarefa.feitos_antes)
-        pergunta = _pergunta_do_teto(tarefa, total, bloco, por_tempo=por_tempo)
+        """A tarefa chegou a um limite (passos, tempo, laço, falhas): o código monta a notificação
+        com o estado real e o **motor decide** — continuar, perguntar ao dono ou encerrar com as
+        palavras dele (ADR-0070). Devolve o novo `(teto, limite)` para seguir; `None` = acabou."""
+        sozinho = tarefa.continuacoes_sem_o_dono < CONTINUACOES_SEM_O_DONO
+        aviso = notificacao(
+            motivo,
+            tarefa.descricao,
+            (*tarefa.feitos_antes, *feitos),
+            segundos=time.monotonic() - comeco,
+            bloco=bloco,
+            detalhe=detalhe,
+            proximo=proximo,
+            opcoes=("continuar", "perguntar", "encerrar") if sozinho else ("perguntar", "encerrar"),
+        )
+        decisao = self._decidir(tarefa, motor, feitos, aviso)
+        self._trilhar_o_limite(aviso, decisao)
+        if tarefa.cancelada.is_set():
+            self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+            return None
+        if decisao is None:
+            self._encerrar_no_limite(tarefa, aviso, "")
+            return None
+        prazo = tarefa.prazo_s or self.prazo_s
+        if decisao.acao == "continuar":
+            tarefa.continuacoes_sem_o_dono += 1
+            if decisao.estrategia:
+                tarefa.nota_de_laco = (
+                    f"Você decidiu continuar depois do limite com esta estratégia: "
+                    f"{decisao.estrategia}"
+                )
+            self._retomar(motor, motivo)
+            return numero + max(1, min(bloco, decisao.passos or bloco)), time.monotonic() + prazo
+        if decisao.acao == "perguntar":
+            return self._perguntar_no_limite(tarefa, motor, feitos, numero, bloco, aviso, decisao)
+        self._encerrar_no_limite(tarefa, aviso, decisao.texto)
+        return None
+
+    def _perguntar_no_limite(
+        self,
+        tarefa: Tarefa,
+        motor: MotorDeTarefa,
+        feitos: Sequence[ResultadoDeFerramenta],
+        numero: int,
+        bloco: int,
+        aviso: NotificacaoDoLimite,
+        decisao: DecisaoNoLimite,
+    ) -> tuple[float, float] | None:
+        """O motor quis perguntar: a pergunta dele vai ao dono pela pendência de sempre (ADR-0059:
+        «sim», «mais 50», «até terminar», «não»). Sim, a tarefa segue; não ou sem resposta, o motor
+        recebe a resposta do dono e escreve o fim."""
+        pergunta = _pergunta_do_limite(tarefa, decisao.texto, bloco, aviso)
         resposta = self._perguntar_no_teto(tarefa, pergunta)
         if self.executor.trilha is not None:
             self.executor.trilha.evento(
@@ -603,12 +715,73 @@ class GestorDeTarefas:
         if tarefa.cancelada.is_set():
             self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
             return None
-        if resposta is RespostaAoTeto.PARAR:
-            self._parar_no_teto(tarefa, motor, feitos)
-            return None
         if resposta is RespostaAoTeto.ATE_TERMINAR:
+            tarefa.continuacoes_sem_o_dono = 0
+            self._retomar(motor, aviso.motivo)
             return math.inf, math.inf
-        return numero + bloco, time.monotonic() + (tarefa.prazo_s or self.prazo_s)
+        if resposta is RespostaAoTeto.MAIS_UM_BLOCO:
+            tarefa.continuacoes_sem_o_dono = 0
+            self._retomar(motor, aviso.motivo)
+            return numero + bloco, time.monotonic() + (tarefa.prazo_s or self.prazo_s)
+        respondido = replace(
+            aviso, resposta_do_dono="não, ou não respondeu a tempo", opcoes=("encerrar",)
+        )
+        fim = self._decidir(tarefa, motor, feitos, respondido)
+        self._trilhar_o_limite(respondido, fim)
+        if tarefa.cancelada.is_set():
+            self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+            return None
+        self._encerrar_no_limite(tarefa, respondido, fim.texto if fim else "")
+        return None
+
+    def _decidir(
+        self,
+        tarefa: Tarefa,
+        motor: MotorDeTarefa,
+        feitos: Sequence[ResultadoDeFerramenta],
+        aviso: NotificacaoDoLimite,
+    ) -> DecisaoNoLimite | None:
+        if not isinstance(motor, MotorQueDecide):
+            return None
+        try:
+            decisao = motor.decidir_no_limite(tarefa, aviso, feitos, tarefa.cancelada.is_set)
+        except Exception:  # o motor caiu: a tarefa acaba com o estado no card, sem frase
+            return None
+        if decisao is None or decisao.acao in aviso.opcoes:
+            return decisao
+        # Fora das opções (continuar depois da vez dele): pergunta, se escreveu algo; senão encerra.
+        if decisao.texto and "perguntar" in aviso.opcoes:
+            return replace(decisao, acao="perguntar")
+        return replace(decisao, acao="encerrar")
+
+    @staticmethod
+    def _retomar(motor: MotorDeTarefa, motivo: MotivoDoLimite) -> None:
+        if isinstance(motor, MotorQueDecide):
+            try:
+                motor.retomar(motivo)
+            except Exception:
+                return
+
+    def _trilhar_o_limite(
+        self, aviso: NotificacaoDoLimite, decisao: DecisaoNoLimite | None
+    ) -> None:
+        if self.executor.trilha is not None:
+            self.executor.trilha.evento(
+                "tarefa.limite",
+                motivo=str(aviso.motivo),
+                decisao=decisao.acao if decisao is not None else "motor_caiu",
+                passos=aviso.passos_dados,
+                respondido=bool(aviso.resposta_do_dono),
+            )
+
+    def _encerrar_no_limite(self, tarefa: Tarefa, aviso: NotificacaoDoLimite, texto: str) -> None:
+        """A tarefa acaba no limite. O que o dono ouve é o que o **motor** escreveu; sem texto (o
+        motor caiu), a resposta fica vazia e o fim vai ao Jarvis como evento, com o estado. O
+        objetivo ficou sem cumprir: o estado é `falhou`."""
+        tarefa.resumo, tarefa.resposta = texto or aviso.em_poucas_palavras(), texto
+        self._terminar(
+            tarefa, EstadoDaTarefa.FALHOU, motivo=f"limite: {aviso.em_poucas_palavras()}"
+        )
 
     def _perguntar_no_teto(self, tarefa: Tarefa, pergunta: Confirmacao) -> RespostaAoTeto:
         if tarefa.no_teto is not None:
@@ -619,29 +792,6 @@ class GestorDeTarefas:
         finally:
             self.esperando_o_dono(tarefa, False)
         return RespostaAoTeto.MAIS_UM_BLOCO if sim else RespostaAoTeto.PARAR
-
-    def _parar_no_teto(
-        self,
-        tarefa: Tarefa,
-        motor: MotorDeTarefa,
-        feitos: Sequence[ResultadoDeFerramenta],
-        *,
-        abertura: str = "Parei sem terminar.",
-    ) -> None:
-        """O dono não mandou seguir: a tarefa acaba dizendo o que fez. Não é erro dela, mas o
-        objetivo ficou sem cumprir: o estado é `falhou`, e o resumo é a resposta."""
-        contado = ""
-        if isinstance(motor, MotorQueResume):
-            try:
-                contado = motor.resumir_no_teto(tarefa, feitos, tarefa.cancelada.is_set)
-            except Exception:  # o motor caiu: o resumo do código ainda diz o que foi feito
-                contado = ""
-        if tarefa.cancelada.is_set():
-            return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
-        todos = (*tarefa.feitos_antes, *feitos)
-        frase = f"{abertura} {contado}" if contado else _resumo_do_codigo(todos, abertura)
-        tarefa.resumo, tarefa.resposta = frase, frase
-        self._terminar(tarefa, EstadoDaTarefa.FALHOU, motivo=frase)
 
     def _confirmar_da(self, tarefa: Tarefa) -> Callable[[Confirmacao], bool]:
         def perguntar(pergunta: Confirmacao) -> bool:
@@ -673,47 +823,27 @@ class GestorDeTarefas:
             return
 
 
-def _pergunta_do_teto(tarefa: Tarefa, numero: int, bloco: int, *, por_tempo: bool) -> Confirmacao:
-    """A pergunta do teto, escrita pelo código. A frase falada acaba na razão, e não nas opções: o
-    que volta pelo microfone no fim da fala dele não pode soar como a resposta (ADR-0048). E a razão
-    não diz «não»: fala que só repete a pergunta é eco, e o «não» do dono seria ignorado."""
+def _pergunta_do_limite(
+    tarefa: Tarefa, texto: str, bloco: int, aviso: NotificacaoDoLimite
+) -> Confirmacao:
+    """A pergunta que o **motor** escreveu no limite (ADR-0070), como pendência do teto (ADR-0059):
+    a fala é a dele; a janela mostra o estado em números; o «sim» dá um bloco."""
     from jarvis.executor.ferramentas import Confirmacao
 
     descricao = tarefa.descricao if len(tarefa.descricao) <= 60 else f"{tarefa.descricao[:60]}…"
-    feitos = _passos_em_frase(numero)
-    razao = (
-        f"o tempo acabou em «{descricao}», com {feitos}, e ainda falta"
-        if por_tempo
-        else f"já dei {feitos} em «{descricao}» e ainda falta"
-    )
     return Confirmacao(
         id=f"{tarefa.id}-teto-{uuid7()[-8:]}",
         tool_id=TOOL_DO_TETO,
         titulo="Continuar a tarefa",
         detalhe=(
-            f"«{descricao}» ({feitos}, sem terminar): «sim» dá mais {bloco} passos, e dizer "
-            "«até terminar» vai até o fim"
+            f"«{descricao}» ({aviso.em_poucas_palavras()}): «sim» dá mais {bloco} passos, e "
+            "dizer «até terminar» vai até o fim"
         ),
-        motivo="a tarefa chegou ao teto sem terminar",
+        motivo="a tarefa chegou a um limite e o Jarvis quer saber se segue",
         prazo_s=PRAZO_DA_PERGUNTA_DO_TETO_S,
         causa="teto_da_tarefa",
-        falado=f"continuar por mais {bloco} passos ou até terminar",
-        razao_falada=razao,
+        fala=texto,
         continuar_por=bloco,
-    )
-
-
-def _passos_em_frase(numero: int) -> str:
-    return "1 passo" if numero == 1 else f"{numero} passos"
-
-
-def _resumo_do_codigo(
-    feitos: Sequence[ResultadoDeFerramenta], abertura: str = "Parei sem terminar."
-) -> str:
-    """O resumo sem o motor: quantos passos rodaram e quantos deram certo. Nunca cita ferramenta."""
-    certos = sum(1 for r in feitos if r.status == "ok")
-    return (
-        f"{abertura.rstrip('.')}, depois de {_passos_em_frase(len(feitos))}; {certos} deram certo."
     )
 
 

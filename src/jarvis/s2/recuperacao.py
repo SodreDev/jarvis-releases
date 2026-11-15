@@ -215,6 +215,12 @@ class Recuperacao:
     def ultima(self) -> Tentativa | None:
         return self.historico[-1] if self.historico and self.seguidas else None
 
+    def estender(self) -> None:
+        """O motor decidiu seguir depois do limite (ADR-0070), ou o dono disse sim: mais uma rodada
+        inteira de tentativas, sem esquecer o que já falhou (a recusa da ação repetida continua)."""
+        self.seguidas = 0
+        self.falhas_por_tarefa = self.total + FALHAS_POR_TAREFA
+
     def esgotou(self) -> bool:
         return self.seguidas >= self.tentativas_por_passo or self.total >= self.falhas_por_tarefa
 

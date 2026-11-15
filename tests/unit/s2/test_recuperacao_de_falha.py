@@ -35,6 +35,7 @@ from jarvis.s2.motor import Contexto, Delta, Fim, Modo, MotivoDoFim, PedidoDeToo
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.s2.recuperacao import Recuperacao, Tentativa, assinatura, codigo_da_falha
 from jarvis.tarefas.gestor import EstadoDaTarefa, GestorDeTarefas, Tarefa
+from jarvis.tarefas.limite import MARCA_DA_NOTIFICACAO
 from jarvis.voz.interface import Cancelado, Onde
 
 URL = "https://www.exemplo.org/inicio"
@@ -279,7 +280,12 @@ def test_pagina_vazia_e_falha_e_o_motor_rola_e_le_de_novo(
 
 
 # --- prazo em todas: esgota e para com honestidade -------------------------------------------
+DESISTI = "Não consegui ler a página: ela não respondeu, nem rolando."
+
+
 def _roteiro_teimoso(contexto: Contexto) -> Sequence[Parte]:
+    if MARCA_DA_NOTIFICACAO in contexto.sistema:  # o orçamento acabou: o motor decide (ADR-0070)
+        return [json.dumps({"decisao": "encerrar", "texto": DESISTI})]
     vistos = _resultados(contexto)
     if not vistos:
         return ["Vou abrir. ", PedidoDeTool("browser.navigate", {"url": OUTRA})]
@@ -296,16 +302,17 @@ def test_quando_tudo_falha_a_tarefa_para_e_diz_o_que_tentou_sem_fingir(
 ) -> None:
     extensao = ExtensaoQueFalha({"page.read": ["calada"] * 6, "page.scroll": ["calada"] * 6})
 
-    tarefa, tela, _motor = _rodar(tmp_path, auditoria, extensao, _roteiro_teimoso)
+    tarefa, tela, motor = _rodar(tmp_path, auditoria, extensao, _roteiro_teimoso)
 
     assert tarefa.estado is EstadoDaTarefa.FALHOU
-    assert tarefa.resposta.startswith("Não consegui."), tarefa.resposta
-    assert "ler a página" in tarefa.resposta and "rolar a página" in tarefa.resposta
-    for proibido in ("browser.", "abri", "Pronto", "{"):
-        assert proibido not in tarefa.resposta, proibido
+    # O orçamento acabou: o motor recebe o que foi tentado, com o erro real, e escreve o fim.
+    (aviso,) = [c.sistema for c in motor.pedidos if MARCA_DA_NOTIFICACAO in c.sistema]
+    assert "orçamento de falhas" in aviso
+    assert "browser.read" in aviso and "browser.scroll" in aviso
+    assert tarefa.resposta == DESISTI
     # o orçamento: no máximo 4 falhas seguidas; a idêntica passageira rodou só uma vez a mais
     assert extensao.metodos.count("page.read") == 2
-    assert any("desisti" in linha for linha in tela), tela
+    assert any("o orçamento acabou" in linha for linha in tela), tela
 
 
 # --- o motor que cai numa rodada --------------------------------------------------------------

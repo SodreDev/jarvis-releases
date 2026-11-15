@@ -2675,8 +2675,8 @@ class Aplicativo:
         # do dono não pode virar eco.
         assert cerebro is not None
         dita = cerebro.falas_de_aviso.get(f"{PREFIXO_DA_PERGUNTA}{pendencia.id}", "")
-        sem_respostas = " ".join(p for p in dita.split() if resposta_literal(p) is None)
-        return f"{pendencia.pergunta.pergunta_falada} {sem_respostas}".strip()
+        eco = f"{pendencia.pergunta.pergunta_falada} {dita}"
+        return " ".join(p for p in eco.split() if resposta_literal(p) is None)
 
     def _bloco_da_pergunta_ouvida(self) -> int:
         """O bloco da pergunta do teto de uma tarefa que já tocou inteira (ADR-0059); 0 = não há."""

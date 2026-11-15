@@ -17,6 +17,7 @@ import pytest
 
 from jarvis.executor.ferramentas import ResultadoDeFerramenta
 from jarvis.executor.janelas import JanelaDoSistema, PistaDoApp
+from jarvis.s2.motor import PedidoDeTool
 from jarvis.tarefas.foco import MotorDeFoco
 from jarvis.tarefas.gestor import ErroDeTarefa, FimDaTarefa, Tarefa
 
@@ -128,7 +129,7 @@ def _rodar(
         passo = motor.proximo(tarefa, feitos, cancelado)
         if isinstance(passo, FimDaTarefa):
             return passo
-        assert passo.tool_id == "window.focus_app"
+        assert isinstance(passo, PedidoDeTool) and passo.tool_id == "window.focus_app"
         if status == "ok":
             tela.ativar(str(passo.args["janela_id"]))
         feitos.append(ResultadoDeFerramenta("window.focus_app", status, motivo="não deixou"))

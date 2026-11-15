@@ -41,7 +41,7 @@ from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 from jarvis.s2.pendencias import RegistroDePendencias
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
-from jarvis.s2.tarefa_do_pedido import NOTA_DE_CONFERIR, SEM_CONFERIR
+from jarvis.s2.tarefa_do_pedido import NOTA_DE_CONFERIR, NOTA_DO_FIM
 from jarvis.tarefas.gestor import EstadoDaTarefa, GestorDeTarefas, Tarefa
 
 BUSCA = "https://www.youtube.com/results?search_query=canal+x"
@@ -341,8 +341,14 @@ def test_a_conversa_recebe_outro_pedido_enquanto_a_tarefa_trabalha(
 
 
 # --- a falha volta como resultado útil ------------------------------------------------------
+NAO_CONFERI = "Abri a busca, mas não conferi o vídeo."
+NAO_ABRIU = "Não deu: o navegador não abriu."
+
+
 def _roteiro_de_quem_mente(contexto: Contexto) -> Sequence[Parte]:
     feitas = len(_feitas(contexto))
+    if NOTA_DO_FIM in contexto.sistema:  # o fim que o código não escreve (ADR-0070)
+        return [NAO_ABRIU if "NÃO foi cumprido" in contexto.sistema else NAO_CONFERI]
     if feitas == 0:
         return ["Vou abrir. ", PedidoDeTool("browser.navigate", {"url": BUSCA})]
     return ["Pronto, abri o vídeo."]  # afirma sem ter lido nada
@@ -359,9 +365,8 @@ def test_navegador_fechado_o_jarvis_abre_ele_mesmo_e_nao_finge_conferir(
     executor.abrir_site = abertos.append
 
     publicados: list[dict[str, Any]] = []
-    resposta = _cerebro(executor, MotorRoteirizado(resposta=_roteiro_de_quem_mente)).responder(
-        PEDIDO, epoch=0, publicar=publicados.append
-    )
+    motor = MotorRoteirizado(resposta=_roteiro_de_quem_mente)
+    resposta = _cerebro(executor, motor).responder(PEDIDO, epoch=0, publicar=publicados.append)
     tarefa = _tarefa(executor, resposta.tarefa_id)
 
     assert [(r.tool_id, r.status) for r in resposta.ferramentas] == [
@@ -371,7 +376,10 @@ def test_navegador_fechado_o_jarvis_abre_ele_mesmo_e_nao_finge_conferir(
     assert abertos == [BUSCA], "o navegador do dono abriu, já na busca"
     assert _falado(publicados) == "Vou abrir.", "nada de mandar o dono abrir o navegador"
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
-    assert tarefa.resposta.endswith(SEM_CONFERIR), "não leu a página: não afirma"
+    # Não leu a página: o motor recebe o fato como evento e diz com as palavras dele (ADR-0070).
+    fim = next(c for c in motor.pedidos if NOTA_DO_FIM in c.sistema)
+    assert "não foi conferido" in fim.sistema
+    assert tarefa.resposta == NAO_CONFERI
 
 
 def test_sem_como_abrir_o_navegador_a_falha_e_frase_de_gente_sem_fingir_sucesso(
@@ -390,7 +398,7 @@ def test_sem_como_abrir_o_navegador_a_falha_e_frase_de_gente_sem_fingir_sucesso(
 
     assert [r.status for r in resposta.ferramentas] == ["erro", "erro"]
     assert tarefa.estado is EstadoDaTarefa.FALHOU
-    assert tarefa.resposta.startswith("Não consegui:") and "Pronto" not in tarefa.resposta
+    assert tarefa.resposta == NAO_ABRIU and "Pronto" not in tarefa.resposta
     _sem_protocolo(tarefa.resposta)
 
 
@@ -459,6 +467,8 @@ def test_a_pergunta_da_tarefa_espera_o_sim_falado_depois_de_tocar(
             return [PedidoDeTool("files.read_text", {"path": "~/Documentos/notas.txt"})]
         if feitas == 1:
             return [PedidoDeTool("sites.open", {"url": "https://exemplo.com.br"})]
+        if NOTA_DO_FIM in contexto.sistema and "não foi conferido" in contexto.sistema:
+            return ["Abri o exemplo.com.br, mas não conferi a página."]
         return ["Abri o exemplo.com.br."]
 
     relogio = _Relogio()
@@ -498,8 +508,8 @@ def test_a_pergunta_da_tarefa_espera_o_sim_falado_depois_de_tocar(
     assert _falado(publicados) == "Certo."
     assert abertos == ["https://exemplo.com.br"]
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
-    # O motor foi cobrado a conferir e não leu: a resposta diz isso, em vez de afirmar sozinha.
-    assert tarefa.resposta == "Abri o exemplo.com.br. Não consegui conferir se ficou certo."
+    # O motor foi cobrado a conferir e não leu: o fato volta a ele, que diz isso (ADR-0070).
+    assert tarefa.resposta == "Abri o exemplo.com.br, mas não conferi a página."
 
 
 def test_a_voz_da_pergunta_nao_tem_id_de_ferramenta_nem_json(

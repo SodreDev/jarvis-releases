@@ -265,6 +265,9 @@ class Confirmacao:
     continuar_por: int = 0
     """A pergunta do teto de uma tarefa (ADR-0059): o tamanho do bloco que o «sim» dá. Só ela aceita
     «até terminar» e «mais 50» como resposta. 0 = a pergunta de uma ação."""
+    fala: str = ""
+    """A pergunta que o **motor** escreveu (o limite da tarefa, ADR-0070): a voz diz ela, inteira,
+    em vez da montada pelo código. Vazio = a montada."""
 
     @property
     def para_ouvir(self) -> str:
@@ -275,6 +278,8 @@ class Confirmacao:
         """A pergunta que a voz faz: a ação primeiro e, quando o alvo pede o sim por um motivo, o
         motivo depois. Sem "sim" na frase (ADR-0048): ela passa pelo alto-falante e volta pelo
         microfone, e o eco de "preciso do seu sim" soava como resposta."""
+        if self.fala:
+            return self.fala
         razao = self.razao_falada.strip().rstrip(".")
         motivo = f" {razao[:1].upper()}{razao[1:]}." if razao else ""
         return f"Posso {self.para_ouvir}?{motivo}"

@@ -24,6 +24,7 @@ from jarvis.s2.motor import (
 )
 from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ErroDeTarefa, FimDaTarefa, Passo, Tarefa
+from jarvis.tarefas.limite import DecisaoNoLimite, MotivoDoLimite, NotificacaoDoLimite, ler_decisao
 from jarvis.voz.interface import Onde
 
 if TYPE_CHECKING:
@@ -103,3 +104,36 @@ class MotorDeAgente:
             return pedido
         resumo = " ".join("".join(texto).split())
         return FimDaTarefa(resumo or "terminei", de_terceiros=True)
+
+    def decidir_no_limite(
+        self,
+        tarefa: Tarefa,
+        aviso: NotificacaoDoLimite,
+        feitos: Sequence[ResultadoDeFerramenta],
+        cancelado: Callable[[], bool],
+    ) -> DecisaoNoLimite | None:
+        """No limite (ADR-0070): o subagente recebe o estado, sem ferramentas, e decide."""
+        contexto = Contexto(
+            sistema=f"{SISTEMA_DA_TAREFA}\n\n{aviso.para_o_motor()}",
+            mensagens=(
+                Mensagem("dono", f"Objetivo: {tarefa.descricao}."),
+                *(Mensagem("ferramenta", t) for t in textos_no_contexto(feitos)[0]),
+            ),
+        )
+        texto: list[str] = []
+        deltas = self.motor.gerar(contexto, Modo.RAPIDO, cancelado)
+        try:
+            for delta in deltas:
+                if isinstance(delta, Texto):
+                    texto.append(delta.texto)
+                elif isinstance(delta, Fim):
+                    if delta.motivo in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO):
+                        return None
+                    break
+        finally:
+            deltas.close()
+        return ler_decisao("".join(texto), aviso.opcoes, aviso.bloco)
+
+    def retomar(self, motivo: MotivoDoLimite) -> None:
+        """Nada a renovar: o agente não tem orçamento próprio de falhas."""
+        del motivo

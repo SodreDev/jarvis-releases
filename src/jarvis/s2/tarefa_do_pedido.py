@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Final
 
 from jarvis.imagem import Imagem
@@ -57,6 +57,13 @@ from jarvis.s2.roteiro_do_navegador import (
 from jarvis.s2.verdade import FALTA_ENVIAR, NOTA_DE_SEGUIR, frase_do_que_falta
 from jarvis.s2.verdade import conferir as conferir_relato
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ErroDeTarefa, FimDaTarefa, Passo, Tarefa
+from jarvis.tarefas.limite import (
+    DecisaoNoLimite,
+    LimiteDaTarefa,
+    MotivoDoLimite,
+    NotificacaoDoLimite,
+    ler_decisao,
+)
 from jarvis.voz.interface import Onde
 
 if TYPE_CHECKING:
@@ -77,16 +84,15 @@ NOTA_DE_CONFERIR: Final = (
     "página, o estado) com uma ferramenta de leitura e só diga que ficou pronto se a leitura "
     "confirmar."
 )
-NOTA_DO_TETO: Final = (
-    "A tarefa parou aqui, sem terminar: não peça mais nenhuma ferramenta. Diga ao dono, em uma ou "
-    "duas frases, sem markdown, o que já ficou feito e o que faltou, só com o que as ferramentas "
-    "confirmaram."
+NOTA_DO_FIM: Final = (
+    "A tarefa termina aqui: não peça ferramenta. Diga ao dono, em uma ou duas frases, sem "
+    "markdown e sem citar ferramenta, o que aconteceu, com as suas palavras e só com o que as "
+    "ferramentas confirmaram. O que aconteceu (evento do sistema, não é o dono falando):"
 )
+"""A rodada do fim que o código não escreve (ADR-0070): o motor recebe o evento e fala."""
 FERRAMENTAS_DE_LEITURA: Final = frozenset(
     {"browser.read", "browser.tabs", "browser.tela", "browser.inspecionar", "web.ler"}
 )
-SEM_CONFERIR: Final = "Não consegui conferir se ficou certo."
-NAO_CONFIRMADO: Final = "Não fiz, porque você não confirmou."
 SEM_JEITO: Final = "não achei um jeito de fazer isso com o que está ligado agora"
 CAUSAS_DE_DENTRO: Final = frozenset(
     {"fora_do_contrato", "ferramenta_desligada", "argumento_recusado", "metodo_de_fora"}
@@ -100,14 +106,16 @@ tentar de novo a rodada que caiu): o teto de custo de um passo."""
 PAUSA_DEPOIS_DO_ERRO_S: Final = 0.5
 """Antes de tentar de novo a rodada do motor que caiu (a CLI que saiu com código, o serviço que
 respondeu 5xx): um respiro curto, cancelável."""
-FRASES_SEM_SAIDA: Final[Mapping[str, str]] = {
+EVENTOS_SEM_SAIDA: Final[Mapping[str, str]] = {
     "extensao_desatualizada": (
-        "A extensão do Jarvis no navegador é de uma versão anterior: abra a página de extensões, "
-        "clique em Recarregar no card do Jarvis e me peça de novo."
+        "a extensão do Jarvis no navegador é de uma versão anterior à do Jarvis; o dono precisa "
+        "abrir a página de extensões e clicar em Recarregar no card do Jarvis antes de tentar de "
+        "novo"
     ),
-    "parado_pelo_dono": "Parei, como você mandou.",
+    "parado_pelo_dono": "o dono mandou parar",
 }
-"""As falhas sem outro caminho agora (`recuperacao.SEM_SAIDA`): a frase é do código."""
+"""As falhas sem outro caminho agora (`recuperacao.SEM_SAIDA`), como **dado** para o motor dizer
+com as palavras dele (ADR-0070)."""
 _FRASE: Final = r"(?<=[.!?…])\s+"
 _CODIGO_ENTRE_PARENTESES: Final = r"\s*\([a-z][a-z_]{2,40}\)"
 
@@ -180,10 +188,12 @@ class MotorDoObjetivo:
         recuperacao.observar(feitos, self._propostos)
         sem_saida = recuperacao.sem_saida()
         if sem_saida is not None:
-            frase = FRASES_SEM_SAIDA.get(sem_saida.codigo, "Não deu para seguir.")
-            return FimDaTarefa(sem_saida.em_frase(), resposta=frase, falhou=True)
+            evento = EVENTOS_SEM_SAIDA.get(sem_saida.codigo, sem_saida.em_frase())
+            return self._explicar(
+                tarefa, feitos, f"não há outro caminho agora: {evento}.", cancelado, falhou=True
+            )
         if recuperacao.esgotou():
-            return self._desistir(tarefa, feitos)
+            return self._no_limite_de_falhas()
         if recuperacao.ultima() is not None:
             self._mostrar(recuperacao.linha_na_tela())
         # O aviso da guarda de laço (ADR-0062) vai junto da nota de replanejar, uma vez.
@@ -236,7 +246,7 @@ class MotorDoObjetivo:
                     )
                 )
                 if recuperacao.esgotou():
-                    return self._desistir(tarefa, feitos)
+                    return self._no_limite_de_falhas()
                 self._mostrar(recuperacao.linha_na_tela())
                 continue
             ids = self.ids | set(disponiveis)
@@ -252,23 +262,75 @@ class MotorDoObjetivo:
             if objetivo is not None and objetivo.falta_conferir and pode_ler and not cobrar:
                 self.cobrou_conferencia = True  # uma vez: o motor lê, ou a resposta diz que não
                 continue
-            return self._fim(tarefa, feitos, texto, ids)
-        return self._desistir(tarefa, feitos)
+            return self._fim(tarefa, feitos, texto, ids, cancelado)
+        # As rodadas deste passo acabaram sem um passo válido: o motor recebe o estado e decide.
+        return LimiteDaTarefa(
+            MotivoDoLimite.RODADAS,
+            f"{RODADAS_POR_PASSO} rodadas sem uma proposta que pudesse rodar",
+        )
 
-    def resumir_no_teto(
-        self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
-    ) -> str:
-        """O que foi feito até o teto (ADR-0059), numa rodada sem ferramentas. Vazio = o motor não
-        contou (caiu, ou quis outra ferramenta): quem resume é o código."""
+    def decidir_no_limite(
+        self,
+        tarefa: Tarefa,
+        aviso: NotificacaoDoLimite,
+        feitos: Sequence[ResultadoDeFerramenta],
+        cancelado: Callable[[], bool],
+    ) -> DecisaoNoLimite | None:
+        """No limite (ADR-0070): uma rodada sem ferramentas em que o motor pensa com o estado real e
+        decide continuar, perguntar ao dono ou encerrar. `None` = o motor caiu."""
         try:
             pedido, texto = self._rodada(
-                tarefa, feitos, (), cancelado, conferir=False, recuperar=NOTA_DO_TETO
+                tarefa, feitos, (), cancelado, conferir=False, recuperar=aviso.para_o_motor()
             )
         except MotorFalhou:
-            return ""
-        if pedido is not None:
-            return ""
-        return sem_etapas_internas(texto, self.ids | {r.tool_id for r in feitos})
+            return None
+        if pedido is not None and "continuar" in aviso.opcoes:
+            # Pediu ferramenta em vez de responder: é querer seguir, por um bloco.
+            return DecisaoNoLimite("continuar", aviso.bloco)
+        decisao = ler_decisao(texto if pedido is None else "", aviso.opcoes, aviso.bloco)
+        todos = (*self.feitos_antes, *feitos)
+        ids = self.ids | {r.tool_id for r in todos}
+        fala = sem_etapas_internas(decisao.texto, ids)
+        if decisao.acao == "encerrar":
+            fala = conferir_relato(fala, todos).texto
+        self._mostrar(f"no limite ({aviso.motivo}), decidi: {decisao.acao}")
+        return replace(decisao, texto=fala)
+
+    def retomar(self, motivo: MotivoDoLimite) -> None:
+        """A tarefa segue depois do limite: o orçamento de falhas ganha outra rodada inteira."""
+        if motivo is MotivoDoLimite.FALHAS:
+            self.recuperacao.estender()
+
+    def _no_limite_de_falhas(self) -> LimiteDaTarefa:
+        """O orçamento de falhas acabou: não é o fim, é uma notificação (ADR-0070)."""
+        detalhe = explicacao_do_que_tentou(self.recuperacao)
+        self._mostrar(f"{self.recuperacao.total} falha(s): o orçamento acabou; decido o que fazer")
+        return LimiteDaTarefa(MotivoDoLimite.FALHAS, detalhe)
+
+    def _explicar(
+        self,
+        tarefa: Tarefa,
+        feitos: Sequence[ResultadoDeFerramenta],
+        evento: str,
+        cancelado: Callable[[], bool],
+        *,
+        falhou: bool,
+    ) -> FimDaTarefa:
+        """O fim que o código não escreve (ADR-0070): o motor recebe o que aconteceu como evento,
+        numa rodada sem ferramentas, e diz ao dono com as palavras dele. O relato verdadeiro corta o
+        que nada confirmou. Sem texto (o motor caiu), a resposta fica vazia e o fim vai ao Jarvis
+        do turno como evento, com o estado."""
+        todos = (*self.feitos_antes, *feitos)
+        ids = self.ids | {r.tool_id for r in todos}
+        try:
+            pedido, texto = self._rodada(
+                tarefa, feitos, (), cancelado, conferir=False, recuperar=f"{NOTA_DO_FIM} {evento}"
+            )
+        except MotorFalhou:
+            pedido, texto = None, ""
+        fala = "" if pedido is not None else sem_etapas_internas(texto, ids)
+        fala = conferir_relato(fala, todos).texto
+        return FimDaTarefa(fala or evento, resposta=fala, falhou=falhou)
 
     def _copiou_a_mensagem(self, pedido: PedidoDeTool, objetivo: Objetivo | None) -> bool:
         if self._cobrou_redacao or objetivo is None:
@@ -302,27 +364,19 @@ class MotorDoObjetivo:
         if linha and self.na_tela is not None:
             self.na_tela(linha)
 
-    def _desistir(self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta]) -> FimDaTarefa:
-        """O orçamento acabou: a resposta é do código — o que foi tentado, nunca "abri"."""
-        todos = (*self.feitos_antes, *feitos)
-        ids = self.ids | {r.tool_id for r in todos}
-        frase = explicacao_para_ouvir(self.recuperacao, ids)
-        resumo = f"desisti depois de {self.recuperacao.total} falha(s)"
-        self._mostrar(resumo)
-        return FimDaTarefa(resumo, resposta=frase, falhou=True)
-
     def _sem_motor(
         self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], erro: MotorFalhou
     ) -> FimDaTarefa:
-        """O motor caiu de novo depois das tentativas. Se o objetivo já está feito e conferido, o
-        código diz o resultado (o dono não perde o que deu certo por uma rodada que caiu); senão a
-        tarefa acaba com o motivo do motor."""
+        """O motor caiu de novo depois das tentativas: ninguém aqui escreve a fala. O fim vai ao
+        Jarvis do turno como evento, com o estado (conferido ou não) e o motivo do motor."""
         objetivo = tarefa.contaminacao.objetivo
         conferido = objetivo is not None and objetivo.efeito_feito and not objetivo.falta_conferir
         if conferido and any(r.status == "ok" for r in feitos):
             titulo = _titulo_lido(feitos)
-            frase = f"Pronto: {titulo} está aberto." if titulo else "Pronto, está feito."
-            return FimDaTarefa(frase, resposta=frase)
+            resumo = "o objetivo foi feito e conferido" + (
+                f"; a página lida: {titulo}" if titulo else ""
+            )
+            return FimDaTarefa(f"{resumo}; o motor da tarefa caiu antes de responder")
         raise ErroDeTarefa(
             "o motor da conversa falhou "
             f"{self.recuperacao.motor_falhou} vez(es) seguidas no próximo passo: {erro.detalhe}"
@@ -438,36 +492,45 @@ class MotorDoObjetivo:
         feitos: Sequence[ResultadoDeFerramenta],
         texto: str,
         ids: frozenset[str],
+        cancelado: Callable[[], bool],
     ) -> FimDaTarefa:
+        """O motor respondeu sem ferramenta. Quando a resposta dele não pode ir como está (nada deu
+        certo, afirmou sem confirmar, veio vazia, faltou conferir), o código não a troca por uma
+        frase dele: o motor recebe o fato como evento e escreve de novo (ADR-0070)."""
         todos = (*self.feitos_antes, *feitos)
         objetivo = tarefa.contaminacao.objetivo
         nada_feito = (
             objetivo is not None and objetivo.efeitos_tentados and not objetivo.efeito_feito
         )
         if nada_feito or not any(r.status == "ok" for r in todos):
-            # Nada deu certo — nenhum passo, ou nenhum dos que mudam algo (ler a página não é abrir
-            # o vídeo): quem diz é o código, com o motivo do último erro, nunca "abri".
             ultimo = next((r for r in reversed(todos) if r.status != "ok"), todos[-1])
             if ultimo.causa == "dono_nao_confirmou" or ultimo.motivo == "o dono disse não":
-                return FimDaTarefa(ultimo.motivo, resposta=NAO_CONFIRMADO, falhou=True)
-            motivo = motivo_para_ouvir(ultimo, ids)
-            if len(self.recuperacao.historico) > 1:
-                # Mais de um caminho tentado: o dono ouve o que foi tentado, não só o último erro.
-                return FimDaTarefa(
-                    motivo, resposta=explicacao_para_ouvir(self.recuperacao, ids), falhou=True
-                )
-            return FimDaTarefa(motivo, resposta=f"Não consegui: {motivo}.", falhou=True)
+                return FimDaTarefa(ultimo.motivo, resposta="", falhou=True, aviso="")
+            tentou = explicacao_do_que_tentou(self.recuperacao) or motivo_para_ouvir(ultimo, ids)
+            evento = (
+                "nenhum passo que muda algo deu certo, então o pedido NÃO foi cumprido; "
+                f"o que foi tentado e o erro real: {tentou}."
+            )
+            return self._explicar(tarefa, feitos, evento, cancelado, falhou=True)
         relato = conferir_relato(sem_etapas_internas(texto, ids), todos)
         if relato.cortadas:
-            # O relato verdadeiro (ADR-0066): o que nada confirmou não é dito; o código diz o que
-            # falta. Envio não conferido é objetivo não cumprido.
             falta = frase_do_que_falta(relato)
-            resposta = f"{relato.texto} {falta}".strip()
-            return FimDaTarefa(resposta, resposta=resposta, falhou=falta == FALTA_ENVIAR)
-        resposta = relato.texto or "Terminei o que você pediu."
+            evento = (
+                "estas afirmações suas não foram confirmadas por nenhuma ferramenta e não podem "
+                f"ser ditas: «{' '.join(relato.cortadas)}». O que está confirmado: "
+                f"«{relato.texto or 'nada'}». Situação: {falta}"
+            )
+            return self._explicar(tarefa, feitos, evento, cancelado, falhou=falta == FALTA_ENVIAR)
+        if not relato.texto:
+            evento = "a sua resposta final veio vazia; diga ao dono o resultado do pedido."
+            return self._explicar(tarefa, feitos, evento, cancelado, falhou=False)
         if objetivo is not None and objetivo.falta_conferir:
-            resposta = f"{resposta} {SEM_CONFERIR}"
-        return FimDaTarefa(resposta, resposta=resposta)
+            evento = (
+                f"você ia dizer «{relato.texto}», mas o resultado não foi conferido por uma "
+                "leitura: diga o que foi feito e que não deu para conferir."
+            )
+            return self._explicar(tarefa, feitos, evento, cancelado, falhou=False)
+        return FimDaTarefa(relato.texto, resposta=relato.texto)
 
 
 class MotorFalhou(ErroDeTarefa):
@@ -478,47 +541,18 @@ class MotorFalhou(ErroDeTarefa):
         self.detalhe = detalhe
 
 
-NOMES_DE_GENTE: Final[Mapping[str, str]] = {
-    "browser.navigate": "abrir a página na aba",
-    "browser.tabs": "ver as abas",
-    "browser.click": "clicar no elemento",
-    "browser.type": "digitar no campo",
-    "browser.acionar": "acionar o elemento",
-    "browser.read": "ler a página",
-    "browser.inspecionar": "inspecionar a página",
-    "browser.gesto": "o clique físico",
-    "browser.avaliar": "o script na página",
-    "browser.scroll": "rolar a página",
-    "browser.launch": "abrir o navegador",
-    "sites.open": "abrir o site direto",
-    "web.buscar": "procurar na web",
-    "web.ler": "ler o endereço",
-    "apps.launch": "abrir o aplicativo",
-    "window.focus_app": "trazer a janela para a frente",
-    "files.search_in_roots": "procurar o arquivo",
-    "files.read_text": "ler o arquivo",
-}
-"""Como cada ferramenta aparece na frase da desistência: a voz não cita id de ferramenta."""
-
-
-def explicacao_para_ouvir(recuperacao: Recuperacao, ids: frozenset[str]) -> str:
-    """O que foi tentado e por que não deu, em frase de gente: no máximo três caminhos."""
+def explicacao_do_que_tentou(recuperacao: Recuperacao) -> str:
+    """O que foi tentado e o erro real de cada caminho, como dado para o motor (ADR-0070): no
+    máximo cinco, sem a ação recusada por repetida. Vazio = nada falhou."""
     partes: list[str] = []
     for tentativa in recuperacao.historico:
         if tentativa.codigo == "repetida":
             continue
-        nome = NOMES_DE_GENTE.get(tentativa.tool_id, "outro caminho")
-        motivo = re.sub(_CODIGO_ENTRE_PARENTESES, "", sem_protocolo(tentativa.motivo)).strip()
-        motivo = motivo.rstrip(".!?…").strip()
-        if not motivo or _cita_ferramenta(motivo, ids) or "{" in motivo:
-            motivo = ""
-        parte = f"{nome} ({motivo})" if motivo else nome
+        motivo = " ".join(sem_protocolo(tentativa.motivo).split())[:160]
+        parte = f"{tentativa.tool_id} [{tentativa.codigo}]" + (f": {motivo}" if motivo else "")
         if parte not in partes:
             partes.append(parte)
-    if not partes:
-        return f"Não consegui: {SEM_JEITO}."
-    tentei = "; ".join(partes[-3:])
-    return f"Não consegui. Tentei {tentei} — e nenhum caminho deu certo."
+    return "; ".join(partes[-5:])
 
 
 def _titulo_lido(feitos: Sequence[ResultadoDeFerramenta]) -> str:
@@ -540,10 +574,14 @@ def _esperar(segundos: float, cancelado: Callable[[], bool]) -> None:
 def _recusado(resultado: ResultadoDeFerramenta) -> FimDaTarefa:
     """O fim da tarefa cuja pergunta o dono não confirmou. Ele disse não, clicou não ou cortou a
     pergunta com outro assunto: já ouviu (ou disse) o que importa, e o fim é calado — só o card
-    muda. O prazo que venceu sem resposta é o único "não" que ele não viu acontecer: esse é dito."""
+    muda. O prazo que venceu sem resposta é o único "não" que ele não viu acontecer: esse vai ao
+    Jarvis como evento (ADR-0070), e ele decide como dizer."""
     origem = str(resultado.dados.get("resposta_do_dono", "prazo"))
     if origem == "prazo":
-        return FimDaTarefa(resultado.motivo, resposta=NAO_CONFIRMADO, falhou=True)
+        resumo = (
+            f"a pergunta ao dono venceu sem resposta, então nada foi feito ({resultado.motivo})"
+        )
+        return FimDaTarefa(resumo, resposta="", falhou=True)
     return FimDaTarefa(resultado.motivo, resposta="", falhou=True, aviso="")
 
 
