@@ -132,6 +132,7 @@ from jarvis.s2.portao import PortaoDeAcao
 from jarvis.s2.protocolo import sem_protocolo
 from jarvis.s2.regras import Regras, na_pasta
 from jarvis.s2.regras import padrao as padrao_das_regras
+from jarvis.s2.roteiro_do_navegador import Contato as CandidatoDeContato
 from jarvis.social.memorias import ARQUIVO as ARQUIVO_DAS_MEMORIAS
 from jarvis.social.memorias import MemoriaInvalida
 from jarvis.social.memorias import bloco as bloco_das_memorias
@@ -861,6 +862,8 @@ class Aplicativo:
         self._cerebro.ao_mudar_permissao = self._mudar_permissao
         # Trocar o estilo do endpoint de voz pela fala («fala mais calmo», ADR-0068).
         self._cerebro.ao_pedir_estilo = self._pedir_estilo
+        # Os contatos das memórias fixas para o roteiro da tarefa de navegador (ADR-0066).
+        self._cerebro.contatos = self._contatos_das_memorias
         self._cerebro.ao_status = self._status_do_laco
         # O replanejamento da tarefa quando um passo falha: na tela, nunca na voz (ADR-0031).
         self._cerebro.ao_raciocinio = lambda linha: self.escrever_na_tela(f"  ↻ {linha}")
@@ -1518,6 +1521,16 @@ class Aplicativo:
                 memorias = ()
             pessoas = [m.nome for m in memorias if m.tipo in {"contato", "servico"}]
         return Reconciliador.do_contexto(termos=termos, apps=apps, pessoas=pessoas)
+
+    def _contatos_das_memorias(self) -> list[CandidatoDeContato]:
+        """Nome e nota dos contatos das memórias fixas — nunca o telefone, que é só do código."""
+        if self.vocabulario is None:
+            return []
+        try:
+            memorias = ler_as_memorias(self.vocabulario.pasta / ARQUIVO_DAS_MEMORIAS)
+        except (MemoriaInvalida, OSError):
+            return []
+        return [CandidatoDeContato(m.nome, m.texto) for m in memorias if m.tipo == "contato"]
 
     def _reconciliar(self, texto: str) -> Reconciliacao:
         """O texto com o som trocado corrigido; quando agiu, a trilha leva o antes e o depois

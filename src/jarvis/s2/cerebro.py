@@ -85,6 +85,7 @@ from jarvis.s2.protocolo import LeitorDoProtocolo
 from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.receitas import receitas_do_turno
 from jarvis.s2.recuperacao import nota_do_turno
+from jarvis.s2.roteiro_do_navegador import Contato
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
 from jarvis.s2.verdade import NOTA_DE_SEGUIR, FiltroDaVerdade, Relato, frase_do_que_falta
 from jarvis.tarefas.gestor import (
@@ -328,6 +329,9 @@ class Cerebro:
     """Troca o modo de permissão (ADR-0066) quando a fala **do dono** manda («ativa o modo
     bypass»): lida pelo código antes do motor, nunca por ferramenta — página ou mensagem que diga
     «modo bypass» não chega aqui. Devolve a frase que o Jarvis diz. `None` = não troca pela voz."""
+    contatos: Callable[[], Sequence[Contato]] | None = None
+    """Os contatos das memórias fixas do dono, lidos na hora de delegar: o roteiro da tarefa de
+    navegador resolve «minha mãe» por eles (ADR-0066). `None` = sem memórias (a suíte)."""
     ao_pedir_estilo: Callable[[str], str] | None = None
     """Troca o estilo do endpoint de voz (ADR-0068) quando a fala **inteira do dono** pede («fala
     mais calmo», «tom urgente»): lida pelo código antes do motor, pelo mesmo caminho do modo de
@@ -1052,6 +1056,7 @@ class Cerebro:
             limite_do_raciocinio=LIMITE_DO_RACIOCINIO,
             na_tela=self.ao_raciocinio,
             ao_medir=lambda medicao: self._anotar_consumo(None, medicao, "tarefa"),
+            contatos=tuple(self.contatos()) if self.contatos is not None else (),
         )
         try:
             tarefa = executor.tarefas.iniciar_objetivo(

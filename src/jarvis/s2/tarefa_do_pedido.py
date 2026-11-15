@@ -46,6 +46,7 @@ from jarvis.s2.motor import (
 from jarvis.s2.protocolo import LeitorDoProtocolo, sem_protocolo
 from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.recuperacao import Recuperacao, Tentativa, assinatura
+from jarvis.s2.roteiro_do_navegador import Contato, roteiro
 from jarvis.s2.verdade import FALTA_ENVIAR, NOTA_DE_SEGUIR, frase_do_que_falta
 from jarvis.s2.verdade import conferir as conferir_relato
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ErroDeTarefa, FimDaTarefa, Passo, Tarefa
@@ -142,6 +143,9 @@ class MotorDoObjetivo:
     """Recebe o consumo (tokens, custo, 1º token) de cada chamada ao motor (ADR-0061)."""
     _propostos: list[str] = field(default_factory=list)
     """A assinatura (ferramenta + argumentos) de cada passo proposto, na ordem dos `feitos`."""
+    contatos: tuple[Contato, ...] = ()
+    """Os contatos das memórias fixas (nome e nota, nunca telefone): o roteiro do envio resolve
+    «minha mãe» por eles (ADR-0066)."""
 
     @property
     def na_nuvem(self) -> bool:
@@ -300,6 +304,13 @@ class MotorDoObjetivo:
                 f"Critério de pronto: {dados['criterio_de_pronto']}. Fase: {dados['fase']}. "
                 f"Passos feitos: {', '.join(dados['passos_feitos']) or 'nenhum'}."
             )
+            # Os passos concretos montados pelo código (dono, 2026-11-14): o que abrir, ler,
+            # digitar e conferir — não só o objetivo. Só com ferramenta de navegador no catálogo.
+            passos = roteiro(
+                objetivo.pedido, (str(m.get("id", "")) for m in catalogo), self.contatos
+            )
+            if passos:
+                notas.append(passos)
         if conferir:
             notas.append(NOTA_DE_CONFERIR)
         if self._cobrar_objetivo:
