@@ -215,7 +215,7 @@ class MotorWhisper:
 
 def _cuda_visivel() -> bool:
     try:
-        import ctranslate2  # type: ignore[import-untyped]
+        import ctranslate2
     except ImportError:  # pragma: no cover — vem junto com o faster-whisper
         return False
     try:

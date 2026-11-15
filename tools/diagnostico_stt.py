@@ -57,7 +57,7 @@ def ler_wav(caminho: Path) -> np.ndarray:
 def placa_de_video() -> str:
     """CUDA pronta para o CTranslate2? Diz o que falta, sem instalar nada."""
     try:
-        import ctranslate2  # type: ignore[import-untyped]
+        import ctranslate2
     except ImportError:
         return "faster-whisper não instalado (uv sync --group asr)"
     if ctranslate2.get_cuda_device_count() == 0:

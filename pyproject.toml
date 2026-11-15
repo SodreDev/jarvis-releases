@@ -178,6 +178,8 @@ module = [
   "onnxruntime.*",
   "faster_whisper",
   "faster_whisper.*",
+  "ctranslate2",
+  "ctranslate2.*",
   "epitran",
   "epitran.*",
   "edge_tts",
