@@ -58,7 +58,7 @@ from jarvis.politica.memoria import TRUST_DO_DONO, AlcanceDeMemoria, Provenienci
 from jarvis.politica.metodo import Escolha
 from jarvis.politica.objetivo import EstadoDoObjetivo
 from jarvis.politica.permissao import ModoDePermissao, comando_de_permissao
-from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
+from jarvis.s2.avisos import AvisoLiberado, calado, nota_dos_eventos, pede_detalhe
 from jarvis.s2.consumo import ConsumoDoTurno, Medicao, campos_da_medicao, medir, precos_do_motor
 from jarvis.s2.entrega import FiltroDoJaDito, traz_algo_novo
 from jarvis.s2.fluxo_de_acao import FluxoDeAcao, frase_do_feito
@@ -260,6 +260,9 @@ class Resposta:
     sem_confirmacao: list[str] = field(default_factory=list)
     """Frases do motor que afirmavam o que nenhuma ferramenta confirmou, ou pediam permissão para o
     que o dono já pediu (`jarvis.s2.verdade`, ADR-0066): nem voz nem tela."""
+    calado: bool = False
+    """O turno de avisos em que o Jarvis decidiu não falar (ou o motor caiu): nada foi à voz, e
+    os avisos ficam no card (ADR-0070)."""
     respondida: bool = False
     """O turno já respondeu ao dono (uma rodada sem ferramenta falou uma resposta): sem ação em
     andamento, nenhuma outra rodada escreve outra resposta ao mesmo pedido (ADR-0062, emenda de
@@ -360,6 +363,9 @@ class Cerebro:
     mais calmo», «tom urgente»): lida pelo código antes do motor, pelo mesmo caminho do modo de
     permissão. Devolve a frase que o Jarvis diz, ou vazio (não era pedido de estilo)."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
+    falas_de_aviso: dict[str, str] = field(default_factory=dict)
+    """O que o Jarvis disse por cada aviso (ADR-0070): a fala dele é o eco a filtrar quando o
+    aviso é uma pergunta que espera o sim do dono."""
 
     @property
     def fluxo(self) -> FluxoDeAcao | None:
@@ -540,10 +546,10 @@ class Cerebro:
                 sistema=f"{contexto.sistema}\n\n{tom}", mensagens=contexto.mensagens
             )
         if avisos:
-            ditos = " ".join(frase_do_aviso(a) for a in avisos)
+            # Os avisos que chegaram com a mensagem são eventos para o Jarvis (ADR-0070): ele decide
+            # se e como mencioná-los na resposta; o código não fala nenhum antes dele.
             contexto = Contexto(
-                sistema=f"{contexto.sistema}\n\nAntes desta resposta você já disse ao dono, em "
-                f"voz: «{ditos}» Não repita o aviso: responda à mensagem dele.",
+                sistema=f"{contexto.sistema}\n\n{nota_dos_eventos(avisos, com_mensagem=True)}",
                 mensagens=contexto.mensagens,
             )
         resposta = Resposta(
@@ -558,9 +564,7 @@ class Cerebro:
         # O que vai para a voz cabe no orçamento; a tela recebe tudo (dono, 2026-10-21).
         orcamento = OrcamentoDaFala(livre=quer_detalhe(texto_do_dono))
         crescer = _tela(resposta, mostrar)
-        visto_cancelamento = self._falar_avisos(
-            avisos, resposta, publicar, comeco, cancelado, crescer
-        )
+        visto_cancelamento = time.monotonic() if cancelado() else None
         catalogo = self.ferramentas.catalogo_para_o_modelo() if self.ferramentas else ()
         # A tela mais nova que uma ferramenta deste turno capturou (ADR-0032): vai só ao motor que
         # a aceita, e só neste turno.
@@ -1572,50 +1576,97 @@ class Cerebro:
         publicar: Publicar,
         cancelado: Cancelado = nunca_cancelado,
     ) -> Resposta:
-        """Piso livre, sem mensagem do dono: só os avisos, sem chamar o motor (regra 12)."""
+        """Piso livre, sem mensagem do dono: os avisos chegam ao Jarvis como **eventos do sistema**
+        e um turno do motor decide se fala, o quê e com que palavras (ADR-0070). O código não
+        escreve a fala: se o motor responde `[silencio]`, ou cai, nada vai à voz e o card guarda
+        (`Resposta.calado`). Os pedaços levam os `notif_ids` de todos os avisos do turno."""
         comeco = time.monotonic()
         self._pendentes.clear()
         resposta = Resposta(
-            response_id=f"r-{uuid7()}", turn_id=f"t-{uuid7()}", epoch=epoch, motor="avisos"
+            response_id=f"r-{uuid7()}", turn_id=f"t-{uuid7()}", epoch=epoch, motor=self.motor.nome
         )
-        fatiador = FatiadorDeFala()
-        if self._falar_avisos(avisos, resposta, publicar, comeco, cancelado) is None:
-            for pedaco in fatiador.fechar():
-                self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
-        else:
+        if cancelado():
             resposta.fim = MotivoDoFim.CANCELADO
+            resposta.motor_chamado = False
+            return resposta
+        # O turno é do sistema, não do dono (ADR-0070): os eventos entram como a última mensagem
+        # e as regras de decidir, na nota de sistema. Nada disto entra na conversa salva.
+        conversa = self.conversa
+        mensagens = (
+            *conversa.turnos[-conversa.maximo :],
+            Mensagem("evento", "Os eventos estão na nota de sistema; decida o que fazer com eles."),
+        )
+        contexto = Contexto(
+            sistema=f"{conversa.sistema}\n\n{nota_dos_eventos(avisos)}", mensagens=mensagens
+        )
+        resposta.ms_ate_contexto = _ms_desde(comeco)
+        texto = self._texto_sem_ferramentas(contexto, resposta, cancelado)
+        if cancelado():
+            resposta.fim = MotivoDoFim.CANCELADO
+            return resposta
+        if texto is None or calado(texto):
+            # O Jarvis decidiu não falar agora (ou o motor caiu): nada na voz, o card guarda.
+            resposta.calado = True
+            return resposta
+        resposta.gerado = texto
+        ids = [a.notif_id for a in avisos]
+        for identificador in ids:
+            self.falas_de_aviso[identificador] = texto
+        orcamento = OrcamentoDaFala(livre=pede_detalhe(avisos))
+        fatiador = FatiadorDeFala()
+        for pedaco in fatiador.alimentar(orcamento.passar(texto) + orcamento.fechar()):
+            if cancelado():
+                resposta.fim = MotivoDoFim.CANCELADO
+                return resposta
+            self._publicar(resposta, pedaco, publicar, comeco, ultimo=False, notif_ids=ids)
+        resposta.so_na_tela = orcamento.so_na_tela
+        for pedaco in fatiador.fechar():
+            self._publicar(
+                resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM, notif_ids=ids
+            )
         self._pendentes[resposta.response_id] = resposta
         return resposta
 
-    def _falar_avisos(
-        self,
-        avisos: Sequence[AvisoLiberado],
-        resposta: Resposta,
-        publicar: Publicar,
-        comeco: float,
-        cancelado: Cancelado,
-        crescer: Callable[[], None] = lambda: None,
-    ) -> float | None:
-        """Publica a frase de cada aviso; devolve o instante do cancelamento, se houve."""
-        for aviso in avisos:
-            if cancelado():
-                return time.monotonic()
-            frase = frase_do_aviso(aviso)
-            resposta.gerado += frase + " "
-            crescer()
-            # Cada aviso é uma fala completa: seu residual pode ser curto, mas precisa sair
-            # com o próprio notif_id antes do próximo aviso ou da resposta. Compartilhar o
-            # buffer perderia a identidade de avisos menores que o piso normal de 14 palavras.
-            fatiador = FatiadorDeFala()
-            for pedaco in fatiador.alimentar(frase) + fatiador.fechar():
-                if not pedaco.texto:
-                    continue
-                if cancelado():
-                    return time.monotonic()
-                self._publicar(
-                    resposta, pedaco, publicar, comeco, ultimo=False, notif_ids=[aviso.notif_id]
-                )
-        return time.monotonic() if cancelado() else None
+    def _texto_sem_ferramentas(
+        self, contexto: Contexto, resposta: Resposta, cancelado: Cancelado
+    ) -> str | None:
+        """Uma rodada do motor sem ferramentas, inteira, sem o protocolo: o texto que ele escreveu,
+        ou `None` se ele caiu. O raciocínio fica com o turno (ADR-0031), nunca na voz."""
+        leitor = LeitorDoProtocolo()
+        partes: list[str] = []
+        deltas = medir(
+            self.motor.gerar(contexto, Modo.RAPIDO, cancelado),
+            caracteres_entrada=lambda: len(contexto.como_texto()),
+            precos=lambda: precos_do_motor(self.motor),
+            ao_medir=lambda medicao: self._anotar_consumo(resposta.consumo, medicao, "turno"),
+        )
+
+        def juntar(delta: Delta) -> None:
+            if isinstance(delta, Raciocinio):
+                _guardar_raciocinio(resposta, delta.texto, separado=True)
+            elif isinstance(delta, Texto):
+                partes.append(delta.texto)
+
+        try:
+            for delta in deltas:
+                if isinstance(delta, Fim):
+                    if delta.motivo in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO):
+                        resposta.fim, resposta.detalhe = delta.motivo, delta.detalhe
+                        return None
+                    break
+                if isinstance(delta, Texto):
+                    for parte in leitor.alimentar(delta.texto):
+                        juntar(parte)
+                else:
+                    juntar(delta)
+        except Exception as erro:  # o motor caiu: o aviso fica no card, a conversa não cai
+            resposta.fim, resposta.detalhe = MotivoDoFim.ERRO, f"{type(erro).__name__}: {erro}"
+            return None
+        finally:
+            deltas.close()
+        for parte in leitor.fechar():
+            juntar(parte)
+        return " ".join("".join(partes).split())
 
     def ouvido(
         self,

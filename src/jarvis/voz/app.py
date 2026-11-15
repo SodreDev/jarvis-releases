@@ -115,7 +115,7 @@ from jarvis.provedores.presets import FonteDePresets, TrocaPorVoz
 from jarvis.provedores.roteador import MotorDosPresets
 from jarvis.rede import ErroDeRede
 from jarvis.relogio import Relogio, RelogioDoSistema
-from jarvis.s2.avisos import FALAR, AvisoLiberado, decidir_entrega, frase_do_aviso
+from jarvis.s2.avisos import FALAR, AvisoLiberado, decidir_entrega
 from jarvis.s2.cerebro import Cerebro, Resposta
 from jarvis.s2.entrega import so_o_novo
 from jarvis.s2.motor import (
@@ -128,7 +128,7 @@ from jarvis.s2.motor import (
 from jarvis.s2.nota_do_dono import VALE_POR_S, Nota, nota_do_botao, nota_na_fala
 from jarvis.s2.orcamento_da_fala import orcar, quer_detalhe
 from jarvis.s2.persona import sistema_do_jarvis
-from jarvis.s2.portao import PortaoDeAcao
+from jarvis.s2.portao import PortaoDeAcao, resposta_literal
 from jarvis.s2.protocolo import sem_protocolo
 from jarvis.s2.regras import Regras, na_pasta
 from jarvis.s2.regras import padrao as padrao_das_regras
@@ -1152,14 +1152,17 @@ class Aplicativo:
         if tarefa.aviso == "":
             self._entrega_silenciosa(tarefa, "recusada_pelo_dono", tarefa.motivo)
             return
+        # O que vai ao Jarvis é o fim da tarefa como dado (ADR-0070): a resposta que o motor da
+        # tarefa escreveu, ou o estado e o motivo real — nunca uma frase pronta para o dono.
         if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
-            tipo, frase = "concluida", tarefa.resposta or "Terminei o que você pediu."
+            tipo = "concluida"
+            frase = tarefa.resposta or f"(a tarefa terminou sem texto de resposta; {tarefa.resumo})"
         else:
             motivo = tarefa.motivo
             if not motivo or re.match(ERRO_CRU, motivo):
-                motivo = "deu um erro aqui dentro"
+                motivo = f"erro interno ({motivo or 'sem detalhe'})"
             tipo = "falhou"
-            frase = tarefa.resposta or f"Não consegui terminar o que você pediu: {motivo}."
+            frase = tarefa.resposta or f"(a tarefa não cumpriu o objetivo; motivo real: {motivo})"
         frase = sem_protocolo(frase)
         with self._trava_dos_avisos:
             ditos = [tarefa.ja_dito, *self._ditos_das_tarefas.get(tarefa.id, [])]
@@ -1187,9 +1190,11 @@ class Aplicativo:
             self._entrega_silenciosa(tarefa, "cancelada_pelo_dono", "Parei o que você confirmou.")
             return
         if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
-            tipo, frase = "concluida", tarefa.aviso or f"Feito: {tarefa.descricao}."
+            tipo = "concluida"
+            frase = tarefa.aviso or f"(a ação «{tarefa.descricao}» que o dono confirmou terminou)"
         else:
-            tipo, frase = "falhou", f"Não deu para {tarefa.descricao}: {tarefa.motivo}."
+            tipo = "falhou"
+            frase = f"(a ação «{tarefa.descricao}» que o dono confirmou falhou: {tarefa.motivo})"
         self._aviso_da_tarefa(tarefa, f"tarefa-{tarefa.id}", tipo, frase)
 
     def _entrega_silenciosa(self, tarefa: Tarefa, motivo: str, frase: str) -> None:
@@ -1270,7 +1275,9 @@ class Aplicativo:
                     notif_id=na_fila.notif_id,
                     tipo=na_fila.tipo,
                     origem=na_fila.origem,
-                    resumo=self._falas_dos_avisos.get(na_fila.notif_id, na_fila.resumo),
+                    # O Jarvis decide com o texto inteiro (a tela), não só com o que cabia na voz.
+                    resumo=self._telas_dos_avisos.get(na_fila.notif_id)
+                    or self._falas_dos_avisos.get(na_fila.notif_id, na_fila.resumo),
                     de_terceiros=na_fila.trust == str(Trust.THIRD_PARTY),
                 )
             )
@@ -1295,20 +1302,35 @@ class Aplicativo:
         return True
 
     def _falar_os_avisos(self, avisos: list[AvisoLiberado], fila: FilaDePlayback | None) -> None:
-        """Os avisos como um turno sem motor: o que tocou entra na conversa (e no livro)."""
+        """Os avisos como um turno do Jarvis (ADR-0070): o motor recebe os eventos e decide se fala
+        e o quê. Calado, os avisos ficam no card; falado, o que tocou entra na conversa (e no
+        livro)."""
         assert self._cerebro is not None
         cerebro = self._cerebro
         epoch = self.epoch
         self._turno_cancelado = False
         self._corte_por_resposta = False
         pedacos: list[dict[str, Any]] = []
-        resposta = cerebro.avisar(avisos, epoch=epoch, publicar=pedacos.append)
-        # A tela mostra a resposta inteira; a voz, o que coube no orçamento da fala.
         with self._trava_dos_avisos:
-            telas = {a.notif_id: self._telas_dos_avisos.pop(a.notif_id, "") for a in avisos}
-        texto = " ".join(telas[a.notif_id] or frase_do_aviso(a) for a in avisos)
-        so_na_tela = [orcar(telas[a.notif_id])[1] for a in avisos if telas[a.notif_id]]
-        resposta.so_na_tela = " ".join(t for t in so_na_tela if t)
+            for aviso in avisos:
+                self._telas_dos_avisos.pop(aviso.notif_id, None)
+        resposta = cerebro.avisar(avisos, epoch=epoch, publicar=pedacos.append)
+        if resposta.calado or not pedacos:
+            with self._trava_dos_avisos:
+                for aviso in avisos:
+                    self.avisos.decidido(aviso.notif_id, Entrega.SO_CARD)
+            for aviso in avisos:
+                self.trilha.evento(
+                    "entrega",
+                    turno=aviso.notif_id,
+                    origem="aviso",
+                    decisao="silenciosa",
+                    motivo="jarvis_calou" if resposta.fim is MotivoDoFim.CONCLUIDO else "motor",
+                )
+            self._avisos_mudaram()
+            self._mudar(self._repouso)
+            return
+        texto = resposta.gerado
         if self.ao_pedaco is not None:
             self.ao_pedaco(texto)
         fala, turno = self._tocar(
@@ -2648,7 +2670,13 @@ class Aplicativo:
         pendencia = cerebro.pendencias.valida() if cerebro is not None else None
         if pendencia is None or (pendencia.espera is not None and pendencia.espera.so_clique):
             return ""
-        return pendencia.pergunta.pergunta_falada
+        # O eco é o que o Jarvis disse ao perguntar (ADR-0070: a fala é dele) e a pergunta em si.
+        # Sem as palavras que já são uma resposta («sim», «não»): se ele disse as opções, o «sim»
+        # do dono não pode virar eco.
+        assert cerebro is not None
+        dita = cerebro.falas_de_aviso.get(f"{PREFIXO_DA_PERGUNTA}{pendencia.id}", "")
+        sem_respostas = " ".join(p for p in dita.split() if resposta_literal(p) is None)
+        return f"{pendencia.pergunta.pergunta_falada} {sem_respostas}".strip()
 
     def _bloco_da_pergunta_ouvida(self) -> int:
         """O bloco da pergunta do teto de uma tarefa que já tocou inteira (ADR-0059); 0 = não há."""

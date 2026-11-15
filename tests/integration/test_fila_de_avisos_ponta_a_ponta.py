@@ -42,7 +42,11 @@ class Tocando:
 class Simulacao:
     fila: FilaDeAvisos = field(default_factory=lambda: FilaDeAvisos(session_id=SESSAO))
     cerebro: Cerebro = field(
-        default_factory=lambda: Cerebro(motor=MotorRoteirizado(resposta="Certo, entendi."))
+        default_factory=lambda: Cerebro(
+            motor=MotorRoteirizado(
+                resposta="Certo, entendi o que aconteceu e já te conto com calma o que mudou."
+            )
+        )
     )
     tocando: Tocando | None = None
     dono_falando: bool = False
@@ -125,7 +129,10 @@ class Simulacao:
                 self.violacoes.append(f"{agora:.1f}: a mensagem não levou todos os pendentes")
             publicados: list[dict[str, Any]] = []
             self.cerebro.responder("e então?", epoch=0, publicar=publicados.append, avisos=avisos)
-            self._tocar(publicados, agora, espontaneo=False)
+            # Com a mensagem, os avisos são contexto da resposta do Jarvis (ADR-0070): entregues
+            # se a resposta tocou inteira — como o app conta (`_avisos_tocados` do turno).
+            ids = [a.notif_id for a in avisos]
+            self._tocar([{**p, "notif_ids": ids} for p in publicados], agora, espontaneo=False)
         if self.tocando is not None and agora >= self.tocando.pedacos[-1][0]:
             self._encerrar_fala(agora, cortada=False)
         if self.tocando is None and not self.dono_falando:

@@ -15,7 +15,9 @@ from typing import Any
 
 import pytest
 
+from jarvis.s2.avisos import MARCA_DO_SILENCIO
 from jarvis.s2.cerebro import Cerebro
+from jarvis.s2.motor import Contexto
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.s2.orcamento_da_fala import (
     FECHO,
@@ -220,7 +222,15 @@ def _tarefa(descricao: str, resposta: str) -> Tarefa:
     )
 
 
+def _jarvis_que_conta(contexto: Contexto) -> str:
+    """O motor de teste que conta ao dono o conteúdo do evento (ADR-0070: quem fala é o Jarvis)."""
+    achado = re.search(r"conteudo=«(.*?)»", contexto.sistema, re.S)
+    return achado.group(1) if achado else MARCA_DO_SILENCIO
+
+
 def _falar_a_resposta(app: Aplicativo, tarefa: Tarefa) -> Callable[[], str]:
+    assert app._cerebro is not None
+    app._cerebro.motor = MotorRoteirizado(resposta=_jarvis_que_conta)
     app._tarefa_concluida(tarefa)
     assert app.entregar_avisos(None), "a resposta da tarefa não foi à voz"
     assert app._cerebro is not None

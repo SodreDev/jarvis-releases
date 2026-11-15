@@ -12,6 +12,7 @@ ADR-0025 cobra de todo motor.
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass, field
@@ -59,6 +60,10 @@ class MotorRoteirizado:
     """O teste da tela liga: o motor passa a receber `Contexto.imagens` (ADR-0032)."""
     pedidos: list[Contexto] = field(default_factory=list)
     """Cada contexto recebido — é como o teste prova que o motor não guarda estado."""
+    conta_eventos: bool = True
+    """No turno de eventos do sistema (ADR-0070), em vez do roteiro, conta ao dono o conteúdo de
+    cada evento — o que um modelo de verdade, bem-comportado, faria. O teste que quer roteirizar
+    também esse turno (calar, falar outra coisa) desliga."""
     _dormir: Callable[[float], None] = field(default=time.sleep, repr=False)
 
     def gerar(
@@ -66,7 +71,11 @@ class MotorRoteirizado:
     ) -> Generator[Delta, None, None]:
         del modo  # o roteiro não pensa
         self.pedidos.append(contexto)
-        roteiro = self.resposta if isinstance(self.resposta, str) else self.resposta(contexto)
+        roteiro: str | Sequence[Parte]
+        if self.conta_eventos and contexto.de_evento:
+            roteiro = _contar_eventos(contexto)
+        else:
+            roteiro = self.resposta if isinstance(self.resposta, str) else self.resposta(contexto)
         partes: Sequence[Parte] = [roteiro] if isinstance(roteiro, str) else roteiro
         deltas: list[Parte] = []
         for parte in partes:
@@ -99,3 +108,12 @@ class MotorRoteirizado:
             if restante <= 0:
                 return True
             self._dormir(min(INTERVALO_DE_CONSULTA_S, restante))
+
+
+def _contar_eventos(contexto: Contexto) -> str:
+    """O conteúdo de cada evento da nota (`jarvis.s2.avisos.nota_dos_eventos`), um depois do outro;
+    sem evento, o silêncio."""
+    conteudos = re.findall(r"conteudo=«(.*?)»\n", f"{contexto.sistema}\n", re.S)
+    falas = [c.strip() for c in conteudos if c.strip()]
+    falas = [f if f.endswith((".", "!", "?", "…")) else f"{f}." for f in falas]
+    return " ".join(falas) or "[silencio]"

@@ -188,7 +188,7 @@ def test_o_dono_aprova_na_janela_e_so_entao_a_memoria_e_apagada(
     tela.responderPendencia(pedido["id"], True)
     # A memória roda na hora, com a proveniência do turno do pedido, e a frase do feito é a
     # resposta — uma só, pela fila de avisos.
-    final = "Jarvis: Aviso: Feito: apagar de vez."
+    final = "Jarvis: Feito: apagar de vez."
     _esperar(aplicativo, 8.0, ate=lambda: final in _respostas(tela))
     _esperar(aplicativo, 0.5)
     _capturar(janela, "memoria-apagada.png")

@@ -1,14 +1,14 @@
 """ADR-0038: os avisos da tarefa de um pedido do dono (a resposta, a pergunta) na fila de avisos.
 
 Não são espontâneos — quem abriu a conversa foi o dono, ao pedir —, então não esperam o teto de
-fala de 2 min (D22); o piso livre continua valendo: nunca por cima da fala, e um por vez. E a frase
-é a fala como ela é, sem "Aviso:" na frente."""
+fala de 2 min (D22); o piso livre continua valendo: nunca por cima da fala, e um por vez. E quem
+fala é o Jarvis (ADR-0070): o aviso vai a ele como evento do pedido, nunca como frase pronta."""
 
 from __future__ import annotations
 
 from jarvis.agentd.fila_de_avisos import ORIGEM_DO_PEDIDO, FilaDeAvisos, notificacao
 from jarvis.barramento.envelope import uuid7
-from jarvis.s2.avisos import AvisoLiberado, frase_do_aviso
+from jarvis.s2.avisos import AvisoLiberado, nota_dos_eventos
 
 S = str(uuid7())
 
@@ -45,11 +45,11 @@ def test_o_do_pedido_nunca_sai_por_cima_da_fala() -> None:
     assert fila.liberar(7.0) is not None
 
 
-def test_a_frase_do_pedido_e_a_fala_como_ela_e() -> None:
+def test_o_do_pedido_vai_ao_jarvis_como_evento_do_pedido() -> None:
     origem = f"{ORIGEM_DO_PEDIDO}abre o vídeo"
     resposta = AvisoLiberado("t-1", "concluida", origem, "Abri o vídeo na aba atual")
-    pergunta = AvisoLiberado("p-1", "precisa_decisao", origem, "Preciso do seu sim. Posso?")
-    assert frase_do_aviso(resposta) == "Abri o vídeo na aba atual."
-    assert frase_do_aviso(pergunta) == "Preciso do seu sim. Posso?"
     alheio = AvisoLiberado("x", "concluida", origem, "a página diz X", de_terceiros=True)
-    assert frase_do_aviso(alheio).startswith("Aviso de"), "de terceiros continua marcado"
+    nota = nota_dos_eventos([resposta, alheio])
+    assert "pedido do dono «abre o vídeo»" in nota
+    assert "Abri o vídeo na aba atual" in nota
+    assert "de_terceiros=sim" in nota, "de terceiros continua marcado"

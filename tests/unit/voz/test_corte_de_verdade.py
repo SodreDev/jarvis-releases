@@ -226,7 +226,8 @@ def test_o_aviso_cortado_nao_volta_a_tocar_no_piso_livre(tmp_path: Path) -> None
     assert "  (parei)" in tela
     assert app.avisos.avisos[identificador].entrega is not Entrega.NA_FILA
     assert not app.avisos.avisos[identificador].pendente
-    assert len(motor.pedidos) == 0, "«para» virou pedido ao motor"
+    # O único turno do motor é o dos eventos (ADR-0070), que falou o aviso; o «para» não é pedido.
+    assert [c for c in motor.pedidos if not c.de_evento] == [], "«para» virou pedido ao motor"
     assert _amostras_tocadas(app.caminho_de_saida) == falas_do_jarvis[0].amostras_tocadas
 
 
@@ -245,8 +246,9 @@ def test_o_aviso_cortado_nao_vai_na_frente_do_pedido_novo(tmp_path: Path) -> Non
     aviso, pedido = app.turnos
     assert not aviso.falou and pedido.falou == "que horas são"
     assert pedido.respondeu == "São três e meia.", "a resposta velha foi junto com o pedido novo"
-    assert len(motor.pedidos) == 1
-    assert "Antes desta resposta você já disse" not in motor.pedidos[0].sistema
+    pedidos = [c for c in motor.pedidos if not c.de_evento]
+    assert len(pedidos) == 1
+    assert "EVENTOS DO SISTEMA" not in pedidos[0].sistema, "o aviso cortado voltou como evento"
 
 
 # --- o cérebro do turno cortado não prende o laço -------------------------------------------

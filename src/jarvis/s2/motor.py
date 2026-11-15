@@ -56,7 +56,9 @@ class MotivoDoFim(StrEnum):
     PRAZO = "prazo"
 
 
-Papel = Literal["dono", "jarvis", "ferramenta"]
+Papel = Literal["dono", "jarvis", "ferramenta", "evento"]
+"""`evento`: o turno que o **sistema** abre para o Jarvis (ADR-0070) — uma tarefa acabou, uma rede
+mudou — quando o dono não falou nada. Não é fala do dono, e nunca entra na conversa salva."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,11 +93,19 @@ class Contexto:
     def __post_init__(self) -> None:
         if not self.mensagens or self.mensagens[-1].papel == "jarvis":
             raise ValueError("o contexto termina no turno do dono: é a ele que se responde")
+        if not any(m.papel in ("dono", "evento") for m in self.mensagens):
+            raise ValueError("o contexto precisa de um turno do dono ou de um evento do sistema")
 
     @property
     def turno(self) -> str:
         """A última fala do dono — mesmo quando, depois dela, vieram resultados de ferramenta."""
-        return next(m.texto for m in reversed(self.mensagens) if m.papel == "dono")
+        return next(m.texto for m in reversed(self.mensagens) if m.papel in ("dono", "evento"))
+
+    @property
+    def de_evento(self) -> bool:
+        """O turno é um evento do sistema (ADR-0070), não uma fala do dono."""
+        ultimo = next(m for m in reversed(self.mensagens) if m.papel in ("dono", "evento"))
+        return ultimo.papel == "evento"
 
     def como_texto(self) -> str:
         """A conversa em texto corrido, para motor que só recebe um texto (a CLI).
@@ -103,17 +113,24 @@ class Contexto:
         Turno do Jarvis interrompido vai marcado, para o modelo não continuar uma frase que o
         dono não ouviu como se ele tivesse ouvido (§3.3, regra 5).
         """
+        agora = (
+            f"Agora não foi o dono que falou: chegaram eventos do sistema. {self.turno}"
+            if self.de_evento
+            else self.turno
+        )
         if len(self.mensagens) == 1 and not (self.raciocinio or self.ja_dito):
-            return self.turno
-        ultimo_do_dono = max(i for i, m in enumerate(self.mensagens) if m.papel == "dono")
+            return agora
+        ultimo_do_dono = max(
+            i for i, m in enumerate(self.mensagens) if m.papel in ("dono", "evento")
+        )
         linhas = ["Conversa até aqui (do Jarvis, só o que o dono chegou a ouvir):"]
         for mensagem in self.mensagens[:ultimo_do_dono]:
-            if mensagem.papel == "ferramenta":
+            if mensagem.papel in ("ferramenta", "evento"):
                 continue
             quem = "Dono" if mensagem.papel == "dono" else "Jarvis"
             marca = " [interrompido pelo dono aqui]" if mensagem.interrompida else ""
             linhas.append(f"{quem}: {mensagem.texto}{marca}")
-        linhas += ["", f"Agora o dono disse: {self.turno}"]
+        linhas += ["", agora if self.de_evento else f"Agora o dono disse: {self.turno}"]
         resultados = [m.texto for m in self.mensagens[ultimo_do_dono + 1 :]]
         if resultados:
             linhas += [
