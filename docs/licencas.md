@@ -75,6 +75,7 @@ nascem desligados, e campo de termo vazio barra o motor em tempo de execução
 
 | papel | motor | onde | ligado | licença do cliente | categoria | estado | fonte | acesso |
 |---|---|---|---|---|---|---|---|---|
+| asr | `asr-endpoint` | nuvem | não | Apache-2.0 | permissiva | em_uso | <src/jarvis/voz/stt_endpoint.py> | 2026-11-15 |
 | asr | `asr-groq-whisper-large-v3` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://console.groq.com/docs/legal/services-agreement> | 2026-10-15 |
 | asr | `asr-groq-whisper-large-v3-turbo` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://console.groq.com/docs/legal/services-agreement> | 2026-10-15 |
 | asr | `asr-oraculo` | local | sim | Apache-2.0 | permissiva | em_uso | <https://github.com/SodreDev/jarvis> | 2026-10-15 |

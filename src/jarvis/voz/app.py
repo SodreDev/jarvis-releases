@@ -152,6 +152,7 @@ from jarvis.trilha import PASTA as PASTA_DA_TRILHA_DE_DIAGNOSTICO
 from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import (
+    ASR_ENDPOINT,
     ASR_PADRAO,
     TTS_ENDPOINT,
     TTS_OMNIVOICE,
@@ -295,6 +296,10 @@ def motor_de_asr(
     por `jarvis.voz.dica` —, nos dois motores: `initial_prompt` no local, `prompt` na Groq. Curta de
     propósito (ADR-0043): a lista de apps instalados que ia aqui fazia ruído virar nome de app; quem
     casa a fala com o app é o resolvedor de `jarvis.apps`, contra o registro, depois do ASR."""
+    if configuracao.asr == ASR_ENDPOINT:
+        return _ouvido_por_endpoint(
+            configuracao, raiz=raiz, cancelado=cancelado, ambiente=ambiente, dica=dica
+        )
     falta = o_que_falta(
         configuracao.asr, configuracao, ambiente=ambiente, pasta_de_vozes=PASTA_DE_VOZES
     )
@@ -329,6 +334,39 @@ def motor_de_asr(
     )
     local.abrir()
     return local
+
+
+def _ouvido_por_endpoint(
+    configuracao: Configuracao,
+    *,
+    raiz: Path,
+    cancelado: Callable[[], bool],
+    ambiente: Mapping[str, str] | None = None,
+    dica: str = "",
+) -> MotorDeAsr:
+    """O STT por endpoint HTTP (pedido do dono, 2026-11-14), com o STT local de reserva: desligado
+    em `nuvem_ligada` ou mal configurado, ouve pelo local (o diagnóstico diz por quê); no ar, o
+    endpoint transcreve e, se cair, o mesmo trecho vai ao local."""
+    from jarvis.voz.stt_endpoint import EndpointInvalido, MotorAsrEndpoint, escolher
+
+    def local() -> MotorDeAsr:
+        return motor_de_asr(
+            configuracao.com(asr=ASR_PADRAO),
+            raiz=raiz,
+            cancelado=cancelado,
+            ambiente=ambiente,
+            dica=dica,
+        )
+
+    if o_que_falta(ASR_ENDPOINT, configuracao, ambiente=ambiente, pasta_de_vozes=PASTA_DE_VOZES):
+        return local()
+    try:
+        endpoint = escolher(configuracao.endpoint_stt, ambiente=ambiente)
+    except EndpointInvalido:
+        return local()
+    motor = MotorAsrEndpoint(endpoint=endpoint, reserva=local, ambiente=ambiente)
+    motor.abrir()
+    return motor
 
 
 def _aquecer_em_segundo_plano(*motores: object) -> None:

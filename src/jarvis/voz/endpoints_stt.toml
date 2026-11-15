@@ -1,0 +1,34 @@
+# Endpoints de STT por HTTP — o EXEMPLO do repositório. O do dono mora em
+# ~/.config/jarvis/stt-endpoints.toml e vence, pelo nome, quando existe.
+#
+# Escolher um endpoint NÃO liga nada: o áudio da fala sai desta máquina, então o motor
+# `asr-endpoint` só transcreve depois de o dono escolher `asr = "asr-endpoint"` E ligá-lo
+# (`nuvem_ligada`). Fora do ar, o STT local transcreve no lugar (nunca fica surdo).
+#
+# Sem segredo aqui: com autenticação, este arquivo guarda só o NOME da variável de ambiente
+# (`variavel_de_ambiente`); o valor vem do ambiente ou do chaveiro do sistema.
+#
+# Campos: base · caminho · metodo (POST ou PUT) · envio (multipart, binario, base64) · formato do
+# áudio (wav ou pcm 16 kHz mono 16 bits) · campo_do_arquivo (multipart) · campo_do_audio (base64)
+# · campos (tabela de extras sem segredo: model, language…) · campo_do_texto (caminho no JSON da
+# resposta, ex.: text ou results.0.transcript; vazio = a resposta é o texto) · autenticacao
+# (nenhuma, bearer, cabecalho) · cabecalho · variavel_de_ambiente · prazo_s · nota.
+
+versao = 1
+
+[[endpoint]]
+nome = "Whisper local compatível (exemplo)"
+base = "http://127.0.0.1:8000"
+caminho = "/v1/audio/transcriptions"
+metodo = "POST"
+envio = "multipart"
+formato = "wav"
+campo_do_arquivo = "file"
+campo_do_texto = "text"
+autenticacao = "nenhuma"
+prazo_s = 15.0
+nota = "servidor compatível com a API de transcrição da OpenAI (faster-whisper-server, speaches…)"
+
+[endpoint.campos]
+model = "whisper-1"
+language = "pt"

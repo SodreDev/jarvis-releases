@@ -666,6 +666,7 @@ def pedir(
     *,
     metodo: str = "POST",
     corpo: bytes | None = None,
+    tipo: str = "application/json",
     chave: Chave | None = None,
     cancelado: Cancelado = nunca_cancelado,
     prazo_s: float | None = None,
@@ -687,7 +688,7 @@ def pedir(
     url = endpoint.url(caminho)
     pedido = urllib.request.Request(url=url, data=corpo, method=metodo)  # noqa: S310 — conferida
     if corpo is not None:
-        pedido.add_header("Content-Type", "application/json")
+        pedido.add_header("Content-Type", tipo)
         pedido.add_header("Content-Length", str(len(corpo)))
     for nome, valor in _cabecalhos(endpoint, chave).items():
         pedido.add_header(nome, valor)

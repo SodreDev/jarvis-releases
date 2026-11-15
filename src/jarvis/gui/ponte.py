@@ -217,6 +217,7 @@ class Ponte(QObject):
     diagnosticoMudou = Signal()
     vozesMudaram = Signal()
     endpointMudou = Signal()
+    sttEndpointMudou = Signal()
     escutaMudou = Signal()
     dedoGlobal = Signal(bool)
     avisoDoAtalho = Signal(str)
@@ -343,6 +344,7 @@ class Ponte(QObject):
         self._vozes_frase = ""
         self._catalogo_do_endpoint: dict[str, Any] = {}
         self._endpoint_frase = ""
+        self._stt_frase = ""
         extras_do_acesso: dict[str, Any] = {}
         if pastas_de_apps is not None:
             extras_do_acesso["pastas_de_apps"] = pastas_de_apps
@@ -1203,6 +1205,53 @@ class Ponte(QObject):
             self.endpointMudou.emit()
 
         threading.Thread(target=trabalhar, name="jarvis-testar-endpoint", daemon=True).start()
+
+    # --- o STT por endpoint HTTP (pedido do dono, 2026-11-14) -----------------------------------
+    @Property(dict, notify=sttEndpointMudou)
+    def endpointStt(self) -> dict[str, Any]:
+        """Os endpoints de STT, o escolhido e as opções; nunca levanta (o erro vem em `erro`)."""
+        from jarvis.voz.stt_endpoint import para_a_janela
+
+        dados = para_a_janela(self._configuracao.endpoint_stt, ambiente=self._ambiente_base)
+        dados["frase"] = self._stt_frase
+        return dados
+
+    @Slot(str)
+    def escolherEndpointStt(self, nome: str) -> None:
+        self._guardar(f"STT: {nome}", endpoint_stt=nome)
+        self._stt_frase = f"endpoint de STT {nome}: {self._aviso.split(' — ')[-1]}"
+        self.sttEndpointMudou.emit()
+
+    @Slot(str, str)
+    def definirNoEndpointStt(self, campo: str, valor: str) -> None:
+        """Um campo do endpoint de STT, gravado no `stt-endpoints.toml` do dono."""
+        from jarvis.voz.stt_endpoint import mudar_no_endpoint
+
+        resultado = mudar_no_endpoint(
+            self._configuracao.endpoint_stt, campo, valor, ambiente=self._ambiente_base
+        )
+        self._stt_frase = f"{campo}: {resultado}"
+        self.sttEndpointMudou.emit()
+
+    @Slot()
+    def testarEndpointStt(self) -> None:
+        """O diagnóstico do endpoint de STT numa thread: manda 1 s de silêncio (nada da voz do
+        dono) e diz configuração, chave (presença) e pedido, sem segredo."""
+        from jarvis.voz.stt_endpoint import diagnostico
+
+        self._stt_frase = "testando o servidor de STT…"
+        self.sttEndpointMudou.emit()
+        nome = self._configuracao.endpoint_stt
+        ambiente = chaveiro.ambiente_com_chaves(self._ambiente_base)
+
+        def trabalhar() -> None:
+            try:
+                self._stt_frase = " · ".join(diagnostico(nome, ambiente=ambiente))
+            except Exception as erro:  # o teste não derruba a janela
+                self._stt_frase = f"o teste falhou: {type(erro).__name__}"
+            self.sttEndpointMudou.emit()
+
+        threading.Thread(target=trabalhar, name="jarvis-testar-stt", daemon=True).start()
 
     def _estilo_pela_voz(self, estilo: str) -> str:
         """O dono trocou o estilo falando («fala mais calmo», ADR-0068): vai ao arquivo como o

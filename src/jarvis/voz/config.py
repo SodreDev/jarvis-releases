@@ -73,6 +73,8 @@ ESCUTAS: Final[tuple[str, ...]] = MODOS
 TTS_ELEVENLABS: Final = "tts-elevenlabs"
 TTS_OMNIVOICE: Final = "tts-omnivoice"
 TTS_ENDPOINT: Final = "tts-endpoint"
+ASR_ENDPOINT: Final = "asr-endpoint"
+"""O STT por endpoint HTTP configurável (dono, 2026-11-14): só a opção; o local não muda."""
 """O TTS por endpoint HTTP configurável (ADR-0068): o servidor de voz do dono, ou outra API."""
 FORMA_DO_NOME_DO_ENDPOINT: Final[re.Pattern[str]] = re.compile(r"[^\W_][\w .()+\-]{0,59}")
 FORMA_DA_VOZ_DO_ENDPOINT: Final[re.Pattern[str]] = re.compile(r"[^\x00-\x1f\x7f\"\\]{1,64}")
@@ -260,6 +262,10 @@ class Configuracao:
     estilo_endpoint: str = ""
     """O estilo de fala pedido ao endpoint (cordial, calmo, urgente…). Vazio = o padrão dele. Muda
     também pela voz do dono («fala mais calmo»), e fica salvo."""
+    endpoint_stt: str = ""
+    """O endpoint de STT, pelo nome, de `stt-endpoints.toml`. Vazio = o primeiro. Só ouve por ele
+    com `asr = "asr-endpoint"` **e** `asr-endpoint` em `nuvem_ligada`: o áudio sai desta máquina.
+    Fora do ar, o STT local transcreve."""
     reserva_do_endpoint: str = ""
     """Quem fala quando o endpoint não responde (fora da rede, desligado): o TTS que o dono usava
     antes de escolher o endpoint. Vazio = o motor padrão (o local)."""
@@ -319,6 +325,7 @@ class Configuracao:
             "voz_endpoint": self.voz_endpoint,
             "estilo_endpoint": self.estilo_endpoint,
             "reserva_do_endpoint": self.reserva_do_endpoint,
+            "endpoint_stt": self.endpoint_stt,
         }
 
     @property
@@ -484,6 +491,11 @@ endpoint_tts = {aspas(configuracao.endpoint_tts)}
 voz_endpoint = {aspas(configuracao.voz_endpoint)}
 estilo_endpoint = {aspas(configuracao.estilo_endpoint)}
 reserva_do_endpoint = {aspas(configuracao.reserva_do_endpoint)}
+
+# STT por endpoint HTTP: o servidor de transcrição que VOCÊ configurou (os endpoints ficam em
+# stt-endpoints.toml, ao lado deste arquivo). Ouve por ele só com asr = "asr-endpoint" e com
+# "asr-endpoint" em nuvem_ligada. Vazio = o primeiro endpoint. Fora do ar, ouve o STT local.
+endpoint_stt = {aspas(configuracao.endpoint_stt)}
 """
 
 
@@ -619,6 +631,13 @@ def validar(configuracao: Configuracao) -> Configuracao:
         valor = str(getattr(configuracao, campo))
         if valor and not FORMA_DA_VOZ_DO_ENDPOINT.fullmatch(valor):
             raise ConfiguracaoInvalida(f"{campo} = {valor!r}: sem controle nem aspas, até 64")
+    if configuracao.endpoint_stt and not FORMA_DO_NOME_DO_ENDPOINT.fullmatch(
+        configuracao.endpoint_stt
+    ):
+        raise ConfiguracaoInvalida(
+            f"endpoint_stt = {configuracao.endpoint_stt!r} não é nome de endpoint (letras, "
+            "números, espaço, ( ) + . -, até 60)"
+        )
     if configuracao.reserva_do_endpoint:
         reserva = exigir("reserva_do_endpoint", configuracao.reserva_do_endpoint, "tts")
         if reserva.id == TTS_ENDPOINT:
@@ -858,6 +877,7 @@ def _da_tabela(dados: Mapping[str, Any], *, arquivo: str) -> Configuracao:
         voz_endpoint=_texto(dados, "voz_endpoint", ""),
         estilo_endpoint=_texto(dados, "estilo_endpoint", ""),
         reserva_do_endpoint=_texto(dados, "reserva_do_endpoint", ""),
+        endpoint_stt=_texto(dados, "endpoint_stt", ""),
     )
     return validar(configuracao)
 

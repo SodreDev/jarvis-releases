@@ -309,6 +309,31 @@ nasce desligado e só fala depois de o dono ligar `tts-endpoint` em `nuvem_ligad
 campos de termo dizem a verdade de um motor genérico — quem decide é quem opera o servidor. \
 Só http/https, sem redirecionamento seguido, o texto só vai à base configurada."""
 
+[[motor]]
+id = "asr-endpoint"
+papel = "asr"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.voz.stt_endpoint:MotorAsrEndpoint"
+modelo = "(o do servidor configurado)"
+servico = "Endpoint HTTP de STT (o servidor de transcrição que você configurou)"
+endereco = "(base e caminho do endpoint escolhido em stt-endpoints.toml)"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (http.client da biblioteca padrão, pelo transporte do jarvis.voz.endpoint)"
+uso_comercial = "o do servidor que você configurou: o Jarvis não tem como ler termos de um servidor seu ou de terceiro"
+retencao_declarada = "a do servidor configurado (o Jarvis não guarda o áudio enviado; o servidor pode guardar)"
+treina_com_entrada = "o que o servidor configurado fizer — o Jarvis não tem como saber"
+dono_da_saida = "o do servidor configurado"
+marca_dagua = "não se aplica"
+preco = "nenhum cobrado pelo Jarvis"
+fonte = "src/jarvis/voz/stt_endpoint.py"
+data_de_acesso = "2026-11-15"
+nota = """Pedido do dono (2026-11-14): configurar o STT dele pelo app (URL da API e configuração), \
+no mesmo estilo do tts-endpoint (ADR-0068). Conta como nuvem porque o ÁUDIO da fala SAI desta \
+máquina: nasce desligado e só transcreve depois de o dono escolher asr = "asr-endpoint" e ligar \
+`asr-endpoint` em `nuvem_ligada`. Fora do ar, o STT local transcreve (reserva). O whisper local \
+não muda."""
+
 # --- Decisão (classificador de perguntas fechadas) — ADR-0029 -------------------------
 
 [[motor]]

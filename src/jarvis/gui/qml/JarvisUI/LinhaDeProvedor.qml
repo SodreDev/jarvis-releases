@@ -18,6 +18,7 @@ Column {
     readonly property bool naNuvem: provedor.onde === "nuvem"
     readonly property bool daElevenLabs: provedor.chave === "nuvem:ElevenLabs"
     readonly property bool daEndpoint: provedor.chave === "nuvem:Endpoint HTTP"
+    readonly property bool daEndpointStt: provedor.chave === "nuvem:Endpoint HTTP de STT"
     readonly property var modelos: provedor.modelos || []
     // O que falta para este motor rodar agora — a mesma frase com que o laço recusaria
     // (`jarvis.voz.prontidao`). Vazio = roda.
@@ -75,6 +76,7 @@ Column {
         property string valor: ""
         property string dica: ""
         property real largura: 260
+        property bool doStt: false
         spacing: 8
         Rotulo {
             width: 96
@@ -99,7 +101,11 @@ Column {
                 font.pixelSize: Tema.tamanhoTexto - 3
                 clip: true
                 onEditingFinished: {
-                    if (text.trim() !== campoLinha.valor)
+                    if (text.trim() === campoLinha.valor)
+                        return
+                    if (campoLinha.doStt)
+                        ponte.definirNoEndpointStt(campoLinha.campo, text.trim())
+                    else
                         ponte.definirNoEndpoint(campoLinha.campo, text.trim())
                 }
             }
@@ -446,6 +452,110 @@ Column {
                       ? ponte.endpointFrase
                       : "o estilo também muda pela voz: «fala mais calmo», «tom urgente», «volta ao normal». "
                         + "A busca de vozes não manda texto seu — só o pedido da lista."
+            }
+        }
+
+        // O STT por endpoint HTTP (pedido do dono, 2026-11-14): qual servidor, como o áudio vai
+        // e onde está o texto na resposta. Cada campo grava no stt-endpoints.toml do dono quando a
+        // edição termina. O STT local não muda: fora do ar, ele ouve no lugar.
+        Column {
+            id: painelDoStt
+            objectName: "painelDoEndpointStt"
+            visible: linha.daEndpointStt
+            width: parent.width
+            spacing: 8
+            readonly property var dados: ponte ? ponte.endpointStt : ({})
+            readonly property var ativo: dados.ativo || ({})
+
+            Flow {
+                width: parent.width
+                spacing: 8
+                Rotulo { text: "servidor"; height: 26; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: painelDoStt.dados.endpoints || []
+                    Ficha {
+                        texto: modelData.nome
+                        ativo: modelData.escolhido
+                        onEscolhida: ponte.escolherEndpointStt(modelData.nome)
+                    }
+                }
+            }
+            CampoDoEndpoint { doStt: true; rotulo: "base"; campo: "base"; valor: painelDoStt.ativo.base || ""; dica: "http://192.168.0.10:8000" }
+            CampoDoEndpoint { doStt: true; rotulo: "transcrição"; campo: "caminho"; valor: painelDoStt.ativo.caminho || ""; dica: "/v1/audio/transcriptions" }
+            Flow {
+                width: parent.width
+                spacing: 6
+                Rotulo { text: "envio"; width: 96; height: 26; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: painelDoStt.dados.envios || []
+                    Ficha {
+                        texto: modelData
+                        ativo: painelDoStt.ativo.envio === modelData
+                        onEscolhida: ponte.definirNoEndpointStt("envio", modelData)
+                    }
+                }
+                Repeater {
+                    model: painelDoStt.dados.formatos || []
+                    Ficha {
+                        texto: modelData
+                        ativo: painelDoStt.ativo.formato === modelData
+                        onEscolhida: ponte.definirNoEndpointStt("formato", modelData)
+                    }
+                }
+            }
+            CampoDoEndpoint {
+                doStt: true
+                visible: painelDoStt.ativo.envio === "multipart"
+                rotulo: "campo do arquivo"; campo: "campo_do_arquivo"
+                valor: painelDoStt.ativo.campo_do_arquivo || ""; dica: "file"; largura: 140
+            }
+            CampoDoEndpoint {
+                doStt: true
+                visible: painelDoStt.ativo.envio === "base64"
+                rotulo: "campo do áudio"; campo: "campo_do_audio"
+                valor: painelDoStt.ativo.campo_do_audio || ""; dica: "audio"; largura: 140
+            }
+            CampoDoEndpoint { doStt: true; rotulo: "texto na resposta"; campo: "campo_do_texto"; valor: painelDoStt.ativo.campo_do_texto || ""; dica: "text (vazio = corpo inteiro)"; largura: 200 }
+            CampoDoEndpoint { doStt: true; rotulo: "prazo (s)"; campo: "prazo_s"; valor: String(painelDoStt.ativo.prazo_s || ""); largura: 50 }
+            Flow {
+                width: parent.width
+                spacing: 6
+                Rotulo { text: "autenticação"; width: 96; height: 26; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: painelDoStt.dados.autenticacoes || []
+                    Ficha {
+                        texto: modelData
+                        ativo: painelDoStt.ativo.autenticacao === modelData
+                        onEscolhida: ponte.definirNoEndpointStt("autenticacao", modelData)
+                    }
+                }
+            }
+            CampoDoEndpoint {
+                doStt: true
+                visible: (painelDoStt.ativo.autenticacao || "nenhuma") !== "nenhuma"
+                rotulo: "variável"; campo: "variavel_de_ambiente"
+                valor: painelDoStt.ativo.variavel_de_ambiente || ""; dica: "JARVIS_STT_ENDPOINT_API_KEY"
+            }
+            CampoDoEndpoint {
+                doStt: true
+                visible: painelDoStt.ativo.autenticacao === "cabecalho"
+                rotulo: "cabeçalho"; campo: "cabecalho"
+                valor: painelDoStt.ativo.cabecalho || ""; dica: "X-API-Key"; largura: 140
+            }
+            Flow {
+                width: parent.width
+                spacing: 8
+                Item { width: 96; height: 1 }
+                Botao { objectName: "testarEndpointStt"; texto: "testar"; onApertado: ponte.testarEndpointStt() }
+            }
+            Nota {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: painelDoStt.dados.erro
+                      ? painelDoStt.dados.erro
+                      : (painelDoStt.dados.frase
+                         ? painelDoStt.dados.frase
+                         : "o teste manda 1 s de silêncio, nada da sua voz. Fora do ar, o STT local ouve no lugar.")
             }
         }
 
