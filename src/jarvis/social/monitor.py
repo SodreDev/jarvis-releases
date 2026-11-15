@@ -39,6 +39,8 @@ from jarvis.social.redes import IDS, rede
 MAXIMO_DE_NOTIFICACOES: Final = 5
 """Por rede, no cartão da aba: as últimas cinco."""
 NOMES_NO_AVISO: Final = 3
+NOMES_NO_EVENTO: Final = 5
+"""Quantas conversas, com trecho e sinais, vão no evento ao Jarvis (o prompt tem teto)."""
 SEM_NOTICIA_S: Final = 90.0
 """Aba aberta e nenhum evento em 90 s: a extensão é a de antes (sem `social.js`) ou a aba
 foi descartada pelo navegador."""
@@ -63,6 +65,10 @@ class EventoInvalido(ValueError):
 class ConversaNaoLida:
     nome: str
     nao_lidas: int
+    trecho: str = ""
+    """A prévia que a lista mostra (de terceiros): evidência para o agente monitor (ADR-0070)."""
+    sinais: tuple[str, ...] = ()
+    """Os rótulos dos ícones da linha (aria-label, data-icon): o que separa mensagem de ligação."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +94,12 @@ class EstadoDaPagina:
                 logado=bool(evento["logado"]),
                 nao_lidas=int(evento["naoLidas"]),
                 conversas=tuple(
-                    ConversaNaoLida(str(c["nome"]), int(c["naoLidas"]))
+                    ConversaNaoLida(
+                        str(c["nome"]),
+                        int(c["naoLidas"]),
+                        str(c.get("trecho", "")),
+                        tuple(str(x) for x in c.get("sinais", [])),
+                    )
                     for c in evento.get("conversas", [])
                 ),
                 formato=str(evento.get("formato", "conhecido")),
@@ -104,7 +115,11 @@ class EstadoDaPagina:
 class Notificacao:
     rede: str
     texto: str
+    """A linha do cartão da rede, na tela (nunca falada)."""
     momento: float
+    evento: Mapping[str, Any] = field(default_factory=dict)
+    """O EVENTO estruturado que vai ao Jarvis (ADR-0070): rede, tipo, remetentes com trecho e
+    sinais, o que o monitor observou. Quem decide se fala, quando e o quê é o Jarvis."""
 
     @property
     def hora(self) -> str:
@@ -280,9 +295,12 @@ class EstadoDoMonitor:
                 ):
                     da_rede.estado = "sem_noticia"
 
-    def anotar(self, identificador: str, texto: str) -> Notificacao:
-        """Uma notificação que não veio da página (o resultado de uma resposta no modo ausente)."""
-        aviso = Notificacao(identificador, texto, self._relogio())
+    def anotar(
+        self, identificador: str, texto: str, evento: Mapping[str, Any] | None = None
+    ) -> Notificacao:
+        """Uma notificação que não veio da página (o resultado de uma resposta no modo ausente):
+        `texto` é a linha do cartão; `evento`, o que vai ao Jarvis."""
+        aviso = Notificacao(identificador, texto, self._relogio(), dict(evento or {}))
         with self._trava:
             self._redes[identificador].notificacoes.appendleft(aviso)
         return aviso
@@ -320,9 +338,15 @@ class EstadoDoMonitor:
                 da_rede.alerta = alerta
                 aviso = Notificacao(
                     pagina.rede,
-                    f"{rede(pagina.rede).nome}: sinal de alerta — {ALERTAS_DITOS[alerta]}. "
-                    "O Jarvis parou o envio desta rede por 24 h; confira a aba você mesmo.",
+                    f"sinal de alerta — {ALERTAS_DITOS[alerta]}",
                     agora,
+                    {
+                        "rede": rede(pagina.rede).nome,
+                        "tipo": "alerta_de_conta",
+                        "alerta": alerta,
+                        "o_que_a_pagina_mostra": ALERTAS_DITOS[alerta],
+                        "envio_automatico_pausado_por_24h": True,
+                    },
                 )
                 da_rede.notificacoes.appendleft(aviso)
                 return aviso
@@ -351,9 +375,10 @@ class EstadoDoMonitor:
                 return None
             novas = pagina.nao_lidas - da_rede.base
             da_rede.base = pagina.nao_lidas
-            if not notificar:
-                return None
-            aviso = Notificacao(pagina.rede, _texto(pagina, novas), agora)
+            # «Não avisa» é contexto do evento, não filtro (ADR-0070): o Jarvis sabe e decide.
+            aviso = Notificacao(
+                pagina.rede, _texto(pagina, novas), agora, _evento(pagina, novas, notificar)
+            )
             da_rede.notificacoes.appendleft(aviso)
             return aviso
 
@@ -395,8 +420,38 @@ def _nome_seguro(nome: str) -> str:
     return NOME_SUSPEITO if examinar(nome) is not None else nome
 
 
+def _evento(pagina: EstadoDaPagina, novas: int, notificar: bool) -> dict[str, Any]:
+    """O evento estruturado da subida de não lidas (ADR-0070): a evidência de cada conversa, crua.
+    O nome e o trecho são de terceiros: o que tenta dar ordens ao Jarvis vai marcado como
+    suspeito, sem o texto (ADR-0065)."""
+    remetentes = []
+    for conversa in pagina.conversas[:NOMES_NO_EVENTO]:
+        suspeito = examinar(conversa.nome) is not None or examinar(conversa.trecho) is not None
+        remetentes.append(
+            {
+                "remetente": NOME_SUSPEITO
+                if examinar(conversa.nome) is not None
+                else conversa.nome,
+                "nao_lidas": conversa.nao_lidas,
+                "trecho": "" if suspeito else conversa.trecho,
+                "sinais": [] if suspeito else list(conversa.sinais),
+                "suspeito": suspeito,
+            }
+        )
+    evento: dict[str, Any] = {
+        "rede": rede(pagina.rede).nome,
+        "tipo": "nao_lidas_subiram",
+        "novas": novas,
+        "remetentes": remetentes,
+        "outras_conversas": max(0, len(pagina.conversas) - NOMES_NO_EVENTO),
+    }
+    if not notificar:
+        evento["o_dono_desligou_os_avisos_desta_rede"] = True
+    return evento
+
+
 def _texto(pagina: EstadoDaPagina, novas: int) -> str:
-    """«2 mensagens novas — Ana (1), Bruno (1)». Só nomes e contagem: nunca o texto da mensagem."""
+    """A linha do cartão da rede (só tela): «2 mensagens novas — Ana (1), Bruno (1)»."""
     nome = rede(pagina.rede).nome
     plural = "mensagem nova" if novas == 1 else "mensagens novas"
     quem = ", ".join(

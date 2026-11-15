@@ -10,7 +10,7 @@ const NATIVE_HOST = "br.com.granafacil.jarvis";
 // número menor), diz ao dono para recarregá-la — em vez de ver as ferramentas novas falharem
 // uma a uma (dono, 2026-10-30: «o Jarvis não sabe mais usar a extensão»). Igual a
 // `VERSAO_DA_PONTE` em src/jarvis/navegador/protocolo.py (o teste confere).
-const VERSAO_DA_PONTE = 5;
+const VERSAO_DA_PONTE = 6;
 const MAX_ID = 80;
 const MAX_URL = 2_048;
 const RECONNECT_BASE_MS = 250;
@@ -1161,6 +1161,9 @@ const PISTAS_SOCIAIS = ["carregando", "sem_lista", "contador_ilegivel"];
 const MAX_AMOSTRA_SOCIAL = 60;
 const MAX_CONVERSAS_SOCIAIS = 20;
 const MAX_NOME_SOCIAL = 80;
+const MAX_TRECHO_SOCIAL = 160;
+const MAX_SINAIS_SOCIAIS = 6;
+const MAX_SINAL_SOCIAL = 40;
 const MAX_NAO_LIDAS = 9_999;
 
 function redeSocial(id) {
@@ -1213,6 +1216,14 @@ async function abrirRedeSocial(params) {
   return { tabId: criada.id, reutilizada: false };
 }
 
+function textoSocial(valor, maximo) {
+  return String(valor ?? "")
+    .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, maximo);
+}
+
 function estadoSocialLimpo(id, bruto) {
   // O que vem da página: só os campos do contrato, nos limites — o Jarvis valida de novo.
   const corpo = comoObjeto(bruto);
@@ -1221,12 +1232,14 @@ function estadoSocialLimpo(id, bruto) {
   const conversas = (Array.isArray(corpo.conversas) ? corpo.conversas : [])
     .slice(0, MAX_CONVERSAS_SOCIAIS)
     .map((c) => ({
-      nome: String(comoObjeto(c).nome ?? "")
-        .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/gu, " ")
-        .replace(/\s+/gu, " ")
-        .trim()
-        .slice(0, MAX_NOME_SOCIAL),
+      nome: textoSocial(comoObjeto(c).nome, MAX_NOME_SOCIAL),
       naoLidas: contagem(comoObjeto(c).naoLidas),
+      // A evidência crua da linha (ADR-0070): a prévia e os rótulos dos ícones.
+      trecho: textoSocial(comoObjeto(c).trecho, MAX_TRECHO_SOCIAL),
+      sinais: (Array.isArray(comoObjeto(c).sinais) ? comoObjeto(c).sinais : [])
+        .map((sinal) => textoSocial(sinal, MAX_SINAL_SOCIAL))
+        .filter((sinal) => sinal)
+        .slice(0, MAX_SINAIS_SOCIAIS),
     }))
     .filter((c) => c.nome);
   return {

@@ -31,6 +31,7 @@ mentir.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import queue
 import re
@@ -40,6 +41,7 @@ from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -138,6 +140,7 @@ from jarvis.s2.protocolo import sem_protocolo
 from jarvis.s2.regras import Regras, na_pasta
 from jarvis.s2.regras import padrao as padrao_das_regras
 from jarvis.s2.roteiro_do_navegador import Contato as CandidatoDeContato
+from jarvis.social.agente import AgenteMonitor, contexto_do_dono
 from jarvis.social.memorias import ARQUIVO as ARQUIVO_DAS_MEMORIAS
 from jarvis.social.memorias import MemoriaInvalida
 from jarvis.social.memorias import bloco as bloco_das_memorias
@@ -739,6 +742,8 @@ class Aplicativo:
     não repete (dono, 2026-10-25)."""
     _tarefas_entregues: set[str] = field(default_factory=set, repr=False)
     _progresso_avisado: dict[str, float] = field(default_factory=dict, repr=False)
+    _eventos_dos_avisos: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
+    """O evento de rede inteiro e o contexto do dono de cada aviso de rede (ADR-0070)."""
     """Quando o progresso de cada subagente foi à fila pela última vez (ADR-0070)."""
     """As tarefas cujo fim já foi entregue: o fim de uma tarefa sai uma vez só, por id."""
 
@@ -768,19 +773,48 @@ class Aplicativo:
             self.avisos.decidido(identificador, Entrega.SO_CARD)
         self._avisos_mudaram()
 
-    def aviso_de_rede(self, origem: str, resumo: str) -> None:
-        """Uma notificação do monitor das redes sociais (ADR-0060): entra na fila como as outras,
-        mas com a confiança de **terceiros** — o nome de quem mandou vem da página da rede."""
-        self.receber_aviso(
-            notificacao(
-                self.session_id,
-                f"rede-{uuid7()}",
-                tipo="evento",
-                origem=origem[:80],
-                resumo=resumo,
-                trust=Trust.THIRD_PARTY,
-            )
+    def evento_de_rede(
+        self,
+        origem: str,
+        evento: Mapping[str, Any],
+        *,
+        ausente: bool = False,
+        avisos_da_rede: bool = True,
+    ) -> None:
+        """Um evento do monitor das redes (ADR-0060, ADR-0070). O agente monitor classifica a
+        evidência (mensagem, ligação, notificação do sistema, outra; urgência observada) numa linha
+        própria, e o evento estruturado entra na fila com a confiança de **terceiros** e o modo do
+        dono como contexto. Quem decide se fala, quando e o quê é o Jarvis, no turno dos avisos."""
+        contexto = contexto_do_dono(
+            ausente=ausente,
+            hora=datetime.now().hour,
+            nao_perturbe=bool(getattr(self.avisos, "nao_perturbe", False)),
+            avisos_da_rede=avisos_da_rede,
         )
+
+        def entregar() -> None:
+            classificado = (
+                AgenteMonitor(lambda: self._motor).classificar(evento)
+                if evento.get("remetentes")
+                else dict(evento)
+            )
+            dados = json.dumps(classificado, ensure_ascii=False)
+            identificador = f"rede-{uuid7()}"
+            with self._trava_dos_avisos:
+                self._eventos_dos_avisos[identificador] = (dados, contexto)
+            self.receber_aviso(
+                notificacao(
+                    self.session_id,
+                    identificador,
+                    tipo="evento",
+                    origem=origem[:80],
+                    resumo=dados[:280],
+                    trust=Trust.THIRD_PARTY,
+                )
+            )
+
+        # O agente chama um modelo: fora da linha de quem avisou (o monitor, a janela).
+        threading.Thread(target=entregar, name="jarvis-agente-monitor", daemon=True).start()
 
     def _status_do_laco(self, resumo: str) -> None:
         """Progresso do encadeamento vai para a fila, nunca direto à fala em andamento."""
@@ -1323,9 +1357,12 @@ class Aplicativo:
                     notif_id=na_fila.notif_id,
                     tipo=na_fila.tipo,
                     origem=na_fila.origem,
-                    # O Jarvis decide com o texto inteiro (a tela), não só com o que cabia na voz.
+                    # O Jarvis decide com o texto inteiro (a tela, o evento de rede inteiro), não só
+                    # com o que cabia na voz ou no card.
                     resumo=self._telas_dos_avisos.get(na_fila.notif_id)
+                    or self._eventos_dos_avisos.get(na_fila.notif_id, ("", ""))[0]
                     or self._falas_dos_avisos.get(na_fila.notif_id, na_fila.resumo),
+                    contexto=self._eventos_dos_avisos.get(na_fila.notif_id, ("", ""))[1],
                     de_terceiros=na_fila.trust == str(Trust.THIRD_PARTY),
                 )
             )

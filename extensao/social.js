@@ -1,7 +1,10 @@
 /*
  * O monitor das redes sociais (ADR-0060), SOMENTE LEITURA: só roda nos hosts das cinco redes
- * (manifest.json) e só lê o título, o contador de não lidas e quem mandou. Não clica, não digita,
- * não rola e não lê o texto das mensagens (mapear o formato delas é para depois).
+ * (manifest.json) e lê o título, o contador de não lidas e, de cada conversa não lida, quem mandou,
+ * o trecho que a própria lista mostra (a prévia) e os sinais dos ícones da linha (o aria-label, o
+ * data-icon — o que distingue mensagem de ligação). Não classifica nada (ADR-0070): a evidência
+ * vai crua ao agente monitor do Jarvis, que decide o que é. Não clica, não digita, não rola e não
+ * abre a conversa.
  *
  * O estado vai ao fundo da extensão (`{tipo: "social"}`), que o repassa ao Jarvis como evento —
  * só quando muda, e uma vez por minuto para o Jarvis saber que a aba continua viva. Os seletores
@@ -25,6 +28,9 @@
   const MAX_NOME = 80;
   const MAX_CONTAGEM = 9_999;
   const MAX_AMOSTRA = 60;
+  const MAX_TRECHO = 160;
+  const MAX_SINAIS = 6;
+  const MAX_SINAL = 40;
   const CARREGANDO_MS = 45_000;
   // Até aqui, sem login nem lista, é a página carregando (o WhatsApp Web leva segundos na tela de
   // «carregando suas conversas», mais ainda numa aba de fundo); depois, é a página que mudou.
@@ -187,6 +193,40 @@
     return { naoLidas: 1, ilegivel: [texto, rotulo].filter((t) => limpo(t, 80)).join(" | ") };
   }
 
+  function trechoDaLinha(linha, nome, selo) {
+    // A prévia que a lista mostra: o texto da linha sem o nome e sem o contador. É de terceiros e
+    // vai crua, curta e limpa ao Jarvis (o Python ainda confere injeção, ADR-0065).
+    let texto = limpo(linha.textContent, 4 * MAX_TRECHO);
+    for (const tirar of [nome, limpo(selo?.textContent, MAX_SINAL)]) {
+      if (tirar) {
+        texto = texto.split(tirar).join(" ");
+      }
+    }
+    return limpo(texto, MAX_TRECHO);
+  }
+
+  function sinaisDaLinha(linha, selo) {
+    // Os rótulos dos ícones da linha (aria-label, data-icon, title curto): «Chamada de voz
+    // perdida», «missed-voice-call», «Mensagem de voz». Sem interpretar: o agente lê.
+    const sinais = [];
+    const elementos = [linha, ...linha.querySelectorAll?.("[aria-label], [data-icon], svg[title]") ?? []];
+    for (const elemento of elementos) {
+      if (elemento === selo) {
+        continue;
+      }
+      for (const atributo of ["data-icon", "aria-label"]) {
+        const valor = limpo(elemento.getAttribute?.(atributo), MAX_SINAL);
+        if (valor && !sinais.includes(valor)) {
+          sinais.push(valor);
+        }
+      }
+      if (sinais.length >= MAX_SINAIS) {
+        break;
+      }
+    }
+    return sinais.slice(0, MAX_SINAIS);
+  }
+
   function conversasNaoLidas(raiz, rede) {
     const saida = [];
     let ilegivel = "";
@@ -202,7 +242,12 @@
         MAX_NOME,
       );
       if (lido.naoLidas > 0 && nome) {
-        saida.push({ nome, naoLidas: Math.min(MAX_CONTAGEM, lido.naoLidas) });
+        saida.push({
+          nome,
+          naoLidas: Math.min(MAX_CONTAGEM, lido.naoLidas),
+          trecho: trechoDaLinha(linha, nome, selo),
+          sinais: sinaisDaLinha(linha, selo),
+        });
         ilegivel ||= lido.ilegivel;
       }
       if (saida.length >= MAX_CONVERSAS) {

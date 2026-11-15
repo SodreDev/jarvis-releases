@@ -191,7 +191,7 @@ test("social.estado pergunta à aba da rede e devolve só o contrato, limpo", as
   assert.deepEqual(resposta.result, {
     logado: true,
     naoLidas: 2,
-    conversas: [{ nome: "Ana X", naoLidas: 2 }],
+    conversas: [{ nome: "Ana X", naoLidas: 2, trecho: "", sinais: [] }],
     formato: "conhecido",
     alerta: "",
     pista: "contador_ilegivel",

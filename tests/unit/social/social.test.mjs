@@ -175,12 +175,29 @@ function carregar(host = "", api = undefined) {
 
 const social = carregar();
 
+function soNomes(conversas) {
+  // O nome e a contagem (os outros campos, a prévia e os sinais, têm o teste deles).
+  return [...conversas].map((c) => ({ nome: c.nome, naoLidas: c.naoLidas }));
+}
+
+test("a prévia e os ícones de cada linha vão crus ao agente, sem classificar (ADR-0070)", async () => {
+  const estado = social.lerEstado("whatsapp", await pagina("whatsapp-ligacao"));
+  assert.equal(estado.naoLidas, 2);
+  const [carla, dani] = estado.conversas;
+  assert.equal(carla.nome, "Carla");
+  assert.equal(carla.trecho, "Pode me ligar quando sair?");
+  assert.equal(dani.trecho, "Chamada de voz perdida");
+  assert.ok([...dani.sinais].includes("missed-voice-call"), JSON.stringify(dani.sinais));
+  assert.ok(![...dani.sinais].some((s) => /não lida/.test(s)), "o selo do contador não é sinal");
+  assert.equal("tipo" in dani, false, "a extensão não classifica: quem classifica é o agente");
+});
+
 test("WhatsApp logado: contagem do título, quem mandou e nome limpo de controle", async () => {
   const estado = social.lerEstado("whatsapp", await pagina("whatsapp-logado"));
   assert.equal(estado.logado, true);
   assert.equal(estado.formato, "conhecido");
   assert.equal(estado.naoLidas, 3);
-  assert.deepEqual(JSON.parse(JSON.stringify(estado.conversas)), [
+  assert.deepEqual(soNomes(estado.conversas), [
     { nome: "Ana Prestadora", naoLidas: 2 },
     { nome: "Bruno moc.elpmaxe", naoLidas: 1 },
   ]);
@@ -220,7 +237,7 @@ test("todos os formatos de contador da página: milhar, 99+, bolinha, outros alf
   const estado = social.lerEstado("whatsapp", await pagina("whatsapp-contadores"));
   assert.equal(estado.formato, "conhecido");
   assert.equal(estado.pista, "", "tudo reconhecido: nenhuma pista");
-  assert.deepEqual(JSON.parse(JSON.stringify(estado.conversas)), [
+  assert.deepEqual(soNomes(estado.conversas), [
     { nome: "Ana", naoLidas: 1234 },
     { nome: "Bruno", naoLidas: 99 },
     { nome: "Carla", naoLidas: 1 },
@@ -235,18 +252,18 @@ test("todos os formatos de contador da página: milhar, 99+, bolinha, outros alf
 test("interface em inglês e em espanhol", async () => {
   const ingles = social.lerEstado("whatsapp", await pagina("whatsapp-ingles"));
   assert.equal(ingles.formato, "conhecido");
-  assert.deepEqual(JSON.parse(JSON.stringify(ingles.conversas)), [{ nome: "Grace", naoLidas: 2 }]);
+  assert.deepEqual(soNomes(ingles.conversas), [{ nome: "Grace", naoLidas: 2 }]);
   const espanhol = social.lerEstado("whatsapp", await pagina("whatsapp-espanhol"));
   assert.equal(espanhol.formato, "conhecido");
   assert.equal(espanhol.logado, true);
-  assert.deepEqual(JSON.parse(JSON.stringify(espanhol.conversas)), [{ nome: "Inés", naoLidas: 1 }]);
+  assert.deepEqual(soNomes(espanhol.conversas), [{ nome: "Inés", naoLidas: 1 }]);
 });
 
 test("contador que não se reconhece conta 1, dá a pista e uma amostra sem o nome de ninguém", async () => {
   const estado = social.lerEstado("whatsapp", await pagina("whatsapp-contador-estranho"));
   assert.equal(estado.formato, "conhecido");
   assert.equal(estado.logado, true);
-  assert.deepEqual(JSON.parse(JSON.stringify(estado.conversas)), [{ nome: "Zé Ninguém", naoLidas: 1 }]);
+  assert.deepEqual(soNomes(estado.conversas), [{ nome: "Zé Ninguém", naoLidas: 1 }]);
   assert.equal(estado.pista, "contador_ilegivel");
   assert.equal(estado.amostra, "1,5 mil | 1,5 mil mensagens nao lidas de x x");
   assert.ok(estado.amostra.length <= 60);
@@ -411,7 +428,7 @@ test("fatia E: Instagram, Facebook, TikTok e Discord — logado, login e alerta"
   const messenger = social.lerEstado("facebook", await pagina("facebook-messenger"));
   assert.equal(messenger.logado, true);
   assert.deepEqual(
-    JSON.parse(JSON.stringify(messenger.conversas)),
+    soNomes(messenger.conversas),
     [{ nome: "Otávio Lima", naoLidas: 1 }],
   );
 

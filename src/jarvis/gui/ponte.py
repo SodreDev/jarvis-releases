@@ -18,6 +18,7 @@ Duas coisas importam na implementação, e as duas são sobre thread:
 from __future__ import annotations
 
 import contextlib
+import json
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -634,7 +635,10 @@ class Ponte(QObject):
             configuracao=lambda: self._redes.configuracao,
             familia=familia,
             # Os dois vêm do fio do monitor: o sinal do Qt entrega na thread da janela.
-            ao_notificar=lambda aviso: self.redeNotificou.emit(aviso.rede, aviso.texto),
+            # O evento estruturado (ADR-0070), não uma frase: o Jarvis decide se e como fala.
+            ao_notificar=lambda aviso: self.redeNotificou.emit(
+                aviso.rede, json.dumps(dict(aviso.evento), ensure_ascii=False)
+            ),
             ao_mudar=self.redesMudaram.emit,
             # Sinal de alerta (captcha, conta limitada, logout…): todo envio da rede para por 24 h.
             ao_alerta=lambda rede, alerta: self._redes.pausas.pausar(rede, alerta, time.time()),
@@ -645,13 +649,21 @@ class Ponte(QObject):
         )
 
         def resultado(feito: Resultado) -> None:
-            texto = (
-                f"WhatsApp: respondi a {feito.nome} (você está ausente)"
+            # O cartão mostra a linha; ao Jarvis vai o evento (ADR-0070), sem frase pronta.
+            linha = (
+                f"respondi a {feito.nome} (ausente)"
                 if feito.enviado
-                else f"WhatsApp: não respondi a {feito.nome} — {feito.motivo}"
+                else f"não respondi a {feito.nome} — {feito.motivo}"
             )
-            aviso = monitor.estado.anotar("whatsapp", texto)
-            self.redeNotificou.emit(aviso.rede, aviso.texto)
+            evento = {
+                "rede": "WhatsApp",
+                "tipo": "resposta_automatica",
+                "remetente": feito.nome,
+                "enviada": feito.enviado,
+                "motivo_de_nao_enviar": "" if feito.enviado else feito.motivo,
+            }
+            aviso = monitor.estado.anotar("whatsapp", linha, evento)
+            self.redeNotificou.emit(aviso.rede, json.dumps(evento, ensure_ascii=False))
             self.redesMudaram.emit()
 
         ausente = RespostaAusente(
@@ -671,12 +683,26 @@ class Ponte(QObject):
         self._redes.ao_mudar = lambda _configuracao: monitor.atualizar()
         monitor.iniciar()
 
-    def _avisar_da_rede(self, rede: str, texto: str) -> None:
-        """Uma notificação de rede (ADR-0060): na fila de avisos da conversa aberta, com a
-        confiança de terceiros (o nome de quem mandou vem da página), e sempre no cartão da rede."""
+    def _avisar_da_rede(self, rede: str, evento_json: str) -> None:
+        """Um evento de rede (ADR-0060, ADR-0070): vai ao Jarvis da conversa aberta, estruturado,
+        com o modo do dono (ausente) e o ajuste da rede como contexto — quem decide é ele. Sempre
+        fica no cartão da rede."""
         sessao = self._sessao
-        if sessao is not None and sessao.viva and sessao.aplicativo is not None:
-            sessao.aplicativo.aviso_de_rede(Notificacao(rede, texto, 0.0).nome_da_rede, texto)
+        if sessao is None or not sessao.viva or sessao.aplicativo is None:
+            return
+        try:
+            evento = json.loads(evento_json)
+        except ValueError:
+            return
+        if not isinstance(evento, dict):
+            return
+        configuracao = self._redes.configuracao
+        sessao.aplicativo.evento_de_rede(
+            Notificacao(rede, "", 0.0).nome_da_rede,
+            evento,
+            ausente=configuracao.envio.ausente,
+            avisos_da_rede=configuracao.ajuste(rede).notificar,
+        )
 
     def _redigir_para_ausente(self, nome: str) -> str | None:
         """O texto da resposta, redigido pelo motor da conversa aberta; `None` sem conversa."""

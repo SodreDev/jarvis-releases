@@ -8,6 +8,7 @@ que não tocou e o arquivo de estado do microfone.
 
 from __future__ import annotations
 
+import time
 import wave
 from pathlib import Path
 
@@ -475,11 +476,28 @@ def test_o_fim_da_tarefa_fala_o_aviso_do_codigo_e_cala_quando_ele_pede(tmp_path:
     ]
 
 
-def test_aviso_de_rede_entra_na_fila_como_terceiros(tmp_path: Path) -> None:
-    """ADR-0060: a notificação do monitor das redes leva o nome de quem mandou (da página): vai à
-    fila como as outras, com a confiança de terceiros, que o card mostra."""
+def test_evento_de_rede_entra_na_fila_como_terceiros_com_o_modo_como_contexto(
+    tmp_path: Path,
+) -> None:
+    """ADR-0060 e ADR-0070: o evento do monitor das redes vai à fila estruturado, com a confiança de
+    terceiros e o modo do dono como contexto; o agente monitor classifica antes (sem motor, segue
+    sem classificação). Quem decide falar é o Jarvis, no turno dos avisos."""
     app = aplicativo_de(tmp_path)
-    app.aviso_de_rede("WhatsApp", "WhatsApp: 1 mensagem nova — Ana (1)")
+    app._motor = None
+    evento = {
+        "rede": "WhatsApp",
+        "tipo": "nao_lidas_subiram",
+        "novas": 1,
+        "remetentes": [{"remetente": "Ana", "nao_lidas": 1, "trecho": "oi", "sinais": []}],
+    }
+    app.evento_de_rede("WhatsApp", evento, ausente=True, avisos_da_rede=True)
+    limite = time.monotonic() + 5.0
+    while not app.dados_dos_avisos()["avisos"] and time.monotonic() < limite:
+        time.sleep(0.01)
     (aviso,) = app.dados_dos_avisos()["avisos"]
     assert aviso["origem"] == "WhatsApp"
     assert aviso["confianca"] == "terceiros"
+    with app._trava_dos_avisos:
+        (liberado,) = app._liberados(app.avisos.mensagem_do_dono("t-1", app.relogio_dos_avisos()))
+    assert '"tipo": "nao_classificado"' in liberado.resumo, "sem motor, segue sem classificação"
+    assert "ausente" in liberado.contexto and liberado.de_terceiros

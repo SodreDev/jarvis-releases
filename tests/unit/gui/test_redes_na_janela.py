@@ -8,6 +8,7 @@ inclusive o navegador preferido e cada rede. Nada aqui abre navegador nem conta:
 # ruff: noqa: F811 — as fixtures vêm de `test_janela` e são parâmetros aqui
 from __future__ import annotations
 
+import json
 import os
 import stat
 from collections.abc import Callable
@@ -285,7 +286,7 @@ def test_notificacao_da_rede_vai_a_fila_da_conversa_pelo_laco(
 
     from tests.unit.social.test_monitor import PonteFalsa
 
-    recebidos: list[tuple[str, str]] = []
+    recebidos: list[tuple[str, dict[str, Any], bool, bool]] = []
     ponte = Ponte(
         raiz=tmp_path / "sessao",
         caminho_da_configuracao=maquina["config"],
@@ -296,10 +297,16 @@ def test_notificacao_da_rede_vai_a_fila_da_conversa_pelo_laco(
     try:
         cast(Any, ponte)._sessao = SimpleNamespace(
             viva=True,
-            aplicativo=SimpleNamespace(aviso_de_rede=lambda o, r: recebidos.append((o, r))),
+            aplicativo=SimpleNamespace(
+                evento_de_rede=lambda o, e, *, ausente, avisos_da_rede: recebidos.append(
+                    (o, e, ausente, avisos_da_rede)
+                )
+            ),
         )
-        ponte._avisar_da_rede("discord", "Discord: 1 mensagem nova — edu (1)")
-        assert recebidos == [("Discord", "Discord: 1 mensagem nova — edu (1)")]
+        evento = {"rede": "Discord", "tipo": "nao_lidas_subiram", "novas": 1}
+        ponte._avisar_da_rede("discord", json.dumps(evento))
+        # O evento estruturado, com o modo do dono (ADR-0070): nenhuma frase pronta.
+        assert recebidos == [("Discord", evento, False, True)]
     finally:
         ponte.parar_o_monitor_das_redes()
 
@@ -434,7 +441,7 @@ def test_ausente_de_ponta_a_ponta_responde_a_ana_pela_ponte_falsa(
             viva=True,
             aplicativo=SimpleNamespace(
                 redigir_para_ausente=lambda nome: f"Oi, {nome.split()[0]}! Ele volta à tarde.",
-                aviso_de_rede=lambda origem, resumo: None,
+                evento_de_rede=lambda *_a, **_k: None,
             ),
         )
         assert vista.redes.definirEnvioAutomatico(True)

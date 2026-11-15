@@ -63,7 +63,7 @@ EVENTOS: Final = frozenset({"parar", "social"})
 ORIGENS_DA_PARADA: Final = frozenset({"faixa", "barra"})
 """Onde o dono apertou PARAR: na faixa desenhada na página, ou no botão da extensão na barra."""
 MAXIMO_DE_CONCESSOES: Final = 32
-VERSAO_DA_PONTE: Final = 5
+VERSAO_DA_PONTE: Final = 6
 """O contrato de métodos entre o Jarvis, o host e a extensão. Sobe a cada método novo, junto com
 `VERSAO_DA_PONTE` de extensao/background.js (o teste confere). A 2 é a do CDP (ADR-0051) mais
 `ponte.versao`: a extensão que não responde a ela, ou responde menos, é a de antes — o dono ouve
@@ -385,6 +385,10 @@ página mudou), ou um contador veio num formato que o `social.js` não reconhece
 LIMITE_DA_AMOSTRA: Final = 60
 MAXIMO_DE_CONVERSAS: Final = 20
 LIMITE_DO_NOME: Final = 80
+LIMITE_DO_TRECHO: Final = 160
+"""A prévia da conversa que a lista mostra (ADR-0070): evidência para o agente monitor."""
+MAXIMO_DE_SINAIS: Final = 6
+LIMITE_DO_SINAL: Final = 40
 MAXIMO_DE_NAO_LIDAS: Final = 9_999
 ALERTAS_SOCIAIS: Final = frozenset({"", "captcha", "verificacao", "limitada", "atividade_incomum"})
 """Os sinais de alerta que a página mostra (docs/redes-sociais-riscos.md §6); vazio = nenhum."""
@@ -442,8 +446,13 @@ def validar_estado_social(bruto: object) -> dict[str, Any]:
         raise PedidoInvalido(f"conversas: lista de até {MAXIMO_DE_CONVERSAS}")
     limpas = []
     for conversa in conversas:
-        if not isinstance(conversa, dict) or set(conversa) != {"nome", "naoLidas"}:
-            raise PedidoInvalido("conversa fora do contrato {nome, naoLidas}")
+        if not isinstance(conversa, dict) or not {"nome", "naoLidas"} <= set(conversa) <= {
+            "nome",
+            "naoLidas",
+            "trecho",
+            "sinais",
+        }:
+            raise PedidoInvalido("conversa fora do contrato {nome, naoLidas, trecho?, sinais?}")
         nome = conversa["nome"]
         if (
             not isinstance(nome, str)
@@ -452,7 +461,33 @@ def validar_estado_social(bruto: object) -> dict[str, Any]:
             or _INVISIVEIS.search(nome)
         ):
             raise PedidoInvalido("nome da conversa vazio, longo ou com caractere de controle")
-        limpas.append({"nome": nome, "naoLidas": _contagem(conversa["naoLidas"], "naoLidas")})
+        trecho = conversa.get("trecho", "")
+        if (
+            not isinstance(trecho, str)
+            or len(trecho) > LIMITE_DO_TRECHO
+            or _INVISIVEIS.search(trecho)
+        ):
+            raise PedidoInvalido(
+                f"trecho: texto de até {LIMITE_DO_TRECHO} caracteres, sem controle"
+            )
+        sinais = conversa.get("sinais", [])
+        if (
+            not isinstance(sinais, list)
+            or len(sinais) > MAXIMO_DE_SINAIS
+            or not all(
+                isinstance(x, str) and 0 < len(x) <= LIMITE_DO_SINAL and not _INVISIVEIS.search(x)
+                for x in sinais
+            )
+        ):
+            raise PedidoInvalido(f"sinais: até {MAXIMO_DE_SINAIS} rótulos curtos")
+        limpas.append(
+            {
+                "nome": nome,
+                "naoLidas": _contagem(conversa["naoLidas"], "naoLidas"),
+                "trecho": trecho,
+                "sinais": list(sinais),
+            }
+        )
     return {
         "evento": "social",
         "rede": str(rede),
