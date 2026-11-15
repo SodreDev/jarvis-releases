@@ -1485,10 +1485,6 @@ def comando_de_estilo(fala: str, estilos: Sequence[str], padrao: str = "") -> st
     return None
 
 
-def frase_do_estilo(estilo: str) -> str:
-    return f"Certo, estilo {estilo}."
-
-
 def estilos_conhecidos(endpoint: Endpoint, extras: Iterable[str] = ()) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys((*([endpoint.estilo] if endpoint.estilo else []), *endpoint.estilos, *extras))

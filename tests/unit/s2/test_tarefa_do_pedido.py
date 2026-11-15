@@ -217,12 +217,12 @@ def test_protocolo_escrito_como_texto_nao_vai_a_fala_ao_delegar(
 def test_protocolo_escrito_como_texto_nao_vai_a_resposta_da_tarefa(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    """Com um passo só no turno, o segundo vai para a tarefa — e a resposta dela também perde o
-    protocolo e a frase que cita a ferramenta."""
+    """A tarefa itera os passos — e a resposta dela também perde o protocolo e a frase que cita
+    a ferramenta."""
     motor = MotorRoteirizado(resposta=_roteiro_da_nota)
     publicados: list[dict[str, Any]] = []
 
-    resposta = _cerebro(executor, motor, passos_no_turno=1).responder(
+    resposta = _cerebro(executor, motor).responder(
         "o que tem na minha nota?", epoch=0, publicar=publicados.append
     )
     tarefa = _tarefa(executor, resposta.tarefa_id)
@@ -286,7 +286,7 @@ def test_sem_frase_do_motor_o_codigo_nao_fala_ao_delegar(
         return ["Na sua nota tem comprar café."]
 
     publicados: list[dict[str, Any]] = []
-    resposta = _cerebro(executor, MotorRoteirizado(resposta=roteiro), passos_no_turno=1).responder(
+    resposta = _cerebro(executor, MotorRoteirizado(resposta=roteiro)).responder(
         "lê a nota de Documentos", epoch=0, publicar=publicados.append
     )
     assert _falado(publicados) == "", "sem «Certo, já cuido disso.» do código (ADR-0070)"
@@ -498,7 +498,6 @@ def test_a_pergunta_da_tarefa_espera_o_sim_falado_depois_de_tocar(
         portao=PortaoDeAcao(classificador=_jev("sim")),
         pendencias=RegistroDePendencias(relogio=relogio),
         autorizacoes=AutorizacoesExplicitas(relogio=relogio),
-        passos_no_turno=1,  # a segunda ferramenta já é da tarefa: a pergunta nasce nela
     )
     resposta = cerebro.responder(
         "lê as notas e abre o site que estiver nelas", epoch=0, publicar=lambda _p: None
@@ -546,3 +545,38 @@ def test_a_voz_da_pergunta_nao_tem_id_de_ferramenta_nem_json(
     assert "browser.click" in pergunta.detalhe and "{" in pergunta.detalhe
     assert pergunta.para_ouvir == "clicar num elemento da página «Enviar»"
     _sem_protocolo(pergunta.para_ouvir)
+
+
+# --- o teto do turno vira notificação, e o Jarvis decide seguir pelo subagente (a17) ----------
+def test_no_teto_do_turno_o_jarvis_decide_seguir_pelo_subagente(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """a17 (ADR-0070): o prazo do turno acabou enquanto o Jarvis pensava; ele recebe a
+    notificação do limite e, como ainda falta, propõe o passo — que vai ao subagente. A fala do
+    turno é a dele; a resposta ao dono vem da tarefa, depois."""
+    from jarvis.s2.cerebro import NOTA_DO_LIMITE_DO_TURNO
+
+    relogio = [0.0]
+
+    def roteiro(contexto: Contexto) -> Sequence[Parte]:
+        if NOTA_DO_LIMITE_DO_TURNO in contexto.sistema:
+            assert contexto.ferramentas, "com o subagente, a rodada do limite pode seguir"
+            return [
+                "Está demorando; continuo em segundo plano. ",
+                PedidoDeTool("files.list_dir", {"path": "~/Documentos"}),
+            ]
+        if not _feitas(contexto):
+            relogio[0] = 1000.0  # pensar esgotou o prazo do turno
+            return [PedidoDeTool("system.clock.now", {})]
+        return ["Na pasta tem o arquivo de notas."]
+
+    publicados: list[dict[str, Any]] = []
+    resposta = _cerebro(
+        executor, MotorRoteirizado(resposta=roteiro), relogio=lambda: relogio[0]
+    ).responder("vê a hora e lista Documentos", epoch=0, publicar=publicados.append)
+
+    assert resposta.ferramentas == [], "depois do prazo, nada roda no turno"
+    assert resposta.limite_do_turno and resposta.tarefa_id, "seguiu pelo subagente"
+    assert _falado(publicados) == "Está demorando; continuo em segundo plano."
+    tarefa = _tarefa(executor, resposta.tarefa_id)
+    assert tarefa.resposta == "Na pasta tem o arquivo de notas."

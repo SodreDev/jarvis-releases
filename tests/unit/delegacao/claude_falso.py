@@ -53,7 +53,31 @@ def main() -> int:
         sys.stdout.write("x" * (600 * 1024))
         return 0
     if modo == "erro":
-        print(json.dumps({"type": "result", "subtype": "error_max_turns", "is_error": True}))
+        print(json.dumps({"type": "result", "subtype": "error_during_execution", "is_error": True}))
+        return 1
+    if modo == "max_turnos":
+        # O teto de turnos (ADR-0070, a19): os passos saem no stream e o `result` vem sem texto.
+        passos: tuple[dict[str, object], ...] = (
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Achei a conversa da Ana."}]},
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "tool_use", "name": "mcp__claude-in-chrome__computer", "input": {}}
+                    ]
+                },
+            },
+        )
+        for passo in passos:
+            print(json.dumps(passo), flush=True)
+        print(
+            json.dumps(
+                {"type": "result", "subtype": "error_max_turns", "is_error": True, "num_turns": 7}
+            )
+        )
         return 1
     resposta = {
         "type": "result",

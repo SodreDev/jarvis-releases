@@ -31,8 +31,11 @@ def _encerrar(pid: int) -> None:
     if comm.exists() and comm.read_text().strip() == "sleep":
         os.kill(pid, signal.SIGTERM)
         for _ in range(100):
-            if not comm.exists() or Path(f"/proc/{pid}/stat").read_text().split()[2] == "Z":
-                break
+            try:
+                if Path(f"/proc/{pid}/stat").read_text().split()[2] == "Z":
+                    break
+            except FileNotFoundError:
+                break  # já foi colhido entre uma olhada e outra: é o que o teste quer
             time.sleep(0.02)
 
 

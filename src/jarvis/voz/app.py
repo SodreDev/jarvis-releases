@@ -1242,7 +1242,7 @@ class Aplicativo:
         quem decidiu foi ele."""
         if tarefa.estado is EstadoDaTarefa.CANCELADA:
             self._entrega_silenciosa(
-                tarefa, "cancelada_pelo_dono", "Parei o que você tinha pedido."
+                tarefa, "cancelada_pelo_dono", f"(cancelada pelo dono: {tarefa.descricao})"
             )
             return
         if tarefa.aviso == "":
@@ -1283,7 +1283,9 @@ class Aplicativo:
         """A ação que o dono confirmou no clique (`fluxo_de_acao._despachar`): o fim é a resposta a
         ela, dita como fala — o aviso da ferramenta («Encerrei o Steam.») ou a frase da ação."""
         if tarefa.estado is EstadoDaTarefa.CANCELADA:
-            self._entrega_silenciosa(tarefa, "cancelada_pelo_dono", "Parei o que você confirmou.")
+            self._entrega_silenciosa(
+                tarefa, "cancelada_pelo_dono", f"(cancelada pelo dono: {tarefa.descricao})"
+            )
             return
         if tarefa.estado is EstadoDaTarefa.CONCLUIDA:
             tipo = "concluida"

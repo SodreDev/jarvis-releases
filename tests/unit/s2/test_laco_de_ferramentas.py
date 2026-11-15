@@ -17,7 +17,7 @@ from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo
 from jarvis.politica.pdp import Pdp
-from jarvis.s2.cerebro import MAXIMO_DE_RODADAS, Cerebro
+from jarvis.s2.cerebro import MAXIMO_DE_RODADAS, NOTA_DO_LIMITE_DO_TURNO, Cerebro
 from jarvis.s2.motor import Contexto, Delta, PedidoDeTool, Texto
 from jarvis.s2.motor_claude_cli import (
     MARCA_DE_FERRAMENTA,
@@ -305,17 +305,55 @@ def test_interromper_durante_a_ferramenta_para_o_laco(executor: ExecutorDeFerram
 
 
 def test_motor_que_so_pede_ferramenta_para_no_teto(executor: ExecutorDeFerramentas) -> None:
+    """No teto de passos, o turno não acaba calado (a17, ADR-0070): o motor recebe a notificação
+    do limite numa rodada final, sem ferramentas (não há subagente aqui) — e, se ainda assim só
+    pedir ferramenta, nada roda e o motivo fica na tela."""
     motor = MotorRoteirizado(
         resposta=lambda _c: [PedidoDeTool("files.list_dir", {"path": "~/Documentos"})]
     )
     resposta = Cerebro(motor=motor, ferramentas=executor).responder(
         "?", epoch=0, publicar=lambda _: None
     )
-    assert len(motor.pedidos) == MAXIMO_DE_RODADAS
+    assert len(motor.pedidos) == MAXIMO_DE_RODADAS + 1
+    assert len(resposta.ferramentas) == MAXIMO_DE_RODADAS, "a rodada final não executa nada"
+    final = motor.pedidos[-1]
+    assert NOTA_DO_LIMITE_DO_TURNO in final.sistema and final.ferramentas == ()
+    assert "teto do turno" in resposta.limite_do_turno
     assert "sem responder" in resposta.detalhe
 
 
-def test_prazo_do_laco_e_configuravel_e_nao_chama_o_motor_depois_de_esgotado(
+def test_prazo_do_laco_e_configuravel_e_vira_notificacao_ao_motor(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """O prazo do turno esgotado não corta o Jarvis calado (a17, ADR-0070): ele recebe o limite e
+    o que foi feito, e decide o que dizer — a fala é dele, não do código."""
+    vistos: list[Contexto] = []
+
+    def roteiro(contexto: Contexto) -> list[Any]:
+        vistos.append(contexto)
+        if NOTA_DO_LIMITE_DO_TURNO in contexto.sistema:
+            return ["Demorei demais nessa; quer que eu tente de novo?"]
+        return [PedidoDeTool("files.list_dir", {"path": "~/Documentos"})]
+
+    motor = MotorRoteirizado(resposta=roteiro)
+    publicados: list[dict[str, Any]] = []
+    resposta = Cerebro(
+        motor=motor,
+        ferramentas=executor,
+        prazo_do_laco_de_ferramentas_s=0.0,
+        relogio=lambda: 0.0,
+    ).responder("lista", epoch=0, publicar=publicados.append)
+
+    assert len(vistos) == 1, "só a rodada do limite: o laço não roda depois do prazo"
+    assert "prazo de 0 s" in vistos[0].sistema
+    assert resposta.ferramentas == []
+    assert resposta.fim.value == "concluido", "ele respondeu: não há «sem resposta» na tela"
+    assert resposta.limite_do_turno
+    falado = " ".join(str(p["text"]) for p in publicados if p["text"])
+    assert falado == "Demorei demais nessa; quer que eu tente de novo?"
+
+
+def test_prazo_do_laco_sem_resposta_do_motor_fica_como_prazo(
     executor: ExecutorDeFerramentas,
 ) -> None:
     motor = _roteiro([PedidoDeTool("files.list_dir", {"path": "~/Documentos"})])
@@ -327,7 +365,7 @@ def test_prazo_do_laco_e_configuravel_e_nao_chama_o_motor_depois_de_esgotado(
     ).responder("lista", epoch=0, publicar=lambda _: None)
 
     assert resposta.fim.value == "prazo"
-    assert motor.pedidos == []
+    assert resposta.ferramentas == [], "a rodada do limite não executa ferramenta no turno"
 
 
 def test_sem_executor_o_pedido_volta_negado_e_o_motor_responde() -> None:

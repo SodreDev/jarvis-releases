@@ -5,9 +5,9 @@ respondia de novo — a resposta dele e mais uma. Aqui, com o motor roteirizado 
 (o caminho rápido desligado: é o caso em que a regra não pegou a fala) e a máquina falsa dos testes
 de fechar e encerrar:
 
-- a ação roda no turno (`passos_no_turno=2`: o caminho no turno, que a produção só usa para as
-  consultas do Jarvis — ADR-0070) e o dono ouve o resultado **uma vez**, na fala do motor: sem
-  frase do código depois da ação, e sem o código encerrar o turno (ADR-0070);
+- a ação roda no turno (o laço todo no turno, sem o subagente: o que o harness usa; com o
+  subagente ligado, a execução vai a ele — ADR-0070) e o dono ouve o resultado **uma vez**, na
+  fala do motor: sem frase do código depois da ação, e sem o código encerrar o turno;
 - o aviso de uma moderada vai ao motor como dado, e a fala é dele;
 - nenhuma tarefa nasce para isso.
 """
@@ -78,11 +78,13 @@ def _feitas(contexto: Contexto) -> int:
     return sum(m.papel == "ferramenta" for m in contexto.mensagens)
 
 
-def _cerebro(executor: ExecutorDeFerramentas, motor: MotorRoteirizado) -> Cerebro:
+def _cerebro(
+    executor: ExecutorDeFerramentas, motor: MotorRoteirizado, *, subagente: bool = False
+) -> Cerebro:
     # O caminho rápido desligado: quem propõe é o motor, como na fala que a regra não pega. Estes
-    # testes são do caminho NO TURNO (as primeiras ferramentas rodam nele), que segue no código
-    # para quem o escolhe (`passos_no_turno` > 0); o padrão, desde a ADR-0070, é delegar tudo.
-    return Cerebro(motor=motor, ferramentas=executor, delegar_em_tarefa=True, passos_no_turno=2)
+    # testes são do laço NO TURNO (sem o subagente); com ele ligado — a produção, ADR-0070 —, toda
+    # execução vai ao subagente desde o primeiro passo.
+    return Cerebro(motor=motor, ferramentas=executor, delegar_em_tarefa=subagente)
 
 
 def _falado(publicados: Sequence[dict[str, Any]]) -> str:
@@ -203,7 +205,7 @@ def test_a_resposta_com_algo_novo_depois_da_acao_e_dita(
     assert len(motor.pedidos) == 2
 
 
-def test_o_terceiro_passo_e_trabalho_longo_e_vai_para_a_tarefa(
+def test_com_o_subagente_todo_o_pedido_composto_vai_a_uma_tarefa(
     executor: ExecutorDeFerramentas, lancados: list[str]
 ) -> None:
     _ligar(executor)
@@ -219,15 +221,15 @@ def test_o_terceiro_passo_e_trabalho_longo_e_vai_para_a_tarefa(
     motor = MotorRoteirizado(resposta=roteiro)
     publicados: list[dict[str, Any]] = []
 
-    resposta = _cerebro(executor, motor).responder(
+    resposta = _cerebro(executor, motor, subagente=True).responder(
         "abre o discord, o steam e me diz as janelas", epoch=1, publicar=publicados.append
     )
 
-    assert resposta.tarefa_id, "o terceiro passo passou do teto do turno"
+    assert resposta.tarefa_id and resposta.ferramentas == [], "nada roda no turno (ADR-0070)"
     assert executor.tarefas is not None
     assert executor.tarefas.esperar(resposta.tarefa_id, 10.0)
     assert lancados == ["discord", "steam"]
     tarefa = executor.tarefas.tarefas[resposta.tarefa_id]
-    assert tarefa.passo == 1 and tarefa.resposta == "Abri os dois; agora há três janelas."
+    assert tarefa.passo == 3 and tarefa.resposta == "Abri os dois; agora há três janelas."
     # O fim da tarefa sabe o que o dono já ouviu no turno: não repete.
     assert tarefa.ja_dito == "", "o código não falou nada no turno (ADR-0070)"

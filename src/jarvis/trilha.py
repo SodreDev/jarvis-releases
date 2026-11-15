@@ -366,6 +366,7 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "claude_code_sem_chrome",
         "claude_code_prazo",
         "claude_code_falhou",
+        "claude_code_limite_de_turnos",  # o teto de turnos: estado ao Jarvis (ADR-0070)
         "claude_code_saida_invalida",
         # o método do pedido (`jarvis.politica.metodo`)
         "pede_teclado_ou_mouse",

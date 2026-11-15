@@ -153,7 +153,6 @@ def _rodar(app: Aplicativo, final: str, esperado: str) -> tuple[list[str], list[
         instalados=frozenset(CATALOGO),
         catalogo=CATALOGO,
     )
-    app._cerebro.passos_no_turno = 1  # o segundo passo já é trabalho longo: vira tarefa
 
     def dono() -> Iterator[str | None]:
         yield "olha as janelas e fecha o discord todo"

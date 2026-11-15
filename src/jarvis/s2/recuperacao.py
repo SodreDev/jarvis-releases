@@ -286,14 +286,6 @@ class Recuperacao:
             + f"); tentando outro caminho — {restam} tentativa(s) restante(s)"
         )
 
-    def explicacao(self, objetivo: str = "") -> str:
-        """A desistência com honestidade: o que foi tentado, em frase de gente."""
-        tentados = list(dict.fromkeys(t.em_frase() for t in self.historico[-4:]))
-        alvo = f" {objetivo.rstrip('.')}" if objetivo else ""
-        if not tentados:
-            return f"Não consegui{alvo}."
-        return f"Não consegui{alvo}. Tentei: {'; '.join(tentados)}."
-
 
 def nota_do_turno(resultado: ResultadoDeFerramenta, disponiveis: Iterable[str]) -> str:
     """A nota de replanejar para a rodada seguinte **do turno**, quando o passo dele falhou (a

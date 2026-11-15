@@ -141,6 +141,20 @@ NOTA_DA_PERGUNTA: Final = (
     "em uma frase, se pode fazer, e diga por quê se houver motivo — sem as palavras sim e não, "
     "sem markdown e sem citar ferramenta. O que aconteceu: a pergunta que o sistema montaria é"
 )
+NOTA_DO_LIMITE_DO_TURNO: Final = (
+    "EVENTO DO SISTEMA (notificação do limite, não é fala do dono): o turno chegou ao teto —"
+)
+NOTA_DO_LIMITE_COM_SUBAGENTE: Final = (
+    "O que já foi feito está nos resultados das ferramentas acima. Decida você: se ainda falta e "
+    "vale seguir, diga ao dono em poucas palavras e proponha a próxima ferramenta — ela vai ao "
+    "subagente, que continua fora do turno; se precisa do dono, pergunte; se não dá, explique o "
+    "que ficou feito e o que não. Com as suas palavras, curto, sem markdown e sem citar ferramenta."
+)
+NOTA_DO_LIMITE_SEM_SUBAGENTE: Final = (
+    "O que já foi feito está nos resultados das ferramentas acima, e não há mais passo neste "
+    "turno. Decida você o que dizer ao dono: o que ficou feito, o que falta, ou uma pergunta. Com "
+    "as suas palavras, curto, sem markdown e sem citar ferramenta."
+)
 CHAVE_DA_DELEGACAO: Final = "delegacao-claude-code"
 """A entrada do andamento dos parciais do Claude Code delegado (uma delegação por vez)."""
 PASSOS_NO_ANDAMENTO: Final = 4
@@ -164,12 +178,6 @@ def nota_do_atalho(atalho: Atalho) -> str:
     )
 
 
-PASSOS_NO_TURNO: Final = 0
-"""Ferramentas de execução que o próprio turno roda antes de passar o pedido a uma tarefa. Zero
-(ADR-0070, dono, 2026-11-15): toda execução — clicar, digitar, abrir app, enviar, pesquisar, rodar
-comando — vai para o subagente desde o primeiro passo; o Jarvis fica livre para conversar e recebe
-o progresso e o resultado como eventos. Só as consultas do próprio Jarvis (`FICAM_NO_TURNO`)
-rodam no turno."""
 FICAM_NO_TURNO: Final = frozenset(
     {
         "system.clock.now",
@@ -189,7 +197,10 @@ FICAM_NO_TURNO: Final = frozenset(
         "tela.fechar",
     }
 )
-"""O que o Jarvis faz ele mesmo, no turno: ler o próprio estado (hora, volume, janelas), os
+"""Com o subagente ligado (`delegar_em_tarefa`), toda execução — clicar, digitar, abrir app,
+enviar, pesquisar, rodar comando — vai para ele desde o primeiro passo (ADR-0070, dono,
+2026-11-15); o Jarvis fica livre para conversar e recebe o progresso e o resultado como eventos.
+O que o Jarvis faz ele mesmo, no turno: ler o próprio estado (hora, volume, janelas), os
 lembretes dele e a tela dele. Não é execução no computador do dono. A memória dele (`memoria.*`)
 também fica; `tarefa.*`, `jarvis.*`, `vocabulario.*`, `modelo.*` e `acao.desfazer` nunca vão para
 tarefa (`_delegavel`)."""
@@ -206,8 +217,6 @@ alguns segundos para carregar a extensão)."""
 INTERVALO_DA_EXTENSAO_S: Final = 0.25
 COBRANCAS_DO_OBJETIVO: Final = 2
 """Quantas vezes o turno cobra o motor que parou antes do objetivo (ADR-0066)."""
-SEGUNDOS_NO_TURNO: Final = 12.0
-"""Laço que já passou disto é trabalho longo: a próxima ferramenta vai para a tarefa."""
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
@@ -260,6 +269,9 @@ class Resposta:
     publicados: list[dict[str, Any]] = field(default_factory=list)
     fim: MotivoDoFim = MotivoDoFim.CONCLUIDO
     detalhe: str = ""
+    limite_do_turno: str = ""
+    """O teto que o turno alcançou (prazo ou passos) e que foi ao motor como notificação, numa
+    rodada final (a17, ADR-0070). Vazio = o turno acabou antes de qualquer teto."""
     pediu_pensar: bool = False
     deltas_depois_do_cancelamento: int = 0
     ferramentas: list[ResultadoDeFerramenta] = field(default_factory=list)
@@ -367,23 +379,17 @@ class Cerebro:
     código — ou com o clique (dono, 2026-10-25; ADR-0048). O aplicativo liga; desligado, a janela
     bloqueia a linha do cérebro até o clique, como antes (o que os testes do laço usam)."""
     delegar_em_tarefa: bool = False
-    """O trabalho longo de um pedido vira uma **tarefa** do objetivo (ADR-0038, emendada pela
-    ADR-0046): a primeira ferramenta roda no turno — o pedido de um passo responde aqui —, e
-    quando o motor pede mais do que `passos_no_turno` ferramentas (uma, no objetivo que precisa
-    conferir) ou o laço passa de `segundos_no_turno`, o resto vai para a tarefa: o turno diz a
-    frase curta e acaba — o Jarvis segue ouvindo —, e ela itera pelo mesmo PDP, Jev e objetivo até
-    cumprir, precisar do dono, falhar ou ser cancelada. Precisa do gestor de tarefas no executor;
-    o aplicativo liga. Desligado = o laço todo no turno (o que os testes do laço e o harness
-    usam)."""
+    """Toda execução de um pedido vira uma **tarefa** do objetivo — o subagente — desde a primeira
+    ferramenta (ADR-0038, ADR-0070): o turno acaba sem frase do código — o Jarvis segue ouvindo —,
+    e ela itera pelo mesmo PDP, Jev e objetivo até cumprir, precisar do dono, chegar a um limite
+    (que vira notificação ao Jarvis) ou ser cancelada. Só as consultas do próprio Jarvis
+    (`FICAM_NO_TURNO`) rodam no turno. Precisa do gestor de tarefas no executor; o aplicativo
+    liga. Desligado = o laço todo no turno (o que os testes do laço e o harness usam)."""
     caminho_rapido: bool = False
     """O comando simples vai à ferramenta pela regra do código, sem esperar o motor (dono,
     2026-10-21: «precisa ser muito rápido»; `jarvis.politica.atalho`). A chamada passa pelo mesmo
     PDP, Jev, objetivo e pergunta da proposta do modelo; pronta e certa, a frase é do código e o
     motor nem é chamado. O aplicativo liga; desligado, como antes (os testes do laço)."""
-    passos_no_turno: int = PASSOS_NO_TURNO
-    """Com `delegar_em_tarefa`: ferramentas que o turno roda antes de passar o resto à tarefa."""
-    segundos_no_turno: float = SEGUNDOS_NO_TURNO
-    """Com `delegar_em_tarefa`: laço mais longo que isto passa a próxima ferramenta à tarefa."""
     ao_mudar_permissao: Callable[[ModoDePermissao], str] | None = None
     """Troca o modo de permissão (ADR-0066) quando a fala **do dono** manda («ativa o modo
     bypass»): lida pelo código antes do motor, nunca por ferramenta — página ou mensagem que diga
@@ -623,6 +629,18 @@ class Cerebro:
         def cancelado_no_laco() -> bool:
             return cancelado() or prazo_esgotado()
 
+        def cortar_por_prazo() -> str:
+            resposta.fim = MotivoDoFim.PRAZO
+            resposta.detalhe = (
+                f"o laço de ferramentas passou de {self.prazo_do_laco_de_ferramentas_s:.0f} s"
+            )
+            return (
+                f"o seu turno passou do prazo de {self.prazo_do_laco_de_ferramentas_s:.0f} s "
+                "antes de você responder ao dono"
+            )
+
+        limite = ""  # a notificação do teto do turno, quando ele chega (a17, ADR-0070)
+
         # O caminho rápido (dono, 2026-10-21) virou DICA (ADR-0070): a regra do código reconhece o
         # comando simples e diz ao motor qual ferramenta e quais argumentos ela acharia — como
         # contexto. Ela não executa nem fala: quem decide o passo, e o que dizer, é o Jarvis.
@@ -652,11 +670,7 @@ class Cerebro:
                 if cancelado():
                     visto_cancelamento = time.monotonic()
                 else:
-                    resposta.fim = MotivoDoFim.PRAZO
-                    resposta.detalhe = (
-                        f"o laço de ferramentas passou de "
-                        f"{self.prazo_do_laco_de_ferramentas_s:.0f} s"
-                    )
+                    limite = cortar_por_prazo()
                 break
             # O objetivo que precisa conferir (navegador, entrada virtual): o turno fez o primeiro
             # passo; ler, seguir e conferir antes de dizer «abri» é da tarefa — o turno não afirma
@@ -723,10 +737,7 @@ class Cerebro:
             )
             if prazo_esgotado() and not cancelado():
                 visto_cancelamento = None
-                resposta.fim = MotivoDoFim.PRAZO
-                resposta.detalhe = (
-                    f"o laço de ferramentas passou de {self.prazo_do_laco_de_ferramentas_s:.0f} s"
-                )
+                limite = cortar_por_prazo()
                 break
             if not pedidos and _respondeu(gerado_antes, resposta.gerado):
                 # Respondeu ao dono (ADR-0062, emenda de 2026-11-15): sem ação em andamento (nenhuma
@@ -804,7 +815,7 @@ class Cerebro:
                         mensagens=contexto.mensagens,
                     )
             _marcar_a_primeira_ferramenta(resposta, comeco)
-            if self._vai_para_tarefa(pedido, resposta, comeco) and not cancelado():
+            if self._vai_para_tarefa(pedido) and not cancelado():
                 # Execução vai ao subagente (ADR-0070): o turno acaba, a conversa segue.
                 recusa = self._delegar(
                     pedido, contexto, texto_do_dono, resposta, fatiador, publicar, comeco, crescer
@@ -817,11 +828,7 @@ class Cerebro:
                 if cancelado():
                     visto_cancelamento = time.monotonic()
                 else:
-                    resposta.fim = MotivoDoFim.PRAZO
-                    resposta.detalhe = (
-                        f"o laço de ferramentas passou de "
-                        f"{self.prazo_do_laco_de_ferramentas_s:.0f} s"
-                    )
+                    limite = cortar_por_prazo()
                 break
             resultado = self._chamar(pedido, cancelado_no_laco, texto_do_dono)
             resposta.ferramentas.append(resultado)
@@ -856,10 +863,7 @@ class Cerebro:
             # Sem frase do código depois da ação e sem o código encerrar o turno (ADR-0070): o
             # motor vê o resultado na próxima rodada e decide se acabou e o que dizer.
             if prazo_esgotado() and not cancelado():
-                resposta.fim = MotivoDoFim.PRAZO
-                resposta.detalhe = (
-                    f"o laço de ferramentas passou de {self.prazo_do_laco_de_ferramentas_s:.0f} s"
-                )
+                limite = cortar_por_prazo()
                 break
             if cancelado():
                 visto_cancelamento = time.monotonic()
@@ -868,6 +872,27 @@ class Cerebro:
                 resposta.detalhe = (
                     f"o motor pediu ferramenta {self.maximo_de_passos} vezes sem responder"
                 )
+                limite = (
+                    f"você pediu {self.maximo_de_passos} ferramentas neste turno, o teto do turno, "
+                    "sem responder ao dono"
+                )
+        if limite and visto_cancelamento is None and not cancelado() and not resposta.tarefa_id:
+            # O turno chegou ao teto (prazo ou passos) antes de responder (a17, ADR-0070): o código
+            # não o corta calado nem fala por ele — o Jarvis recebe a notificação com o estado e
+            # decide numa rodada final: seguir pelo subagente, perguntar ao dono ou explicar.
+            visto_cancelamento = self._rodada_do_limite(
+                limite,
+                contexto,
+                texto_do_dono,
+                modo,
+                cancelado,
+                fatiador,
+                resposta,
+                publicar,
+                comeco,
+                crescer,
+                orcamento,
+            )
         if visto_cancelamento is None and cancelado():
             visto_cancelamento = time.monotonic()
         if falta and visto_cancelamento is None and not cancelado():
@@ -918,6 +943,110 @@ class Cerebro:
         self.autorizacoes.encerrar()
         self._pendentes[resposta.response_id] = resposta
         return resposta
+
+    def _rodada_do_limite(
+        self,
+        limite: str,
+        contexto: Contexto,
+        texto_do_dono: str,
+        modo: Modo,
+        cancelado: Cancelado,
+        fatiador: FatiadorDeFala,
+        resposta: Resposta,
+        publicar: Publicar,
+        comeco: float,
+        crescer: Callable[[], None],
+        orcamento: OrcamentoDaFala,
+    ) -> float | None:
+        """A rodada final do turno que chegou ao teto (a17, ADR-0070). O motor recebe o limite e o
+        estado (os resultados do turno) e decide: propor a próxima ferramenta (com o subagente
+        ligado, ela vai a ele e o trabalho segue fora do turno), perguntar ao dono ou explicar o
+        que ficou feito. Nenhuma frase é do código. Devolve o instante do cancelamento, se houve."""
+        continuar = (
+            self.ferramentas is not None
+            and self.delegar_em_tarefa
+            and (self.ferramentas.tarefas is not None)
+        )
+        textos, _podados = textos_no_contexto(resposta.ferramentas)
+        nota = f"{NOTA_DO_LIMITE_DO_TURNO} {limite}. " + (
+            NOTA_DO_LIMITE_COM_SUBAGENTE if continuar else NOTA_DO_LIMITE_SEM_SUBAGENTE
+        )
+        catalogo = (
+            self.ferramentas.catalogo_para_o_modelo()
+            if continuar and self.ferramentas is not None
+            else ()
+        )
+        final = Contexto(
+            sistema=f"{contexto.sistema}\n\n{nota}",
+            mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
+            ferramentas=catalogo,
+            raciocinio=resposta.raciocinio,
+            ja_dito=_ja_dito(resposta),
+        )
+        gerado_antes = resposta.gerado
+        fim_antes, detalhe_antes = resposta.fim, resposta.detalhe
+        resposta.fim = MotivoDoFim.CONCLUIDO
+        pedidos, visto = self._rodada(
+            final,
+            modo,
+            cancelado,
+            fatiador,
+            resposta,
+            publicar,
+            comeco,
+            crescer,
+            # O que ele diz antes de propor o passo é a fala dele ao dono («continuo em segundo
+            # plano»), não narração de passo: não fica retido. O que repete o já dito vai à tela.
+            segurar=False,
+            orcamento=orcamento,
+            filtro=FiltroDoJaDito(
+                ditos=[dito] if (dito := _dito_no_turno(resposta)) else [],
+                ids=self._ids_das_ferramentas(),
+            ),
+            verdade=FiltroDaVerdade(lambda: resposta.ferramentas)
+            if self.ferramentas is not None
+            else None,
+        )
+        resposta.limite_do_turno = limite
+        if visto is not None or resposta.fim is not MotivoDoFim.CONCLUIDO:
+            if resposta.fim is MotivoDoFim.CONCLUIDO:
+                resposta.fim, resposta.detalhe = fim_antes, detalhe_antes
+            return visto
+        if pedidos and continuar and self._delegavel(pedidos[0]) and not cancelado():
+            # Seguir: a próxima ferramenta que ele escolheu vai ao subagente, com o estado do turno.
+            for pedaco in fatiador.descarregar():
+                self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+            recusa = self._delegar(
+                pedidos[0], contexto, texto_do_dono, resposta, fatiador, publicar, comeco, crescer
+            )
+            if recusa is None:
+                return None
+            resposta.ferramentas.append(recusa)
+            textos, _podados = textos_no_contexto(resposta.ferramentas)
+            sem_saida = Contexto(
+                sistema=f"{contexto.sistema}\n\n{NOTA_DO_EVENTO_DO_TURNO} {limite}; e o subagente "
+                f"não pôde assumir agora ({recusa.motivo}).",
+                mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
+                raciocinio=resposta.raciocinio,
+                ja_dito=_ja_dito(resposta),
+            )
+            _pedidos, visto = self._rodada(
+                sem_saida,
+                modo,
+                cancelado,
+                fatiador,
+                resposta,
+                publicar,
+                comeco,
+                crescer,
+                segurar=True,
+                orcamento=orcamento,
+            )
+            return visto
+        if not _respondeu(gerado_antes, resposta.gerado):
+            # Nem respondeu nem seguiu: o turno fica como estava (a tela diz o motivo do corte).
+            resposta.fim, resposta.detalhe = fim_antes, detalhe_antes
+        return None
 
     def _nota_da_tela(self, texto_do_dono: str, anteriores: Sequence[Mensagem]) -> str:
         """A nota da tela deste turno (`jarvis.tela.guia`), só quando as `tela.*` existem (a
@@ -1008,18 +1137,13 @@ class Cerebro:
             pedido.tool_id
         )
 
-    def _vai_para_tarefa(self, pedido: PedidoDeTool, resposta: Resposta, comeco: float) -> bool:
+    def _vai_para_tarefa(self, pedido: PedidoDeTool) -> bool:
         """A proposta vai para a tarefa, ou roda no turno? (ADR-0070, dono, 2026-11-15)
 
         Execução vai ao subagente desde o primeiro passo: o turno do Jarvis só conversa, consulta
-        o estado dele (`FICAM_NO_TURNO`) e delega. `passos_no_turno` > 0 devolve o comportamento
-        antigo (as primeiras ferramentas no turno), só para quem o escolhe por código."""
-        if not self._delegavel(pedido) or fica_no_turno(pedido.tool_id):
-            return False
-        feitas = len(resposta.ferramentas)
-        return (
-            feitas >= self.passos_no_turno or _ms_desde(comeco) >= 1000.0 * self.segundos_no_turno
-        )
+        o estado dele (`FICAM_NO_TURNO`) e delega. Não há mais o meio-termo de rodar as primeiras
+        ferramentas no turno (`passos_no_turno`, ADR-0046): só existia nos testes."""
+        return self._delegavel(pedido) and not fica_no_turno(pedido.tool_id)
 
     def _continua_na_tarefa(self, resposta: Resposta) -> bool:
         """Depois do primeiro passo de um objetivo que precisa conferir (agir e depois ler: o

@@ -261,7 +261,24 @@ def test_saida_enorme_e_cortada_e_lixo_e_saida_invalida(tmp_path: Path) -> None:
 def test_erro_do_claude_code_volta_como_falha(tmp_path: Path) -> None:
     delegador, _, _ = _delegador(tmp_path, "erro")
     resultado = delegador.delegar(TAREFA)
-    assert resultado.codigo is Codigo.FALHOU and "error_max_turns" in resultado.mensagem()
+    assert resultado.codigo is Codigo.FALHOU and "error_during_execution" in resultado.mensagem()
+
+
+def test_o_limite_de_turnos_volta_como_notificacao_com_o_estado_real(tmp_path: Path) -> None:
+    """a19 (ADR-0070): esgotar o `--max-turns` não é falha dita ao dono — o Jarvis recebe o que o
+    subagente fez (os parciais do stream) e o limite, e decide continuar, perguntar ou encerrar."""
+    delegador, _, _ = _delegador(tmp_path, "max_turnos")
+    vistos: list[str] = []
+    resultado = delegador.delegar(TAREFA, ao_parcial=vistos.append)
+    assert resultado.codigo is Codigo.LIMITE_DE_TURNOS and resultado.rodou
+    assert resultado.turnos == 7
+    assert resultado.parciais == tuple(vistos) and len(vistos) == 2
+    dados = resultado.para_o_modelo()
+    assert dados["feito"] is False
+    assert dados["o_que_fez"][0] == "o subagente disse: Achei a conversa da Ana."
+    assert "computer" in dados["o_que_fez"][1]
+    assert dados["limite"]["turnos_usados"] == 7 and "decida" in dados["limite"]
+    assert "falhou" not in resultado.mensagem() and "turnos" in resultado.mensagem()
 
 
 # --- a degradação clara ---------------------------------------------------------------------
