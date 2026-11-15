@@ -224,10 +224,11 @@ def test_o_raciocinio_tem_teto_e_o_que_passa_e_so_contado(
     assert len(motor.pedidos[1].raciocinio) == LIMITE_DO_RACIOCINIO
 
 
-def test_o_aviso_de_um_efeito_que_fica_continua_sendo_falado(
+def test_o_aviso_de_um_efeito_que_fica_vai_ao_jarvis_como_dado(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    """A pasta nova é resultado (e se desfaz): esse aviso o dono ouve, como antes."""
+    """A pasta nova é resultado (e se desfaz): o aviso vai ao motor como dado, e quem conta ao
+    dono é o Jarvis, com as palavras dele (ADR-0070)."""
     motor = _roteiro(
         [PedidoDeTool("files.create_dir", {"path": "~/Documentos/viagem"})], ["Pronto."]
     )
@@ -237,9 +238,8 @@ def test_o_aviso_de_um_efeito_que_fica_continua_sendo_falado(
         "cria a pasta viagem em Documentos", epoch=0, publicar=publicados.append
     )
 
-    # O «Pronto.» do motor repete o aviso: vai à tela, não à voz (dono, 2026-10-25, ADR-0046).
-    assert _falado(publicados) == "Criei a pasta viagem."
-    assert resposta.caladas == ["Pronto."] and resposta.gerado.endswith("Pronto.")
+    assert "«Criei a pasta viagem.»" in motor.pedidos[-1].sistema, "o aviso chegou ao motor"
+    assert _falado(publicados) == "Pronto." and resposta.gerado.endswith("Pronto.")
 
 
 RESPOSTA_LONGA = (

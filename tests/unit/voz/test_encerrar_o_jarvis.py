@@ -43,9 +43,10 @@ def _app(tmp_path: Path, linhas: list[str]) -> Aplicativo:
 
 
 def _encerra_quando_pedem(contexto: Contexto) -> Sequence[Parte]:
-    """O modelo: "encerra…" propõe a tool; o resultado dela voltou → só a despedida (já dita)."""
+    """O modelo: "encerra…" propõe a tool; o resultado dela voltou → a despedida é dele (ADR-0070:
+    o código não fala «Encerrando o Jarvis»)."""
     if any(m.papel == "ferramenta" for m in contexto.mensagens):
-        return ""
+        return "Até mais."
     pedido = next(m.texto for m in reversed(contexto.mensagens) if m.papel == "dono")
     if "encerra" in pedido or "fechar o jarvis" in pedido.lower():
         return [PedidoDeTool("jarvis.encerrar", {})]
@@ -178,7 +179,7 @@ def test_encerra_o_sistema_despede_e_sai_limpo(tmp_path: Path) -> None:
     codigo = app.rodar_texto(dono())
 
     assert codigo == 0 and app.encerrado
-    assert "Jarvis: Encerrando o Jarvis. Até mais." in linhas, linhas
+    assert "Jarvis: Até mais." in linhas, linhas
     assert "  ⏻ Jarvis encerrado" in linhas
     assert depois == [], "o laço seguiu depois de encerrar"
     assert len(app.turnos) == 1

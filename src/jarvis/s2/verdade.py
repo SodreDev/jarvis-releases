@@ -12,9 +12,10 @@ Aqui o código confere, frase por frase, antes da voz e da tela:
   aberto»): só passa se um resultado deste pedido a confirma — abrir: uma ferramenta que abre,
   clica ou navega deu `ok`; enviar: um envio deu `ok` **e** foi conferido (o chat mostra a
   mensagem: `conferido` no resultado do `social.enviar`, ou uma leitura da página depois do envio);
-- **pergunta de permissão sobre o próprio pedido** («quer que eu mande?», «posso enviar?»,
-  «posso rodar o script?»): pedido direto é para executar — a pergunta não vai ao dono, e o laço
-  segue para o objetivo.
+- **pergunta de permissão** («quer que eu mande?», «posso enviar?»): desde a ADR-0070 **não é
+  cortada** — perguntar é decisão do Jarvis, não afirmação a conferir. O código só a reconhece
+  (`Afirmacao.PEDE_PERMISSAO`), para a trilha; a persona é quem diz que pedido direto é para
+  executar.
 
 A frase cortada vai para a lista `cortadas` (a trilha conta; nada é dito). Quem chama decide o que
 fazer: o laço do turno e o da tarefa cobram o motor para seguir até o objetivo (ou dizer o que
@@ -123,7 +124,7 @@ def envio_conferido(resultados: Sequence[ResultadoDeFerramenta]) -> bool:
 
 def confirmada(afirmacao: Afirmacao, resultados: Sequence[ResultadoDeFerramenta]) -> bool:
     if afirmacao is Afirmacao.PEDE_PERMISSAO:
-        return False
+        return True  # perguntar não afirma nada: quem decide perguntar é o Jarvis (ADR-0070)
     if afirmacao is Afirmacao.ENVIOU:
         return envio_conferido(resultados)
     return any(r.status == "ok" and r.tool_id in ABREM for r in resultados)
@@ -178,8 +179,8 @@ class FiltroDaVerdade:
 
 
 NOTA_DE_SEGUIR: Final = (
-    "ATENÇÃO: a sua última resposta afirmava algo que nenhuma ferramenta confirmou, ou pedia "
-    "permissão ao dono para fazer o que ele já pediu. Pedido direto é para executar: continue com "
+    "ATENÇÃO: a sua última resposta afirmava algo que nenhuma ferramenta confirmou. Pedido "
+    "direto é para executar: continue com "
     "as ferramentas até o objetivo estar cumprido e conferido (no navegador: troque de aba, leia a "
     "página, clique e digite pelo ref; se um caminho travar, tente outro). Só diga que fez o que "
     "um resultado confirmou; se for impossível, diga o que faltou e por quê."

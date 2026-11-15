@@ -144,35 +144,20 @@ def test_no_automatico_executa_ate_o_fim_e_so_afirma_o_confirmado(
         assert "Mandei «eu te amo» para a sua mãe." in falado
 
 
-def test_parar_perguntando_quer_que_eu_mande_e_cobrado_e_segue(
+def test_a_pergunta_do_jarvis_nao_e_cortada_nem_cobrada(
     tmp_path: Path, pagina: PaginaFalsa
 ) -> None:
-    """O motor que para no meio e pergunta é cobrado (ADR-0038): segue até enviar."""
+    """ADR-0070: perguntar é decisão do Jarvis, não afirmação a conferir — a pergunta vai ao dono;
+    o «abri» que nada confirmou continua cortado."""
     rodadas = (
         [PedidoDeTool("browser.avaliar", {"codigo": CLICAR_NA_MAE})],
         ["Abri o contato da sua mãe. Quer que eu mande a mensagem?"],
     )
-    cobrado = (
-        [PedidoDeTool("browser.inspecionar", {})],
-        [PedidoDeTool("browser.type", {"alvo": "Mensagem", "texto": "eu te amo"})],
-        [PedidoDeTool("browser.acionar", {"alvo": "Mensagem", "acao": "enviar"})],
-        [PedidoDeTool("browser.read", {})],
-        ["Mandei."],
-    )
-
-    def resposta(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
-        feitas = sum(1 for m in contexto.mensagens if m.papel == "ferramenta")
-        if "ATENÇÃO: a sua última resposta" in contexto.sistema:
-            return cobrado[min(feitas - 1, len(cobrado) - 1)]
-        return rodadas[min(feitas, len(rodadas) - 1)]
-
     for executor in _executor(tmp_path, pagina, ModoDePermissao.AUTOMATICO):
-        cerebro = Cerebro(motor=MotorRoteirizado(resposta=resposta), ferramentas=executor)
+        cerebro = Cerebro(motor=_roteiro(*rodadas), ferramentas=executor)
         resultado, falado = _dizer(cerebro, PEDIDO)
-        assert resultado.cobrancas == 1
-        assert "Quer que eu mande" not in falado
-        assert [r.tool_id for r in resultado.ferramentas][-1] == "browser.read"
-        assert "Mandei." in falado
+        assert resultado.cobrancas == 0
+        assert "Quer que eu mande a mensagem?" in falado
 
 
 def test_sem_confirmar_o_envio_o_jarvis_diz_o_que_falta(

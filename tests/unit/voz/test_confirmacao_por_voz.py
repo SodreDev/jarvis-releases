@@ -149,8 +149,10 @@ def _trilha(app: Aplicativo) -> list[dict[str, Any]]:
 
 
 def _pedidos_ao_motor(app: Aplicativo) -> int:
+    """As rodadas em que o motor podia propor ferramenta. As de evento (a pergunta da pendência, a
+    resposta do Jarvis ao «sim»/«não», ADR-0070) não têm ferramentas e não repropõem nada."""
     assert isinstance(app._motor, MotorRoteirizado)
-    return len(app._motor.pedidos)
+    return sum(1 for c in app._motor.pedidos if c.ferramentas)
 
 
 def _cortes(app: Aplicativo) -> list[str]:
@@ -200,7 +202,7 @@ def test_nao_por_cima_cancela_sem_reproposta(tmp_path: Path) -> None:
 
     assert app.turnos[0].cancelado and _cortes(app) == ["resposta_a_pergunta"]
     assert _memoria_viva(conversa, alvo), "com o não, nada foi apagado"
-    assert app.turnos[1].respondeu.startswith("Tudo bem, não vou fazer isso")
+    assert app.turnos[1].respondeu.startswith("O dono disse não: nada foi feito")
     assert _pedidos_ao_motor(app) == 1, "o não virou pedido ao motor"
     assert app._cerebro is not None and app._cerebro.pendencias.valida() is None
 
@@ -209,7 +211,7 @@ def test_cancela_depois_da_pergunta_cancela(tmp_path: Path) -> None:
     app, conversa, alvo, _tela = _rodar(tmp_path, "Cancela.", por_cima=False)
 
     assert _memoria_viva(conversa, alvo)
-    assert app.turnos[-1].respondeu.startswith("Tudo bem, não vou fazer isso")
+    assert app.turnos[-1].respondeu.startswith("O dono disse não: nada foi feito")
     assert _pedidos_ao_motor(app) == 1
 
 
@@ -257,7 +259,7 @@ def test_sim_dito_de_um_jeito_natural_confirma_uma_vez(tmp_path: Path, resposta:
 def test_melhor_nao_cancela_e_a_ambigua_nao_confirma(tmp_path: Path) -> None:
     app, conversa, alvo, _tela = _rodar(tmp_path, "Melhor não.", por_cima=True)
     assert _memoria_viva(conversa, alvo)
-    assert app.turnos[-1].respondeu.startswith("Tudo bem, não vou fazer isso")
+    assert app.turnos[-1].respondeu.startswith("O dono disse não: nada foi feito")
 
     ambigua, conversa2, alvo2, _tela2 = _rodar(tmp_path / "b", "Não, pode seguir.", por_cima=False)
     assert _memoria_viva(conversa2, alvo2), "uma fala ambígua não pode autorizar"

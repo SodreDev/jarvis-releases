@@ -62,9 +62,6 @@ PRAZO_NA_HORA_MS: Final = 10_000
 um programa), numa tarefa — o turno não prende o laço de voz por minutos."""
 SEM_PORTAO: Final = Classificacao(Classe.FAZER, "sem o portão contextual: o PDP decide sozinho")
 """Sem o Jev, a ferramenta segue o que o PDP disser — o `confirm` dele é a pergunta de sempre."""
-FRASE_DO_SIM_DA_TAREFA: Final = "Certo."
-"""O "sim" a uma pergunta de tarefa: a tarefa segue sozinha e o resultado dela é a resposta — o
-turno não promete "aviso quando terminar" (seria a segunda fala do mesmo pedido)."""
 MOTIVO_DO_NAO: Final[Mapping[str, str]] = {
     "voz": "nada foi feito: o dono disse não",
     "clique": "nada foi feito: o dono disse não",
@@ -90,9 +87,10 @@ class _Perguntar:
 class LeituraDaResposta:
     """O que a fala do dono fez com a pendência aberta."""
 
-    frase: str = ""
-    """Não vazia: o turno é **só** isto (a pendência foi resolvida); o motor não é chamado — e
-    não tem como propor a mesma ação de novo."""
+    evento: str = ""
+    """Não vazio: a pendência foi resolvida, e isto é o que aconteceu, como DADO (ADR-0070). O
+    turno é a resposta do Jarvis a este evento — uma rodada do motor sem ferramentas, que não tem
+    como propor a mesma ação de novo. O código não escreve a fala."""
     nota: str = ""
     """Não vazia: vai ao prompt de sistema do turno (a pendência caiu: o dono mudou de assunto)."""
     resultado: ResultadoDeFerramenta | None = None
@@ -438,26 +436,38 @@ class FluxoDeAcao:
             )
             if resultado is None:  # venceu entre a leitura e o tomar: o "sim" não vale mais
                 return LeituraDaResposta(
-                    frase=f"A pergunta sobre {falado} já tinha vencido; não fiz nada.",
+                    evento=f"o dono disse sim, mas a pergunta sobre «{falado}» já tinha vencido; "
+                    "nada foi feito.",
                 )
             if resultado.status == "despachado" and pendencia.espera is not None:
-                frase = FRASE_DO_SIM_DA_TAREFA
+                evento = (
+                    f"o dono disse sim à pergunta sobre «{falado}»; a tarefa que esperava segue "
+                    "sozinha, e o resultado dela chega depois como evento."
+                )
             elif resultado.status == "despachado":
-                frase = f"Certo, estou fazendo: {falado}. Aviso quando terminar."
+                evento = (
+                    f"o dono disse sim; «{falado}» foi passado a um subagente, e o resultado chega "
+                    "depois como evento."
+                )
             elif resultado.status == "ok":
-                frase = frase_do_feito(pendencia.pergunta, resultado)
+                evento = f"o dono disse sim e «{falado}» foi feito: {_o_que_mudou(resultado)}."
             else:
-                frase = f"Não deu para fazer {falado}: {resultado.motivo}."
-            return LeituraDaResposta(frase=frase, resultado=resultado)
+                evento = (
+                    f"o dono disse sim, mas «{falado}» falhou: {resultado.motivo or 'sem motivo'}."
+                )
+            return LeituraDaResposta(evento=evento, resultado=resultado)
         if pendencia.espera is not None:
             # A tarefa que esperava acorda com o "não" e acaba calada: a frase é esta.
             self.pendencias.tomar(pendencia.id, sim=False, origem="voz")
         else:
             self.pendencias.cancelar()
         if resposta is RespostaDoDono.NAO and bloco:
-            return LeituraDaResposta(frase="Tudo bem, paro por aqui.")
+            return LeituraDaResposta(
+                evento="o dono disse não à pergunta de continuar a tarefa; ela para, e o fim dela "
+                "chega depois como evento."
+            )
         if resposta is RespostaDoDono.NAO:
-            return LeituraDaResposta(frase=f"Tudo bem, não vou fazer isso ({falado}).")
+            return LeituraDaResposta(evento=f"o dono disse não: nada foi feito («{falado}»).")
         return LeituraDaResposta(
             nota=(
                 f"A pergunta que estava pendente («{detalhe}») foi cancelada porque o dono falou "
@@ -512,6 +522,14 @@ class FluxoDeAcao:
                 proveniencia=pendencia.proveniencia,
             )
         return _despachar(executor, pendencia)
+
+
+def _o_que_mudou(resultado: ResultadoDeFerramenta) -> str:
+    """O que a ferramenta confirmada devolveu, como dado curto para o motor (ADR-0070)."""
+    if resultado.aviso:
+        return resultado.aviso
+    dados = {k: v for k, v in resultado.dados.items() if isinstance(v, (str, int, float, bool))}
+    return ", ".join(f"{k}={v}" for k, v in list(dados.items())[:6]) or "a ferramenta deu ok"
 
 
 def frase_do_feito(pergunta: Confirmacao, resultado: ResultadoDeFerramenta) -> str:

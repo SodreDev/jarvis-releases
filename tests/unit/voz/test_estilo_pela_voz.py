@@ -49,7 +49,9 @@ def test_fala_mais_calmo_troca_o_estilo_do_proximo_trecho_e_grava(tmp_path: Path
 
         aplicativo.ao_mudar_estilo = gravar
         assert aplicativo._pedir_estilo("abre o Discord") == ""
-        assert aplicativo._pedir_estilo("Jarvis, fala mais calmo") == "Certo, estilo calmo."
+        # O que aconteceu vai ao Jarvis como dado (ADR-0070); a confirmação falada é dele.
+        evento = aplicativo._pedir_estilo("Jarvis, fala mais calmo")
+        assert "«calmo»" in evento and "Certo" not in evento
         motor.sintetizar("tudo bem")
     assert gravados == ["calmo"]
     assert aplicativo.configuracao.estilo_endpoint == "calmo"

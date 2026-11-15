@@ -116,7 +116,7 @@ from jarvis.politica.modos import Modo as ModoDeAcesso
 from jarvis.politica.modos import Raiz
 from jarvis.politica.objetivo import Objetivo
 from jarvis.politica.pdp import Pdp
-from jarvis.politica.permissao import ModoDePermissao, frase_da_troca, modo_de_permissao
+from jarvis.politica.permissao import FRASE_DO_MODO, ModoDePermissao, modo_de_permissao
 from jarvis.provedores.nucleo import Provedores
 from jarvis.provedores.presets import FonteDePresets, TrocaPorVoz
 from jarvis.provedores.roteador import MotorDosPresets
@@ -992,7 +992,7 @@ class Aplicativo:
         """A fala inteira do dono pede outro estilo do endpoint de voz (ADR-0068)? Troca já — o
         próximo trecho sai no estilo novo, inclusive a confirmação — e grava pela janela. Vazio =
         não era pedido de estilo (ou a voz de agora não tem estilo): o turno segue como sempre."""
-        from jarvis.voz.endpoint import comando_de_estilo, frase_do_estilo
+        from jarvis.voz.endpoint import comando_de_estilo
 
         motor = self._tts
         estilos: tuple[str, ...] = tuple(getattr(motor, "estilos", ()) or ())
@@ -1005,12 +1005,13 @@ class Aplicativo:
             return ""
         definir(estilo)
         self.configuracao = self.configuracao.com(estilo_endpoint=estilo)
-        frase = frase_do_estilo(estilo)
+        # O que aconteceu vai ao Jarvis como dado (ADR-0070): ele confirma com as palavras dele.
+        evento = f"o estilo de voz mudou para «{estilo}», e já vale nesta resposta"
         if self.ao_mudar_estilo is not None and self.ao_mudar_estilo(estilo) != "salvo":
-            frase = f"{frase} Vale agora, mas não consegui salvar no arquivo."
+            evento += "; não deu para salvar no arquivo, então vale só até fechar o Jarvis"
         if self.trilha is not None:
             self.trilha.evento("voz.estilo", estilo=estilo)
-        return frase
+        return evento + "."
 
     def atualizar_voz_do_endpoint(self, *, voz: str, estilo: str) -> None:
         """A janela trocou a voz ou o estilo do endpoint com a conversa aberta: vale no próximo
@@ -1032,14 +1033,15 @@ class Aplicativo:
         self.configuracao = self.configuracao.com(permissao=str(modo))
         if self.ferramentas is not None:
             self.ferramentas.pdp.permissao = modo
-        frase = frase_da_troca(modo)
+        # O que aconteceu vai ao Jarvis como dado (ADR-0070): ele confirma com as palavras dele.
+        evento = f"o modo de permissão mudou para «{modo}» ({FRASE_DO_MODO[modo]})"
         if self.ao_mudar_permissao is not None:
             salvo = self.ao_mudar_permissao(str(modo))
             if salvo != "salvo":
-                frase = f"{frase} Vale agora, mas não consegui salvar no arquivo."
+                evento += "; não deu para salvar no arquivo, então vale só até fechar o Jarvis"
         if self.trilha is not None:
             self.trilha.evento("permissao.modo", modo=str(modo))
-        return frase
+        return evento + "."
 
     def _conferir_a_extensao_em_segundo_plano(self) -> None:
         """Uma vez por sessão, fora da linha da voz e da janela: a extensão conectada é da versão

@@ -51,6 +51,11 @@ class Relogio:
         return self.agora
 
 
+def _propostas(motor: MotorRoteirizado) -> int:
+    """As rodadas em que o motor podia propor ferramenta; as de evento (ADR-0070) não têm."""
+    return sum(1 for c in motor.pedidos if c.ferramentas)
+
+
 def _jev(
     classe: str = "fazer",
     p: float = 0.95,
@@ -382,7 +387,10 @@ def test_pedir_permissao_vira_pendencia_e_o_turno_acaba_na_pergunta(
     assert abertos == []
     assert falado.startswith("Posso abrir exemplo.com.br") and falado.rstrip().endswith("?")
     assert "sim" not in falado.casefold().split(), "sem «sim» na pergunta: o eco não responde"
-    assert len(motor.pedidos) == 1, "depois da pergunta, o motor não é chamado de novo"
+    assert _propostas(motor) == 1, "depois da pergunta, o motor não propõe de novo"
+    assert motor.pedidos[-1].ferramentas == (), (
+        "a pergunta é do Jarvis, numa rodada sem ferramentas"
+    )
     pendencia = cerebro.pendencias.valida()
     assert pendencia is not None and pendencia.pergunta.tool_id == "sites.open"
     assert dict(pendencia.pergunta.argumentos) == {"url": "https://exemplo.com.br"}
@@ -610,9 +618,10 @@ def test_sim_falado_resolve_a_pendencia_e_roda_a_acao_no_turno(
     frase só (dono, 2026-10-25: pedido de um passo não vira tarefa nem fala duas vezes)."""
     cerebro, motor = _pendencia_de_site(executor, _jev("pedir_permissao", 0.9))
     resposta, falado = _dizer(cerebro, "Sim, pode.")
-    assert resposta.motor == "portao" and len(motor.pedidos) == 1, "o motor não é chamado"
+    assert _propostas(motor) == 1, "o motor não propõe a mesma ação de novo"
     assert [r.status for r in resposta.ferramentas] == ["ok"]
-    assert falado == "Abri o exemplo.com.br."
+    # O que aconteceu vai ao Jarvis como evento, e a fala é dele (ADR-0070).
+    assert "foi feito" in falado and "exemplo.com.br" in falado
     assert abertos == ["https://exemplo.com.br"]
     assert executor.tarefas is not None and executor.tarefas.tarefas == {}, "não virou tarefa"
     assert concluidas == []
@@ -628,8 +637,8 @@ def test_sim_depois_do_prazo_e_rejeitado(
     relogio = Relogio()
     cerebro, motor = _pendencia_de_site(executor, _jev("pedir_permissao", 0.9), relogio)
     relogio.agora += executor.prazo_de_confirmacao_s + 1
-    resposta, _ = _dizer(cerebro, "sim")
-    assert resposta.motor != "portao" and len(motor.pedidos) == 2
+    _resposta, _ = _dizer(cerebro, "sim")
+    assert _propostas(motor) == 2
     _esperar_tarefas(executor)
     assert abertos == [] and executor.tarefas is not None and executor.tarefas.tarefas == {}
 
@@ -665,7 +674,7 @@ def test_nao_e_outro_assunto_cancelam_e_o_sim_seguinte_nao_vale(
 ) -> None:
     cerebro, _motor = _pendencia_de_site(executor, _jev("pedir_permissao", 0.9))
     _resposta, falado = _dizer(cerebro, "não")
-    assert falado.startswith("Tudo bem")
+    assert "nada foi feito" in falado
     cerebro2, _ = _pendencia_de_site(executor, _jev("pedir_permissao", 0.9))
     _dizer(cerebro2, "que horas são?")
     _dizer(cerebro2, "sim")
@@ -831,8 +840,8 @@ def test_a_voz_do_dono_troca_o_modo_sem_chamar_o_motor(executor: ExecutorDeFerra
     cerebro.ao_mudar_permissao = trocar
     _resposta, falado = _dizer(cerebro, "ativa o modo bypass")
     assert trocas == [ModoDePermissao.BYPASS]
-    assert falado.startswith("Modo bypass")
-    assert motor.pedidos == []
+    assert "bypass" in falado, "o Jarvis confirma com as palavras dele (ADR-0070)"
+    assert _propostas(motor) == 0
     # Conteúdo de terceiros não troca: só a fala do dono (trust de voz ou da janela).
     publicados: list[dict[str, Any]] = []
     cerebro.responder("ativa o modo automático", epoch=0, publicar=publicados.append, trust="web")
@@ -853,8 +862,8 @@ def test_a_voz_do_dono_troca_o_estilo_da_voz_sem_chamar_o_motor(
 
     cerebro.ao_pedir_estilo = estilo
     _resposta, falado = _dizer(cerebro, "fala mais calmo")
-    assert falado.startswith("Certo, estilo calmo")
-    assert motor.pedidos == []
+    assert "calmo" in falado, "o Jarvis confirma com as palavras dele (ADR-0070)"
+    assert _propostas(motor) == 0
     publicados: list[dict[str, Any]] = []
     cerebro.responder("fala mais calmo", epoch=0, publicar=publicados.append, trust="web")
     assert pedidos == ["fala mais calmo"], "conteúdo de terceiros não troca o estilo"

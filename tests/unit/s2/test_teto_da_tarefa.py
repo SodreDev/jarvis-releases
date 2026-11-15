@@ -136,7 +136,7 @@ def test_no_teto_a_tarefa_para_e_pergunta_com_a_conversa_livre(
     assert pergunta.pergunta_falada == PERGUNTA, "a pergunta é a que o motor escreveu"
     assert f"{BLOCO} passo(s)" in pergunta.detalhe, "os do turno contam"
     assert tarefa.passo == PRIMEIRA_PARADA
-    assert _dizer(cerebro, "não") == "Tudo bem, paro por aqui."
+    assert "disse não à pergunta de continuar" in _dizer(cerebro, "não"), "evento ao Jarvis"
     _fim(executor, tarefa)
 
 
@@ -144,7 +144,7 @@ def test_sim_da_mais_um_bloco_e_pergunta_de_novo(executor: ExecutorDeFerramentas
     cerebro, tarefa = _comecar(executor, Roteiro())
     primeira = _pergunta(cerebro)
 
-    assert _dizer(cerebro, "sim, pode seguir") == "Certo."
+    assert "segue sozinha" in _dizer(cerebro, "sim, pode seguir"), "evento ao Jarvis"
 
     segunda = _pergunta(cerebro, anterior=primeira.id)
     assert tarefa.passo == SEGUNDA_PARADA
@@ -171,7 +171,7 @@ def test_ate_terminar_nao_pergunta_mais_e_a_tarefa_acaba_sozinha(
     cerebro, tarefa = _comecar(executor, Roteiro(passos=4 * BLOCO))
     _pergunta(cerebro)
 
-    assert _dizer(cerebro, "até terminar") == "Certo."
+    assert "segue sozinha" in _dizer(cerebro, "até terminar"), "evento ao Jarvis"
 
     _fim(executor, tarefa)
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA

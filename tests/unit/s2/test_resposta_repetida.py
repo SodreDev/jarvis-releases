@@ -45,8 +45,8 @@ def test_a_oferta_no_fim_da_resposta_nao_faz_o_jarvis_responder_de_novo(tmp_path
     assert not any(NOTA_DE_SEGUIR in c.sistema for c in chamadas)
     assert falado.count("Camberra") == 1 and "meio-termo" not in falado
     assert resposta.respondida and resposta.cobrancas == 0
-    # A oferta continua fora da voz (ADR-0066), e nenhuma frase do código entra no lugar dela.
-    assert "Quer que eu fale mais" not in falado
+    # A oferta é decisão do Jarvis e vai ao dono (ADR-0070); nenhuma frase do código entra.
+    assert "Quer que eu fale mais" in falado
     assert "Não consegui" not in falado and "ainda não foi enviada" not in falado
 
 
@@ -57,7 +57,7 @@ def test_sem_resposta_nenhuma_o_objetivo_ainda_e_cobrado(tmp_path: Path) -> None
     def resposta(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
         chamadas.append(contexto)
         if len(chamadas) == 1:
-            return ["Abri o contato da sua mãe. Quer que eu mande?"]
+            return ["Abri o contato da sua mãe."]
         return ["Ainda estou sem acesso ao contato."]
 
     for executor in _executor(tmp_path, _whatsapp(), ModoDePermissao.AUTOMATICO):

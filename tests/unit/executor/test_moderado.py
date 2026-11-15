@@ -265,12 +265,13 @@ def _roteiro(*rodadas: Sequence[str | PedidoDeTool]) -> MotorRoteirizado:
     return MotorRoteirizado(resposta=resposta)
 
 
-def test_o_cerebro_fala_o_aviso_da_tool_moderada_e_o_motor_nao_o_repete(
+def test_o_aviso_da_tool_moderada_vai_ao_motor_e_a_fala_e_dele(
     executor: ExecutorDeFerramentas,
 ) -> None:
+    """ADR-0070: o aviso da moderada é dado para o motor, que conta ao dono com as palavras dele."""
     motor = _roteiro(
         ["Vou anotar. ", PedidoDeTool("files.write_draft", {"nome": "compras", "texto": "café"})],
-        ["Pronto."],
+        ["Anotei café no rascunho de compras."],
     )
     cerebro = Cerebro(motor=motor, ferramentas=executor)
     falado: list[dict[str, Any]] = []
@@ -278,12 +279,10 @@ def test_o_cerebro_fala_o_aviso_da_tool_moderada_e_o_motor_nao_o_repete(
     resposta = cerebro.responder("anota café", epoch=0, publicar=falado.append)
 
     texto = " ".join(p["text"] for p in falado if p["text"])
-    # O «Pronto.» do motor só repetiria o aviso: vai à tela, não à voz (ADR-0046).
-    assert texto == "Vou anotar. Gravei o rascunho compras.md na pasta do Jarvis."
-    assert resposta.caladas == ["Pronto."]
+    assert texto == "Vou anotar. Anotei café no rascunho de compras."
+    assert "Gravei o rascunho" not in texto, "o código não fala o aviso"
     assert [r.tool_id for r in resposta.ferramentas] == ["files.write_draft"]
-    contexto_da_segunda = motor.pedidos[1].mensagens[-1].texto
-    assert "já dito em voz ao dono" in contexto_da_segunda
+    assert "«Gravei o rascunho compras.md na pasta do Jarvis.»" in motor.pedidos[1].sistema
 
 
 def test_o_cerebro_zera_a_contaminacao_a_cada_turno(executor: ExecutorDeFerramentas) -> None:

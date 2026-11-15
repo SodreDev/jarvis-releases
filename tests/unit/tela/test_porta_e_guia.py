@@ -234,13 +234,17 @@ def test_sem_janela_o_cerebro_nao_fala_de_tela(executor: ExecutorDeFerramentas) 
     assert GUIA_DE_DESIGN not in motor.pedidos[0].sistema
 
 
-def test_mostrar_e_acao_de_um_passo_com_a_frase_do_codigo(executor: ExecutorDeFerramentas) -> None:
-    """ "Põe na tela a lista": a ferramenta, «Pronto, está na tela.» e o turno acaba — sem outra
-    rodada do motor para dizer "pronto" de novo."""
+def test_mostrar_e_o_motor_diz_que_esta_na_tela(executor: ExecutorDeFerramentas) -> None:
+    """ "Põe na tela a lista": a ferramenta, e quem diz que está na tela é o motor, com o
+    resultado na mão (ADR-0070: sem frase do código e sem o código encerrar o turno)."""
     janela = Janela()
     executor.portas().tela = janela.porta()
     motor = MotorRoteirizado(
-        resposta=lambda _c: [PedidoDeTool("tela.mostrar", {"html": TABELA, "titulo": "Compras"})]
+        resposta=lambda c: (
+            ["Pus a lista na tela."]
+            if any(m.papel == "ferramenta" for m in c.mensagens)
+            else [PedidoDeTool("tela.mostrar", {"html": TABELA, "titulo": "Compras"})]
+        )
     )
     cerebro = Cerebro(motor=motor)
     cerebro.ferramentas = executor
@@ -251,6 +255,6 @@ def test_mostrar_e_acao_de_um_passo_com_a_frase_do_codigo(executor: ExecutorDeFe
     )
 
     falado = " ".join(str(p["text"]) for p in publicados).strip()
-    assert falado == "Pronto, está na tela.", falado
-    assert len(motor.pedidos) == 1 and len(janela.mostradas) == 1
+    assert falado == "Pus a lista na tela.", falado
+    assert len(motor.pedidos) == 2 and len(janela.mostradas) == 1
     assert resposta.ferramentas[0].status == "ok"

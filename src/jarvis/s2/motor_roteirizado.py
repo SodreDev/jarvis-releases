@@ -74,6 +74,8 @@ class MotorRoteirizado:
         roteiro: str | Sequence[Parte]
         if self.conta_eventos and contexto.de_evento:
             roteiro = _contar_eventos(contexto)
+        elif self.conta_eventos and MARCA_DO_EVENTO_DO_TURNO in contexto.sistema:
+            roteiro = _contar_o_evento_do_turno(contexto)
         else:
             roteiro = self.resposta if isinstance(self.resposta, str) else self.resposta(contexto)
         partes: Sequence[Parte] = [roteiro] if isinstance(roteiro, str) else roteiro
@@ -117,3 +119,17 @@ def _contar_eventos(contexto: Contexto) -> str:
     falas = [c.strip() for c in conteudos if c.strip()]
     falas = [f if f.endswith((".", "!", "?", "…")) else f"{f}." for f in falas]
     return " ".join(falas) or "[silencio]"
+
+
+MARCA_DO_EVENTO_DO_TURNO = "EVENTO DO SISTEMA (já aconteceu por causa do que o dono acabou de dizer"
+"""O começo da nota do evento de um turno do dono (`jarvis.s2.cerebro.NOTA_DO_EVENTO_DO_TURNO`)."""
+
+
+def _contar_o_evento_do_turno(contexto: Contexto) -> str:
+    """O que aconteceu, contado ao dono (a pendência resolvida, o modo ou o estilo trocado)."""
+    evento = contexto.sistema.rsplit("O que aconteceu:", 1)[-1].strip()
+    pergunta = re.fullmatch(r"a pergunta que o sistema montaria é «(.*)»", evento, re.S)
+    if pergunta is not None:  # a pendência: o motor de teste pergunta com aquelas palavras
+        return pergunta.group(1)
+    evento = evento[:1].upper() + evento[1:]
+    return evento if evento.endswith((".", "!", "?", "…")) else f"{evento}."

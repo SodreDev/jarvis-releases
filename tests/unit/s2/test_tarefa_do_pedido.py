@@ -516,12 +516,12 @@ def test_a_pergunta_da_tarefa_espera_o_sim_falado_depois_de_tocar(
 
     cerebro.pendencias.marcar_ouvida(pendencia.id)
     publicados: list[dict[str, Any]] = []
-    depois = cerebro.responder("sim", epoch=2, publicar=publicados.append)
+    cerebro.responder("sim", epoch=2, publicar=publicados.append)
     tarefa = _tarefa(executor, tarefa_id)
 
-    assert depois.motor == "portao"
-    # O "sim" a uma pergunta de tarefa é só um «Certo.»: o resultado da tarefa é a resposta.
-    assert _falado(publicados) == "Certo."
+    # O "sim" a uma pergunta de tarefa vai ao Jarvis como evento (ADR-0070): a tarefa segue
+    # sozinha e o resultado dela é a resposta.
+    assert "a tarefa que esperava segue sozinha" in _falado(publicados)
     assert abertos == ["https://exemplo.com.br"]
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
     # O motor foi cobrado a conferir e não leu: o fato volta a ele, que diz isso (ADR-0070).

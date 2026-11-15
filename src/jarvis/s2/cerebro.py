@@ -53,14 +53,14 @@ from jarvis.fatiador import PALAVRAS_MINIMAS_POR_PEDACO, Corte, FatiadorDeFala, 
 from jarvis.imagem import Imagem
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.navegador.cliente import SEM_NAVEGADOR_ABERTO
-from jarvis.politica.atalho import Atalho, fala_simples, frase_da_ferramenta
+from jarvis.politica.atalho import Atalho
 from jarvis.politica.memoria import TRUST_DO_DONO, AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.politica.metodo import Escolha
 from jarvis.politica.objetivo import EstadoDoObjetivo
 from jarvis.politica.permissao import ModoDePermissao, comando_de_permissao
 from jarvis.s2.avisos import AvisoLiberado, calado, nota_dos_eventos, pede_detalhe
 from jarvis.s2.consumo import ConsumoDoTurno, Medicao, campos_da_medicao, medir, precos_do_motor
-from jarvis.s2.entrega import FiltroDoJaDito, traz_algo_novo
+from jarvis.s2.entrega import FiltroDoJaDito
 from jarvis.s2.fluxo_de_acao import FluxoDeAcao, frase_do_feito
 from jarvis.s2.leitura_da_pagina import NOTA_DA_LEITURA, leitura_antes
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
@@ -127,6 +127,17 @@ MAXIMO_DE_RODADAS: Final = MAXIMO_DE_PASSOS
 TURNOS_NO_CONTEXTO: Final = 12
 """Orçamento fixo de conversa no contexto (regra 5): os últimos turnos estáveis. O resumo do que
 ficou para trás é trabalho de segundo plano, fora desta fatia."""
+NOTA_DO_EVENTO_DO_TURNO: Final = (
+    "EVENTO DO SISTEMA (já aconteceu por causa do que o dono acabou de dizer; não é para fazer de "
+    "novo): responda ao dono com as suas palavras, curto, sem markdown e sem citar ferramenta. O "
+    "que aconteceu:"
+)
+NOTA_DA_PERGUNTA: Final = (
+    "EVENTO DO SISTEMA (já aconteceu por causa do que o dono acabou de dizer; não é para fazer de "
+    "novo): uma ação espera o sim do dono antes de rodar. Pergunte a ele, com as suas palavras e "
+    "em uma frase, se pode fazer, e diga por quê se houver motivo — sem as palavras sim e não, "
+    "sem markdown e sem citar ferramenta. O que aconteceu: a pergunta que o sistema montaria é"
+)
 PASSOS_NO_ANDAMENTO: Final = 4
 """Os últimos passos de cada subagente que o Jarvis vê na nota do andamento (ADR-0070)."""
 LIMITE_DO_RACIOCINIO: Final = 2000
@@ -192,30 +203,6 @@ COBRANCAS_DO_OBJETIVO: Final = 2
 """Quantas vezes o turno cobra o motor que parou antes do objetivo (ADR-0066)."""
 SEGUNDOS_NO_TURNO: Final = 12.0
 """Laço que já passou disto é trabalho longo: a próxima ferramenta vai para a tarefa."""
-ACOES_DE_UM_PASSO: Final = frozenset(
-    {
-        "apps.launch",
-        "apps.quit",
-        "browser.launch",
-        "clipboard.text.write",
-        "jarvis.encerrar",
-        "media.player.control",
-        "modelo.preset",
-        "notify.desktop.send",
-        "system.brightness.set",
-        "system.volume.set",
-        "tela.fechar",
-        "tela.mostrar",
-        "timer.alarm.cancel",
-        "timer.alarm.set",
-        "vocabulario.aprender",
-        "window.close",
-        "window.focus_app",
-    }
-)
-"""Ações que cumprem sozinhas um pedido simples: deu certo e o dono já ouviu o que mudou (o aviso,
-a frase do código ou a do motor antes dela), o turno acaba — sem outra rodada do motor para dizer
-"pronto" de novo."""
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
@@ -402,7 +389,8 @@ class Cerebro:
     ao_pedir_estilo: Callable[[str], str] | None = None
     """Troca o estilo do endpoint de voz (ADR-0068) quando a fala **inteira do dono** pede («fala
     mais calmo», «tom urgente»): lida pelo código antes do motor, pelo mesmo caminho do modo de
-    permissão. Devolve a frase que o Jarvis diz, ou vazio (não era pedido de estilo)."""
+    permissão. Devolve o que aconteceu, como dado para o Jarvis responder (ADR-0070), ou vazio
+    (não era pedido de estilo)."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
     andamento: dict[str, tuple[str, list[str]]] = field(default_factory=dict)
     """O progresso de cada subagente no ar (ADR-0070): `tarefa_id → (pedido, últimos passos)`.
@@ -433,10 +421,14 @@ class Cerebro:
         # Confirmado no clique, a ação vai para uma tarefa e o fim dela é a resposta (o aviso da
         # ferramenta): nada de "está rodando, aviso quando terminar" antes (dono, 2026-10-25). A
         # que roda aqui mesmo (a memória) tem a frase dela, como no "sim" falado.
+        # O que aconteceu vai à fila como dado; o turno dos avisos é do Jarvis (ADR-0070).
         if sim and resultado.status == "ok" and aberta is not None and aberta.id == pendencia_id:
-            self._status(frase_do_feito(aberta.pergunta, resultado))
+            self._status(
+                f"(o dono confirmou no clique e «{aberta.pergunta.para_ouvir}» foi feito: "
+                f"{frase_do_feito(aberta.pergunta, resultado)})"
+            )
         elif sim and resultado.status not in ("ok", "despachado"):
-            self._status(f"Não deu para fazer o que você confirmou: {resultado.motivo}")
+            self._status(f"(o dono confirmou no clique, mas a ação falhou: {resultado.motivo})")
         return True
 
     @property
@@ -494,9 +486,9 @@ class Cerebro:
             leitura = fluxo.ler_a_resposta(
                 self.ferramentas, texto_do_dono, mensagens=anteriores, cancelado=cancelado
             )
-            if leitura.frase:
-                return self._so_dizer(
-                    leitura.frase,
+            if leitura.evento:
+                return self._responder_ao_evento(
+                    leitura.evento,
                     epoch=epoch,
                     turn_id=turn_id,
                     publicar=publicar,
@@ -513,7 +505,7 @@ class Cerebro:
             else None
         )
         if troca is not None and self.ao_mudar_permissao is not None:
-            return self._so_dizer(
+            return self._responder_ao_evento(
                 self.ao_mudar_permissao(troca),
                 epoch=epoch,
                 turn_id=turn_id,
@@ -529,7 +521,7 @@ class Cerebro:
             else ""
         )
         if estilo:
-            return self._so_dizer(
+            return self._responder_ao_evento(
                 estilo,
                 epoch=epoch,
                 turn_id=turn_id,
@@ -646,7 +638,7 @@ class Cerebro:
                     completo=atalho.completo,
                 )
         resposta.motor_chamado = not pular_o_motor
-        falta = ""  # a frase do código quando o motor parou afirmando sem confirmar (ADR-0066)
+        falta = ""  # o evento do fim quando o motor parou afirmando sem confirmar (ADR-0066/0070)
         passos = range(0) if pular_o_motor else range(1, self.maximo_de_passos + 1)
         for passo in passos:
             if visto_cancelamento is not None:
@@ -768,7 +760,12 @@ class Cerebro:
             ):
                 # Respondida e só cortou a oferta do fim («quer que eu fale mais?»): não há o que
                 # faltar — a frase do código seria outra resposta ao mesmo pedido.
-                falta = frase_do_que_falta(Relato("", tuple(verdade.cortadas), verdade.perguntou))
+                cortadas = tuple(verdade.cortadas)
+                falta = (
+                    "estas frases suas não foram ditas, porque nenhuma ferramenta as confirmou: "
+                    f"«{' '.join(cortadas)}». Situação: "
+                    f"{frase_do_que_falta(Relato('', cortadas, verdade.perguntou))}"
+                )
             if (
                 visto_cancelamento is not None
                 or not pedidos
@@ -848,26 +845,22 @@ class Cerebro:
             # Sem status entre passos (dono, 2026-10-20, ADR-0031): ele não acompanha passo a
             # passo. O aviso de uma moderada é resultado (o que mudou e se desfaz); o passo de
             # navegação vem sem aviso (`aviso_silencioso` no manifesto).
-            if resultado.aviso:
-                # Tool moderada: o aviso é do código, e sai agora, em voz (dono, 2026-10-18).
-                resposta.gerado += resultado.aviso + " "
-                crescer()
-                for pedaco in fatiador.alimentar(resultado.aviso + " ") + fatiador.descarregar():
-                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
             if resultado.status == "pendente":
-                # A pergunta é a última coisa do turno: o laço de voz fica livre para o "sim".
+                # A ação espera o sim do dono: quem pergunta é o Jarvis, com as palavras dele
+                # (ADR-0070); o código guarda a pendência e lê a resposta. É a última coisa do
+                # turno: o laço de voz fica livre para o "sim".
+                self._perguntar_ao_dono(resultado, resposta, fatiador, publicar, comeco, crescer)
                 break
-            # A ação de um passo que deu certo (dono, 2026-10-25): o resultado sai já, na frase do
-            # código, se o dono ainda não o ouviu; e o pedido simples acaba aqui, sem outra rodada
-            # do motor para dizer "pronto" de novo.
-            dita = self._frase_da_acao(pedido, resultado, resposta)
-            if dita:
-                resposta.gerado += dita + " "
-                crescer()
-                for pedaco in fatiador.alimentar(dita + " ") + fatiador.descarregar():
-                    self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
-            if self._cumpriu_no_turno(pedido, resultado, resposta, texto_do_dono):
-                break
+            if resultado.aviso:
+                # Tool moderada: o aviso é DADO para o motor (ADR-0070), que conta ao dono com as
+                # palavras dele na próxima rodada — o código não o fala.
+                contexto = Contexto(
+                    sistema=f"{contexto.sistema}\n\nO que a ferramenta registrou (o dono ainda não "
+                    f"ouviu): «{resultado.aviso}»",
+                    mensagens=contexto.mensagens,
+                )
+            # Sem frase do código depois da ação e sem o código encerrar o turno (ADR-0070): o
+            # motor vê o resultado na próxima rodada e decide se acabou e o que dizer.
             if prazo_esgotado() and not cancelado():
                 resposta.fim = MotivoDoFim.PRAZO
                 resposta.detalhe = (
@@ -884,11 +877,28 @@ class Cerebro:
         if visto_cancelamento is None and cancelado():
             visto_cancelamento = time.monotonic()
         if falta and visto_cancelamento is None and not cancelado():
-            # O relato que não se confirmou não foi dito: o dono ouve o que falta, do código.
-            resposta.gerado += falta + " "
-            crescer()
-            for pedaco in fatiador.alimentar(falta + " ") + fatiador.descarregar():
-                self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+            # O relato que não se confirmou não foi dito: o motor recebe o fato como evento e diz
+            # ao dono o que falta, com as palavras dele (ADR-0070), numa rodada sem ferramentas.
+            textos, _podados = textos_no_contexto(resposta.ferramentas)
+            final = Contexto(
+                sistema=f"{contexto.sistema}\n\n{NOTA_DO_EVENTO_DO_TURNO} {falta}",
+                mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
+                raciocinio=resposta.raciocinio,
+                ja_dito=_ja_dito(resposta),
+            )
+            _pedidos, visto_cancelamento = self._rodada(
+                final,
+                modo,
+                cancelado,
+                fatiador,
+                resposta,
+                publicar,
+                comeco,
+                crescer,
+                segurar=True,
+                orcamento=orcamento,
+                verdade=FiltroDaVerdade(lambda: resposta.ferramentas),
+            )
         if visto_cancelamento is not None or resposta.fim is MotivoDoFim.CANCELADO:
             resposta.fim = MotivoDoFim.CANCELADO
             parado = time.monotonic()
@@ -1063,45 +1073,6 @@ class Cerebro:
         if objetivo is None or not objetivo.pede_conferencia or not resposta.ferramentas:
             return False
         return resposta.ferramentas[-1].status != "pendente"
-
-    def _frase_da_acao(
-        self, pedido: PedidoDeTool, resultado: ResultadoDeFerramenta, resposta: Resposta
-    ) -> str:
-        """A frase do código para a ação de um passo que o motor propôs e deu certo («Abrindo o
-        Discord.»), se o dono ainda não ouviu isso neste turno — o "vou abrir o Discord" do motor
-        já disse. O app que já estava aberto é sempre novidade."""
-        if resultado.status != "ok":
-            return ""
-        objetivo = self.ferramentas.objetivo if self.ferramentas is not None else None
-        if objetivo is not None and objetivo.pede_conferencia:
-            return ""  # no navegador, "abri" só depois de ler e conferir (ADR-0038)
-        if pedido.tool_id not in ACOES_DE_UM_PASSO and len(resposta.ferramentas) > 1:
-            return ""  # no meio de uma cadeia (abrir o site achado), quem conta é a resposta final
-        frase = frase_da_ferramenta(pedido.tool_id, pedido.args, resultado.dados)
-        if not frase:
-            return ""
-        dito = _dito_no_turno(resposta)
-        if not dito or resultado.dados.get("ja_aberto") or traz_algo_novo(frase, [dito]):
-            return frase
-        return ""
-
-    def _cumpriu_no_turno(
-        self,
-        pedido: PedidoDeTool,
-        resultado: ResultadoDeFerramenta,
-        resposta: Resposta,
-        texto_do_dono: str,
-    ) -> bool:
-        """O pedido simples acabou nesta ação: deu certo, foi a única do turno, é uma ação de um
-        passo, a fala pedia só ela e o dono já ouviu o resultado (o aviso, a frase do código ou a
-        do motor). Outra rodada do motor só diria "pronto" de novo — e custaria segundos."""
-        return (
-            resultado.status == "ok"
-            and len(resposta.ferramentas) == 1
-            and pedido.tool_id in ACOES_DE_UM_PASSO
-            and fala_simples(texto_do_dono)
-            and bool(_dito_no_turno(resposta).strip())
-        )
 
     def _delegar(
         self,
@@ -1316,9 +1287,37 @@ class Cerebro:
 
         return chamar
 
-    def _so_dizer(
+    def _perguntar_ao_dono(
         self,
-        frase: str,
+        resultado: ResultadoDeFerramenta,
+        resposta: Resposta,
+        fatiador: FatiadorDeFala,
+        publicar: Publicar,
+        comeco: float,
+        crescer: Callable[[], None],
+    ) -> None:
+        """A pergunta de uma pendência, escrita pelo motor (ADR-0070). A fala dele vira o eco a
+        filtrar quando o dono responder (`falas_de_aviso`). Motor que cai: nada na voz — a faixa
+        da janela mostra a pergunta e o clique responde."""
+        base = self.conversa.contexto()
+        contexto = Contexto(
+            sistema=f"{base.sistema}\n\n{NOTA_DA_PERGUNTA} «{resultado.aviso}»",
+            mensagens=base.mensagens,
+        )
+        texto = self._texto_sem_ferramentas(contexto, resposta, lambda: False)
+        if not texto:
+            return
+        aberta = self.pendencias.valida()
+        if aberta is not None:
+            self.falas_de_aviso[f"pergunta-{aberta.id}"] = texto
+        resposta.gerado += texto + " "
+        crescer()
+        for pedaco in fatiador.alimentar(texto + " ") + fatiador.descarregar():
+            self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
+
+    def _responder_ao_evento(
+        self,
+        evento: str,
         *,
         epoch: int,
         turn_id: str,
@@ -1328,26 +1327,40 @@ class Cerebro:
         ferramentas: list[ResultadoDeFerramenta],
         mostrar: Mostrar | None = None,
     ) -> Resposta:
-        """Um turno sem motor: a frase é do código (a resposta do dono a uma pendência)."""
+        """O que a fala do dono já fez (a pendência resolvida, o modo ou o estilo trocado) chega ao
+        Jarvis como EVENTO, e a resposta é dele (ADR-0070): uma rodada do motor sem ferramentas — o
+        código não escreve a fala, e o motor não tem como propor a mesma ação de novo."""
         resposta = Resposta(
             response_id=f"r-{uuid7()}",
             turn_id=turn_id or f"t-{uuid7()}",
             epoch=epoch,
-            motor="portao",
-            gerado=frase,
+            motor=self.motor.nome,
             ferramentas=ferramentas,
             ms_ate_contexto=_ms_desde(comeco),
         )
+        base = self.conversa.contexto()
+        contexto = Contexto(
+            sistema=f"{base.sistema}\n\n{NOTA_DO_EVENTO_DO_TURNO} {evento}",
+            mensagens=base.mensagens,
+        )
+        texto = self._texto_sem_ferramentas(contexto, resposta, cancelado)
+        if cancelado():
+            resposta.fim = MotivoDoFim.CANCELADO
+            return resposta
+        if not texto:
+            return resposta  # o motor caiu: nada na voz (o card e a tela mostram o estado)
+        resposta.gerado = texto
         _tela(resposta, mostrar)()
+        orcamento = OrcamentoDaFala()
         fatiador = FatiadorDeFala()
-        for pedaco in fatiador.alimentar(frase):
+        for pedaco in fatiador.alimentar(orcamento.passar(texto) + orcamento.fechar()):
             if cancelado():
                 resposta.fim = MotivoDoFim.CANCELADO
-                break
+                return resposta
             self._publicar(resposta, pedaco, publicar, comeco, ultimo=False)
-        else:
-            for pedaco in fatiador.fechar():
-                self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
+        resposta.so_na_tela = orcamento.so_na_tela
+        for pedaco in fatiador.fechar():
+            self._publicar(resposta, pedaco, publicar, comeco, ultimo=pedaco.corte is Corte.FIM)
         self._pendentes[resposta.response_id] = resposta
         return resposta
 

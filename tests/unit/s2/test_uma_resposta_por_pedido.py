@@ -5,10 +5,10 @@ respondia de novo — a resposta dele e mais uma. Aqui, com o motor roteirizado 
 (o caminho rápido desligado: é o caso em que a regra não pegou a fala) e a máquina falsa dos testes
 de fechar e encerrar:
 
-- a ação de um passo roda no turno e o dono ouve o resultado **uma vez** — a frase do código, ou o
-  "vou abrir" do motor, nunca os dois — e o motor não é chamado de novo para dizer "pronto";
-- o aviso de uma moderada fecha o pedido simples do mesmo jeito;
-- pedido composto segue com o motor, e a frase dele que só repete o já dito vai à tela, não à voz;
+- a ação roda no turno (`passos_no_turno=2`: o caminho no turno, que a produção só usa para as
+  consultas do Jarvis — ADR-0070) e o dono ouve o resultado **uma vez**, na fala do motor: sem
+  frase do código depois da ação, e sem o código encerrar o turno (ADR-0070);
+- o aviso de uma moderada vai ao motor como dado, e a fala é dele;
 - nenhuma tarefa nasce para isso.
 """
 
@@ -89,7 +89,7 @@ def _falado(publicados: Sequence[dict[str, Any]]) -> str:
     return " ".join(str(p["text"]) for p in publicados if p["text"])
 
 
-def test_abrir_um_app_pelo_motor_responde_uma_vez_e_sem_tarefa(
+def test_abrir_um_app_pelo_motor_ele_responde_uma_vez_e_sem_tarefa(
     executor: ExecutorDeFerramentas, lancados: list[str]
 ) -> None:
     _ligar(executor)
@@ -107,15 +107,15 @@ def test_abrir_um_app_pelo_motor_responde_uma_vez_e_sem_tarefa(
     )
 
     assert lancados == ["discord"]
-    assert _falado(publicados) == "Abrindo o Discord.", "uma frase só, a do código, já"
-    assert len(motor.pedidos) == 1, "o motor não é chamado de novo para dizer «pronto»"
+    assert _falado(publicados) == "Pronto, abri o Discord pra você.", "uma fala só, a do motor"
+    assert len(motor.pedidos) == 2, "o motor vê o resultado e decide o que dizer"
     assert not resposta.tarefa_id
     assert executor.tarefas is not None
     # A única tarefa é a que acompanha o foco da janela que vai abrir (ADR-0037), não o pedido.
     assert [t.motor for t in executor.tarefas.tarefas.values()] == ["foco"]
 
 
-def test_o_vou_abrir_do_motor_ja_diz_e_a_frase_do_codigo_nao_repete(
+def test_o_vou_abrir_do_motor_ja_diz_e_nao_ha_frase_do_codigo(
     executor: ExecutorDeFerramentas, lancados: list[str]
 ) -> None:
     _ligar(executor)
@@ -131,11 +131,12 @@ def test_o_vou_abrir_do_motor_ja_diz_e_a_frase_do_codigo_nao_repete(
     _cerebro(executor, motor).responder("abre o discord aí", epoch=1, publicar=publicados.append)
 
     assert lancados == ["discord"]
-    assert _falado(publicados) == "Vou abrir o Discord."
-    assert len(motor.pedidos) == 1
+    assert _falado(publicados).startswith("Vou abrir o Discord.")
+    assert "Abrindo o Discord" not in _falado(publicados), "nenhuma frase do código"
+    assert len(motor.pedidos) == 2
 
 
-def test_o_aviso_da_moderada_fecha_o_pedido_simples(executor: ExecutorDeFerramentas) -> None:
+def test_o_aviso_da_moderada_vai_ao_motor_como_dado(executor: ExecutorDeFerramentas) -> None:
     tabela, _janelas = _ligar(executor)
     motor = MotorRoteirizado(
         resposta=lambda c: (
@@ -151,11 +152,11 @@ def test_o_aviso_da_moderada_fecha_o_pedido_simples(executor: ExecutorDeFerramen
     )
 
     assert tabela.sinais, "o Discord recebeu o sinal"
-    assert _falado(publicados) == "Encerrei o Discord."
-    assert len(motor.pedidos) == 1
+    assert "«Encerrei o Discord.»" in motor.pedidos[-1].sistema, "o aviso foi ao motor como dado"
+    assert _falado(publicados) == "O Discord foi encerrado."
 
 
-def test_pedido_composto_segue_com_o_motor_e_a_repeticao_fica_na_tela(
+def test_pedido_composto_segue_com_o_motor_e_ele_fala_uma_vez(
     executor: ExecutorDeFerramentas, lancados: list[str]
 ) -> None:
     _ligar(executor)
@@ -176,9 +177,7 @@ def test_pedido_composto_segue_com_o_motor_e_a_repeticao_fica_na_tela(
     )
 
     assert lancados == ["discord", "steam"], "dois passos cabem no turno"
-    assert _falado(publicados) == "Abrindo o Discord. Abrindo o Steam."
-    assert resposta.caladas == ["Pronto, abri o Discord e o Steam."]
-    assert "Pronto, abri o Discord e o Steam." in resposta.gerado, "a tela mostra"
+    assert _falado(publicados) == "Pronto, abri o Discord e o Steam."
     assert not resposta.tarefa_id
 
 
@@ -200,8 +199,8 @@ def test_a_resposta_com_algo_novo_depois_da_acao_e_dita(
         "abre o discord, por favor", epoch=1, publicar=publicados.append
     )
 
-    assert _falado(publicados) == ("Abrindo o Discord. Quer que eu entre no servidor do trabalho?")
-    assert len(motor.pedidos) == 2, "a fala com vírgula não é simples: o motor segue"
+    assert _falado(publicados) == "Abri o Discord. Quer que eu entre no servidor do trabalho?"
+    assert len(motor.pedidos) == 2
 
 
 def test_o_terceiro_passo_e_trabalho_longo_e_vai_para_a_tarefa(
@@ -231,4 +230,4 @@ def test_o_terceiro_passo_e_trabalho_longo_e_vai_para_a_tarefa(
     tarefa = executor.tarefas.tarefas[resposta.tarefa_id]
     assert tarefa.passo == 1 and tarefa.resposta == "Abri os dois; agora há três janelas."
     # O fim da tarefa sabe o que o dono já ouviu no turno: não repete.
-    assert tarefa.ja_dito == "Abrindo o Discord. Abrindo o Steam."
+    assert tarefa.ja_dito == "", "o código não falou nada no turno (ADR-0070)"
