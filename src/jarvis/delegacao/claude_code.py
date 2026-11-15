@@ -270,8 +270,11 @@ class DelegadorClaudeCode:
             "-p",
             PROMPT,
             "--chrome",
+            # Em stream (ADR-0070): cada passo do subagente sai numa linha JSON, e o Jarvis recebe
+            # os parciais como eventos enquanto ele trabalha; o fim é a linha `result`.
             "--output-format",
-            "json",
+            "stream-json",
+            "--verbose",
             "--permission-mode",
             "dontAsk",
             "--tools",
@@ -294,7 +297,12 @@ class DelegadorClaudeCode:
         return argv
 
     def delegar(
-        self, tarefa: str, *, site: str = "", cancelado: Callable[[], bool] = lambda: False
+        self,
+        tarefa: str,
+        *,
+        site: str = "",
+        cancelado: Callable[[], bool] = lambda: False,
+        ao_parcial: Callable[[str], None] = lambda _parcial: None,
     ) -> Resultado:
         with self._trava:
             falta = self.checar()
@@ -308,7 +316,11 @@ class DelegadorClaudeCode:
             resumo = linhas[0].removeprefix("OBJETIVO: ")
             self.avisar(f"Delegando ao Claude Code, no seu navegador: «{_curto(resumo, 120)}»")
             saida = self._executar(
-                self.argv(executavel), entrada, self.configuracao.prazo_s, cancelado
+                self.argv(executavel),
+                entrada,
+                self.configuracao.prazo_s,
+                cancelado,
+                ao_linha=lambda linha: _parcial_da_linha(linha, ao_parcial),
             )
             return self._ler(saida)
 
@@ -318,10 +330,7 @@ class DelegadorClaudeCode:
             return Resultado(Codigo.INTERROMPIDO, **base)
         if saida.estouro:
             return Resultado(Codigo.PRAZO, **base)
-        try:
-            dados = json.loads(saida.stdout)
-        except ValueError:
-            dados = None
+        dados = _o_resultado(saida.stdout)
         if not isinstance(dados, dict):
             erro = _curto(redigir(saida.stderr).texto, ERRO_MAXIMO)
             codigo = Codigo.FALHOU if saida.codigo_de_saida != 0 else Codigo.SAIDA_INVALIDA
@@ -340,7 +349,12 @@ class DelegadorClaudeCode:
 
     # --- o processo -----------------------------------------------------------------------
     def _executar(
-        self, argv: list[str], entrada: str, prazo_s: float, cancelado: Callable[[], bool]
+        self,
+        argv: list[str],
+        entrada: str,
+        prazo_s: float,
+        cancelado: Callable[[], bool],
+        ao_linha: Callable[[str], None] | None = None,
     ) -> Saida:
         comeco = time.perf_counter()
         with tempfile.TemporaryDirectory(prefix="jarvis-delegar-") as pasta:
@@ -357,7 +371,7 @@ class DelegadorClaudeCode:
             except OSError as falha:
                 return Saida(127, "", str(falha), ms=_ms(comeco))
             assert processo.stdin and processo.stdout and processo.stderr
-            leitores = (_Leitor(processo.stdout), _Leitor(processo.stderr))
+            leitores = (_Leitor(processo.stdout, ao_linha), _Leitor(processo.stderr))
             for leitor in leitores:
                 leitor.start()
             with suppress(BrokenPipeError, OSError):
@@ -392,9 +406,11 @@ class DelegadorClaudeCode:
 class _Leitor(threading.Thread):
     """Lê um cano até o fim guardando no máximo `SAIDA_MAXIMA_BYTES` (o resto é drenado)."""
 
-    def __init__(self, cano: IO[bytes]) -> None:
+    def __init__(self, cano: IO[bytes], ao_linha: Callable[[str], None] | None = None) -> None:
         super().__init__(daemon=True)
         self._cano = cano
+        self._ao_linha = ao_linha
+        self._linha = b""
         self._partes: list[bytes] = []
         self._tamanho = 0
         self._lidos = 0
@@ -405,15 +421,74 @@ class _Leitor(threading.Thread):
 
     def run(self) -> None:
         with suppress(OSError, ValueError):
-            while bloco := self._cano.read(65536):
+            # `read1` devolve o que já chegou: a linha do stream sai na hora, não no fim.
+            ler = getattr(self._cano, "read1", self._cano.read)
+            while bloco := ler(65536):
                 self._lidos += len(bloco)
+                self._avisar_linhas(bloco)
                 falta = SAIDA_MAXIMA_BYTES - self._tamanho
                 if falta > 0:
                     self._partes.append(bloco[:falta])
                     self._tamanho += min(len(bloco), falta)
 
+    def _avisar_linhas(self, bloco: bytes) -> None:
+        """Cada linha completa vai a `ao_linha` (os parciais do stream); falha dele não para a
+        leitura."""
+        if self._ao_linha is None:
+            return
+        self._linha += bloco
+        *completas, self._linha = self._linha.split(b"\n")
+        for linha in completas[-MAXIMO_DE_LINHAS_POR_BLOCO:]:
+            with suppress(Exception):
+                self._ao_linha(linha.decode("utf-8", errors="replace"))
+
     def texto(self) -> str:
         return b"".join(self._partes).decode("utf-8", errors="replace")
+
+
+MAXIMO_DE_LINHAS_POR_BLOCO = 50
+CARACTERES_DO_PARCIAL = 200
+
+
+def _o_resultado(saida: str) -> Any:
+    """A linha `result` do stream (a última); a saída antiga, um JSON só, também serve."""
+    for linha in reversed(saida.splitlines()):
+        linha = linha.strip()
+        if not linha:
+            continue
+        try:
+            dados = json.loads(linha)
+        except ValueError:
+            continue
+        if isinstance(dados, dict) and dados.get("type", "result") == "result":
+            return dados
+    try:
+        return json.loads(saida)
+    except ValueError:
+        return None
+
+
+def _parcial_da_linha(linha: str, ao_parcial: Callable[[str], None]) -> None:
+    """Uma linha do stream vira um parcial curto para o Jarvis (ADR-0070): o que o subagente disse
+    ou a ferramenta que ele usou. É dado de outro agente: redigido e cortado."""
+    try:
+        dados = json.loads(linha)
+    except ValueError:
+        return
+    if not isinstance(dados, dict) or dados.get("type") != "assistant":
+        return
+    mensagem = dados.get("message")
+    conteudo = mensagem.get("content") if isinstance(mensagem, dict) else None
+    if not isinstance(conteudo, list):
+        return
+    for parte in conteudo:
+        if not isinstance(parte, dict):
+            continue
+        if parte.get("type") == "text" and str(parte.get("text", "")).strip():
+            texto = redigir(str(parte["text"])).texto
+            ao_parcial(f"o subagente disse: {_curto(texto, CARACTERES_DO_PARCIAL)}")
+        elif parte.get("type") == "tool_use":
+            ao_parcial(f"o subagente usou {_curto(str(parte.get('name', '?')), 80)}")
 
 
 def _matar_o_grupo(pid: int) -> None:

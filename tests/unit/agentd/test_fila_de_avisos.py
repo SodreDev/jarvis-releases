@@ -119,13 +119,12 @@ def test_cortado_volta_para_a_fila_e_tocado_nao_volta(fila: FilaDeAvisos) -> Non
     assert fila.mensagem_do_dono("t2", agora=300.0) is None
 
 
-def test_nao_perturbe_so_card_e_privacidade_nada_em_voz(fila: FilaDeAvisos) -> None:
-    """Aceite (f): pedido de decisão com não perturbe — card sempre, voz nunca."""
+def test_nao_perturbe_vai_ao_jarvis_e_privacidade_nada_em_voz(fila: FilaDeAvisos) -> None:
+    """ADR-0070 (b9): «não perturbe» não filtra na fila — o aviso vai ao Jarvis com o modo como
+    contexto, e ele decide. A privacidade (o microfone desligado) segura tudo no código."""
     fila.nao_perturbe = True
     fila.receber(_notificacao("d", tipo="precisa_decisao"), agora=0.0)
-    assert fila.liberar(agora=60.0) is None
-    assert fila.mensagem_do_dono("t", agora=61.0) is None
-    assert fila.dados_do_card(agora=61.0)["avisos"][0]["entrega"] == "so_card"
+    assert fila.liberar(agora=60.0) is not None
 
     privada = FilaDeAvisos(session_id=SESSAO, privacidade=True)
     privada.receber(_notificacao("n"), agora=0.0)

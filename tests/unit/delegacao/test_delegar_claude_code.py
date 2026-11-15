@@ -179,7 +179,7 @@ def test_o_argv_e_o_documentado_e_restrito(tmp_path: Path) -> None:
     argv = delegador.argv("/x/claude")
     assert argv[:3] == ["/x/claude", "-p", argv[2]]
     for par in (
-        ("--output-format", "json"),
+        ("--output-format", "stream-json"),
         ("--permission-mode", "dontAsk"),
         ("--tools", ""),
         ("--allowedTools", FERRAMENTAS_DO_CHROME),
@@ -188,6 +188,7 @@ def test_o_argv_e_o_documentado_e_restrito(tmp_path: Path) -> None:
         i = argv.index(par[0])
         assert argv[i + 1] == par[1], par
     for flag in (
+        "--verbose",
         "--chrome",
         "--strict-mcp-config",
         "--no-session-persistence",
@@ -613,3 +614,18 @@ def test_o_pedido_sem_passos_ou_sem_o_que_devolver_esta_fora_do_contrato(
         r = ex.executar(FERRAMENTA_DE_DELEGAR, pedido, cancelado=NUNCA, confirmar=lambda _p: True)
         assert r.causa == "fora_do_contrato", falta
     assert _registros(pasta) == []
+
+
+def test_os_parciais_do_subagente_voltam_como_eventos_enquanto_ele_roda(tmp_path: Path) -> None:
+    """ADR-0070 (d7): em stream-json, cada passo do Claude Code vira um parcial para o Jarvis; o
+    resultado final continua sendo a linha `result`."""
+    delegador, _, _ = _delegador(tmp_path, "limpo")
+    parciais: list[str] = []
+
+    resultado = delegador.delegar("OBJETIVO: ver o horário", ao_parcial=parciais.append)
+
+    assert resultado.ok and "14h" in resultado.resumo
+    assert parciais == [
+        "o subagente disse: Vou abrir a página.",
+        "o subagente usou mcp__claude-in-chrome__navigate",
+    ]

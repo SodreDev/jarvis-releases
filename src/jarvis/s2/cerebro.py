@@ -125,6 +125,11 @@ MAXIMO_DE_RODADAS: Final = MAXIMO_DE_PASSOS
 TURNOS_NO_CONTEXTO: Final = 12
 """Orçamento fixo de conversa no contexto (regra 5): os últimos turnos estáveis. O resumo do que
 ficou para trás é trabalho de segundo plano, fora desta fatia."""
+NOTA_DO_NAVEGADOR_FECHADO: Final = (
+    "O navegador do dono está fechado (nenhum com a extensão do Jarvis). Você pode abri-lo: "
+    "sites.open abre o navegador dele já na página; browser.launch abre o navegador, e o sistema "
+    "espera a extensão conectar antes de devolver. Decida você; não mande o dono abrir."
+)
 NOTA_DO_EVENTO_DO_TURNO: Final = (
     "EVENTO DO SISTEMA (já aconteceu por causa do que o dono acabou de dizer; não é para fazer de "
     "novo): responda ao dono com as suas palavras, curto, sem markdown e sem citar ferramenta. O "
@@ -136,6 +141,8 @@ NOTA_DA_PERGUNTA: Final = (
     "em uma frase, se pode fazer, e diga por quê se houver motivo — sem as palavras sim e não, "
     "sem markdown e sem citar ferramenta. O que aconteceu: a pergunta que o sistema montaria é"
 )
+CHAVE_DA_DELEGACAO: Final = "delegacao-claude-code"
+"""A entrada do andamento dos parciais do Claude Code delegado (uma delegação por vez)."""
 PASSOS_NO_ANDAMENTO: Final = 4
 """Os últimos passos de cada subagente que o Jarvis vê na nota do andamento (ADR-0070)."""
 LIMITE_DO_RACIOCINIO: Final = 2000
@@ -818,16 +825,15 @@ class Cerebro:
                 break
             resultado = self._chamar(pedido, cancelado_no_laco, texto_do_dono)
             resposta.ferramentas.append(resultado)
-            # O navegador fechado não é motivo para mandar o dono abri-lo (dono, 2026-10-25): o
-            # Jarvis abre e segue — a página pelo sites.open, ou o navegador e o passo de novo.
-            extras = self._abrir_o_navegador(
-                pedido,
-                resultado,
-                lambda p: self._chamar(p, cancelado_no_laco, texto_do_dono),
-                lambda p: self._chamar(p, cancelado_no_laco, texto_do_dono, self._sem_o_metodo()),
-            )
-            resposta.ferramentas.extend(extras)
-            resultado = extras[-1] if extras else resultado
+            # O navegador fechado (ADR-0070): o código não o abre sozinho — o motor recebe o fato
+            # e o caminho, e decide (sites.open já na página, ou browser.launch). Abrir pelo motor
+            # espera a extensão conectar, como parte da própria ferramenta.
+            self._depois_de_abrir_o_navegador(pedido, resultado)
+            if _sem_navegador_aberto(pedido, resultado):
+                contexto = Contexto(
+                    sistema=f"{contexto.sistema}\n\n{NOTA_DO_NAVEGADOR_FECHADO}",
+                    mensagens=contexto.mensagens,
+                )
             if resultado.anexos and aceita_imagem(self.motor):
                 imagens = resultado.anexos
             # Sem status entre passos (dono, 2026-10-20, ADR-0031): ele não acompanha passo a
@@ -923,46 +929,13 @@ class Cerebro:
         ultima = next((m.texto for m in reversed(anteriores) if m.papel == "jarvis"), "")
         return nota_da_tela(texto_do_dono, ultima, porta.abertas())
 
-    def _abrir_o_navegador(
-        self,
-        pedido: PedidoDeTool,
-        resultado: ResultadoDeFerramenta,
-        chamar: Callable[[PedidoDeTool], ResultadoDeFerramenta],
-        abrir: Callable[[PedidoDeTool], ResultadoDeFerramenta] | None = None,
-    ) -> list[ResultadoDeFerramenta]:
-        """Com o navegador fechado, o Jarvis o abre — ele pode e deve (dono, 2026-10-25: «abre um
-        vídeo no YouTube» com o Brave fechado mandava o dono abrir). A navegação com endereço vai
-        pelo `sites.open`, que abre o navegador do dono já na página; outro passo (ler as abas, a
-        página) abre o navegador (`browser.launch`), espera a extensão conectar e tenta de novo,
-        uma vez. As chamadas passam pelo PDP, Jev e pergunta de sempre; `abrir` é a do
-        `browser.launch`, sem o método do pedido — que tira o `browser.launch` do **modelo** num
-        pedido de site, e aqui quem decide abrir é o código. Devolve o que rodou a mais."""
-        if not _sem_navegador_aberto(pedido, resultado):
-            return []
-        url = pedido.args.get("url")
-        if (
-            pedido.tool_id == "browser.navigate"
-            and isinstance(url, str)
-            and self._pode("sites.open")
-        ):
-            return [chamar(PedidoDeTool("sites.open", {"url": url}))]
-        executor = self.ferramentas
-        if pedido.tool_id == "browser.launch" or executor is None:
-            return []
-        if executor.navegadores is None or not executor.disponivel("browser.launch"):
-            return []  # nenhum navegador configurado: não há o que abrir, e o motor diz
-        aberto = (abrir or chamar)(PedidoDeTool("browser.launch", {}))
-        if aberto.status != "ok" or not self._esperar_a_extensao():
-            return [aberto]
-        return [aberto, chamar(pedido)]
-
-    def _sem_o_metodo(self) -> Contaminacao | None:
-        """A marca do turno sem o método do pedido — a contaminação e o objetivo de agora seguem
-        para o PDP — para a chamada que o próprio código decide (abrir o navegador fechado)."""
-        executor = self.ferramentas
-        if executor is None:
-            return None
-        return Contaminacao(executor.turno.valor, executor.objetivo, None)
+    def _depois_de_abrir_o_navegador(
+        self, pedido: PedidoDeTool, resultado: ResultadoDeFerramenta
+    ) -> None:
+        """O motor abriu o navegador (`browser.launch` ok): a ferramenta só se dá por acabada com a
+        extensão conectada (até `ESPERA_DA_EXTENSAO_S`), para o próximo passo dele achar a ponte."""
+        if pedido.tool_id == "browser.launch" and resultado.status == "ok":
+            self._esperar_a_extensao()
 
     def _esperar_a_extensao(self) -> bool:
         """Espera a extensão do navegador recém-aberto conectar (até `ESPERA_DA_EXTENSAO_S`). Sem
@@ -1256,11 +1229,9 @@ class Cerebro:
 
             try:
                 resultado = passo(pedido)
-                # O navegador fechado: a tarefa o abre e segue, como o turno (ADR-0046).
-                abertos = self._abrir_o_navegador(
-                    pedido, resultado, passo, lambda p: passo(p, sem_metodo=True)
-                )
-                resultado = abertos[-1] if abertos else resultado
+                # O navegador fechado: o motor da tarefa recebe o erro e os caminhos e decide
+                # (ADR-0070); o código só espera a extensão quando ele mesmo abriu o navegador.
+                self._depois_de_abrir_o_navegador(pedido, resultado)
             finally:
                 gestor.esperando_o_dono(tarefa, False)
                 for identificador in anunciadas:
@@ -1639,6 +1610,13 @@ class Cerebro:
         _pedido, passos = self.andamento.setdefault(tarefa_id, (pedido, []))
         passos.append(passo)
         del passos[:-PASSOS_NO_ANDAMENTO]
+
+    def anotar_parcial(self, texto: str) -> None:
+        """Um parcial do Claude Code delegado (ADR-0070): entra no andamento; vazio = acabou."""
+        if not texto:
+            self.esquecer_andamento(CHAVE_DA_DELEGACAO)
+            return
+        self.anotar_progresso(CHAVE_DA_DELEGACAO, "delegação ao Claude Code", texto)
 
     def esquecer_andamento(self, tarefa_id: str) -> None:
         self.andamento.pop(tarefa_id, None)

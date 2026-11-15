@@ -23,7 +23,7 @@ from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo
 from jarvis.politica.pdp import Pdp
-from jarvis.s2.cerebro import Cerebro
+from jarvis.s2.cerebro import NOTA_DO_NAVEGADOR_FECHADO, Cerebro
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 
@@ -96,13 +96,28 @@ def _abas(contexto: Contexto) -> list[PedidoDeTool | str]:
     return ["Uma aba aberta, no g1."]
 
 
-def test_o_passo_sem_endereco_abre_o_navegador_espera_e_tenta_de_novo(
+def _decide_abrir(contexto: Contexto) -> list[PedidoDeTool | str]:
+    """O motor que lê o evento do navegador fechado e decide abri-lo, e depois tenta de novo."""
+    feitas = [m.texto for m in contexto.mensagens if m.papel == "ferramenta"]
+    if not feitas:
+        return [PedidoDeTool("browser.tabs", {})]
+    if len(feitas) == 1:
+        assert NOTA_DO_NAVEGADOR_FECHADO in contexto.sistema, "o fato chegou ao motor"
+        return [PedidoDeTool("browser.launch", {})]
+    if len(feitas) == 2:
+        return [PedidoDeTool("browser.tabs", {})]
+    return ["Uma aba aberta, no g1."]
+
+
+def test_com_o_navegador_fechado_o_motor_recebe_o_fato_e_decide_abrir(
     executor: ExecutorDeFerramentas, navegador: NavegadorQueAbre
 ) -> None:
+    """ADR-0070 (d4): o código não abre o navegador sozinho; o motor recebe o fato e o caminho e
+    decide. O browser.launch dele só se dá por acabado com a extensão conectada."""
     publicados: list[dict[str, Any]] = []
-    resposta = Cerebro(motor=MotorRoteirizado(resposta=_abas), ferramentas=executor).responder(
-        "o que eu tenho aberto no navegador agora?", epoch=0, publicar=publicados.append
-    )
+    resposta = Cerebro(
+        motor=MotorRoteirizado(resposta=_decide_abrir), ferramentas=executor
+    ).responder("o que eu tenho aberto no navegador agora?", epoch=0, publicar=publicados.append)
 
     assert [(r.tool_id, r.status) for r in resposta.ferramentas] == [
         ("browser.tabs", "erro"),
@@ -112,7 +127,16 @@ def test_o_passo_sem_endereco_abre_o_navegador_espera_e_tenta_de_novo(
     assert navegador.lancados == [("/usr/bin/true",)], "o navegador do dono foi aberto, uma vez"
     falado = " ".join(str(p["text"]) for p in publicados if p["text"])
     assert falado == "Uma aba aberta, no g1."
-    assert "abra" not in falado.casefold(), "nunca manda o dono abrir o navegador"
+
+
+def test_o_codigo_nao_abre_o_navegador_sozinho(
+    executor: ExecutorDeFerramentas, navegador: NavegadorQueAbre
+) -> None:
+    resposta = Cerebro(motor=MotorRoteirizado(resposta=_abas), ferramentas=executor).responder(
+        "o que eu tenho aberto no navegador agora?", epoch=0, publicar=lambda _p: None
+    )
+    assert [(r.tool_id, r.status) for r in resposta.ferramentas] == [("browser.tabs", "erro")]
+    assert navegador.lancados == [], "quem decide abrir é o motor"
 
 
 def test_sem_navegador_configurado_o_erro_volta_ao_motor_como_antes(

@@ -71,6 +71,24 @@ def main() -> int:
         "permission_denials": [{"tool_name": "Bash"}],
         "total_cost_usd": 0.01,
     }
+    if "stream-json" in sys.argv:
+        # Em stream (ADR-0070): os passos do subagente, uma linha JSON cada, antes do `result`.
+        for linha in (
+            {"type": "system", "subtype": "init"},
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Vou abrir a página."}]},
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "tool_use", "name": "mcp__claude-in-chrome__navigate", "input": {}}
+                    ]
+                },
+            },
+        ):
+            print(json.dumps(linha), flush=True)
     print(json.dumps(resposta))
     return 0
 

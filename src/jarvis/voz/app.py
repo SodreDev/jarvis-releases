@@ -232,6 +232,15 @@ PASTA_DA_TRILHA: Final = PASTA_DA_TRILHA_DE_DIAGNOSTICO
 """Dentro da pasta da sessão: `turnos.jsonl` da trilha de diagnóstico (`jarvis.trilha`)."""
 PREFIXO_DA_PERGUNTA: Final = "pergunta-"
 """O `notif_id` do aviso que leva à voz a pergunta de uma tarefa: o resto é o id da pendência."""
+
+
+def _com_nao_perturbe(contexto: str, ligado: bool) -> str:
+    """«Não perturbe» é contexto do aviso para o Jarvis decidir (ADR-0070), não filtro."""
+    if not ligado:
+        return contexto
+    return "; ".join(p for p in (contexto, "o dono ligou o modo não perturbe") if p)
+
+
 PROGRESSO_A_CADA_S: Final = 45.0
 """De quanto em quanto tempo o progresso de um subagente vai à fila como evento (ADR-0070): o
 Jarvis decide se fala; a cada passo seria uma rodada do motor por passo."""
@@ -954,6 +963,9 @@ class Aplicativo:
         # Os contatos das memórias fixas para o roteiro da tarefa de navegador (ADR-0066).
         self._cerebro.contatos = self._contatos_das_memorias
         self._cerebro.ao_status = self._status_do_laco
+        if self.ferramentas is not None:
+            # Os parciais do Claude Code delegado vão ao Jarvis como eventos (ADR-0070).
+            self.ferramentas.ao_parcial_da_delegacao = self._cerebro.anotar_parcial
         # O replanejamento da tarefa quando um passo falha: na tela, nunca na voz (ADR-0031).
         self._cerebro.ao_raciocinio = lambda linha: self.escrever_na_tela(f"  ↻ {linha}")
         self._cerebro.maximo_de_passos = self.configuracao.laco_max_passos
@@ -1364,7 +1376,10 @@ class Aplicativo:
                     resumo=self._telas_dos_avisos.get(na_fila.notif_id)
                     or self._eventos_dos_avisos.get(na_fila.notif_id, ("", ""))[0]
                     or self._falas_dos_avisos.get(na_fila.notif_id, na_fila.resumo),
-                    contexto=self._eventos_dos_avisos.get(na_fila.notif_id, ("", ""))[1],
+                    contexto=_com_nao_perturbe(
+                        self._eventos_dos_avisos.get(na_fila.notif_id, ("", ""))[1],
+                        self.avisos.nao_perturbe,
+                    ),
                     de_terceiros=na_fila.trust == str(Trust.THIRD_PARTY),
                 )
             )
@@ -2139,6 +2154,7 @@ class Aplicativo:
                 novo.tarefas = antigo.tarefas
         self.ferramentas = novo
         self._cerebro.ferramentas = novo
+        novo.ao_parcial_da_delegacao = self._cerebro.anotar_parcial
 
     def _confirmar(
         self, pergunta: Confirmacao, *, tarefa_cancelada: Callable[[], bool] | None = None

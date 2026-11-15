@@ -18,6 +18,7 @@ import json
 import os
 import time
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
@@ -443,6 +444,9 @@ class ExecutorDeFerramentas:
     delegacao: DelegadorClaudeCode | None = None
     """Quem delega ao Claude Code do dono (ADR-0054). Sem ele (o padrão: a chave em
     `~/.config/jarvis/delegar.toml` desligada), a `delegar.claude_code` não existe."""
+    ao_parcial_da_delegacao: Callable[[str], None] = field(default=lambda _parcial: None)
+    """Cada parcial do Claude Code delegado (ADR-0070), enquanto ele roda: vai ao Jarvis como
+    evento. Vazio = a delegação acabou."""
     mcp: GestorMcp | None = None
     """Os servidores MCP que o dono ligou (ADR-0052). Sem ele, nenhuma `mcp.*` existe. As tools
     promovidas entram no catálogo e no PDP em `preparar`, com o tier que o dono deu."""
@@ -1453,9 +1457,17 @@ class ExecutorDeFerramentas:
             objetivo.delegacao_aprovada = True
         # O subagente recebe o pedido que o Jarvis formulou, em seções (ADR-0069): objetivo,
         # contexto, passos, pronto quando e o que devolver — a página de partida vai junto nele.
-        resultado = self.delegacao.delegar(
-            pedido_formulado.texto(pedido_formulado.do_args(args)), cancelado=cancelado
-        )
+        # Os parciais do subagente voltam ao Jarvis como eventos (ADR-0070), enquanto ele roda.
+        ao_parcial = self.ao_parcial_da_delegacao
+        try:
+            resultado = self.delegacao.delegar(
+                pedido_formulado.texto(pedido_formulado.do_args(args)),
+                cancelado=cancelado,
+                ao_parcial=ao_parcial,
+            )
+        finally:
+            with suppress(Exception):
+                ao_parcial("")  # vazio = a delegação acabou
         if resultado.rodou and objetivo is not None:
             objetivo.delegacoes += 1
         if self.trilha is not None:

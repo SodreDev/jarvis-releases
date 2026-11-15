@@ -107,8 +107,8 @@ class FilaDeAvisos:
             trust=str(envelope.trust),
             recebido_em=agora,
         )
-        if self.nao_perturbe:
-            aviso.entrega = Entrega.SO_CARD
+        # «Não perturbe» não cala nada aqui (ADR-0070): vai ao Jarvis como contexto, e ele
+        # decide. Só a privacidade (o microfone desligado pelo dono) segura a voz no código.
         self.avisos[identificador] = aviso
         return aviso
 
@@ -146,7 +146,7 @@ class FilaDeAvisos:
     # --- liberação --------------------------------------------------------------------
     def liberar(self, agora: float) -> Envelope | None:
         """Liberação espontânea: **um** aviso, com o piso livre e o teto de fala respeitado."""
-        if self.privacidade or self.nao_perturbe or not self.piso_livre(agora):
+        if self.privacidade or not self.piso_livre(agora):
             return None
         if any(a.liberado for a in self.avisos.values()):
             return None  # um por vez: o liberado ainda não tocou, não foi cortado nem decidido
@@ -162,7 +162,7 @@ class FilaDeAvisos:
     def mensagem_do_dono(self, turn_id: str, agora: float) -> Envelope | None:
         """Chegou mensagem do dono: todos os pendentes vão junto com ela (decisão do dono)."""
         del agora
-        if self.privacidade or self.nao_perturbe:
+        if self.privacidade:
             return None
         pendentes = self._pendentes()
         if not pendentes:

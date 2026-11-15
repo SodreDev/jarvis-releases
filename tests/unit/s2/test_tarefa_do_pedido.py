@@ -371,6 +371,10 @@ def _roteiro_de_quem_mente(contexto: Contexto) -> Sequence[Parte]:
         return [NAO_ABRIU if "NÃO foi cumprido" in contexto.sistema else NAO_CONFERI]
     if feitas == 0:
         return ["Vou abrir. ", PedidoDeTool("browser.navigate", {"url": BUSCA})]
+    if feitas == 1:
+        # O navegador estava fechado: o erro e o caminho (sites.open) chegam ao subagente, que
+        # decide abrir o navegador já na página — o código não abre nada sozinho (ADR-0070, d4).
+        return [PedidoDeTool("sites.open", {"url": BUSCA})]
     return ["Pronto, abri o vídeo."]  # afirma sem ter lido nada
 
 
@@ -378,8 +382,8 @@ def test_navegador_fechado_o_jarvis_abre_ele_mesmo_e_nao_finge_conferir(
     executor: ExecutorDeFerramentas, extensao: ExtensaoFalsa
 ) -> None:
     """Dono, 2026-10-25: «abre um vídeo no YouTube» com o navegador fechado mandava o dono abrir.
-    Agora o subagente abre o navegador dele já na página (`sites.open`) e segue; sem ter lido a
-    página, a resposta diz que não conferiu."""
+    O subagente recebe o erro com o caminho e abre o navegador dele já na página (`sites.open`);
+    sem ter lido a página, a resposta diz que não conferiu."""
     extensao.fora_do_ar = True
     abertos: list[str] = []
     executor.abrir_site = abertos.append
