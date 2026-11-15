@@ -96,13 +96,52 @@ O caminho de hoje: `extensao/social.js` (`lerEstado` `:300-362`, `informar` `:38
 
 ---
 
-## O que a Fase B trata (um commit por item)
+## Estado (2026-11-15, depois das rodadas 1 e 2)
+
+**Rodada 1** (ADR-0070): `a0bc7a7` caminho comum, `530fc62` limites, `2d55f21` execução delegada, `7ff9a17` redes por agente monitor, `73a1c58` caminho rápido como dica e roteiro como orientação, `8afc8a2` a ADR. **Rodada 2:** `c16d79a` grupo A, `649061f` grupo B, `a9d499f` grupo C.
+
+| Item | Estado | Onde foi resolvido |
+|---|---|---|
+| Caminho comum (todo aviso falado sem o motor) | **resolvido** | `a0bc7a7`: `Cerebro.avisar` roda o motor com os eventos |
+| a1–a6 (teto, laço, orçamento, sem saída) | **resolvido** | `530fc62`: notificação ao motor, que decide |
+| a7 (motor que cai no fim da tarefa) | **resolvido** | `530fc62`: o fim vai ao Jarvis como evento |
+| a8–a11 (nada feito, sem confirmação, vazio, falta conferir, prazo da pergunta) | **resolvido** | `530fc62`: `_explicar` com o fato |
+| a12–a15 (prazo, teto de tarefas, exceção crua, fallback do app) | **resolvido** | `a0bc7a7`/`2d55f21`: viram dado do evento e a recusa volta ao motor |
+| a16 (respostas fixas à pendência) | **resolvido** | `c16d79a`: `LeituraDaResposta.evento` e `_responder_ao_evento` |
+| a17 (prazo do turno sem rodada final) | **parcial** | Com a execução no subagente o turno quase não usa ferramenta; o corte por prazo do turno ainda acaba sem rodada final |
+| a18 (status do clique) | **resolvido** | `c16d79a`: vai à fila como dado |
+| a19 (subagente sem devolver o estado no último turno) | **parcial** | `d7` traz os parciais; o `--max-turns` esgotado ainda volta como falha |
+| b1–b8, b10, b11 (redes) | **resolvido** | `7ff9a17`: agente monitor e evento estruturado |
+| b9 («não perturbe» filtra) | **resolvido** | `a9d499f`: vira contexto do aviso; só a privacidade segura a voz |
+| b12 (frases do cartão) | **fica** | Só tela |
+| c1, c2, d2 (caminho rápido executa e fala) | **resolvido** | `73a1c58`: virou dica; `c16d79a`: sem frase da ação |
+| c3 (método tira ferramentas) | **resolvido** | `649061f`: dica, sem recusa |
+| c4 (roteiro de passos fixos) | **resolvido** | `73a1c58`: orientação e fatos |
+| c5 (veto regex da mensagem copiada) | **resolvido** | `649061f` |
+| c6 (o código troca a ação por leitura) | **fica, como guarda** | Ler antes de agir é garantia de ferramenta (ADR-0069), pedida pelo dono |
+| c7 (`_PEDE` corta perguntas) | **resolvido** | `c16d79a`: perguntar é decisão do Jarvis |
+| c8 (o código encerra o turno) | **resolvido** | `c16d79a` |
+| c9 (receitas por palavra-chave) | **resolvido** | `649061f`: vêm como dica |
+| c10 (classificador falhou → pergunta) | **fica** | Política de segurança |
+| c11 (frase do comando de estilo e do modo) | **resolvido** | `c16d79a`: a troca é do código, a fala é do Jarvis |
+| c12 («Certo, já cuido disso.») | **resolvido** | `2d55f21` |
+| d1, d3 (execução no turno, delegação síncrona) | **resolvido** | `2d55f21` |
+| d4 (navegador fechado aberto pelo código) | **resolvido** | `a9d499f`: o motor recebe o fato e decide; o código só espera a extensão depois do `browser.launch` dele |
+| d5 (ferramenta rápida depois do «sim» no turno) | **resolvido** | `649061f`: vai ao subagente |
+| d6 (progresso parcial) | **resolvido** | `2d55f21`: `ao_progresso` e nota SUBAGENTES EM ANDAMENTO |
+| d7 (parciais do Claude Code) | **resolvido** | `a9d499f`: `stream-json`, cada passo vira parcial |
+| D (agente monitor ler a página por CDP) | **não feito, de propósito** | Anexar o depurador à aba da rede, a cada notificação, é o risco de detecção e banimento que a ADR-0060 restringe ao envio (CDP só durante o envio, sem ligar domínio nenhum). O agente usa a leitura do content script (prévia e ícones de cada linha). Volta se o dono aceitar esse risco explicitamente. |
+
+**Ainda pendente, honesto:** a17 (o corte por prazo do turno não tem rodada final), a19 (`--max-turns` esgotado volta como falha, sem o estado parcial além dos parciais já enviados) e o caminho no turno com `passos_no_turno > 0`, que existe no código e nos testes, mas a produção não usa para execução. Nada disto foi testado no navegador, nas contas, no microfone nem no áudio reais do dono.
+
+## O que a Fase B tratou (registro original)
+
 
 1. **Limites → notificação ao Jarvis** (a1–a6, a17 parcial, a19): teto de passos/tempo, laço e orçamento da recuperação deixam de gerar fala ou pergunta do código. O gestor monta a **notificação** (pedido, passos com ferramenta/status/erro real, o que deu certo, gasto) e o motor **decide** numa rodada própria: `continuar` (N passos e a estratégia nova), `perguntar` (a pergunta escrita por ele vai ao dono; a resposta volta a ele como novo evento) ou `encerrar` (a resposta dele). O subagente pensa no último passo: a rodada final nunca é bloqueada sem devolver o estado.
 2. **Execução sempre delegada** (d1, d3, d6, c4, c6, d7): a primeira ferramenta de execução já vai para a tarefa; o turno do Jarvis só conversa e lê; o progresso volta como evento. O subagente do navegador é **obrigado pela ferramenta** a ler a página (árvore/DOM via CDP) antes do primeiro clique e a reler depois para conferir; sai o roteiro de passos fixos.
 3. **Redes sociais por agente monitor** (b1–b8, b10–b11, e o cano comum b3/b4/b5 para eventos de rede): o monitor entrega um **evento estruturado**; o Jarvis decide se fala, quando e o quê; ausente, madrugada e não perturbe viram contexto. As travas da ADR-0060 ficam só no envio autônomo.
 
-## Pendências (cabem na regra; ficam para depois)
+## Pendências levantadas na auditoria (ver «Estado» acima para o que já saiu)
 
 - c1/c2/d2 — caminho rápido por regex que executa e fala sem o motor.
 - c3 — `escolher_metodo` tirando ferramentas por palavra-chave.

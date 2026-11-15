@@ -68,3 +68,10 @@ Da auditoria, com o motivo de cada uma estar fora: abrir o navegador fechado ain
 ## Como invalidar esta decisão
 
 Se a trilha mostrar o Jarvis calando (`jarvis_calou`) a resposta de um pedido que o dono esperava ouvir, a nota dos eventos muda (o modelo é instruído a falar o resultado de um pedido do dono); se mostrar `tarefa.limite` com `decisao=continuar` repetido em tarefas que o dono diz que não avançavam, o teto de continuações sozinho cai para 1.
+
+## Emendas
+
+- **2026-11-15 — rodada 2** (pedido do dono: «sua lista de pendentes é exatamente o tipo de automação que o dono não quer»). Grupo A (`c16d79a`): sem frase do código depois da ação de um passo e sem o código encerrar o turno; a resposta à pendência, a troca de estilo e a de modo viram evento e o Jarvis responde (`Cerebro._responder_ao_evento`); a pergunta da pendência é escrita por ele (`Cerebro._perguntar_ao_dono`); o filtro `_PEDE` não corta mais a pergunta dele. Grupo B (`649061f`): o método e as receitas viram dica (nenhuma ferramenta recusada nem tirada do motor), saiu o veto por regex da mensagem copiada, e o «sim» falado manda a ação ao subagente. Grupo C (`a9d499f`): o código não abre mais o navegador fechado (o motor recebe o fato e decide), os parciais do Claude Code delegado vêm em `stream-json` e vão ao Jarvis como eventos, e «não perturbe» vira contexto do aviso (só a privacidade segura a voz).
+- **Não feito, de propósito: o agente monitor ler a página das redes por CDP.** Anexar o depurador à aba da rede a cada notificação é o risco de detecção e banimento que a ADR-0060 restringe ao envio (CDP só durante o envio, sem ligar domínio nenhum). O agente segue com a leitura do content script (a prévia e os ícones de cada linha). Volta se o dono aceitar esse risco explicitamente.
+- **Ainda pendente:** o corte por prazo do turno acaba sem rodada final do motor; o `--max-turns` esgotado do Claude Code volta como falha (os parciais já enviados ficam com o Jarvis); e o caminho no turno com `passos_no_turno > 0` existe no código e nos testes, mas a produção não o usa para execução.
+
