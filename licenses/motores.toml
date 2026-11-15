@@ -281,6 +281,34 @@ e golpe: o motor só usa voz que o dono cadastrou localmente com a declaração 
 "tenho permissão do titular", e nenhuma ferramenta do assistente cadastra voz. O VoiceStudio \
 (debpalash/VoiceStudio, AGPL-3.0) é programa à parte: citado como referência, nunca embutido."""
 
+# --- TTS por endpoint HTTP configurável — ADR-0068 ------------------------------------
+
+[[motor]]
+id = "tts-endpoint"
+papel = "tts"
+onde = "nuvem"
+ligado = false
+implementacao = "jarvis.voz.endpoint:MotorTtsEndpoint"
+modelo = "(o do servidor configurado)"
+voz = "(escolhida pelo dono entre as do servidor)"
+servico = "Endpoint HTTP (o servidor de TTS que você configurou)"
+endereco = "(base, caminho e corpo do endpoint escolhido em tts-endpoints.toml)"
+licenca_do_cliente = "Apache-2.0"
+cliente = "código deste repositório (http.client da biblioteca padrão, pelo pool de conexões do jarvis.voz.nuvem)"
+uso_comercial = "o do servidor que você configurou: o Jarvis não tem como ler termos de um servidor seu ou de terceiro — no preset JARVIS-BR (phonon-web), é um servidor do próprio dono na rede local"
+retencao_declarada = "a do servidor configurado (o Jarvis não guarda o texto enviado; o servidor pode guardar)"
+treina_com_entrada = "o que o servidor configurado fizer — o Jarvis não tem como saber"
+dono_da_saida = "o do servidor configurado (no servidor do próprio dono, o dono)"
+marca_dagua = "não declarada"
+preco = "nenhum cobrado pelo Jarvis"
+fonte = "docs/adr/0068-tts-por-endpoint-http-configuravel.md"
+data_de_acesso = "2026-11-14"
+nota = """Pedido do dono (2026-11-14): um TTS que ele mesmo montou (phonon-web) em outra \
+máquina da rede. Conta como nuvem porque o texto que o Jarvis vai falar SAI desta máquina: \
+nasce desligado e só fala depois de o dono ligar `tts-endpoint` em `nuvem_ligada`. Os quatro \
+campos de termo dizem a verdade de um motor genérico — quem decide é quem opera o servidor. \
+Só http/https, sem redirecionamento seguido, o texto só vai à base configurada."""
+
 # --- Decisão (classificador de perguntas fechadas) — ADR-0029 -------------------------
 
 [[motor]]

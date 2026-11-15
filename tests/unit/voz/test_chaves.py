@@ -147,6 +147,7 @@ def test_as_variaveis_do_dono_sao_as_registradas() -> None:
         "OPENAI_API_KEY",  # os provedores de modelo (ADR-0056)
         "ANTHROPIC_API_KEY",
         "JARVIS_COMPATIVEL_API_KEY",
+        "JARVIS_TTS_ENDPOINT_API_KEY",  # o endpoint de TTS com autenticação (ADR-0068)
     )
     assert VARIAVEL_GROQ == "JARVIS_GROQ_API_KEY"
     assert VARIAVEL_ELEVENLABS == "JARVIS_ELEVENLABS_API_KEY"

@@ -72,6 +72,11 @@ ESCUTAS: Final[tuple[str, ...]] = MODOS
 """`ptt` (atalho de teclas), `palavra` (palavra de ativação) e `vad` (escuta contínua)."""
 TTS_ELEVENLABS: Final = "tts-elevenlabs"
 TTS_OMNIVOICE: Final = "tts-omnivoice"
+TTS_ENDPOINT: Final = "tts-endpoint"
+"""O TTS por endpoint HTTP configurável (ADR-0068): o servidor de voz do dono, ou outra API."""
+FORMA_DO_NOME_DO_ENDPOINT: Final[re.Pattern[str]] = re.compile(r"[^\W_][\w .()+\-]{0,59}")
+FORMA_DA_VOZ_DO_ENDPOINT: Final[re.Pattern[str]] = re.compile(r"[^\x00-\x1f\x7f\"\\]{1,64}")
+"""Voz e estilo do endpoint vão dentro do JSON do pedido (escapados), nunca na URL."""
 FORMA_DO_ID_DE_VOZ: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_-]{1,64}")
 """O `voice_id` vai **no caminho** da URL (`/v1/text-to-speech/{voice_id}`): barra, `?`, `#`
 ou espaço mudariam o pedido. Os ids da ElevenLabs são alfanuméricos; o resto recusa."""
@@ -246,6 +251,18 @@ class Configuracao:
     base_compativel_nuvem: str = ""
     """A base `https://` do roteador de nuvem compatível que o dono escolheu
     (`conversa-compativel-nuvem`). Vazio = o provedor não tem para onde chamar."""
+    endpoint_tts: str = ""
+    """O endpoint de TTS (ADR-0068), pelo nome, de `tts-endpoints.toml` (o do dono vence o do
+    repositório). Vazio = o primeiro, «JARVIS-BR (phonon-web)». Só fala com `tts = "tts-endpoint"`
+    **e** `tts-endpoint` em `nuvem_ligada`: o texto sai desta máquina."""
+    voz_endpoint: str = ""
+    """A voz pedida ao endpoint. Vazio = a padrão do endpoint."""
+    estilo_endpoint: str = ""
+    """O estilo de fala pedido ao endpoint (cordial, calmo, urgente…). Vazio = o padrão dele. Muda
+    também pela voz do dono («fala mais calmo»), e fica salvo."""
+    reserva_do_endpoint: str = ""
+    """Quem fala quando o endpoint não responde (fora da rede, desligado): o TTS que o dono usava
+    antes de escolher o endpoint. Vazio = o motor padrão (o local)."""
 
     def para_dict(self) -> dict[str, Any]:
         return {
@@ -298,6 +315,10 @@ class Configuracao:
             "voz_omnivoice": self.voz_omnivoice,
             "base_compativel_local": self.base_compativel_local,
             "base_compativel_nuvem": self.base_compativel_nuvem,
+            "endpoint_tts": self.endpoint_tts,
+            "voz_endpoint": self.voz_endpoint,
+            "estilo_endpoint": self.estilo_endpoint,
+            "reserva_do_endpoint": self.reserva_do_endpoint,
         }
 
     @property
@@ -454,6 +475,15 @@ voz_omnivoice = {aspas(configuracao.voz_omnivoice)}
 # http://127.0.0.1:11434/v1) e um roteador de nuvem (https://, com JARVIS_COMPATIVEL_API_KEY).
 base_compativel_local = {aspas(configuracao.base_compativel_local)}
 base_compativel_nuvem = {aspas(configuracao.base_compativel_nuvem)}
+
+# TTS por endpoint HTTP (ADR-0068): o servidor de voz que VOCÊ montou, ou outra API (os endpoints
+# ficam em tts-endpoints.toml, ao lado deste arquivo). Fala só com tts = "tts-endpoint" e com
+# "tts-endpoint" em nuvem_ligada. Vazio = o primeiro endpoint, a voz e o estilo padrão dele. Fora do
+# ar, fala `reserva_do_endpoint` (vazio = o motor local), com um aviso curto na tela.
+endpoint_tts = {aspas(configuracao.endpoint_tts)}
+voz_endpoint = {aspas(configuracao.voz_endpoint)}
+estilo_endpoint = {aspas(configuracao.estilo_endpoint)}
+reserva_do_endpoint = {aspas(configuracao.reserva_do_endpoint)}
 """
 
 
@@ -578,6 +608,23 @@ def validar(configuracao: Configuracao) -> Configuracao:
             f"base_compativel_nuvem = {configuracao.base_compativel_nuvem!r} não é um endereço "
             "https:// (o texto da conversa vai por ele: sem https, não)"
         )
+    if configuracao.endpoint_tts and not FORMA_DO_NOME_DO_ENDPOINT.fullmatch(
+        configuracao.endpoint_tts
+    ):
+        raise ConfiguracaoInvalida(
+            f"endpoint_tts = {configuracao.endpoint_tts!r} não é nome de endpoint (letras, "
+            "números, espaço, ( ) + . -, até 60)"
+        )
+    for campo in ("voz_endpoint", "estilo_endpoint"):
+        valor = str(getattr(configuracao, campo))
+        if valor and not FORMA_DA_VOZ_DO_ENDPOINT.fullmatch(valor):
+            raise ConfiguracaoInvalida(f"{campo} = {valor!r}: sem controle nem aspas, até 64")
+    if configuracao.reserva_do_endpoint:
+        reserva = exigir("reserva_do_endpoint", configuracao.reserva_do_endpoint, "tts")
+        if reserva.id == TTS_ENDPOINT:
+            raise ConfiguracaoInvalida(
+                "reserva_do_endpoint não pode ser o tts-endpoint: é quem fala quando ele cai"
+            )
     if configuracao.voz_omnivoice and not FORMA_DO_NOME_DE_VOZ.fullmatch(
         configuracao.voz_omnivoice
     ):
@@ -757,6 +804,10 @@ def ler(caminho: Path | None = None, *, ambiente: Mapping[str, str] | None = Non
         voz_omnivoice=_texto(dados, "voz_omnivoice", ""),
         base_compativel_local=_texto(dados, "base_compativel_local", ""),
         base_compativel_nuvem=_texto(dados, "base_compativel_nuvem", ""),
+        endpoint_tts=_texto(dados, "endpoint_tts", ""),
+        voz_endpoint=_texto(dados, "voz_endpoint", ""),
+        estilo_endpoint=_texto(dados, "estilo_endpoint", ""),
+        reserva_do_endpoint=_texto(dados, "reserva_do_endpoint", ""),
     )
     return validar(configuracao)
 

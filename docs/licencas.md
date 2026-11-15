@@ -82,6 +82,7 @@ nascem desligados, e campo de termo vazio barra o motor em tempo de execução
 | decisao | `decisao-jev-openrouter` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://typesafe.ai/legal/mca> | 2026-10-17 |
 | tts | `tts-edge` | nuvem | não | LGPL-3.0 | permissiva | extra_opcional | <https://pypi.org/pypi/edge-tts/json> | 2026-10-15 |
 | tts | `tts-elevenlabs` | nuvem | não | Apache-2.0 | permissiva | em_uso | <https://elevenlabs.io/terms-of-use> | 2026-10-15 |
+| tts | `tts-endpoint` | nuvem | não | Apache-2.0 | permissiva | em_uso | <docs/adr/0068-tts-por-endpoint-http-configuravel.md> | 2026-11-14 |
 | tts | `tts-omnivoice` | local | não | Apache-2.0 | permissiva | uso_pessoal | <https://pypi.org/pypi/omnivoice/json> | 2026-10-21 |
 | tts | `tts-parametrico` | local | sim | Apache-2.0 | permissiva | em_uso | <https://github.com/SodreDev/jarvis> | 2026-10-15 |
 | tts | `tts-piper-epitran` | local | sim | MIT | permissiva | em_uso | <https://pypi.org/pypi/epitran/json> | 2026-10-15 |

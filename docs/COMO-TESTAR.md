@@ -2156,6 +2156,39 @@ Testes: `tests/unit/voz/test_reconciliar.py`, `tests/unit/voz/test_reconciliacao
 **Não provado:** a sua voz e o seu microfone (só voz sintética), a Groq (sem chave aqui) e a placa
 rodando o whisper (a cuBLAS não está instalada).
 
+### 0.58 A voz do seu servidor: TTS por endpoint HTTP (2026-11-14, ADR-0068)
+
+**O que mudou.** Um motor de voz novo, `tts-endpoint`, que fala por um servidor HTTP seu (ou
+qualquer API de TTS que receba JSON e devolva áudio). Vem pronto o endpoint **«JARVIS-BR
+(phonon-web)»**: `http://192.168.15.9:20202`, `POST /api/tts` e `/api/tts/stream`, voz `jarvis-br`,
+PCM 24 kHz mono, estilos cordial (padrão), calmo, urgente, ironico, seco, sem autenticação. Ele
+**nasce desligado**: o texto que o Jarvis fala sai desta máquina para o vaio. Se o vaio estiver
+desligado ou fora da rede, a voz de antes fala no lugar (uma linha curta na tela avisa) e o Jarvis
+tenta o servidor de novo a cada 20 s — nunca fica mudo, e a escuta não muda.
+
+1. **Ligar.** No `jarvis-voz.toml`: `tts = "tts-endpoint"`, `"tts-endpoint"` em `nuvem_ligada`
+   (e, se quiser, `reserva_do_endpoint = "tts-elevenlabs"` — vazio é a voz local). Abra o Jarvis: a
+   tela de abertura diz `falando com: endpoint:JARVIS-BR (phonon-web)` e, embaixo, a base, a voz e
+   o estilo.
+2. **Trocar o que o servidor recebe.** Os endpoints ficam em `~/.config/jarvis/tts-endpoints.toml`
+   (o seu vence o do repositório pelo nome; o modelo comentado está em
+   `src/jarvis/voz/endpoints_tts.toml`). O corpo é um molde JSON — o padrão é
+   `{"text": "{texto}", "voice": "{voz}", "style": "{estilo}", "format": "{formato}"}`. Se o
+   phonon-web usar outros nomes de campo, troque só o molde. Com chave: `autenticacao = "bearer"`
+   (ou `"cabecalho"` com `cabecalho = "X-API-Key"`) e `variavel_de_ambiente =
+   "JARVIS_TTS_ENDPOINT_API_KEY"` — a chave fica no chaveiro ou no ambiente, nunca no arquivo.
+3. **Cair e voltar.** Com o Jarvis falando pelo vaio, desligue o servidor: a frase seguinte sai na
+   voz reserva e a tela mostra «voz: JARVIS-BR (phonon-web) não respondeu (…) — falo com a voz
+   reserva». Ligue de novo: em até 20 s a tela mostra «… voltou» e a voz do vaio retoma.
+4. **Interromper.** Fale «Jarvis» por cima enquanto ele fala pelo servidor (ADR-0040): o corte é
+   igual ao de sempre, e o pedido em voo ao vaio é abandonado.
+
+Testes: `tests/unit/voz/test_endpoint.py` (servidor falso em 127.0.0.1, porta efêmera — nunca o
+seu IP).
+
+**Não provado:** o phonon-web de verdade (os nomes dos campos do corpo são os comuns, não
+confirmados), a rede entre o seu PC e o vaio, a latência ponta a ponta.
+
 ## 1. O terminal (`jarvis-voz`)
 
 **O que é isto:** um aplicativo de **teste**, no terminal, para você falar com o Jarvis e

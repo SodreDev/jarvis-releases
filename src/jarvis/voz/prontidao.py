@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Final
 
 from jarvis.voz.chaves import Chave
-from jarvis.voz.config import TTS_OMNIVOICE, Configuracao
+from jarvis.voz.config import TTS_ENDPOINT, TTS_OMNIVOICE, Configuracao
 from jarvis.voz.registro import MotorRecusado, exigir_motor, motor_registrado
 
 PASTA_DE_VOZES: Final = Path.home() / ".cache" / "jarvis" / "vozes"
@@ -69,6 +69,12 @@ def o_que_falta(
         return 'falta escolher a voz da ElevenLabs: Configuração → "buscar vozes da conta"'
     if motor_id == "asr-oraculo":
         return "o oráculo não transcreve voz de verdade (devolve o texto do corpus de teste)"
+    if motor_id == TTS_ENDPOINT:
+        # Como o OmniVoice: o laço não para (a reserva fala), a frase é para a janela e o
+        # diagnóstico dizerem o que falta ao endpoint escolhido.
+        from jarvis.voz.endpoint import o_que_falta_ao_endpoint
+
+        return o_que_falta_ao_endpoint(configuracao.endpoint_tts, ambiente=ambiente)
     if motor_id == TTS_OMNIVOICE:
         # O laço não para por isto: cai no motor padrão (ADR-0039). A frase é para a janela e o
         # diagnóstico dizerem por quê.

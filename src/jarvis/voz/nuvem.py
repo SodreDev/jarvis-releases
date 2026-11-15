@@ -210,6 +210,10 @@ class _RespostaPersistente:
     def status(self) -> int:
         return self._resposta.status
 
+    def cabecalho(self, nome: str) -> str:
+        """Um cabeçalho da resposta (o `Content-Type`, o `Location` de um redirecionamento)."""
+        return str(self._resposta.getheader(nome, "") or "")
+
     def read(self, quantos: int = -1) -> bytes:
         return self._resposta.read(quantos)
 

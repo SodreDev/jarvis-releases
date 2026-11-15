@@ -56,6 +56,9 @@ VARIAVEL_ANTHROPIC: Final = "ANTHROPIC_API_KEY"
 conversa continua indo pela CLI, com a assinatura do dono (ADR-0056)."""
 VARIAVEL_COMPATIVEL: Final = "JARVIS_COMPATIVEL_API_KEY"
 """A chave do roteador de nuvem compatível que o dono escolheu (`conversa-compativel-nuvem`)."""
+VARIAVEL_TTS_ENDPOINT: Final = "JARVIS_TTS_ENDPOINT_API_KEY"
+"""A chave do endpoint de TTS (ADR-0068), quando o servidor pede autenticação: o nome sugerido, que
+a janela guarda no chaveiro. O endpoint pode nomear outra variável em `variavel_de_ambiente`."""
 VARIAVEIS: Final[tuple[str, ...]] = (
     VARIAVEL_GROQ,
     VARIAVEL_ELEVENLABS,
@@ -64,6 +67,7 @@ VARIAVEIS: Final[tuple[str, ...]] = (
     VARIAVEL_OPENAI,
     VARIAVEL_ANTHROPIC,
     VARIAVEL_COMPATIVEL,
+    VARIAVEL_TTS_ENDPOINT,
 )
 """As variáveis que o produto conhece. O registro de motores aponta para elas pelo nome."""
 

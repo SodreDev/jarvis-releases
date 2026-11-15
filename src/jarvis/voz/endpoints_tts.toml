@@ -1,0 +1,41 @@
+# Endpoints de TTS por HTTP — o PADRÃO do repositório (ADR-0068). O do dono mora em
+# ~/.config/jarvis/tts-endpoints.toml e vence, pelo nome, quando existe; a janela grava lá.
+#
+# Escolher um endpoint NÃO liga nada: o texto que o Jarvis vai falar sai desta máquina, então o
+# motor `tts-endpoint` só fala depois de o dono escolher `tts = "tts-endpoint"` E ligá-lo
+# (`nuvem_ligada`), com o aviso. Fora do ar, a voz reserva fala no lugar (nunca fica mudo).
+#
+# Sem segredo aqui: com autenticação, este arquivo guarda só o NOME da variável de ambiente
+# (`variavel_de_ambiente`); o valor vem do ambiente ou do chaveiro do sistema.
+#
+# Campos: base (http/https, sem usuário, consulta nem fragmento) · caminho (síntese, obrigatório)
+# · caminho_stream (opcional: o mesmo corpo, áudio por pedaços; 404/405/501 cai no caminho comum)
+# · metodo (POST ou PUT) · corpo (JSON com os moldes {texto} {voz} {estilo} {formato} {taxa}
+# {canais}; campo que é só um molde vazio — voz ou estilo — sai do corpo) · formato (pcm, wav,
+# mp3, opus; mp3 e opus pedem o ffmpeg do sistema) · taxa e canais (do PCM cru) · voz e vozes ·
+# estilo e estilos · autenticacao (nenhuma, bearer, cabecalho) · cabecalho (o nome, se for
+# «cabecalho») · variavel_de_ambiente · prazo_s · caminhos_de_vozes (vazio = as rotas comuns,
+# tentadas sem supor que existam).
+
+versao = 1
+
+[[endpoint]]
+nome = "JARVIS-BR (phonon-web)"
+base = "http://192.168.15.9:20202"
+caminho = "/api/tts"
+caminho_stream = "/api/tts/stream"
+metodo = "POST"
+corpo = '{"text": "{texto}", "voice": "{voz}", "style": "{estilo}", "format": "{formato}"}'
+formato = "pcm"
+taxa = 24000
+canais = 1
+voz = "jarvis-br"
+vozes = ["jarvis-br"]
+estilo = "cordial"
+estilos = ["cordial", "calmo", "urgente", "ironico", "seco"]
+autenticacao = "nenhuma"
+cabecalho = ""
+variavel_de_ambiente = ""
+prazo_s = 8.0
+caminhos_de_vozes = []
+nota = "o painel phonon-web do dono, na máquina vaio da rede local (PCM 24 kHz mono)"

@@ -1,0 +1,36 @@
+# ADR-0068 — TTS por endpoint HTTP configurável (o servidor de voz do dono, e outras APIs)
+
+**Data:** 2026-11-14 · **Estado:** aceita (testada só contra servidor HTTP falso em 127.0.0.1; o servidor real do dono é dele testar com `jarvis --testar-endpoint`) · **Decide:** arquiteto (o desenho do motor, a reserva, as recusas de rede); dono (ligar o endpoint, a voz, o estilo, qual motor é a reserva)
+**Pedido:** dono, 2026-11-14 — suporte a um TTS que ele mesmo montou (painel phonon-web na máquina «vaio» da rede local, porta 20202: `POST /api/tts`, `POST /api/tts/stream`, voz `jarvis-br`, formatos mp3/wav/opus/pcm 24 kHz mono, estilos cordial/calmo/urgente/ironico/seco, sem autenticação), mas genérico para outras APIs. Relaciona: ADR-0017 (portão de motores e nuvem), ADR-0039 (reserva do OmniVoice), ADR-0040 (barge-in), ADR-0045 (conexão aquecida), ADR-0056 (presets: o do repositório e o do dono), ADR-0060 (salvar a cada clique).
+
+## Contexto
+
+- Os motores de TTS de rede (ElevenLabs, Edge) são **um serviço cada**, com cabeçalho, caminho e formato no código. O servidor do dono é outro, e o próximo vai ser outro ainda: amarrar o código a ele repetiria o padrão.
+- O servidor do dono está **noutra máquina**: o texto que o Jarvis vai falar sai desta. Pela régua da ADR-0017, isso é «nuvem» — nasce desligado e só fala com o interruptor do dono.
+- A máquina «vaio» desliga. O `AdaptadorRemoto` (F1-14) trata queda declarando a degradação da **sessão** e derrubando a escuta para o botão de falar — certo para o ASR na Groq, errado aqui: o servidor de voz da sala desligado não é motivo para o Jarvis parar de ouvir, nem para ficar mudo.
+- O `SintetizadorEmStreaming` (F1-09) sintetiza **por trecho** (o fatiador), até três adiantados, em paralelo, e o mapa texto ↔ amostras (F1-12) é por trecho: é o que deixa o histórico guardar só o que o dono ouviu.
+
+## Decisão
+
+1. **Um motor genérico, `tts-endpoint`** (`jarvis.voz.endpoint`), registrado em `licenses/motores.toml` como `onde = "nuvem"`, `ligado = false`. Os quatro campos de termo dizem a verdade de um motor genérico (quem decide é quem opera o servidor), e o aviso sai deles, como nos outros.
+2. **O endpoint é dado, não código.** `Endpoint`: base, `caminho`, `caminho_stream` (opcional), `metodo` (POST/PUT), **molde do corpo** em JSON com `{texto}` `{voz}` `{estilo}` `{formato}` `{taxa}` `{canais}` (campo que é só o molde mantém o tipo — `{taxa}` vira número —; `{voz}`/`{estilo}` vazios saem do corpo), `formato` (pcm, wav, mp3, opus — os dois últimos pelo ffmpeg do sistema, o mesmo decodificador do Edge), `taxa` e `canais` do PCM cru, vozes e estilos conhecidos, `autenticacao` (nenhuma, `bearer`, `cabecalho` com nome dado) com o **nome** da variável de ambiente (`JARVIS_TTS_ENDPOINT_API_KEY` é a sugerida, que a janela guarda no chaveiro), cabeçalhos extras sem credencial, `prazo_s`, rotas de vozes. O padrão do repositório é `src/jarvis/voz/endpoints_tts.toml`, com o preset **«JARVIS-BR (phonon-web)»** com os valores do dono; o do dono é `~/.config/jarvis/tts-endpoints.toml`, que **vence pelo nome** (mesmo desenho dos presets da ADR-0056). A `jarvis-voz.toml` só guarda a escolha: `endpoint_tts`, `voz_endpoint`, `estilo_endpoint`, `reserva_do_endpoint`.
+3. **Recusas de rede no código.** Só `http`/`https`; base sem usuário, senha, consulta e fragmento; caminho começando em **uma** barra, sem `@`, `\`, `#`, espaço; a URL montada é conferida contra o servidor da base. **Redirecionamento não é seguido** (o `http.client` não segue; um 3xx vira recusa que diz para onde ele apontava, sem a consulta). Erro passa por `redigir`. Sob `CI=1`, só a máquina local. Arquivo com campo desconhecido ou valor com forma de chave é recusado inteiro.
+4. **Stream por pedaço, cancelável.** Com `caminho_stream`, o corpo é lido em pedaços de 8 KiB com o cancelamento consultado entre eles: o barge-in fecha a resposta (a conexão não volta ao pool com corpo em voo) e descarta o que chegou. A unidade de síntese continua o trecho — o mapa texto ↔ amostras não muda. Rota de stream ausente (404, 405, 501) cai no caminho comum, uma vez por sessão. A conexão fica aquecida e reaproveitada (o pool da ADR-0045).
+5. **Reserva por episódio (`MotorComReservaDeRede`), não por sessão.** O endpoint levantou (conexão recusada, prazo estourado, 5xx, JSON de erro, áudio vazio): o **mesmo trecho** é falado pela reserva — `reserva_do_endpoint`, que a janela preenche com o TTS que o dono usava antes de escolher o endpoint; vazio, o motor padrão local —, sai uma linha curta na tela, e o endpoint não é tentado por `RETENTAR_EM_S` (20 s). Passado isso, uma checagem de saúde barata (`connect` TCP de 0,5 s) decide se tenta; voltou, outra linha curta. Endpoint mal configurado, desligado ou sem chave já abre na reserva, com o motivo em `observacao` — nada derruba a abertura do aplicativo. Cancelamento não é falha: não chama a reserva.
+6. **Voz e estilo do dono.** A janela lista as vozes e os estilos que o servidor expõe (rotas comuns tentadas sem supor que existam; nada achado = campos livres e lista editável), e o estilo também muda pela voz do dono — «fala mais calmo», «tom urgente», «volta ao normal» —, lido pelo código na fala **inteira** do dono antes do cérebro (como o modo de permissão da ADR-0066), só entre os estilos do endpoint, salvo no arquivo como o clique.
+7. **Diagnóstico sem segredo.** `jarvis --testar-endpoint [NOME|URL]` (e `jarvis-voz --testar-endpoint`) resolve o nome, mede o `connect`, lê o OpenAPI se houver, lista vozes, faz um POST curto em cada caminho e diz status, tipo, bytes, latência do primeiro byte e duração do áudio — sem cabeçalho de autenticação na saída. É o que o dono roda na máquina dele e manda.
+
+## Alternativas descartadas
+
+- **Um adaptador só para o phonon-web.** Resolveria hoje e repetiria o problema no próximo servidor.
+- **Usar o `AdaptadorRemoto`.** Derruba a escuta para PTT e marca os pedidos como descartados no disco: o servidor de voz fora do ar não é isso.
+- **Seguir redirecionamento para o mesmo servidor.** POST redirecionado muda de semântica conforme o código (301/302 viram GET em muitos clientes); recusar e dizer para onde aponta é mais simples e não manda o texto a lugar que o dono não escreveu.
+- **Trocar o trecho pelo pedaço do stream no `SintetizadorEmStreaming`.** Tocaria o mapa texto ↔ amostras do F1-12 e o corte da regra 5; o ganho (o começo do trecho mais cedo) é pequeno com o primeiro trecho já curto do fatiador.
+- **SDK/cliente HTTP de terceiro.** O `http.client` da biblioteca padrão faz o que é preciso, sem dependência nova nem licença a verificar.
+
+## Consequências
+
+- O dono liga em Configuração → quem fala → «Endpoint HTTP» → «li o aviso — ligar»; a base, os caminhos, o formato e o molde se editam no mesmo painel e são salvos no arquivo dele a cada mudança.
+- O preset carrega o IP da rede local do dono (`192.168.15.9`), um endereço privado, a pedido dele. A suíte nunca o abre: sob `CI=1` o portão recusa antes do socket.
+- Os nomes dos campos do corpo do phonon-web (`text`, `voice`, `style`, `format`) são os comuns, **não confirmados** contra o servidor real: o diagnóstico mostra o esquema do OpenAPI quando o servidor o publica, e o molde se corrige no painel.
+- Não provado em máquina real: o servidor do dono, a rede entre as máquinas, a latência ponta a ponta.

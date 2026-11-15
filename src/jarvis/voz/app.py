@@ -152,6 +152,7 @@ from jarvis.trilha import TrilhaDeDiagnostico
 from jarvis.voz.chaves import SegredoAusente
 from jarvis.voz.config import (
     ASR_PADRAO,
+    TTS_ENDPOINT,
     TTS_OMNIVOICE,
     TTS_PADRAO,
     Configuracao,
@@ -369,6 +370,23 @@ def motor_de_tts(
                 configuracao.com(tts=TTS_PADRAO), raiz=raiz, cancelado=cancelado, ambiente=ambiente
             ),
         )
+    if configuracao.tts == TTS_ENDPOINT:
+        # O servidor de voz por HTTP (ADR-0068): fora do ar, desligado ou mal configurado, fala a
+        # reserva — o TTS de antes do endpoint, ou o padrão —, sem derrubar a abertura e sem ficar
+        # mudo. O motivo vai em `observacao`; queda e volta saem numa linha curta na tela.
+        from jarvis.voz.endpoint import motor_endpoint
+
+        return motor_endpoint(
+            nome=configuracao.endpoint_tts,
+            voz=configuracao.voz_endpoint,
+            estilo=configuracao.estilo_endpoint,
+            nuvem_ligada=configuracao.nuvem_ligada,
+            cancelado=cancelado,
+            ambiente=ambiente,
+            reserva=lambda: _reserva_do_endpoint(
+                configuracao, raiz=raiz, cancelado=cancelado, ambiente=ambiente
+            ),
+        )
     falta = o_que_falta(
         configuracao.tts, configuracao, ambiente=ambiente, pasta_de_vozes=PASTA_DE_VOZES
     )
@@ -430,6 +448,30 @@ def motor_de_tts(
     )
     piper.abrir()
     return piper
+
+
+def _reserva_do_endpoint(
+    configuracao: Configuracao,
+    *,
+    raiz: Path,
+    cancelado: Callable[[], bool],
+    ambiente: Mapping[str, str] | None = None,
+) -> MotorDeTts:
+    """Quem fala quando o endpoint não responde: o TTS que o dono usava antes dele e, se esse
+    também não abre (nuvem desligada, voz não baixada), o padrão."""
+    alvo = configuracao.reserva_do_endpoint or TTS_PADRAO
+    if alvo == TTS_ENDPOINT:
+        alvo = TTS_PADRAO
+    try:
+        return motor_de_tts(
+            configuracao.com(tts=alvo), raiz=raiz, cancelado=cancelado, ambiente=ambiente
+        )
+    except (AplicativoIndisponivel, MotorRecusado, SegredoAusente, ErroDeRede):
+        if alvo == TTS_PADRAO:
+            raise
+        return motor_de_tts(
+            configuracao.com(tts=TTS_PADRAO), raiz=raiz, cancelado=cancelado, ambiente=ambiente
+        )
 
 
 def motor_de_conversa(
@@ -739,6 +781,9 @@ class Aplicativo:
             # aqui está o porquê" —, porque para ele são: motor desligado, chave ausente e
             # nuvem proibida sob CI resolvem-se lendo a frase, não um traceback.
             raise AplicativoIndisponivel(str(erro)) from None
+        if hasattr(self._tts, "ao_avisar"):
+            # O endpoint de voz (ADR-0068): caiu ou voltou, uma linha curta na tela.
+            self._tts.ao_avisar = lambda frase: self.escrever_na_tela(f"  ({frase})")
         _aquecer_em_segundo_plano(self._asr, self._tts)
         if self._motor is None:
             self._motor = motor_de_conversa(
