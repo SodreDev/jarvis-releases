@@ -87,6 +87,7 @@ from jarvis.voz.provedores import (
     mexer_na_lista_do_endpoint,
     mudar_no_endpoint,
     provedores,
+    testar_o_endpoint,
     vozes_da_elevenlabs,
 )
 from jarvis.voz.registro import motor_registrado, motores_de
@@ -1142,6 +1143,26 @@ class Ponte(QObject):
             self.endpointMudou.emit()
 
         threading.Thread(target=trabalhar, name="jarvis-vozes-endpoint", daemon=True).start()
+
+    @Slot()
+    def testarEndpoint(self) -> None:
+        """O teste do endpoint (`jarvis --testar-endpoint`) numa thread; a saída vai à nota do
+        painel. Manda um texto fixo de teste ao servidor — nada do dono."""
+        self._endpoint_frase = "testando o servidor…"
+        self.endpointMudou.emit()
+        configuracao = self._configuracao
+        ambiente = chaveiro.ambiente_com_chaves(self._ambiente_base)
+
+        def trabalhar() -> None:
+            self._endpoint_frase = testar_o_endpoint(
+                configuracao.endpoint_tts,
+                voz=configuracao.voz_endpoint,
+                estilo=configuracao.estilo_endpoint,
+                ambiente=ambiente,
+            )
+            self.endpointMudou.emit()
+
+        threading.Thread(target=trabalhar, name="jarvis-testar-endpoint", daemon=True).start()
 
     def _estilo_pela_voz(self, estilo: str) -> str:
         """O dono trocou o estilo falando («fala mais calmo», ADR-0068): vai ao arquivo como o

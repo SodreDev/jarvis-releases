@@ -285,3 +285,21 @@ def catalogo_do_endpoint(nome: str, *, ambiente: Mapping[str, str] | None = None
         return descobrir(_o_endpoint(nome, ambiente), ambiente=ambiente).para_dict()
     except (ep.EndpointInvalido, SegredoAusente) as erro:
         return {"vozes": [], "estilos": [], "frase": f"não deu para consultar: {erro}"}
+
+
+def testar_o_endpoint(
+    nome: str, *, voz: str = "", estilo: str = "", ambiente: Mapping[str, str] | None = None
+) -> str:
+    """O mesmo teste de `jarvis --testar-endpoint`, em texto para o painel (sem segredo)."""
+    from jarvis.rede import ErroDeRede
+    from jarvis.voz import endpoint as ep
+    from jarvis.voz.endpoint_diagnostico import diagnosticar
+
+    linhas: list[str] = []
+    try:
+        diagnosticar(
+            _o_endpoint(nome, ambiente), linhas.append, ambiente=ambiente, voz=voz, estilo=estilo
+        )
+    except (ep.EndpointInvalido, ErroDeRede, OSError) as erro:
+        linhas.append(f"não testado: {erro}")
+    return "\n".join(linhas)

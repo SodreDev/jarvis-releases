@@ -367,6 +367,7 @@ Column {
                     }
                 }
                 Botao { texto: "buscar no servidor"; onApertado: ponte.buscarVozesDoEndpoint() }
+                Botao { texto: "testar"; onApertado: ponte.testarEndpoint() }
             }
             Flow {
                 width: parent.width

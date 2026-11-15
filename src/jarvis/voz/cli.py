@@ -362,11 +362,58 @@ def _analisador() -> argparse.ArgumentParser:
         "--turnos", type=int, default=None, help="para depois de N turnos (teste)"
     )
     analisador.add_argument(
+        "--testar-endpoint",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="NOME|URL",
+        help="testa o endpoint HTTP de TTS (o da configuração, um nome ou uma URL) e imprime o "
+        "resultado sem segredo — para mandar a quem ajuda (ADR-0068)",
+    )
+    analisador.add_argument(
         "--baixar-voz",
         action="store_true",
         help="baixa a voz local escolhida (diz o tamanho antes e confere o sha256 depois)",
     )
     return analisador
+
+
+def testar_endpoint(
+    alvo: str,
+    *,
+    caminho: Path,
+    ambiente: Mapping[str, str] | None = None,
+    escrever: Callable[[str], None] = print,
+) -> int:
+    """O teste do endpoint de TTS (ADR-0068): `alvo` vazio = o da configuração; um nome; ou uma
+    URL (o preset com essa base). 0 = sintetizou, 1 = não sintetizou, 2 = endpoint recusado."""
+    from jarvis.voz.endpoint import EndpointInvalido
+    from jarvis.voz.endpoint_diagnostico import alvo_do_teste
+    from jarvis.voz.endpoint_diagnostico import diagnosticar as diagnosticar_o_endpoint
+
+    try:
+        configuracao = ler(caminho, ambiente=ambiente)
+    except (ConfiguracaoInvalida, SegredoNaConfiguracao) as erro:
+        escrever(f"(configuração recusada, testo o padrão: {erro})")
+        configuracao = Configuracao()
+    try:
+        endpoint = alvo_do_teste(
+            alvo, nome_configurado=configuracao.endpoint_tts, ambiente=ambiente
+        )
+    except EndpointInvalido as erro:
+        escrever(f"endpoint recusado: {erro}")
+        return 2
+    try:
+        return diagnosticar_o_endpoint(
+            endpoint,
+            escrever,
+            ambiente=ambiente,
+            voz=configuracao.voz_endpoint,
+            estilo=configuracao.estilo_endpoint,
+        )
+    except ErroDeRede as erro:
+        escrever(f"não testado: {erro}")
+        return 1
 
 
 def baixar_voz(configuracao: Configuracao, escrever: Callable[[str], None] = print) -> int:
@@ -412,6 +459,9 @@ def main(argv: Sequence[str] | None = None, *, ambiente: Mapping[str, str] | Non
 
     if args.diagnostico:
         return diagnosticar(print, caminho=caminho, ambiente=ambiente)
+
+    if args.testar_endpoint is not None:
+        return testar_endpoint(args.testar_endpoint, caminho=caminho, ambiente=ambiente)
 
     if args.baixar_voz:
         try:

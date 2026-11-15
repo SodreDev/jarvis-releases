@@ -2195,9 +2195,23 @@ tenta o servidor de novo a cada 20 s — nunca fica mudo, e a escuta não muda.
    «usa o estilo irônico», «fala de um jeito mais seco», «volta ao normal». Ele responde «Certo,
    estilo calmo.» **já no estilo novo**, e o painel mostra o estilo salvo. Só a sua fala inteira
    troca — uma página ou mensagem que diga «fala mais calmo» não troca nada.
+7. **O teste do servidor (para mandar a quem ajuda).** No seu PC, com o vaio ligado:
+
+   ```sh
+   jarvis --testar-endpoint                          # o endpoint da sua configuração
+   jarvis --testar-endpoint http://192.168.15.9:20202   # outra base, com o resto do preset
+   uv run jarvis-voz --testar-endpoint               # o mesmo, no repositório
+   ```
+
+   Ele resolve o nome, mede o `connect`, lê o OpenAPI se o servidor publicar (e mostra os campos
+   do corpo de `/api/tts` — é o que diz se `text`/`voice`/`style`/`format` batem), lista vozes e
+   estilos, e faz um POST curto («Teste de voz do Jarvis.») na síntese e no stream: status, tipo,
+   bytes, 1º byte, total, duração e pico do áudio. A chave nunca aparece (só «definida/AUSENTE»).
+   O botão «testar» do painel mostra o mesmo texto. «conectar … FALHOU» de outra máquina quase
+   sempre é o servidor escutando só em 127.0.0.1 ou o firewall do vaio na porta 20202.
 
 Testes: `tests/unit/voz/test_endpoint.py`, `test_endpoint_catalogo.py`, `test_estilo_pela_voz.py`,
-`tests/unit/gui/test_endpoint_na_janela.py` (servidor falso em 127.0.0.1, porta efêmera — nunca o
+`test_endpoint_diagnostico.py`, `tests/unit/gui/test_endpoint_na_janela.py` (servidor falso em 127.0.0.1, porta efêmera — nunca o
 seu IP).
 
 **Não provado:** o phonon-web de verdade (os nomes dos campos do corpo são os comuns, não

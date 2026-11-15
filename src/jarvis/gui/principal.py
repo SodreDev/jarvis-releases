@@ -82,6 +82,14 @@ def _analisador() -> argparse.ArgumentParser:
         "--modo", choices=MODOS, default="assistente", help="o modo em que a janela abre"
     )
     analisador.add_argument(
+        "--testar-endpoint",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="NOME|URL",
+        help="testa o endpoint HTTP de TTS e imprime o resultado sem segredo, sem abrir janela",
+    )
+    analisador.add_argument(
         "--capturar",
         type=Path,
         default=None,
@@ -149,6 +157,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         from jarvis.voz.cli import diagnosticar
 
         return diagnosticar(print, caminho=args.config)
+
+    if args.testar_endpoint is not None:
+        from jarvis.voz.cli import testar_endpoint
+        from jarvis.voz.config import caminho_padrao
+
+        return testar_endpoint(args.testar_endpoint, caminho=args.config or caminho_padrao())
 
     if args.instalar_atalho:
         for caminho in instalar_atalho():
