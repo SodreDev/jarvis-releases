@@ -94,7 +94,14 @@ from jarvis.s2.roteiro_do_navegador import (
     pedido_de_envio,
 )
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
-from jarvis.s2.verdade import NOTA_DE_SEGUIR, FiltroDaVerdade, Relato, frase_do_que_falta
+from jarvis.s2.verdade import (
+    NOTA_DE_SEGUIR,
+    Afirmacao,
+    FiltroDaVerdade,
+    Relato,
+    afirmacoes,
+    frase_do_que_falta,
+)
 from jarvis.tarefas.gestor import (
     FORA_DA_ALLOWLIST,
     ChamarNaTarefa,
@@ -253,6 +260,10 @@ class Resposta:
     sem_confirmacao: list[str] = field(default_factory=list)
     """Frases do motor que afirmavam o que nenhuma ferramenta confirmou, ou pediam permissão para o
     que o dono já pediu (`jarvis.s2.verdade`, ADR-0066): nem voz nem tela."""
+    respondida: bool = False
+    """O turno já respondeu ao dono (uma rodada sem ferramenta falou uma resposta): sem ação em
+    andamento, nenhuma outra rodada escreve outra resposta ao mesmo pedido (ADR-0062, emenda de
+    2026-11-15)."""
     cobrou_redacao: bool = False
     """A mensagem que ia ser digitada era a fala do dono copiada e o motor foi cobrado (ADR-0069
     §3): uma vez por turno."""
@@ -671,7 +682,7 @@ class Cerebro:
             dito = _dito_no_turno(resposta)
             filtro = (
                 FiltroDoJaDito(ditos=[dito] if dito else [], ids=self._ids_das_ferramentas())
-                if resposta.ferramentas or resposta.cobrancas
+                if resposta.ferramentas or resposta.cobrancas or resposta.respondida
                 else None
             )
             # O relato verdadeiro (ADR-0066): frase que afirma o que nenhuma ferramenta confirmou,
@@ -682,6 +693,7 @@ class Cerebro:
                 if self.ferramentas is not None
                 else None
             )
+            gerado_antes = resposta.gerado
             pedidos, visto_cancelamento = self._rodada(
                 da_vez,
                 modo,
@@ -703,11 +715,18 @@ class Cerebro:
                     f"o laço de ferramentas passou de {self.prazo_do_laco_de_ferramentas_s:.0f} s"
                 )
                 break
+            if not pedidos and _respondeu(gerado_antes, resposta.gerado):
+                # Respondeu ao dono (ADR-0062, emenda de 2026-11-15): sem ação em andamento (nenhuma
+                # ferramenta no turno), este estímulo está respondido — nada de outra rodada que
+                # escreva outra resposta ao mesmo pedido. Com ação no meio, o objetivo pendente
+                # ainda é cobrado (ADR-0066), e o filtro do já dito cala o que repetir.
+                resposta.respondida = True
             if (
                 not pedidos
                 and verdade is not None
                 and verdade.cortadas
                 and visto_cancelamento is None
+                and not (resposta.respondida and not resposta.ferramentas)
                 and resposta.fim is MotivoDoFim.CONCLUIDO
                 and resposta.cobrancas < COBRANCAS_DO_OBJETIVO
                 and passo < self.maximo_de_passos
@@ -725,7 +744,14 @@ class Cerebro:
                 and verdade is not None
                 and verdade.cortadas
                 and visto_cancelamento is None
+                and not (
+                    resposta.respondida
+                    and not resposta.ferramentas
+                    and _so_pediu_permissao(verdade.cortadas)
+                )
             ):
+                # Respondida e só cortou a oferta do fim («quer que eu fale mais?»): não há o que
+                # faltar — a frase do código seria outra resposta ao mesmo pedido.
                 falta = frase_do_que_falta(Relato("", tuple(verdade.cortadas), verdade.perguntou))
             if (
                 visto_cancelamento is not None
@@ -1665,6 +1691,23 @@ class Cerebro:
             resposta.ms_ate_primeiro_pedaco = _ms_desde(comeco)
         resposta.publicados.append(payload)
         publicar(payload)
+
+
+PALAVRAS_DE_RESPOSTA: Final = 4
+"""A partir de quantas palavras novas, ditas numa rodada sem ferramenta, o turno conta como
+respondido. «Certo!» sozinho não é resposta: a cobrança do objetivo (ADR-0066) ainda vale."""
+
+
+def _respondeu(antes: str, depois: str) -> bool:
+    """A rodada deixou uma resposta ao dono (o texto que sobrou do relato verdadeiro)?"""
+    novo = depois[len(antes) :] if depois.startswith(antes) else depois
+    return len(novo.split()) >= PALAVRAS_DE_RESPOSTA
+
+
+def _so_pediu_permissao(cortadas: Sequence[str]) -> bool:
+    """O que o relato verdadeiro cortou era só pergunta de permissão (a oferta do fim), nenhuma
+    afirmação de efeito («abri», «mandei»)."""
+    return all(afirmacoes(f) == {Afirmacao.PEDE_PERMISSAO} for f in cortadas)
 
 
 def _sem_navegador_aberto(pedido: PedidoDeTool, resultado: ResultadoDeFerramenta) -> bool:

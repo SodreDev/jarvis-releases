@@ -2392,6 +2392,8 @@ class Aplicativo:
             atalho=resposta.atalho if resposta else "",
             motor_chamado=resposta.motor_chamado if resposta else True,
             frases_caladas=len(resposta.caladas) if resposta else 0,
+            respondida=resposta.respondida if resposta else False,
+            cobrancas=resposta.cobrancas if resposta else 0,
             # O consumo do turno (ADR-0061): tokens, custo e quantas chamadas ao motor.
             **(resposta.consumo.campos() if resposta else {}),
         )

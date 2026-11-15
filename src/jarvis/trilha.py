@@ -122,6 +122,8 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "ferramentas": Forma.NUMERO,
     "fim": Forma.CODIGO,
     "frases_caladas": Forma.NUMERO,
+    "respondida": Forma.BOOLEANO,
+    "cobrancas": Forma.NUMERO,
     "jev": Forma.MOTIVO,
     "logprob": Forma.NUMERO,
     "maior_fala_ms": Forma.NUMERO,
@@ -212,6 +214,10 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
             "motor_chamado",
             # Uma resposta por pedido (ADR-0046): frases do motor que repetiam o já dito no turno.
             "frases_caladas",
+            # Uma resposta por estímulo (emenda de 2026-11-15 à ADR-0062): o turno respondeu, e
+            # quantas vezes o motor foi cobrado a seguir (ADR-0066).
+            "respondida",
+            "cobrancas",
             # O consumo do turno (ADR-0061): a soma das chamadas ao motor feitas no turno.
             "chamadas_ao_motor",
             "tokens_entrada",

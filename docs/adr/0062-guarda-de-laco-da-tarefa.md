@@ -39,3 +39,7 @@
 ## Como invalidar esta decisão
 
 Se a trilha mostrar `tarefa.laco` com `decisao=parada` numa tarefa que o dono diz que estava avançando, a regra que disparou (`categoria`) sobe o limiar ou sai. Se tarefas em «até terminar» rodarem mais de 200 passos sem nenhum `tarefa.laco`, olhar se o laço escapou pela marca (resultado com relógio).
+
+## Emendas
+
+- **2026-11-15 — uma resposta por estímulo, no turno.** O dono relatou o Jarvis «formulando 5 ou 6 respostas» a uma mensagem. A trilha dele mostrou turnos sem ferramenta com duas chamadas ao motor e o dobro do texto falado: a oferta do fim («quer que eu fale mais?») casa com a pergunta de permissão do relato verdadeiro (ADR-0066), é cortada, e o turno cobrava o motor, que escrevia **outra resposta inteira** ao mesmo pedido — até duas vezes, mais a frase do código. A alternativa descartada aqui («guarda também no laço do turno») passa a valer: a rodada sem ferramenta que deixou ao menos `PALAVRAS_DE_RESPOSTA` (4) palavras ditas marca o turno como **respondido** — se o turno não usou ferramenta (com ação no meio, «abri o contato… quer que eu mande?», o objetivo pendente ainda é cobrado, ADR-0066) (`Resposta.respondida`, na trilha `turno.fim`); respondido, não há cobrança nem nova rodada, o filtro do já dito vale para o que vier, e a frase do código «não consegui confirmar» não entra quando o corte foi só a oferta. Tudo cortado (nada dito) continua cobrado, como manda a ADR-0066. Teste: `tests/unit/s2/test_resposta_repetida.py`.
