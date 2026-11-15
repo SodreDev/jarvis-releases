@@ -49,3 +49,7 @@ A pergunta tocando na voz real e o «até terminar» dito por cima do eco real d
 ## Como invalidar esta decisão
 
 Se a trilha mostrar `permissao` de `tarefa.continuar` com resposta «sim» sem o dono ter dito (o eco das opções), a opção «até terminar» sai da fala e fica só na tela. Se os blocos de 900 s acabarem antes dos 50 passos com frequência, o tempo do bloco sobe.
+
+## Emendas
+
+- **2026-11-15 — ADR-0070:** no teto, o código não pergunta mais nem escreve o fim («Parei sem terminar…»): o motor recebe a notificação com o estado real e decide continuar, perguntar ao dono (com o texto dele) ou encerrar (com o texto dele). A leitura do «sim», «mais 50», «até terminar» e «não» continua no código.
