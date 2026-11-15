@@ -1031,7 +1031,13 @@ class CorposDoNavegador:
         if cancelado():
             raise AcaoRecusada("interrompido antes do clique")
         feito = self.cliente.clicar(tab_id, alvo, ref=ref)
-        return {"tab_id": tab_id, "clicado": bool(feito.get("clicado")), "alvo": _curto(nome, 80)}
+        clicado = bool(feito.get("clicado"))
+        saida: dict[str, Any] = {"tab_id": tab_id, "clicado": clicado, "alvo": _curto(nome, 80)}
+        if clicado and risco.clique_que_envia(dados, nome):
+            # O botão de enviar do chat (ou o envio do formulário): conta como envio, e a leitura
+            # depois confere se a mensagem está lá (`jarvis.s2.verdade.envio_conferido`).
+            saida["enviado"] = True
+        return saida
 
     def _acionar(
         self,

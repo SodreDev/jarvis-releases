@@ -244,3 +244,12 @@ def test_cada_pergunta_e_recusa_do_risco_tem_a_causa_que_a_trilha_grava(
     """A trilha grava a causa, nunca a frase — que cita o rótulo que a página dá ao elemento."""
     assert avaliacao.confirmar or avaliacao.recusa
     assert avaliacao.causa == causa and causa in CAUSAS
+
+
+def test_o_clique_no_botao_de_enviar_conta_como_envio_e_o_da_conversa_nao() -> None:
+    """O clique em «Enviar» (ou o envio de um formulário) é um envio: deu certo, a leitura do chat
+    depois confere a mensagem e o Jarvis pode dizer que mandou (ADR-0066). Abrir uma conversa não
+    é envio."""
+    assert risco.clique_que_envia({"rotulo": "Enviar", "papel": "button"}, "Enviar")
+    assert risco.clique_que_envia({"enviaFormulario": True}, "OK")
+    assert not risco.clique_que_envia({"rotulo": "Bruno", "papel": "listitem"}, "Bruno")

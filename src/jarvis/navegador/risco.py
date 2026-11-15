@@ -257,6 +257,18 @@ def _envio_de_formulario(dados: Mapping[str, Any]) -> str:
     return "envia um formulário"
 
 
+MOTIVO_DO_ENVIO: Final = "envia uma mensagem ou publicação"
+
+
+def clique_que_envia(dados: Mapping[str, Any], alvo: str) -> bool:
+    """O clique é um envio (o botão «Enviar» de um chat, o envio de um formulário)? Um clique
+    desses que deu certo conta como envio, como o Enter no campo (`browser.acionar`): é o que a
+    leitura do chat depois confere antes de o Jarvis dizer que mandou (ADR-0066)."""
+    if _envio_de_formulario(dados):
+        return True
+    return _palavra_de_risco(alvo, str(dados.get("texto", ""))) == MOTIVO_DO_ENVIO
+
+
 def _sem_nome(dados: Mapping[str, Any]) -> bool:
     """O elemento não tem nome acessível (aria-label, alt, texto…) na inspeção da extensão. O texto
     que o modelo deu ao alvo não conta: quem nomeia o elemento é a página."""

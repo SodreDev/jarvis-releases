@@ -223,6 +223,12 @@ class MotorDoObjetivo:
                 _esperar(self.pausa_depois_do_erro_s * recuperacao.motor_falhou, cancelado)
                 continue
             if pedido is not None:
+                if self._falta_ler(pedido, feitos, disponiveis):
+                    # Reler vem antes de julgar a repetição (ADR-0069 §2): depois do passo que
+                    # falhou na página, a próxima ação é a releitura — com o mapa novo na mão, o
+                    # motor decide de novo. Recusar a ação como «repetida» antes disso era desistir
+                    # sem ter olhado a página outra vez.
+                    return self._com_leitura(pedido, feitos, disponiveis)
                 repetida = recuperacao.repetida(pedido)
                 if repetida is None:
                     return self._com_leitura(pedido, feitos, disponiveis)
@@ -339,6 +345,17 @@ class MotorDoObjetivo:
         self._nota_da_leitura = True
         self._mostrar("li a página antes de agir nela")
         return self._propor(leitura)
+
+    def _falta_ler(
+        self,
+        pedido: PedidoDeTool,
+        feitos: Sequence[ResultadoDeFerramenta],
+        disponiveis: Sequence[str],
+    ) -> bool:
+        passos = ((r.tool_id, r.status) for r in (*self.feitos_antes, *feitos))
+        return (
+            leitura_antes(pedido, passos, disponiveis, forcadas=self.leituras_forcadas) is not None
+        )
 
     def _propor(self, pedido: PedidoDeTool) -> PedidoDeTool:
         self._propostos.append(assinatura(pedido.tool_id, pedido.args))
