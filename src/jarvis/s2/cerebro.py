@@ -328,6 +328,10 @@ class Cerebro:
     """Troca o modo de permissão (ADR-0066) quando a fala **do dono** manda («ativa o modo
     bypass»): lida pelo código antes do motor, nunca por ferramenta — página ou mensagem que diga
     «modo bypass» não chega aqui. Devolve a frase que o Jarvis diz. `None` = não troca pela voz."""
+    ao_pedir_estilo: Callable[[str], str] | None = None
+    """Troca o estilo do endpoint de voz (ADR-0068) quando a fala **inteira do dono** pede («fala
+    mais calmo», «tom urgente»): lida pelo código antes do motor, pelo mesmo caminho do modo de
+    permissão. Devolve a frase que o Jarvis diz, ou vazio (não era pedido de estilo)."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
 
     @property
@@ -434,6 +438,22 @@ class Cerebro:
         if troca is not None and self.ao_mudar_permissao is not None:
             return self._so_dizer(
                 self.ao_mudar_permissao(troca),
+                epoch=epoch,
+                turn_id=turn_id,
+                publicar=publicar,
+                cancelado=cancelado,
+                comeco=comeco,
+                ferramentas=[],
+                mostrar=mostrar,
+            )
+        estilo = (
+            self.ao_pedir_estilo(texto_do_dono)
+            if self.ao_pedir_estilo is not None and trust in TRUST_DO_DONO
+            else ""
+        )
+        if estilo:
+            return self._so_dizer(
+                estilo,
                 epoch=epoch,
                 turn_id=turn_id,
                 publicar=publicar,

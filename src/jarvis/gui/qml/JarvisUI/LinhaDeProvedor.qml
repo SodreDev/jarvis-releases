@@ -2,7 +2,8 @@ import QtQuick
 import JarvisUI
 
 // Um provedor de voz — quem ouve ou quem fala — e, quando escolhido, o que se escolhe dentro
-// dele: o modelo, o interruptor da nuvem e (na ElevenLabs) a voz da conta.
+// dele: o modelo, o interruptor da nuvem, (na ElevenLabs) a voz da conta e (no endpoint HTTP,
+// ADR-0068) o servidor, o que ele recebe, a voz e o estilo.
 //
 // Provedor e modelo são duas decisões, e por isso duas linhas: "Groq" diz para onde o áudio
 // vai; "turbo ou v3" diz quanto custa e quanto acerta. O que cada clique escreve vem pronto do
@@ -16,6 +17,7 @@ Column {
     readonly property bool aberto: provedor.escolhido === true
     readonly property bool naNuvem: provedor.onde === "nuvem"
     readonly property bool daElevenLabs: provedor.chave === "nuvem:ElevenLabs"
+    readonly property bool daEndpoint: provedor.chave === "nuvem:Endpoint HTTP"
     readonly property var modelos: provedor.modelos || []
     // O que falta para este motor rodar agora — a mesma frase com que o laço recusaria
     // (`jarvis.voz.prontidao`). Vazio = roda.
@@ -64,6 +66,53 @@ Column {
             onClicked: ficha.escolhida()
         }
     }
+
+    // Um campo do endpoint (ADR-0068): grava quando a edição termina e o texto mudou.
+    component CampoDoEndpoint: Row {
+        id: campoLinha
+        property string rotulo: ""
+        property string campo: ""
+        property string valor: ""
+        property string dica: ""
+        property real largura: 260
+        spacing: 8
+        Rotulo {
+            width: 96
+            height: 26
+            verticalAlignment: Text.AlignVCenter
+            text: campoLinha.rotulo
+        }
+        Rectangle {
+            width: campoLinha.largura
+            height: 26
+            color: "transparent"
+            border.width: 1
+            border.color: entrada.activeFocus ? Tema.cianoFraco : Tema.linha
+            TextInput {
+                id: entrada
+                objectName: "campoDoEndpoint_" + campoLinha.campo
+                anchors.fill: parent
+                anchors.margins: 6
+                text: campoLinha.valor
+                color: Tema.texto
+                font.family: Tema.fonteDados
+                font.pixelSize: Tema.tamanhoTexto - 3
+                clip: true
+                onEditingFinished: {
+                    if (text.trim() !== campoLinha.valor)
+                        ponte.definirNoEndpoint(campoLinha.campo, text.trim())
+                }
+            }
+            Rotulo {
+                anchors.left: parent.left
+                anchors.leftMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                text: campoLinha.dica
+                visible: entrada.text === "" && !entrada.activeFocus
+            }
+        }
+    }
+
 
     // --- a linha do provedor ---------------------------------------------------------------
     Rectangle {
@@ -224,6 +273,178 @@ Column {
                         onEscolhida: ponte.definirCampo("voz_elevenlabs", modelData.id)
                     }
                 }
+            }
+        }
+
+        // O endpoint HTTP (ADR-0068): qual servidor, o que ele recebe, a voz e o estilo. Cada
+        // campo grava no arquivo do dono (tts-endpoints.toml) quando a edição termina; a voz e o
+        // estilo vão ao jarvis-voz.toml e valem na hora, também com a conversa aberta.
+        Column {
+            id: painelDoEndpoint
+            objectName: "painelDoEndpoint"
+            visible: linha.daEndpoint
+            width: parent.width
+            spacing: 8
+            readonly property var dados: ponte ? ponte.endpointTts : ({})
+            readonly property var ativo: dados.ativo || ({})
+
+            Flow {
+                width: parent.width
+                spacing: 8
+                Rotulo { text: "servidor"; height: 26; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: painelDoEndpoint.dados.endpoints || []
+                    Ficha {
+                        texto: modelData.nome
+                        ativo: modelData.escolhido
+                        onEscolhida: ponte.escolherEndpoint(modelData.nome)
+                    }
+                }
+            }
+            CampoDoEndpoint { rotulo: "base"; campo: "base"; valor: painelDoEndpoint.ativo.base || ""; dica: "http://192.168.0.10:8000" }
+            CampoDoEndpoint { rotulo: "síntese"; campo: "caminho"; valor: painelDoEndpoint.ativo.caminho || ""; dica: "/api/tts" }
+            CampoDoEndpoint { rotulo: "stream"; campo: "caminho_stream"; valor: painelDoEndpoint.ativo.caminho_stream || ""; dica: "(sem stream)" }
+            CampoDoEndpoint { rotulo: "corpo (JSON)"; campo: "corpo"; valor: painelDoEndpoint.ativo.corpo || ""; largura: Math.max(260, painelDoEndpoint.width - 110) }
+            Flow {
+                width: parent.width
+                spacing: 8
+                Rotulo { text: "formato"; width: 96; height: 26; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: painelDoEndpoint.dados.formatos || []
+                    Ficha {
+                        texto: modelData
+                        ativo: painelDoEndpoint.ativo.formato === modelData
+                        onEscolhida: ponte.definirNoEndpoint("formato", modelData)
+                    }
+                }
+            }
+            Row {
+                spacing: 16
+                CampoDoEndpoint { rotulo: "taxa (Hz)"; campo: "taxa"; valor: String(painelDoEndpoint.ativo.taxa || ""); largura: 70 }
+                CampoDoEndpoint { rotulo: "canais"; campo: "canais"; valor: String(painelDoEndpoint.ativo.canais || ""); largura: 40 }
+                CampoDoEndpoint { rotulo: "prazo (s)"; campo: "prazo_s"; valor: String(painelDoEndpoint.ativo.prazo_s || ""); largura: 50 }
+            }
+            Flow {
+                width: parent.width
+                spacing: 8
+                Rotulo { text: "autenticação"; width: 96; height: 26; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: painelDoEndpoint.dados.autenticacoes || []
+                    Ficha {
+                        texto: modelData
+                        ativo: painelDoEndpoint.ativo.autenticacao === modelData
+                        onEscolhida: ponte.definirNoEndpoint("autenticacao", modelData)
+                    }
+                }
+            }
+            CampoDoEndpoint {
+                visible: (painelDoEndpoint.ativo.autenticacao || "nenhuma") !== "nenhuma"
+                rotulo: "variável"
+                campo: "variavel_de_ambiente"
+                valor: painelDoEndpoint.ativo.variavel_de_ambiente || ""
+                dica: "JARVIS_TTS_ENDPOINT_API_KEY (o nome; a chave fica no chaveiro)"
+                largura: 320
+            }
+            CampoDoEndpoint {
+                visible: painelDoEndpoint.ativo.autenticacao === "cabecalho"
+                rotulo: "cabeçalho"
+                campo: "cabecalho"
+                valor: painelDoEndpoint.ativo.cabecalho || ""
+                dica: "X-API-Key"
+            }
+
+            // A voz: as do servidor (quando ele lista), as guardadas, ou escrita à mão.
+            Flow {
+                width: parent.width
+                spacing: 6
+                Rotulo { text: "voz"; width: 96; height: 26; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: painelDoEndpoint.dados.vozes || []
+                    Ficha {
+                        texto: modelData
+                        ativo: painelDoEndpoint.dados.voz === modelData
+                        onEscolhida: ponte.escolherNoEndpoint("voz", modelData)
+                    }
+                }
+                Botao { texto: "buscar no servidor"; onApertado: ponte.buscarVozesDoEndpoint() }
+            }
+            Flow {
+                width: parent.width
+                spacing: 8
+                Item { width: 96; height: 1 }
+                Rectangle {
+                    width: 180
+                    height: 26
+                    color: "transparent"
+                    border.width: 1
+                    border.color: novaVoz.activeFocus ? Tema.cianoFraco : Tema.linha
+                    TextInput {
+                        id: novaVoz
+                        objectName: "novaVozDoEndpoint"
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        color: Tema.texto
+                        font.family: Tema.fonteDados
+                        font.pixelSize: Tema.tamanhoTexto - 3
+                        clip: true
+                    }
+                }
+                Botao {
+                    texto: "usar e guardar"
+                    onApertado: { ponte.guardarNoEndpoint("vozes", novaVoz.text.trim()); novaVoz.text = "" }
+                }
+            }
+            Flow {
+                width: parent.width
+                spacing: 6
+                Rotulo { text: "estilo"; width: 96; height: 26; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: painelDoEndpoint.dados.estilos || []
+                    Ficha {
+                        texto: modelData
+                        ativo: painelDoEndpoint.dados.estilo === modelData
+                        onEscolhida: ponte.escolherNoEndpoint("estilo", modelData)
+                    }
+                }
+                Botao {
+                    visible: painelDoEndpoint.dados.estilo !== "" && painelDoEndpoint.dados.estilo !== undefined
+                    texto: "tirar " + (painelDoEndpoint.dados.estilo || "")
+                    onApertado: ponte.tirarDoEndpoint("estilos", painelDoEndpoint.dados.estilo)
+                }
+            }
+            Flow {
+                width: parent.width
+                spacing: 8
+                Item { width: 96; height: 1 }
+                Rectangle {
+                    width: 180
+                    height: 26
+                    color: "transparent"
+                    border.width: 1
+                    border.color: novoEstilo.activeFocus ? Tema.cianoFraco : Tema.linha
+                    TextInput {
+                        id: novoEstilo
+                        objectName: "novoEstiloDoEndpoint"
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        color: Tema.texto
+                        font.family: Tema.fonteDados
+                        font.pixelSize: Tema.tamanhoTexto - 3
+                        clip: true
+                    }
+                }
+                Botao {
+                    texto: "usar e guardar"
+                    onApertado: { ponte.guardarNoEndpoint("estilos", novoEstilo.text.trim()); novoEstilo.text = "" }
+                }
+            }
+            Nota {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: ponte && ponte.endpointFrase !== ""
+                      ? ponte.endpointFrase
+                      : "o estilo também muda pela voz: «fala mais calmo», «tom urgente», «volta ao normal». "
+                        + "A busca de vozes não manda texto seu — só o pedido da lista."
             }
         }
 

@@ -65,6 +65,7 @@ from jarvis.voz.app import Aplicativo
 from jarvis.voz.chaves import VARIAVEIS
 from jarvis.voz.cli import diagnosticar
 from jarvis.voz.config import (
+    TTS_ENDPOINT,
     Configuracao,
     ConfiguracaoInvalida,
     caminho_padrao,
@@ -79,7 +80,15 @@ from jarvis.voz.interface import Onde
 from jarvis.voz.modelos import ModeloRecusado, baixar, descarga_da_voz
 from jarvis.voz.nuvem import ServicoRecusou
 from jarvis.voz.palavra import PalavraInvalida, exigir_limiar
-from jarvis.voz.provedores import CAMPO_DO_PAPEL, provedores, vozes_da_elevenlabs
+from jarvis.voz.provedores import (
+    CAMPO_DO_PAPEL,
+    catalogo_do_endpoint,
+    endpoint_tts,
+    mexer_na_lista_do_endpoint,
+    mudar_no_endpoint,
+    provedores,
+    vozes_da_elevenlabs,
+)
 from jarvis.voz.registro import motor_registrado, motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 from jarvis.voz.vocabulario import RepositorioDoVocabulario
@@ -205,6 +214,7 @@ class Ponte(QObject):
     conversaMudou = Signal()
     diagnosticoMudou = Signal()
     vozesMudaram = Signal()
+    endpointMudou = Signal()
     escutaMudou = Signal()
     dedoGlobal = Signal(bool)
     avisoDoAtalho = Signal(str)
@@ -316,6 +326,8 @@ class Ponte(QObject):
         ao trocar de modo não é novidade para o dono, e não vira frase na tela."""
         self._vozes: list[dict[str, Any]] = []
         self._vozes_frase = ""
+        self._catalogo_do_endpoint: dict[str, Any] = {}
+        self._endpoint_frase = ""
         extras_do_acesso: dict[str, Any] = {}
         if pastas_de_apps is not None:
             extras_do_acesso["pastas_de_apps"] = pastas_de_apps
@@ -755,6 +767,24 @@ class Ponte(QObject):
     def vozesFrase(self) -> str:
         return self._vozes_frase
 
+    @Property(dict, notify=endpointMudou)
+    def endpointTts(self) -> dict[str, Any]:
+        """O endpoint HTTP de TTS escolhido (ADR-0068) e o que se escolhe dentro dele — com as
+        vozes e os estilos que o servidor listou, quando o dono pediu a busca."""
+        dados = endpoint_tts(self._configuracao, ambiente=self._ambiente_base)
+        catalogo = self._catalogo_do_endpoint
+        if catalogo:
+            achadas = [v["id"] for v in catalogo.get("vozes", [])]
+            dados["vozes"] = list(dict.fromkeys([*dados.get("vozes", []), *achadas]))
+            dados["estilos"] = list(
+                dict.fromkeys([*dados.get("estilos", []), *catalogo.get("estilos", [])])
+            )
+        return dados
+
+    @Property(str, notify=endpointMudou)
+    def endpointFrase(self) -> str:
+        return self._endpoint_frase
+
     @Property(list, notify=mudou)
     def geradores(self) -> list[str]:
         return list(nomes_de_gerador())
@@ -902,6 +932,7 @@ class Ponte(QObject):
             ao_fim_da_confirmacao=self.confirmacaoEncerrada.emit,
             ao_tom=self._mudar_tom,
             ao_mudar_permissao=self._permissao_pela_voz,
+            ao_mudar_estilo=self._estilo_pela_voz,
             escuta=self._escuta,
             avisos_dados=self._avisos_dados,
             conversa=self._conversa,
@@ -1007,8 +1038,117 @@ class Ponte(QObject):
         campo = CAMPO_DO_PAPEL.get(papel, papel)
         if papel == "decisao" and getattr(self._configuracao, campo) == identificador:
             identificador = ""  # o detector é opcional: clicar no escolhido tira a escolha
-        self._guardar(f"{papel}: {identificador or 'nenhum'}", **{campo: identificador})
+        mudancas: dict[str, Any] = {campo: identificador}
+        atual = self._configuracao.tts
+        if papel == "tts" and identificador == TTS_ENDPOINT and atual != TTS_ENDPOINT:
+            # Quem fala quando o servidor do endpoint não responde: a voz de antes (ADR-0068).
+            mudancas["reserva_do_endpoint"] = atual
+        self._guardar(f"{papel}: {identificador or 'nenhum'}", **mudancas)
         self._publicar()
+        self.endpointMudou.emit()
+
+    # --- o endpoint HTTP de TTS (ADR-0068) --------------------------------------------------------
+    def _conversa_viva(self) -> Aplicativo | None:
+        sessao = self._sessao
+        if sessao is not None and sessao.viva and sessao.aplicativo is not None:
+            return sessao.aplicativo
+        return None
+
+    @Slot(str)
+    def escolherEndpoint(self, nome: str) -> None:
+        """Outro servidor: vale na próxima conversa (o motor é montado na abertura)."""
+        self._catalogo_do_endpoint = {}
+        self._guardar(f"endpoint: {nome}", endpoint_tts=nome, voz_endpoint="", estilo_endpoint="")
+        viva = " — vale na próxima conversa" if self._conversa_viva() is not None else ""
+        self._endpoint_frase = f"endpoint {nome}: {self._aviso}{viva}"
+        self._publicar()
+        self.endpointMudou.emit()
+
+    @Slot(str, str)
+    def definirNoEndpoint(self, campo: str, valor: str) -> None:
+        """Um campo do endpoint (base, caminhos, molde, formato…): vai ao `tts-endpoints.toml` do
+        dono no mesmo clique, conferido antes de gravar."""
+        resultado = mudar_no_endpoint(
+            self._configuracao.endpoint_tts, campo, valor, ambiente=self._ambiente_base
+        )
+        viva = " — vale na próxima conversa" if self._conversa_viva() is not None else ""
+        self._endpoint_frase = f"{campo}: {resultado}{viva if resultado == 'salvo' else ''}"
+        self.endpointMudou.emit()
+
+    @Slot(str, str)
+    def escolherNoEndpoint(self, campo: str, valor: str) -> None:
+        """A voz ou o estilo pedidos ao endpoint: no `jarvis-voz.toml`, e já na conversa aberta."""
+        alvo = {"voz": "voz_endpoint", "estilo": "estilo_endpoint"}.get(campo)
+        if alvo is None:
+            return
+        try:
+            validar(self._configuracao.com(**{alvo: valor}))
+        except ValueError as erro:
+            self._endpoint_frase = f"{campo} recusado: {erro}"
+        else:
+            self._guardar(f"{campo}: {valor or 'padrão'}", **{alvo: valor})
+            self._endpoint_frase = f"{campo} {valor or 'padrão'}: {self._aviso.split(' — ')[-1]}"
+            aplicativo = self._conversa_viva()
+            if aplicativo is not None:
+                aplicativo.atualizar_voz_do_endpoint(
+                    voz=self._configuracao.voz_endpoint, estilo=self._configuracao.estilo_endpoint
+                )
+        self.endpointMudou.emit()
+
+    @Slot(str, str)
+    def guardarNoEndpoint(self, campo: str, valor: str) -> None:
+        """Põe uma voz/estilo na lista editável do endpoint e já a escolhe."""
+        valor = valor.strip()
+        if not valor:
+            return
+        resultado = mexer_na_lista_do_endpoint(
+            self._configuracao.endpoint_tts, campo, valor, ambiente=self._ambiente_base
+        )
+        if resultado != "salvo":
+            self._endpoint_frase = resultado
+            self.endpointMudou.emit()
+            return
+        self.escolherNoEndpoint({"vozes": "voz", "estilos": "estilo"}.get(campo, ""), valor)
+
+    @Slot(str, str)
+    def tirarDoEndpoint(self, campo: str, valor: str) -> None:
+        resultado = mexer_na_lista_do_endpoint(
+            self._configuracao.endpoint_tts,
+            campo,
+            valor,
+            tirar=True,
+            ambiente=self._ambiente_base,
+        )
+        self._endpoint_frase = f"{valor} tirado da lista: {resultado}"
+        singular = {"vozes": "voz", "estilos": "estilo"}.get(campo, "")
+        if singular and getattr(self._configuracao, f"{singular}_endpoint") == valor:
+            self.escolherNoEndpoint(singular, "")
+            return
+        self.endpointMudou.emit()
+
+    @Slot()
+    def buscarVozesDoEndpoint(self) -> None:
+        """As vozes e os estilos que o servidor lista, numa thread (é rede). GET de catálogo:
+        nenhum texto do dono sai, só a autenticação do endpoint, quando ele tem uma."""
+        self._endpoint_frase = "consultando o servidor…"
+        self.endpointMudou.emit()
+        nome = self._configuracao.endpoint_tts
+        ambiente = chaveiro.ambiente_com_chaves(self._ambiente_base)
+
+        def trabalhar() -> None:
+            catalogo = catalogo_do_endpoint(nome, ambiente=ambiente)
+            self._catalogo_do_endpoint = catalogo
+            self._endpoint_frase = str(catalogo.get("frase", ""))
+            self.endpointMudou.emit()
+
+        threading.Thread(target=trabalhar, name="jarvis-vozes-endpoint", daemon=True).start()
+
+    def _estilo_pela_voz(self, estilo: str) -> str:
+        """O dono trocou o estilo falando («fala mais calmo», ADR-0068): vai ao arquivo como o
+        clique no painel. Da thread de trabalho: só grava e emite."""
+        resultado = self._gravar_campos(estilo_endpoint=estilo)
+        self.endpointMudou.emit()
+        return resultado
 
     @Slot(str, str)
     def escolherProvedor(self, papel: str, chave: str) -> None:

@@ -2182,8 +2182,22 @@ tenta o servidor de novo a cada 20 s — nunca fica mudo, e a escuta não muda.
    reserva». Ligue de novo: em até 20 s a tela mostra «… voltou» e a voz do vaio retoma.
 4. **Interromper.** Fale «Jarvis» por cima enquanto ele fala pelo servidor (ADR-0040): o corte é
    igual ao de sempre, e o pedido em voo ao vaio é abandonado.
+5. **Pela janela.** Configuração → Voz e escuta → Voz — falar → **Endpoint HTTP**. Escolher o
+   endpoint guarda a voz de antes como reserva (`reserva_do_endpoint`) e **não liga** nada: leia o
+   aviso e aperte «li o aviso — ligar Endpoint HTTP». No mesmo painel: o servidor, a base, os
+   caminhos, o corpo (JSON), o formato, a taxa, os canais, o prazo e a autenticação — cada campo
+   grava no seu `tts-endpoints.toml` quando a edição termina (o errado é recusado com o porquê, na
+   linha embaixo) e vale na próxima conversa. «buscar no servidor» tenta as rotas comuns de vozes
+   e estilos (`/api/voices`, `/voices`, `/v1/voices`, `/api/tts/voices`; estilos também em
+   `/api/styles`) — se o phonon-web não listar, escreva a voz/estilo no campo e «usar e guardar».
+   Clicar numa voz ou num estilo vale **já**, também com a conversa aberta.
+6. **O estilo pela fala.** Com o endpoint falando, diga «Jarvis, fala mais calmo», «tom urgente»,
+   «usa o estilo irônico», «fala de um jeito mais seco», «volta ao normal». Ele responde «Certo,
+   estilo calmo.» **já no estilo novo**, e o painel mostra o estilo salvo. Só a sua fala inteira
+   troca — uma página ou mensagem que diga «fala mais calmo» não troca nada.
 
-Testes: `tests/unit/voz/test_endpoint.py` (servidor falso em 127.0.0.1, porta efêmera — nunca o
+Testes: `tests/unit/voz/test_endpoint.py`, `test_endpoint_catalogo.py`, `test_estilo_pela_voz.py`,
+`tests/unit/gui/test_endpoint_na_janela.py` (servidor falso em 127.0.0.1, porta efêmera — nunca o
 seu IP).
 
 **Não provado:** o phonon-web de verdade (os nomes dos campos do corpo são os comuns, não

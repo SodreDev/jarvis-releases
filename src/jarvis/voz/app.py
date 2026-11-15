@@ -578,6 +578,8 @@ class Aplicativo:
     ao_mudar_permissao: Callable[[str], str] | None = None
     """Grava o modo de permissão que o dono trocou pela voz (ADR-0066) e devolve «salvo» ou o
     porquê de não ter salvo. A janela liga (o mesmo arquivo do painel); sem ela, vale na sessão."""
+    ao_mudar_estilo: Callable[[str], str] | None = None
+    """Grava o estilo do endpoint de voz que o dono trocou falando (ADR-0068), como o de cima."""
     """O tom do último turno, curto («entonação de pergunta · voz baixa»; vazio no neutro), para o
     indicador da janela (ADR-0058). Mesmas regras do `ao_mudar_estado`: emite e volta."""
 
@@ -817,6 +819,8 @@ class Aplicativo:
         self._cerebro.confirmar = self._confirmar
         # Trocar o modo de permissão pela voz (ADR-0066): lido pelo código na fala do dono.
         self._cerebro.ao_mudar_permissao = self._mudar_permissao
+        # Trocar o estilo do endpoint de voz pela fala («fala mais calmo», ADR-0068).
+        self._cerebro.ao_pedir_estilo = self._pedir_estilo
         self._cerebro.ao_status = self._status_do_laco
         # O replanejamento da tarefa quando um passo falha: na tela, nunca na voz (ADR-0031).
         self._cerebro.ao_raciocinio = lambda linha: self.escrever_na_tela(f"  ↻ {linha}")
@@ -851,6 +855,44 @@ class Aplicativo:
         )
         self._aquecer()
         self._conferir_a_extensao_em_segundo_plano()
+
+    def _pedir_estilo(self, fala: str) -> str:
+        """A fala inteira do dono pede outro estilo do endpoint de voz (ADR-0068)? Troca já — o
+        próximo trecho sai no estilo novo, inclusive a confirmação — e grava pela janela. Vazio =
+        não era pedido de estilo (ou a voz de agora não tem estilo): o turno segue como sempre."""
+        from jarvis.voz.endpoint import comando_de_estilo, frase_do_estilo
+
+        motor = self._tts
+        estilos: tuple[str, ...] = tuple(getattr(motor, "estilos", ()) or ())
+        definir = getattr(motor, "definir_estilo", None)
+        principal = getattr(motor, "principal", None)
+        if not estilos or not callable(definir) or principal is None:
+            return ""
+        estilo = comando_de_estilo(fala, estilos, principal.endpoint.estilo)
+        if estilo is None:
+            return ""
+        definir(estilo)
+        self.configuracao = self.configuracao.com(estilo_endpoint=estilo)
+        frase = frase_do_estilo(estilo)
+        if self.ao_mudar_estilo is not None and self.ao_mudar_estilo(estilo) != "salvo":
+            frase = f"{frase} Vale agora, mas não consegui salvar no arquivo."
+        if self.trilha is not None:
+            self.trilha.evento("voz.estilo", estilo=estilo)
+        return frase
+
+    def atualizar_voz_do_endpoint(self, *, voz: str, estilo: str) -> None:
+        """A janela trocou a voz ou o estilo do endpoint com a conversa aberta: vale no próximo
+        trecho (vazio = o padrão do endpoint)."""
+        self.configuracao = self.configuracao.com(voz_endpoint=voz, estilo_endpoint=estilo)
+        principal = getattr(self._tts, "principal", None)
+        if principal is None:
+            return
+        definir_voz = getattr(self._tts, "definir_voz", None)
+        definir_estilo = getattr(self._tts, "definir_estilo", None)
+        if callable(definir_voz):
+            definir_voz(voz or principal.endpoint.voz)
+        if callable(definir_estilo):
+            definir_estilo(estilo or principal.endpoint.estilo)
 
     def _mudar_permissao(self, modo: ModoDePermissao) -> str:
         """O dono mandou trocar o modo de permissão (ADR-0066): vale já no próximo passo — o PDP

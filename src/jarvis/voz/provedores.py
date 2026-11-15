@@ -191,3 +191,97 @@ def vozes_da_elevenlabs(ambiente: Mapping[str, str] | None = None) -> list[dict[
     from jarvis.voz.elevenlabs import listar_vozes
 
     return [voz.para_dict() for voz in listar_vozes(ambiente=ambiente)]
+
+
+# --- o endpoint HTTP de TTS (ADR-0068) ---------------------------------------------------------
+# A janela não importa motor (ADR-0019, `test_fronteira`): ela pede ao módulo de escolha, e é ele
+# que fala com `jarvis.voz.endpoint`. Nada do que volta é segredo (a variável vai pelo nome).
+
+
+def endpoint_tts(
+    configuracao: Configuracao, *, ambiente: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    """O endpoint escolhido e as escolhas dentro dele, como o painel desenha."""
+    from jarvis.voz import endpoint as ep
+
+    erro = ""
+    try:
+        lista = ep.todos(ambiente=ambiente)
+    except ep.EndpointInvalido as recusa:
+        erro = f"o seu {ep.NOME_DO_ARQUIVO} foi recusado ({recusa}): valem os do repositório"
+        lista = ep.ler(ep.ARQUIVO_PADRAO)
+    if not lista:
+        return {"endpoints": [], "ativo": {}, "vozes": [], "estilos": [], "erro": erro}
+    pedido = ep.normalizar(configuracao.endpoint_tts)
+    ativo = next((e for e in lista if ep.normalizar(e.nome) == pedido), lista[0])
+    voz = configuracao.voz_endpoint or ativo.voz
+    estilo = configuracao.estilo_endpoint or ativo.estilo
+    return {
+        "endpoints": [
+            {"nome": e.nome, "escolhido": e.nome == ativo.nome, "base": e.base} for e in lista
+        ],
+        "ativo": ativo.para_dict(),
+        "voz": voz,
+        "estilo": estilo,
+        "vozes": list(dict.fromkeys(v for v in (ativo.voz, *ativo.vozes, voz) if v)),
+        "estilos": list(ep.estilos_conhecidos(ativo, [estilo] if estilo else [])),
+        "formatos": list(ep.FORMATOS),
+        "autenticacoes": list(ep.AUTENTICACOES),
+        "arquivo": str(ep.arquivo_do_dono(ambiente)),
+        "erro": erro,
+    }
+
+
+def _o_endpoint(nome: str, ambiente: Mapping[str, str] | None) -> Any:
+    from jarvis.voz import endpoint as ep
+
+    return ep.escolher(nome, ambiente=ambiente)
+
+
+def mudar_no_endpoint(
+    nome: str, campo: str, valor: str, *, ambiente: Mapping[str, str] | None = None
+) -> str:
+    """Troca um campo do endpoint e grava no arquivo do dono. Devolve «salvo» ou o porquê."""
+    from jarvis.voz import endpoint as ep
+
+    try:
+        novo = ep.com_campo(_o_endpoint(nome, ambiente), campo, valor)
+        ep.gravar(novo, arquivo=ep.arquivo_do_dono(ambiente))
+    except (ep.EndpointInvalido, OSError) as erro:
+        return f"{campo} recusado: {erro}"
+    return "salvo"
+
+
+def mexer_na_lista_do_endpoint(
+    nome: str,
+    campo: str,
+    valor: str,
+    *,
+    tirar: bool = False,
+    ambiente: Mapping[str, str] | None = None,
+) -> str:
+    """Põe (ou tira) uma voz/estilo da lista editável do endpoint, no arquivo do dono."""
+    from jarvis.voz import endpoint as ep
+
+    if campo not in ("vozes", "estilos") or not valor.strip():
+        return "nada a guardar"
+    try:
+        atual = _o_endpoint(nome, ambiente)
+        lista = [v for v in getattr(atual, campo) if v != valor.strip()]
+        if not tirar:
+            lista.append(valor.strip())
+        return mudar_no_endpoint(nome, campo, ",".join(lista), ambiente=ambiente)
+    except ep.EndpointInvalido as erro:
+        return f"{campo} recusado: {erro}"
+
+
+def catalogo_do_endpoint(nome: str, *, ambiente: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """As vozes e os estilos que o servidor lista (GET de catálogo, nenhum texto do dono)."""
+    from jarvis.voz import endpoint as ep
+    from jarvis.voz.chaves import SegredoAusente
+    from jarvis.voz.endpoint_catalogo import descobrir
+
+    try:
+        return descobrir(_o_endpoint(nome, ambiente), ambiente=ambiente).para_dict()
+    except (ep.EndpointInvalido, SegredoAusente) as erro:
+        return {"vozes": [], "estilos": [], "frase": f"não deu para consultar: {erro}"}

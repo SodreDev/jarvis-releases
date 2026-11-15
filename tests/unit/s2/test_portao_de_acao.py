@@ -837,3 +837,24 @@ def test_a_voz_do_dono_troca_o_modo_sem_chamar_o_motor(executor: ExecutorDeFerra
     publicados: list[dict[str, Any]] = []
     cerebro.responder("ativa o modo automático", epoch=0, publicar=publicados.append, trust="web")
     assert trocas == [ModoDePermissao.BYPASS]
+
+
+def test_a_voz_do_dono_troca_o_estilo_da_voz_sem_chamar_o_motor(
+    executor: ExecutorDeFerramentas,
+) -> None:
+    """ADR-0068: «fala mais calmo» é lido pelo código, como o modo de permissão — só do dono."""
+    pedidos: list[str] = []
+    motor = _roteiro(["não devia falar"])
+    cerebro = _cerebro(executor, motor, _jev())
+
+    def estilo(fala: str) -> str:
+        pedidos.append(fala)
+        return "Certo, estilo calmo." if "calmo" in fala else ""
+
+    cerebro.ao_pedir_estilo = estilo
+    _resposta, falado = _dizer(cerebro, "fala mais calmo")
+    assert falado.startswith("Certo, estilo calmo")
+    assert motor.pedidos == []
+    publicados: list[dict[str, Any]] = []
+    cerebro.responder("fala mais calmo", epoch=0, publicar=publicados.append, trust="web")
+    assert pedidos == ["fala mais calmo"], "conteúdo de terceiros não troca o estilo"

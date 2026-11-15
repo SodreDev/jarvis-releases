@@ -116,6 +116,7 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "duvidas": Forma.NUMERO,
     "epoch": Forma.NUMERO,
     "erro": Forma.MOTIVO,
+    "estilo": Forma.CODIGO,
     "etapa": Forma.CODIGO,
     "fase": Forma.CODIGO,
     "ferramentas": Forma.NUMERO,
@@ -261,6 +262,8 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     "permissao": frozenset({"tool_id", "origem", "motivo", "resposta"}),
     # O modo de permissão que o dono escolheu pela voz (ADR-0066): só o modo.
     "permissao.modo": frozenset({"modo"}),
+    # O estilo do endpoint de voz que o dono pediu falando (ADR-0068): só o estilo.
+    "voz.estilo": frozenset({"estilo"}),
     # A delegação ao Claude Code (ADR-0054): como terminou (código), quanto demorou, quantos
     # turnos e negações — nunca a tarefa nem o que o Claude Code devolveu.
     "delegacao": frozenset({"tool_id", "status", "ms", "turnos", "negacoes", "cortada"}),
@@ -710,6 +713,8 @@ def _linha(evento: Mapping[str, Any]) -> str:
         )
     if tipo == "permissao.modo":
         return f"modo de permissão: {evento.get('modo')}"
+    if tipo == "voz.estilo":
+        return f"estilo da voz: {evento.get('estilo')}"
     if tipo == "permissao":
         return (
             f"pediu permissão para {evento.get('tool_id')} ({evento.get('origem')}): "
