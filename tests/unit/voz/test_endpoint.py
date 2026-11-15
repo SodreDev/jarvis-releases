@@ -89,11 +89,12 @@ def test_o_preset_do_dono_vem_pronto_e_valido() -> None:
         "/api/tts/stream",
         "POST",
     )
+    # WAV: a taxa vem do cabeçalho (o PCM cru de 16 kHz lido como 24 kHz era o «chiado»).
     assert (preset.voz, preset.estilo, preset.formato, preset.taxa, preset.canais) == (
         "jarvis-br",
         "cordial",
-        "pcm",
-        24000,
+        "wav",
+        16000,
         1,
     )
     assert preset.estilos == ("cordial", "calmo", "urgente", "ironico", "seco")
@@ -542,7 +543,8 @@ def test_o_app_monta_o_endpoint_com_o_estilo_do_dono(tmp_path: Path) -> None:
     from jarvis.voz.app import motor_de_tts
 
     with EndpointFalso() as servidor:
-        servidor.rotas["/api/tts/stream"] = Rota(corpo=pcm(2400))
+        # O preset pede WAV: a taxa (24 kHz aqui) vem do cabeçalho.
+        servidor.rotas["/api/tts/stream"] = Rota(corpo=_wav(24000, 0.1))
         ambiente = _configurar_o_dono(tmp_path, servidor.base)
         configuracao = Configuracao(
             tts=MOTOR,
@@ -592,3 +594,134 @@ def test_barge_in_no_meio_do_stream_nao_publica_nada(tmp_path: Path) -> None:
     assert pedacos == []
     assert reserva.textos == []
     assert principal.descartadas_por_cancelamento >= 1
+
+
+# --- a qualidade da voz do servidor (emenda de 2026-11-15 à ADR-0068) ----------------------------
+
+
+def _wav(taxa: int, segundos: float, valor: int = 2000, canais: int = 1) -> bytes:
+    memoria = io.BytesIO()
+    with wave.open(memoria, "wb") as arquivo:
+        arquivo.setnchannels(canais)
+        arquivo.setsampwidth(2)
+        arquivo.setframerate(taxa)
+        arquivo.writeframes(struct.pack("<h", valor) * int(taxa * segundos) * canais)
+    return memoria.getvalue()
+
+
+def test_o_stream_com_um_wav_por_frase_nao_toca_o_cabecalho() -> None:
+    """O servidor que manda um WAV por frase: o 2º cabeçalho no meio dos dados não é áudio."""
+    corpo = _wav(24000, 0.5) + _wav(24000, 0.5)
+    amostras = ep.para_pcm16(corpo, formato="wav", taxa=0, canais=0)
+    assert len(amostras) // 2 == pytest.approx(16000, abs=4)
+    valores = set(struct.unpack(f"<{len(amostras) // 2}h", amostras)[40:-40])
+    assert valores <= {2000, 1999, 2001}  # nenhum byte de «RIFF…WAVE» virou amostra
+
+
+def test_pediu_wav_e_veio_pcm_cru_le_na_taxa_da_configuracao() -> None:
+    amostras = ep.para_pcm16(pcm(16000), formato="wav", taxa=16000, canais=1)
+    assert len(amostras) == 32000
+    assert ep.formato_lido(pcm(10), formato="wav", taxa=16000, canais=1) == ("pcm", 16000, 1)
+    assert ep.formato_lido(_wav(22050, 0.1), formato="pcm", taxa=24000, canais=1) == (
+        "wav",
+        22050,
+        1,
+    )
+
+
+def test_pcm_de_16k_lido_como_24k_encurta_a_voz() -> None:
+    """A causa do «chiado» do dono: PCM16 16 kHz lido como 24 kHz toca 1,5× rápido e agudo."""
+    um_segundo = pcm(16000)
+    errado = ep.para_pcm16(um_segundo, formato="pcm", taxa=24000, canais=1)
+    certo = ep.para_pcm16(um_segundo, formato="pcm", taxa=16000, canais=1)
+    assert len(certo) // 2 == 16000
+    assert len(errado) // 2 == pytest.approx(16000 / 1.5, abs=2)
+
+
+@pytest.mark.parametrize(
+    ("bruto", "limpo"),
+    [
+        ("Olá, **João**! São 14h30 — às 8h, R$ 25,50.", "Olá, João! São 14h30 — às 8h, R$ 25,50."),
+        ("- Ação: `abrir` o [site](https://a.example) 😀", "Ação: abrir o site"),
+        ("Coração, pão e maçã.\n\n# Fim", "Coração, pão e maçã. Fim"),
+    ],
+)
+def test_o_texto_vai_limpo_mas_integro(bruto: str, limpo: str) -> None:
+    assert ep.texto_para_a_voz(bruto) == limpo
+
+
+def test_a_voz_e_o_estilo_escolhidos_vao_no_corpo_e_quem_falou_fica_registrado() -> None:
+    mudancas: list[ep.QuemFalou] = []
+    with EndpointFalso() as servidor:
+        servidor.rotas["/api/tts/stream"] = Rota(corpo=_wav(24000, 0.2), pedacos=3, chunked=True)
+        principal = motor_em(servidor, formato="wav")
+        motor = MotorComReservaDeRede(
+            principal=principal,
+            fabricar_reserva=Reserva,
+            ao_mudar_quem_fala=mudancas.append,
+        )
+        motor.definir_voz("jarvis-br")
+        motor.definir_estilo("calmo")
+        motor.sintetizar("**Pronto**, já está.")
+        motor.sintetizar("De novo.")
+    corpo = json.loads(servidor.de("/api/tts/stream")[0].corpo)
+    assert corpo == {
+        "text": "Pronto, já está.",
+        "voice": "jarvis-br",
+        "style": "calmo",
+        "format": "wav",
+    }
+    assert motor.ultima == ep.QuemFalou(
+        motor=MOTOR,
+        voz="jarvis-br",
+        estilo="calmo",
+        servidor="falso",
+        via="stream",
+        formato="wav",
+        taxa=24000,
+        canais=1,
+    )
+    assert len(mudancas) == 1  # a segunda fala foi igual: o log não repete
+    assert "voz jarvis-br, estilo calmo (stream, wav 24000 Hz)" in mudancas[0].frase()
+
+
+def test_na_reserva_quem_falou_diz_a_reserva_e_o_porque() -> None:
+    mudancas: list[ep.QuemFalou] = []
+    with EndpointFalso() as servidor:
+        principal = motor_em(servidor)
+        principal.endpoint = replace(principal.endpoint, base=f"http://127.0.0.1:{porta_fechada()}")
+        motor = MotorComReservaDeRede(
+            principal=principal, fabricar_reserva=Reserva, ao_mudar_quem_fala=mudancas.append
+        )
+        motor.sintetizar("oi")
+    (quem,) = mudancas
+    assert quem.via == "reserva" and quem.motor == "reserva"
+    assert "falou a reserva reserva" in quem.frase() and "o endpoint não" in quem.frase()
+
+
+def test_quem_falou_vai_a_trilha_so_com_codigos_e_numeros(tmp_path: Path) -> None:
+    from jarvis.trilha import TrilhaDeDiagnostico
+
+    trilha = TrilhaDeDiagnostico(tmp_path / "trilha")
+    trilha.evento(
+        "voz.falou",
+        motor=MOTOR,
+        via="stream",
+        voz="jarvis-br",
+        estilo="calmo",
+        formato="wav",
+        taxa=24000,
+        canais=1,
+    )
+    (linha,) = [
+        json.loads(t)
+        for a in sorted((tmp_path / "trilha").glob("*.jsonl"))
+        for t in a.read_text(encoding="utf-8").splitlines()
+    ]
+    assert linha["evento"] == "voz.falou" and "campos_fora" not in linha
+    assert (linha["via"], linha["voz"], linha["estilo"], linha["taxa"]) == (
+        "stream",
+        "jarvis-br",
+        "calmo",
+        24000,
+    )

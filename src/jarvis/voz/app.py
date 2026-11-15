@@ -41,7 +41,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from jarvis.agentd.asr import MotorWhisper, TranscritorIncremental
 from jarvis.agentd.fala_em_stream import trechos_do_stream
@@ -194,6 +194,9 @@ from jarvis.voz.tom import (
     ganho_da_resposta_db,
 )
 from jarvis.voz.vocabulario import VAZIO, RepositorioDoVocabulario, Vocabulario
+
+if TYPE_CHECKING:
+    from jarvis.voz.endpoint import QuemFalou
 
 PASTA_DE_VOZES: Final = Path.home() / ".cache" / "jarvis" / "vozes"
 ID_DA_VOZ_NO_REGISTRO: Final = "rhasspy/piper-voices:{voz}"
@@ -865,6 +868,10 @@ class Aplicativo:
         if hasattr(self._tts, "ao_avisar"):
             # O endpoint de voz (ADR-0068): caiu ou voltou, uma linha curta na tela.
             self._tts.ao_avisar = lambda frase: self.escrever_na_tela(f"  ({frase})")
+        if hasattr(self._tts, "ao_mudar_quem_fala"):
+            # Quem falou (emenda de 2026-11-15 à ADR-0068): o servidor, a voz, o estilo e o áudio
+            # como veio — ou a reserva e o porquê —, na tela, na trilha e no painel do endpoint.
+            self._tts.ao_mudar_quem_fala = self._quem_fala_mudou
         _aquecer_em_segundo_plano(self._asr, self._tts)
         if self._motor is None:
             self._motor = motor_de_conversa(
@@ -1560,6 +1567,24 @@ class Aplicativo:
             pessoas = [m.nome for m in memorias if m.tipo in {"contato", "servico"}]
         return Reconciliador.do_contexto(termos=termos, apps=apps, pessoas=pessoas)
 
+    def _quem_fala_mudou(self, quem: QuemFalou) -> None:
+        """Outro motor, voz, estilo ou formato falou: uma linha na tela, o evento na trilha (só
+        códigos e números, nunca o texto falado) e o painel atualizado."""
+        self.quem_falou = quem.frase()
+        self.escrever_na_tela(f"  (voz: {self.quem_falou})")
+        self.trilha.evento(
+            "voz.falou",
+            motor=quem.motor,
+            via=quem.via,
+            voz=quem.voz,
+            estilo=quem.estilo,
+            formato=quem.formato,
+            taxa=quem.taxa,
+            canais=quem.canais,
+        )
+        with contextlib.suppress(Exception):
+            self.ao_mudar_quem_falou()
+
     def _contatos_das_memorias(self) -> list[CandidatoDeContato]:
         """Nome e nota dos contatos das memórias fixas, e as instruções de tom — nunca o telefone,
         que é só do código."""
@@ -2124,6 +2149,10 @@ class Aplicativo:
     _fim_do_ultimo_turno: float = 0.0
     nota_do_ultimo_turno: str = ""
     """`boa`, `ruim` ou vazio: a nota que vale para o último turno (o botão aceso na janela)."""
+    quem_falou: str = ""
+    """Quem falou o último trecho pelo endpoint de voz (ADR-0068, emenda): a frase do painel."""
+    ao_mudar_quem_falou: Callable[[], None] = field(default=lambda: None, repr=False)
+    """O painel do endpoint se atualiza: a janela liga; da linha da voz, o sinal do Qt enfileira."""
     _cerebro_em_voo: threading.Thread | None = field(default=None, repr=False)
     """A linha do cérebro de um turno cortado que ainda não parou (uma ferramenta em voo): o turno
     seguinte e os avisos esperam por ela, fora do laço do microfone."""

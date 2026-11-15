@@ -446,6 +446,15 @@ Column {
                 }
             }
             Nota {
+                // Quem falou a última frase (emenda de 2026-11-15 à ADR-0068): o dono confere se é a
+                // voz e o estilo que escolheu, ou a reserva.
+                objectName: "quemFalouNoEndpoint"
+                width: parent.width
+                wrapMode: Text.WordWrap
+                visible: text !== ""
+                text: ponte && ponte.endpointQuemFalou !== "" ? "última fala: " + ponte.endpointQuemFalou : ""
+            }
+            Nota {
                 width: parent.width
                 wrapMode: Text.WordWrap
                 text: ponte && ponte.endpointFrase !== ""

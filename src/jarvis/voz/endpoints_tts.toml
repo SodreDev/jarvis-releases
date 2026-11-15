@@ -26,8 +26,11 @@ caminho = "/api/tts"
 caminho_stream = "/api/tts/stream"
 metodo = "POST"
 corpo = '{"text": "{texto}", "voice": "{voz}", "style": "{estilo}", "format": "{formato}"}'
-formato = "pcm"
-taxa = 24000
+# WAV, não PCM cru (emenda de 2026-11-15 à ADR-0068): o cabeçalho diz a taxa de verdade. Com PCM
+# cru a taxa é um chute — o servidor do dono manda PCM16 a 16 kHz e o preset dizia 24 kHz, o que
+# toca a voz 1,5× mais rápida e aguda (o «chiado» e a pronúncia ruim). `taxa` só vale para PCM.
+formato = "wav"
+taxa = 16000
 canais = 1
 voz = "jarvis-br"
 vozes = ["jarvis-br"]
@@ -38,4 +41,4 @@ cabecalho = ""
 variavel_de_ambiente = ""
 prazo_s = 8.0
 caminhos_de_vozes = []
-nota = "o painel phonon-web do dono, na máquina vaio da rede local (PCM 24 kHz mono)"
+nota = "o painel phonon-web do dono, na máquina vaio da rede local (WAV; PCM cru é 16 kHz mono)"

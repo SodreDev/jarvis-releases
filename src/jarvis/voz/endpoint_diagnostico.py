@@ -20,9 +20,12 @@ texto mandado é fixo («Teste de voz do Jarvis.»), não do dono.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import time
+import wave
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, Final
 
 from jarvis import __version__
@@ -32,6 +35,10 @@ from jarvis.voz.endpoint_catalogo import descobrir
 from jarvis.voz.nuvem import CONEXOES, ErroDoServico, ServicoRecusou, proibir_nuvem_real_em_ci
 
 TEXTO_DE_TESTE: Final = "Teste de voz do Jarvis."
+DURACAO_PLAUSIVEL_S: Final = (1.0, 3.2)
+"""Quanto «Teste de voz do Jarvis.» (23 caracteres) dura falado em pt-BR, com folga para pausa e
+estilo calmo: fora disso, o áudio PCM cru está sendo lido numa taxa que não é a dele."""
+TAXAS_COMUNS: Final[tuple[int, ...]] = (16000, 22050, 24000, 44100, 48000)
 ROTAS_DO_OPENAPI: Final[tuple[str, ...]] = (
     "/openapi.json",
     "/docs/openapi.json",
@@ -76,6 +83,34 @@ def _campos_do_openapi(dados: Mapping[str, Any], caminho: str) -> str:
     return ", ".join(partes)
 
 
+def pasta_das_amostras(ambiente: Mapping[str, str] | None = None) -> Path | None:
+    """Onde o teste grava o WAV de amostra: `$XDG_STATE_HOME/jarvis` (padrão
+    `~/.local/state/jarvis`). `None` = o ambiente dado não diz onde (a suíte): não grava."""
+    fonte = os.environ if ambiente is None else ambiente
+    if fonte.get("XDG_STATE_HOME"):
+        return Path(fonte["XDG_STATE_HOME"]) / "jarvis"
+    if fonte.get("HOME"):
+        return Path(fonte["HOME"]) / ".local" / "state" / "jarvis"
+    return None
+
+
+def _gravar_wav(arquivo: Path, pcm16: bytes, *, taxa: int, canais: int = 1) -> Path:
+    arquivo.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(arquivo), "wb") as saida:
+        saida.setnchannels(canais)
+        saida.setsampwidth(2)
+        saida.setframerate(taxa)
+        saida.writeframes(pcm16)
+    return arquivo
+
+
+def taxa_plausivel(bytes_pcm16: int, canais: int) -> list[int]:
+    """As taxas comuns em que o PCM cru do teste dura o que a frase dura falada."""
+    baixo, alto = DURACAO_PLAUSIVEL_S
+    amostras = bytes_pcm16 / 2 / max(1, canais)
+    return [t for t in TAXAS_COMUNS if baixo <= amostras / t <= alto]
+
+
 def diagnosticar(
     endpoint: ep.Endpoint,
     escrever: Callable[[str], None] = print,
@@ -84,6 +119,7 @@ def diagnosticar(
     abrir: Any = CONEXOES,
     voz: str = "",
     estilo: str = "",
+    pasta_de_saida: Path | None = None,
 ) -> int:
     """Imprime o teste e devolve 0 (sintetizou por algum caminho) ou 1."""
     chaves: list[Chave] = []
@@ -186,6 +222,10 @@ def diagnosticar(
 
     # 6. sintetizar
     corpo = ep.montar_corpo(endpoint, texto=TEXTO_DE_TESTE, voz=voz, estilo=estilo)
+    # O corpo exato (o texto é o fixo do teste, não do dono): é a prova de que a voz e o estilo
+    # escolhidos chegam ao servidor.
+    dizer(f"corpo enviado: {corpo.decode('utf-8')}")
+    pasta = pasta_de_saida if pasta_de_saida is not None else pasta_das_amostras(ambiente)
     algum = False
     for rotulo, caminho in (("síntese", endpoint.caminho), ("stream", endpoint.caminho_stream)):
         if not caminho:
@@ -221,6 +261,42 @@ def diagnosticar(
             dizer(f"{linha}\n  áudio: NÃO DEU — {erro}")
             continue
         duracao = len(amostras) / 2 / 16000
+        formato, taxa, canais = ep.formato_lido(
+            resposta.corpo, formato=endpoint.formato, taxa=endpoint.taxa, canais=endpoint.canais
+        )
+        if formato == "wav":
+            dizer(f"  veio: WAV {taxa} Hz, {canais} canal/is (a taxa vem do cabeçalho)")
+        elif formato == "pcm":
+            plausiveis = taxa_plausivel(len(resposta.corpo), endpoint.canais)
+            dizer(
+                f"  veio: PCM cru, lido como {endpoint.taxa} Hz (a configuração; PCM cru não diz)"
+            )
+            if plausiveis and endpoint.taxa not in plausiveis:
+                dizer(
+                    f"  ATENÇÃO: lido a {endpoint.taxa} Hz a frase dura {duracao:.2f} s, fora do "
+                    f"plausível; a {' ou '.join(str(t) for t in plausiveis)} Hz ela dura o normal "
+                    "— a taxa configurada deve estar errada (a voz sai rápida/aguda ou lenta/"
+                    'grave). Corrija `taxa` ou use formato = "wav".'
+                )
+        try:
+            if pasta is None:
+                raise OSError("sem pasta de estado no ambiente")
+            ouvir = _gravar_wav(pasta / f"teste-endpoint-{rotulo}.wav", amostras, taxa=16000)
+            dizer(f"  amostra (o que o Jarvis toca, PCM16 16 kHz): {ouvir}")
+            if formato == "wav":
+                bruto = pasta / f"teste-endpoint-{rotulo}-como-veio.wav"
+                bruto.write_bytes(resposta.corpo)
+                dizer(f"  como veio do servidor: {bruto}")
+            elif formato == "pcm":
+                bruto = _gravar_wav(
+                    pasta / f"teste-endpoint-{rotulo}-como-veio.wav",
+                    resposta.corpo[: len(resposta.corpo) // 2 * 2],
+                    taxa=endpoint.taxa,
+                    canais=endpoint.canais,
+                )
+                dizer(f"  como veio do servidor (a {endpoint.taxa} Hz): {bruto}")
+        except OSError as erro:
+            dizer(f"  amostra: não gravei ({erro})")
         pico = max(
             (
                 abs(int.from_bytes(amostras[i : i + 2], "little", signed=True))

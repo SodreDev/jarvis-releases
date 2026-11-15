@@ -94,6 +94,12 @@ class Forma(Enum):
 
 
 CAMPOS: Final[Mapping[str, Forma]] = {
+    # Quem falou (voz.falou, emenda de 2026-11-15 à ADR-0068): só códigos e números.
+    "via": Forma.CODIGO,
+    "voz": Forma.ROTULO,
+    "formato": Forma.CODIGO,
+    "taxa": Forma.NUMERO,
+    "canais": Forma.NUMERO,
     "argumentos": Forma.CHAVES,
     "atalho": Forma.CODIGO,
     "bruto": Forma.FALA,
@@ -270,6 +276,8 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     "permissao.modo": frozenset({"modo"}),
     # O estilo do endpoint de voz que o dono pediu falando (ADR-0068): só o estilo.
     "voz.estilo": frozenset({"estilo"}),
+    # Quem falou (emenda de 2026-11-15 à ADR-0068): o motor, a voz, o estilo e o áudio como veio.
+    "voz.falou": frozenset({"motor", "via", "voz", "estilo", "formato", "taxa", "canais"}),
     # A delegação ao Claude Code (ADR-0054): como terminou (código), quanto demorou, quantos
     # turnos e negações — nunca a tarefa nem o que o Claude Code devolveu.
     "delegacao": frozenset({"tool_id", "status", "ms", "turnos", "negacoes", "cortada"}),
@@ -722,6 +730,11 @@ def _linha(evento: Mapping[str, Any]) -> str:
         return f"modo de permissão: {evento.get('modo')}"
     if tipo == "voz.estilo":
         return f"estilo da voz: {evento.get('estilo')}"
+    if tipo == "voz.falou":
+        return (
+            f"voz: {evento.get('motor')} ({evento.get('via')}) voz {evento.get('voz')}, estilo "
+            f"{evento.get('estilo')}, {evento.get('formato')} {evento.get('taxa')} Hz"
+        )
     if tipo == "permissao":
         return (
             f"pediu permissão para {evento.get('tool_id')} ({evento.get('origem')}): "

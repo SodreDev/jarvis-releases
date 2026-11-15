@@ -626,6 +626,29 @@ def montar_corpo(endpoint: Endpoint, *, texto: str, voz: str, estilo: str) -> by
     return json.dumps(preencher(endpoint.molde), ensure_ascii=False).encode("utf-8")
 
 
+_MARCAS_DE_MARKDOWN: Final = re.compile(r"(\*\*|__|`+|~~)")
+_COMECO_DE_LISTA: Final = re.compile(r"(?m)^\s*(?:#{1,6}|[-*•]|\d+[.)])\s+")
+_LINK_MARKDOWN: Final = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+
+
+def texto_para_a_voz(texto: str) -> str:
+    """O texto que vai ao servidor: limpo, mas íntegro em pt-BR (ADR-0068, emenda de 2026-11-15).
+
+    Sai só o que não é fala — marcas de markdown, começo de lista, link no formato de markdown
+    (fica o texto dele), emoji e caractere de controle. Fica tudo o que a pronúncia precisa:
+    acento, cedilha, número, hora («14h30»), sigla e pontuação. Nada é trocado por extenso aqui:
+    quem lê número é o servidor, e trocar no cliente erra mais do que acerta."""
+    limpo = _LINK_MARKDOWN.sub(r"\1", texto)
+    limpo = _COMECO_DE_LISTA.sub("", limpo)
+    limpo = _MARCAS_DE_MARKDOWN.sub("", limpo)
+    limpo = "".join(
+        c
+        for c in unicodedata.normalize("NFC", limpo)
+        if c in "\n\t" or unicodedata.category(c) not in {"So", "Cc", "Cf", "Cs", "Co", "Sk"}
+    )
+    return " ".join(limpo.split())
+
+
 # --- o pedido -------------------------------------------------------------------------------------
 @dataclass(frozen=True, slots=True)
 class RespostaDoEndpoint:
@@ -832,6 +855,48 @@ def _pcm_de_wav(corpo: bytes) -> tuple[bytes, int, int, int]:
     raise ServicoRecusou("WAV sem o bloco de dados")
 
 
+TAPS_DA_VOZ: Final = 32
+"""Meia largura do núcleo sinc do reamostrador para a voz do servidor (ADR-0068, emenda)."""
+_CABECALHO_WAV: Final = re.compile(rb"RIFF....WAVE", re.DOTALL)
+
+
+def _wavs(corpo: bytes) -> list[bytes]:
+    """O corpo cortado em cada cabeçalho WAV: o stream que manda um WAV por frase traz um
+    cabeçalho novo no meio dos dados, e ele não é áudio (tocado, vira estalo e chiado)."""
+    inicios = [m.start() for m in _CABECALHO_WAV.finditer(corpo)]
+    if not inicios or inicios[0] != 0:
+        inicios = [0, *inicios]
+    return [corpo[a:b] for a, b in zip(inicios, [*inicios[1:], len(corpo)], strict=True)]
+
+
+def _wav_para_16k(corpo: bytes) -> bytes:
+    import numpy as np
+
+    saida: list[bytes] = []
+    for pedaco in _wavs(corpo):
+        dados, taxa, canais, bits = _pcm_de_wav(pedaco)
+        if bits == 32:
+            sinal = np.frombuffer(dados[: len(dados) // 4 * 4], dtype="<f4") * 32767.0
+            saida.append(_para_16k_mono(sinal, taxa=taxa, canais=canais))
+        else:
+            saida.append(_pcm16_cru(dados, taxa=taxa, canais=canais))
+    return b"".join(saida)
+
+
+def formato_lido(corpo: bytes, *, formato: str, taxa: int, canais: int) -> tuple[str, int, int]:
+    """O formato, a taxa e os canais do áudio como ele VEIO (o do cabeçalho, num WAV): é o que o
+    painel mostra e o teste compara com a configuração."""
+    if corpo[:4] == b"RIFF":
+        try:
+            _dados, taxa_do_wav, canais_do_wav, _bits = _pcm_de_wav(_wavs(corpo)[0])
+        except ServicoRecusou:
+            return "wav", 0, 0
+        return "wav", taxa_do_wav, canais_do_wav
+    if formato == "wav":
+        return "pcm", taxa, canais  # pediu WAV e veio PCM cru: lido na taxa da configuração
+    return formato, taxa, canais
+
+
 def _para_16k_mono(amostras: Any, *, taxa: int, canais: int) -> bytes:
     import numpy as np
 
@@ -842,7 +907,9 @@ def _para_16k_mono(amostras: Any, *, taxa: int, canais: int) -> bytes:
         sinal = sinal[: (sinal.size // canais) * canais].reshape(-1, canais).mean(axis=1)
     if sinal.size == 0:
         return b""
-    no_alvo = reamostrar(sinal, de=taxa, para=TAXA_PADRAO)
+    # Núcleo mais longo que o da medição (16): a voz que o dono ouve, de 22–48 kHz para os
+    # 16 kHz do caminho de áudio, sem serrilhado nos agudos (o «chiado» dos sibilantes).
+    no_alvo = reamostrar(sinal, de=taxa, para=TAXA_PADRAO, taps=TAPS_DA_VOZ)
     inteiros = np.clip(np.rint(no_alvo), -32768, 32767).astype("<i2")
     return bytes(inteiros.tobytes())
 
@@ -860,8 +927,6 @@ def _pcm16_cru(corpo: bytes, *, taxa: int, canais: int) -> bytes:
 
 def para_pcm16(corpo: bytes, *, formato: str, taxa: int, canais: int, tipo: str = "") -> bytes:
     """O áudio do servidor no formato do caminho de áudio do Jarvis: PCM16 16 kHz mono."""
-    import numpy as np
-
     if tipo in ("application/json", "text/json") or _parece_json(corpo):
         corpo = _audio_do_json(corpo)
     if tipo.startswith("text/"):
@@ -869,14 +934,12 @@ def para_pcm16(corpo: bytes, *, formato: str, taxa: int, canais: int, tipo: str 
         raise ServicoRecusou(f"o servidor de voz devolveu texto em vez de áudio: {trecho!r}")
     if corpo[:4] == b"RIFF":
         formato = "wav"  # tolerância: pediu pcm e veio WAV (o servidor manda o cabeçalho)
+    elif formato == "wav":
+        formato = "pcm"  # e o contrário: pediu WAV e veio PCM cru (o servidor ignora o formato)
     if formato == "pcm":
         return _pcm16_cru(corpo, taxa=taxa, canais=canais)
     if formato == "wav":
-        dados, taxa_do_wav, canais_do_wav, bits = _pcm_de_wav(corpo)
-        if bits == 32:
-            sinal = np.frombuffer(dados[: len(dados) // 4 * 4], dtype="<f4") * 32767.0
-            return _para_16k_mono(sinal, taxa=taxa_do_wav, canais=canais_do_wav)
-        return _pcm16_cru(dados, taxa=taxa_do_wav, canais=canais_do_wav)
+        return _wav_para_16k(corpo)
     from jarvis.voz.edge import DecodificadorAusente, mp3_para_pcm16
 
     try:
@@ -906,6 +969,38 @@ def saudavel(
         return False
 
 
+@dataclass(frozen=True, slots=True)
+class QuemFalou:
+    """O que falou um trecho (ADR-0068, emenda de 2026-11-15: o dono confere no painel e no log
+    se é mesmo a voz e o estilo que ele escolheu, ou a reserva)."""
+
+    motor: str
+    voz: str = ""
+    estilo: str = ""
+    servidor: str = ""
+    via: str = ""
+    """`stream`, `comum` (o caminho de síntese) ou `reserva` (o endpoint não falou)."""
+    formato: str = ""
+    taxa: int = 0
+    """A taxa do áudio como veio do servidor (a do cabeçalho, num WAV)."""
+    canais: int = 0
+    motivo: str = ""
+    """Na reserva: por que o endpoint não falou."""
+
+    def frase(self) -> str:
+        if self.via == "reserva":
+            return (
+                f"falou a reserva {self.motor}"
+                + (f" (voz {self.voz})" if self.voz else "")
+                + (f" — o endpoint não: {self.motivo}" if self.motivo else "")
+            )
+        audio = f"{self.formato} {self.taxa} Hz" if self.taxa else self.formato
+        return (
+            f"falou {self.servidor}: voz {self.voz or 'padrão'}, estilo {self.estilo or 'padrão'}"
+            f" ({self.via}, {audio})"
+        )
+
+
 @dataclass(slots=True)
 class MotorTtsEndpoint:
     """A voz de um servidor HTTP configurado, atrás da mesma interface dos outros motores."""
@@ -929,6 +1024,8 @@ class MotorTtsEndpoint:
     pelo_stream: int = 0
     sem_stream: bool = False
     """O servidor não tem a rota de stream (404/405/501): daqui em diante, o caminho comum."""
+    ultima: QuemFalou | None = None
+    """Quem falou o último trecho por este endpoint: servidor, voz, estilo e o áudio como veio."""
     _motor: Motor | None = field(default=None, repr=False)
     _chave: Chave | None = field(default=None, repr=False)
     _aberto: bool = field(default=False, repr=False)
@@ -975,14 +1072,19 @@ class MotorTtsEndpoint:
         if self.cancelado():
             self.descartadas_por_cancelamento += 1
             return b""
+        texto = texto_para_a_voz(texto)
+        if not texto:
+            return b""
         self.sinteses += 1
         self.caracteres_enviados += len(texto)
         corpo = montar_corpo(self.endpoint, texto=texto, voz=self.voz, estilo=self.estilo)
         resposta: RespostaDoEndpoint | None = None
+        usou_o_stream = False
         if self.endpoint.tem_stream and not self.sem_stream:
             try:
                 resposta = self._pedir(self.endpoint.caminho_stream, corpo)
                 self.pelo_stream += 1
+                usou_o_stream = True
             except RotaAusente:
                 self.sem_stream = True
         if resposta is None:
@@ -1000,6 +1102,22 @@ class MotorTtsEndpoint:
         )
         if not amostras and texto.strip():
             raise ErroDoServico("o servidor de voz respondeu sem áudio")
+        formato, taxa, canais = formato_lido(
+            resposta.corpo,
+            formato=self.endpoint.formato,
+            taxa=self.endpoint.taxa,
+            canais=self.endpoint.canais,
+        )
+        self.ultima = QuemFalou(
+            motor=REGISTRADO,
+            servidor=self.endpoint.nome,
+            voz=self.voz,
+            estilo=self.estilo,
+            via="stream" if usou_o_stream else "comum",
+            formato=formato,
+            taxa=taxa,
+            canais=canais,
+        )
         return amostras
 
     def _pedir(self, caminho: str, corpo: bytes) -> RespostaDoEndpoint:
@@ -1043,6 +1161,11 @@ class MotorComReservaDeRede:
     onde: Onde = Onde.NUVEM
     quedas: int = 0
     pela_reserva: int = 0
+    ultima: QuemFalou | None = None
+    """Quem falou o último trecho: o endpoint (com voz, estilo e o áudio como veio) ou a reserva."""
+    ao_mudar_quem_fala: Callable[[QuemFalou], None] = field(default=lambda _quem: None, repr=False)
+    """Chamado quando muda quem fala (outro motor, voz, estilo ou formato): o app escreve no log
+    e na tela, e o painel mostra."""
     _fora_ate: float = field(default=0.0, repr=False)
     _conferido: bool = field(default=False, repr=False)
     _reserva: MotorDeTts | None = field(default=None, repr=False)
@@ -1128,12 +1251,33 @@ class MotorComReservaDeRede:
         if self._usar_o_endpoint():
             assert self.principal is not None
             try:
-                return self.principal.sintetizar(texto)
+                amostras = self.principal.sintetizar(texto)
             except Exception as erro:  # pedido do dono: o endpoint caiu, a reserva fala no lugar
                 with self._trava:
                     self._cair_com(_motivo_curto(erro), self.relogio())
+            else:
+                if self.principal.ultima is not None:
+                    self._falou(self.principal.ultima)
+                return amostras
         self.pela_reserva += 1
-        return self._reserva_pronta().sintetizar(texto)
+        reserva = self._reserva_pronta()
+        amostras = reserva.sintetizar(texto)
+        self._falou(
+            QuemFalou(
+                motor=reserva.nome,
+                voz=reserva.voz,
+                via="reserva",
+                motivo=self.motivo_da_reserva,
+            )
+        )
+        return amostras
+
+    def _falou(self, quem: QuemFalou) -> None:
+        mudou = quem != self.ultima
+        self.ultima = quem
+        if mudou:
+            with contextlib.suppress(Exception):
+                self.ao_mudar_quem_fala(quem)
 
     def aquecer(self) -> bool:
         """Numa linha à parte, no começo: a conexão com o endpoint e a reserva já montada (a voz

@@ -828,6 +828,13 @@ class Ponte(QObject):
     def endpointFrase(self) -> str:
         return self._endpoint_frase
 
+    @Property(str, notify=endpointMudou)
+    def endpointQuemFalou(self) -> str:
+        """Quem falou o último trecho: o servidor, a voz, o estilo e o áudio como veio — ou a
+        reserva e o porquê (emenda de 2026-11-15 à ADR-0068). Vazio = nada falou ainda."""
+        viva = self._conversa_viva()
+        return viva.quem_falou if viva is not None else ""
+
     @Property(list, notify=mudou)
     def geradores(self) -> list[str]:
         return list(nomes_de_gerador())
@@ -976,6 +983,8 @@ class Ponte(QObject):
             ao_tom=self._mudar_tom,
             ao_mudar_permissao=self._permissao_pela_voz,
             ao_mudar_estilo=self._estilo_pela_voz,
+            # Quem falou o último trecho pelo endpoint (ADR-0068, emenda): o painel se atualiza.
+            ao_mudar_quem_falou=self.endpointMudou.emit,
             escuta=self._escuta,
             avisos_dados=self._avisos_dados,
             conversa=self._conversa,

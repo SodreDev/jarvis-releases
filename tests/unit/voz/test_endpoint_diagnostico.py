@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import socket
+import wave
 from dataclasses import replace
 from pathlib import Path
 
@@ -63,6 +65,8 @@ def _servidor_completo(servidor: EndpointFalso) -> None:
 def _endpoint(base: str, **mudancas: object) -> ep.Endpoint:
     """O preset do dono, com a base do servidor falso (o IP dele nunca é tocado)."""
     preset = ep.escolher("", arquivo=SEM_ARQUIVO_DO_DONO)
+    # O servidor falso manda PCM cru de 24 kHz: é isso que estes testes conferem.
+    mudancas = {"formato": "pcm", "taxa": 24000, **mudancas}
     return ep.conferir(replace(preset, base=base, **mudancas))  # type: ignore[arg-type]
 
 
@@ -137,3 +141,49 @@ def test_pela_linha_de_comando(tmp_path: Path, capsys: pytest.CaptureFixture[str
     saida = capsys.readouterr().out
     assert codigo == 0 and "RESULTADO: ok" in saida
     assert jarvis_voz(["--testar-endpoint", "não existe"], ambiente=ambiente) == 2
+
+
+def test_pcm_na_taxa_errada_e_acusado_e_a_amostra_e_gravada(tmp_path: Path) -> None:
+    """O servidor manda PCM16 a 16 kHz e a configuração diz 24 kHz: o teste acusa pela duração
+    e grava o WAV de amostra para o dono ouvir."""
+    linhas: list[str] = []
+    with EndpointFalso() as servidor:
+        um_segundo_e_meio = pcm(24000, valor=3000)  # 1,5 s a 16 kHz; 1,0 s se lido a 24 kHz
+        servidor.rotas["/api/tts"] = Rota(corpo=um_segundo_e_meio)
+        endpoint = _endpoint(servidor.base, caminho_stream="", formato="pcm", taxa=48000)
+        codigo = diagnosticar(
+            endpoint, linhas.append, ambiente={"CI": "1"}, pasta_de_saida=tmp_path
+        )
+    saida = "\n".join(linhas)
+    assert codigo == 0, saida
+    assert '"voice": "jarvis-br"' in saida and '"style": "cordial"' in saida
+    assert "ATENÇÃO" in saida and "16000" in saida
+    amostra = tmp_path / "teste-endpoint-síntese.wav"
+    assert amostra.is_file() and (tmp_path / "teste-endpoint-síntese-como-veio.wav").is_file()
+    with wave.open(str(amostra)) as arquivo:
+        assert arquivo.getframerate() == 16000 and arquivo.getnchannels() == 1
+
+
+def test_wav_diz_a_taxa_pelo_cabecalho(tmp_path: Path) -> None:
+    linhas: list[str] = []
+    memoria = io.BytesIO()
+    with wave.open(memoria, "wb") as arquivo:
+        arquivo.setnchannels(1)
+        arquivo.setsampwidth(2)
+        arquivo.setframerate(22050)
+        arquivo.writeframes(b"\x10\x00" * 33075)
+    with EndpointFalso() as servidor:
+        servidor.rotas["/api/tts"] = Rota(corpo=memoria.getvalue(), tipo="audio/wav")
+        endpoint = _endpoint(servidor.base, caminho_stream="", formato="wav")
+        diagnosticar(endpoint, linhas.append, ambiente={"CI": "1"}, pasta_de_saida=tmp_path)
+    saida = "\n".join(linhas)
+    assert "veio: WAV 22050 Hz" in saida and "ATENÇÃO" not in saida
+    assert (tmp_path / "teste-endpoint-síntese-como-veio.wav").read_bytes() == memoria.getvalue()
+
+
+def test_sem_pasta_de_estado_no_ambiente_nao_grava_nada() -> None:
+    from jarvis.voz.endpoint_diagnostico import pasta_das_amostras
+
+    assert pasta_das_amostras({"CI": "1"}) is None
+    assert pasta_das_amostras({"HOME": "/casa"}) == Path("/casa/.local/state/jarvis")
+    assert pasta_das_amostras({"XDG_STATE_HOME": "/estado"}) == Path("/estado/jarvis")
