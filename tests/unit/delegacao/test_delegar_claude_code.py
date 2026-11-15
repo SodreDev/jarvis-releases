@@ -53,6 +53,19 @@ from jarvis.trilha import TrilhaDeDiagnostico
 NUNCA = lambda: False  # noqa: E731
 FALSO = Path(__file__).with_name("claude_falso.py")
 TAREFA = "abra a página de horários da clinica.example e traga o horário de amanhã"
+
+
+def _pedido(tarefa: str = TAREFA, **extra: Any) -> dict[str, Any]:
+    """O pedido que o Jarvis formula ao delegar (ADR-0069): objetivo, passos, pronto e devolver."""
+    return {
+        "tarefa": tarefa,
+        "passos": ["abrir a página de horários", "ler os horários de amanhã"],
+        "pronto_quando": "o horário de amanhã foi lido na página",
+        "devolver": "o horário de amanhã, como está na página",
+        **extra,
+    }
+
+
 AMBIENTE_DO_JARVIS = {
     "HOME": "/casa/do/dono",
     "USER": "dono",
@@ -369,7 +382,7 @@ def test_sem_a_chave_a_tool_nao_existe(tmp_path: Path) -> None:
         ex = ExecutorDeFerramentas(pdp=pdp, lar=tmp_path)
         ids = {t["id"] for t in ex.catalogo_para_o_modelo()}
         assert FERRAMENTA_DE_DELEGAR not in ids
-        r = ex.executar(FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA)
+        r = ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA)
         assert r.status == "negado" and r.causa == "ferramenta_desligada"
 
 
@@ -379,19 +392,19 @@ def test_pede_o_sim_dizendo_o_que_vai_delegar_e_o_resultado_e_dado(
     ex, pasta, perguntas = montagem
     assert FERRAMENTA_DE_DELEGAR in {t["id"] for t in ex.catalogo_para_o_modelo()}
 
-    avaliacao = ex.avaliar(FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA})
+    avaliacao = ex.avaliar(FERRAMENTA_DE_DELEGAR, _pedido())
     assert isinstance(avaliacao, Avaliacao)
     assert avaliacao.decisao.veredito is Veredito.CONFIRM  # moderado, mas a 1ª vez pergunta
 
     # O dono diz não: nada roda, e o `claude` falso nem é chamado.
-    negado = ex.executar(FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA)
+    negado = ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA)
     assert negado.status == "negado" and _registros(pasta) == []
 
     def sim(pergunta: Confirmacao) -> bool:
         perguntas.append(pergunta)
         return True
 
-    r = ex.executar(FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=sim)
+    r = ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=sim)
     assert r.status == "ok", r
     assert r.dados["feito"] is True and "14h" in r.dados["resultado_do_claude_code"]
     assert r.aviso == "O Claude Code terminou a tarefa no navegador."
@@ -422,14 +435,12 @@ def test_varias_delegacoes_no_mesmo_objetivo_com_um_sim_so(
 
         return confirmar
 
-    primeira = ex.executar(
-        FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=anota(True)
-    )
+    primeira = ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=anota(True))
     assert primeira.status == "ok" and len(perguntas) == 1
     for etapa in ("confira também o horário de sábado", "veja se há encaixe na sexta"):
         seguinte = ex.executar(
             FERRAMENTA_DE_DELEGAR,
-            {"tarefa": f"{etapa} na clinica.example"},
+            _pedido(f"{etapa} na clinica.example"),
             cancelado=NUNCA,
             confirmar=anota(False),  # se perguntasse, o "não" a barraria
         )
@@ -453,13 +464,11 @@ def test_resposta_que_tenta_dar_ordens_faz_a_proxima_delegacao_pedir_o_sim(
 
         return confirmar
 
-    primeira = ex.executar(
-        FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=anota(True)
-    )
+    primeira = ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=anota(True))
     assert primeira.status == "ok" and "sobrescrever_instrucoes" in primeira.injecao
     seguinte = ex.executar(
         FERRAMENTA_DE_DELEGAR,
-        {"tarefa": "veja se há encaixe na sexta na clinica.example"},
+        _pedido("veja se há encaixe na sexta na clinica.example"),
         cancelado=NUNCA,
         confirmar=anota(False),
     )
@@ -474,11 +483,11 @@ def test_o_teto_por_objetivo_recusa_a_proxima(
     ex.delegacao.configuracao = replace(ex.delegacao.configuracao, delegacoes_por_objetivo=2)
     for _ in range(2):
         feita = ex.executar(
-            FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=lambda _p: True
+            FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=lambda _p: True
         )
         assert feita.status == "ok"
     terceira = ex.executar(
-        FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=lambda _p: True
+        FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=lambda _p: True
     )
     assert terceira.status == "negado" and terceira.causa == "delegacoes_no_teto"
     assert (
@@ -495,22 +504,20 @@ def test_fora_do_eixo_o_guarda_pede_o_sim_de_novo_e_objetivo_novo_aprova_de_novo
         perguntas.append(pergunta)
         return True
 
-    primeira = ex.executar(
-        FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=sim
-    )
+    primeira = ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=sim)
     assert primeira.status == "ok"
     assert len(perguntas) == 1
     # A delegação que envia (fora do eixo de ver um horário) volta a pedir o sim — o guarda D.
     envio = ex.executar(
         FERRAMENTA_DE_DELEGAR,
-        {"tarefa": "envie uma mensagem para a clínica confirmando a consulta"},
+        _pedido("envie uma mensagem para a clínica confirmando a consulta"),
         cancelado=NUNCA,
         confirmar=sim,
     )
     assert envio.status == "ok" and len(perguntas) == 2, "fora do eixo, não pediu o sim de novo"
     # Outro pedido do dono é outro objetivo: aprova de novo.
     ex.novo_turno("vê o preço do exame na clinica.example")
-    ex.executar(FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=sim)
+    ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=sim)
     assert len(perguntas) == 3
 
 
@@ -519,11 +526,11 @@ def test_com_a_extensao_ligada_tenta_antes_pelo_navegador(
 ) -> None:
     ex, _, _ = montagem
     ex.navegador = cast(Any, object())  # a extensão do Jarvis ligada (só a presença importa aqui)
-    cedo = ex.executar(FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA)
+    cedo = ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA)
     assert cedo.status == "negado" and cedo.causa == "delegar_cedo"
     assert ex.objetivo is not None
     ex.objetivo.registrar("browser.click", "erro", leitura=False)  # tentou e não deu
-    depois = ex.avaliar(FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA})
+    depois = ex.avaliar(FERRAMENTA_DE_DELEGAR, _pedido())
     assert isinstance(depois, Avaliacao) and depois.decisao.veredito is Veredito.CONFIRM
 
 
@@ -533,9 +540,7 @@ def test_a_degradacao_volta_ao_modelo_com_a_mensagem_e_o_codigo(
     ex, _, _ = montagem
     assert ex.delegacao is not None
     ex.delegacao.lar = tmp_path / "sem-chrome"
-    r = ex.executar(
-        FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=lambda _p: True
-    )
+    r = ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=lambda _p: True)
     assert r.status == "erro" and r.causa == "claude_code_sem_chrome"
     assert "Claude in Chrome" in r.motivo
     assert ex.objetivo is not None and ex.objetivo.delegacoes == 0  # não rodou: não conta
@@ -545,12 +550,66 @@ def test_a_trilha_so_tem_codigos(
     tmp_path: Path, montagem: tuple[ExecutorDeFerramentas, Path, list[Confirmacao]]
 ) -> None:
     ex, _, _ = montagem
-    ex.executar(
-        FERRAMENTA_DE_DELEGAR, {"tarefa": TAREFA}, cancelado=NUNCA, confirmar=lambda _p: True
-    )
+    ex.executar(FERRAMENTA_DE_DELEGAR, _pedido(), cancelado=NUNCA, confirmar=lambda _p: True)
     assert ex.trilha is not None
     texto = ex.trilha.arquivo.read_text(encoding="utf-8")
     eventos = [json.loads(linha) for linha in texto.splitlines()]
     (delegacao,) = [e for e in eventos if e.get("evento") == "delegacao"]
     assert delegacao["status"] == "ok" and delegacao["turnos"] == 4
     assert "clinica" not in texto and "14h" not in texto  # nem a tarefa nem o resultado
+
+
+# --- o pedido formulado pelo Jarvis (ADR-0069) ---------------------------------------------
+
+
+def test_a_fala_do_dono_copiada_nao_vai_ao_subagente(
+    montagem: tuple[ExecutorDeFerramentas, Path, list[Confirmacao]],
+) -> None:
+    """Dono, 2026-11-15: o Jarvis repassava o prompt dele literal. A cópia volta ao motor como erro
+    com a instrução de formular, e o `claude` falso nem é chamado."""
+    ex, pasta, _ = montagem
+    copia = _pedido("vê o horário de amanhã na clinica.example")
+    r = ex.executar(FERRAMENTA_DE_DELEGAR, copia, cancelado=NUNCA, confirmar=lambda _p: True)
+    assert r.status == "erro" and r.causa == "pedido_nao_formulado"
+    assert "FORMULE" in r.motivo and _registros(pasta) == []
+    # Um passo que é a fala dele repetida também não serve.
+    passo_copiado = _pedido(passos=["Vê o horário de amanhã na clinica.example!"])
+    r = ex.executar(
+        FERRAMENTA_DE_DELEGAR, passo_copiado, cancelado=NUNCA, confirmar=lambda _p: True
+    )
+    assert r.causa == "pedido_nao_formulado" and _registros(pasta) == []
+
+
+def test_o_subagente_recebe_o_pedido_em_secoes(
+    montagem: tuple[ExecutorDeFerramentas, Path, list[Confirmacao]],
+) -> None:
+    ex, pasta, _ = montagem
+    pedido = _pedido(
+        contexto="o dono é paciente da clínica; o site pede para escolher a unidade Centro",
+        site="https://clinica.example/horarios",
+    )
+    r = ex.executar(FERRAMENTA_DE_DELEGAR, pedido, cancelado=NUNCA, confirmar=lambda _p: True)
+    assert r.status == "ok", r
+    entrada = _registros(pasta)[-1]["entrada"]  # o último é a tarefa (antes, o `auth status`)
+    assert entrada.startswith(f"OBJETIVO: {TAREFA}")
+    for secao in (
+        "CONTEXTO: o dono é paciente",
+        "COMECE POR: https://clinica.example/horarios",
+        "PASSOS:\n1. abrir a página de horários\n2. ler os horários de amanhã",
+        "PRONTO QUANDO: o horário de amanhã foi lido",
+        "DEVOLVA: o horário de amanhã",
+    ):
+        assert secao in entrada
+    assert "vê o horário de amanhã" not in entrada  # a fala do dono não vai
+
+
+def test_o_pedido_sem_passos_ou_sem_o_que_devolver_esta_fora_do_contrato(
+    montagem: tuple[ExecutorDeFerramentas, Path, list[Confirmacao]],
+) -> None:
+    ex, pasta, _ = montagem
+    for falta in ("passos", "pronto_quando", "devolver"):
+        pedido = _pedido()
+        del pedido[falta]
+        r = ex.executar(FERRAMENTA_DE_DELEGAR, pedido, cancelado=NUNCA, confirmar=lambda _p: True)
+        assert r.causa == "fora_do_contrato", falta
+    assert _registros(pasta) == []

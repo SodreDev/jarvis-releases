@@ -69,8 +69,9 @@ PRAZO_DA_CHECAGEM_S: Final = 20.0
 PASSO_DA_ESPERA_S: Final = 0.1
 
 PROMPT: Final = (
-    "Faça a tarefa de navegador descrita na entrada padrão, seguindo as regras do sistema, e "
-    "responda com um resumo curto do que fez e do que encontrou."
+    "Faça a tarefa de navegador que o Jarvis formulou na entrada padrão (OBJETIVO, CONTEXTO, "
+    "PASSOS, PRONTO QUANDO, DEVOLVA), seguindo as regras do sistema, e responda com o que a seção "
+    "DEVOLVA pede."
 )
 """O prompt do argv: constante. A tarefa nunca entra na linha de comando."""
 REGRAS: Final = (
@@ -299,7 +300,10 @@ class DelegadorClaudeCode:
             executavel = self.executavel()
             assert executavel is not None  # checar() acabou de achar
             entrada = tarefa.strip() if not site else f"{tarefa.strip()}\n\nComece por: {site}"
-            self.avisar(f"Delegando ao Claude Code, no seu navegador: «{_curto(tarefa, 120)}»")
+            # O pedido formulado (ADR-0069) começa pelo objetivo: é ele que o dono vê na linha.
+            linhas = tarefa.strip().splitlines() or [""]
+            resumo = linhas[0].removeprefix("OBJETIVO: ")
+            self.avisar(f"Delegando ao Claude Code, no seu navegador: «{_curto(resumo, 120)}»")
             saida = self._executar(
                 self.argv(executavel), entrada, self.configuracao.prazo_s, cancelado
             )

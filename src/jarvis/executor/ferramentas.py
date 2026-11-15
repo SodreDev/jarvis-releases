@@ -26,6 +26,7 @@ import jsonschema
 
 from jarvis.barramento.envelope import uuid7
 from jarvis.caixa import CaixaDeScript
+from jarvis.delegacao import pedido as pedido_formulado
 from jarvis.delegacao.claude_code import DelegadorClaudeCode
 from jarvis.delegacao.config import DELEGACOES_POR_OBJETIVO_PADRAO
 from jarvis.entrada.controle import FERRAMENTA_DE_CONFIRMACAO as CONFIRMACAO_DE_ENTRADA
@@ -807,6 +808,16 @@ class ExecutorDeFerramentas:
                 return ResultadoDeFerramenta(
                     tool_id, "negado", motivo=motivo, call_id=chamada, causa=causa
                 )
+            # O pedido ao subagente é formulado pelo Jarvis, nunca a fala do dono copiada
+            # (ADR-0069): a cópia volta ao motor como erro, com a instrução de formular.
+            objetivo = self.objetivo_de(marca)
+            copia = pedido_formulado.recusa(
+                pedido_formulado.do_args(argumentos), objetivo.pedido if objetivo else ""
+            )
+            if copia:
+                return ResultadoDeFerramenta(
+                    tool_id, "erro", motivo=copia, call_id=chamada, causa="pedido_nao_formulado"
+                )
         try:
             exige_o_sim = self._exige_o_sim(tool_id, argumentos, marca)
         except AlvoRecusado as erro:
@@ -939,7 +950,7 @@ class ExecutorDeFerramentas:
             return Acao(
                 tool_id,
                 Tipo.DELEGACAO,
-                tarefa=str(argumentos.get("tarefa", "")),
+                tarefa=pedido_formulado.texto(pedido_formulado.do_args(argumentos)),
                 destinos=(site,) if site else (),
             )
         if tool_id.startswith(PREFIXO_MCP):
@@ -1447,8 +1458,10 @@ class ExecutorDeFerramentas:
         objetivo = self.objetivo_de(marca)
         if objetivo is not None:
             objetivo.delegacao_aprovada = True
+        # O subagente recebe o pedido que o Jarvis formulou, em seções (ADR-0069): objetivo,
+        # contexto, passos, pronto quando e o que devolver — a página de partida vai junto nele.
         resultado = self.delegacao.delegar(
-            str(args["tarefa"]), site=str(args.get("site", "")), cancelado=cancelado
+            pedido_formulado.texto(pedido_formulado.do_args(args)), cancelado=cancelado
         )
         if resultado.rodou and objetivo is not None:
             objetivo.delegacoes += 1

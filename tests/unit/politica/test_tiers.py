@@ -394,7 +394,14 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
         "browser.gesto": _pedido(pdp, "browser.gesto", {"gesto": "rolar", "pixels": 300}),
         "script.rodar": _pedido(pdp, "script.rodar", {"linguagem": "python", "codigo": "print(1)"}),
         "delegar.claude_code": _pedido(
-            pdp, "delegar.claude_code", {"tarefa": "traga o horário da página de agenda"}
+            pdp,
+            "delegar.claude_code",
+            {
+                "tarefa": "traga o horário da página de agenda",
+                "passos": ["ler a agenda"],
+                "pronto_quando": "o horário lido",
+                "devolver": "o horário",
+            },
         ),
         "browser.acao_sensivel": _pedido(
             pdp, "browser.acao_sensivel", {"acao": "browser.click", "detalhe": "Enviar"}

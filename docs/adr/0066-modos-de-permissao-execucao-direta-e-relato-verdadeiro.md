@@ -46,3 +46,7 @@ Reproduzido com fakes (`tests/unit/s2/test_relato_verdadeiro.py`: WhatsApp falso
 ## Como testar
 
 `docs/COMO-TESTAR.md` §0.55 e §0.56. Testes: `tests/unit/politica/test_permissao.py`, `tests/unit/s2/test_portao_de_acao.py` (os do fim), `tests/unit/s2/test_relato_verdadeiro.py` (o bug do dono reproduzido com o WhatsApp falso).
+
+## Emendas
+
+- **2026-11-15 (ADR-0069):** pedido direto continua sem pedir permissão, mas o Jarvis formula: o pedido ao subagente é escrito por ele (nunca a fala do dono copiada), a página é lida antes de agir e relida depois de erro, e a mensagem é redigida com as palavras dele (literal só quando o dono dita entre aspas ou diz «exatamente»).

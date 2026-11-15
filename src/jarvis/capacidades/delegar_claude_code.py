@@ -40,7 +40,11 @@ POSTCONDITION: Final = (
 class DelegarClaudeCodeEntrada:
     """Argumentos normalizados de `delegar.claude_code` (input_schema do §4)."""
 
+    devolver: str
+    passos: list[Any]
+    pronto_quando: str
     tarefa: str
+    contexto: str | None = None
     site: str | None = None
 
 
@@ -53,8 +57,10 @@ class DelegarClaudeCodeSaida:
     resultado_do_claude_code: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("tarefa", "site"))
-OBRIGATORIOS: Final[frozenset[str]] = frozenset(("tarefa",))
+PERMITIDOS: Final[frozenset[str]] = frozenset(
+    ("devolver", "passos", "pronto_quando", "tarefa", "contexto", "site")
+)
+OBRIGATORIOS: Final[frozenset[str]] = frozenset(("devolver", "passos", "pronto_quando", "tarefa"))
 
 
 def validar_entrada(bruto: dict[str, Any]) -> DelegarClaudeCodeEntrada:

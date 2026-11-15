@@ -346,6 +346,7 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "redelegar",
         "delegacoes_no_teto",
         "delegar_cedo",
+        "pedido_nao_formulado",  # a fala do dono copiada ao subagente (ADR-0069)
         "sem_claude_code",
         "claude_code_sem_login",
         "claude_code_sem_chrome",
