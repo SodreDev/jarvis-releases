@@ -158,6 +158,30 @@ Diagnóstico com arquivo:linha em [parametros-do-modelo.md](parametros-do-modelo
 nem executa), e a regra da ADR-0026 de só gravar memória com palavras do dono continua (é trava
 contra injeção, não automação).
 
+## ADR-0072 (2026-11-16): o laço canônico
+
+O dono definiu o Jarvis como **agente-CLI com voz** (memória 391a8b23): a transcrição é só a
+mensagem do usuário, e o subagente roda o mesmo laço. O diagnóstico com arquivo:linha está em
+[laco-canonico.md](laco-canonico.md); a prova com modelo real, em
+[../medicoes/laco-canonico.md](../medicoes/laco-canonico.md).
+
+| Item | Estado | Onde foi resolvido |
+|---|---|---|
+| f1 — quatro lugares chamando o modelo, cada um com seu leitor | **resolvido** | `0b4ef4b`: `s2/laco.py` (`rodada_do_agente`) |
+| f2 — protocolo de texto para provedor com function calling | **resolvido** | `5dc1d67`: chamada nativa (ADR-0072) |
+| f3 — «enviar mensagem» pedia o sim | **resolvido** | `2ca29a5` |
+| f4 — gatilhos por regex antes do modelo (atalho, permissão, estilo) | **resolvido** | `52fe04d`: atalho fora; `jarvis.permissao` e `jarvis.estilo_da_voz` |
+| f5 — plano obrigatório (barreira de formato) | **resolvido** | `cb68cbd`; o conselho de pensar fica |
+| f6 — o código trocava a ação por leitura | **resolvido** | `c7f8426`: veredito ao modelo |
+| f7 — fatos tirados da fala por regex no subagente | **resolvido** | `28ff604` |
+| f8 — `MotorDeAgente` com prompt próprio, sem persona nem memória | **resolvido** | `a30eb9a` |
+| f9 — `<ferramenta>` com um colchete na voz | **resolvido** | `19f2dc4` |
+
+**Fica, com motivo:** a leitura do «sim/não» contra a pendência (permissão), o filtro do já dito na
+voz (não escreve nem decide), a verdade do relato (validação devolvida ao modelo), os limites como
+notificação. Fora do escopo: o redator e o agente monitor das redes e o `acerto` ainda chamam o
+modelo direto (não executam ferramenta do dono).
+
 ## O que a Fase B tratou (registro original)
 
 
