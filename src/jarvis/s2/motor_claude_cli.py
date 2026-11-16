@@ -61,8 +61,12 @@ VARIAVEL_DO_RACIOCINIO: Final = "MAX_THINKING_TOKENS"
 """`MAX_THINKING_TOKENS=0` desliga o raciocínio escondido da CLI (code.claude.com/docs/en/
 model-config, lida em 2026-11-16) — nos modelos que deixam; nos outros não faz efeito. O
 raciocínio que conta passou a ser o plano visível, obrigatório antes da 1ª ferramenta (ADR-0071)."""
-ESFORCOS_SEM_RACIOCINIO: Final = frozenset({"none", "minimal"})
-"""Os esforços do preset (ADR-0056) que a CLI não tem: viram `low` sem raciocínio escondido."""
+ESFORCOS_SEM_RACIOCINIO: Final = frozenset({"", "none", "minimal", "low"})
+"""Os esforços do modo rápido sem raciocínio escondido (ADR-0071): o vazio (o padrão, `low`), o
+`low` e os que a CLI não tem (`none`/`minimal`, que viram `low`). Medido com o modelo real
+(docs/medicoes/parametros-do-modelo.md): o 1º delta por chamada caiu 12% no p50 e 29% no p90, os
+tokens de saída 37%, e o acerto ficou igual — o plano visível, obrigatório, faz o papel do
+raciocínio. Preset com `medium` ou mais continua pensando; o modo `pensar` sempre pensa."""
 PRAZO_PADRAO_S: Final = 30.0
 ESFORCO_POR_MODO: Final[Mapping[Modo, str]] = {Modo.RAPIDO: "low", Modo.PENSAR: "high"}
 """Medido: o esforço pesa mais que o tamanho do modelo no tempo até a primeira fronteira
@@ -223,7 +227,7 @@ class MotorClaudeCli:
     """O raciocínio escondido da CLI (os `thinking_delta`, que o motor descarta). `False` =
     `MAX_THINKING_TOKENS=0` no modo rápido: no turno do dono ele gastava ~650 tokens antes do 1º
     texto (docs/estudos/parametros-do-modelo.md), e o plano visível o substitui (ADR-0071). `None`
-    = pelo esforço do preset (`none`/`minimal` desligam); o `pensar` sempre pensa."""
+    = pelo esforço (`ESFORCOS_SEM_RACIOCINIO` desligam); o `pensar` sempre pensa."""
 
     def pensa_escondido(self, modo: Modo) -> bool:
         """Este pedido deixa a CLI raciocinar escondido?"""

@@ -1,6 +1,6 @@
 # ADR-0071 — O Jarvis decide os parâmetros: entender antes de agir, objetivo formulado, alvo conferido
 
-**Data:** 2026-11-16 · **Estado:** aceita (implementada e testada só com fakes; o motor real espera o OK do dono para gastar crédito, e o uso real é dele) · **Decide:** dono (o princípio: o modelo processa, pensa e decide os parâmetros por conta própria; não repassa a fala), arquiteto (onde o plano mora, como a tarefa o recebe, onde a realidade confere)
+**Data:** 2026-11-16 · **Estado:** aceita (implementada; provada com modelo real — Claude Haiku pelo `claude -p` e DeepSeek V4.1 Flash pelo OpenRouter — contra ferramentas falsas; o uso real, com navegador, contas e voz, é do dono) · **Decide:** dono (o princípio: o modelo processa, pensa e decide os parâmetros por conta própria; não repassa a fala), arquiteto (onde o plano mora, como a tarefa o recebe, onde a realidade confere)
 **Pedido:** dono, 2026-11-16, depois do print: «o contato da minha mãe é literalmente mãe, salve para não esquecer depois» → «Vou abrir a conversa "mãe salve para não esquecer depois".» Continua a ADR-0070 (o Jarvis é agente). Emenda: ADR-0026 (o texto da memória), ADR-0047 (o catálogo), ADR-0066 (o relato verdadeiro), ADR-0069 (ler a página). Diagnóstico com arquivo:linha: [docs/estudos/parametros-do-modelo.md](../estudos/parametros-do-modelo.md).
 
 ## Contexto
@@ -51,14 +51,14 @@ Os e2e da ADR-0070 passavam porque o motor deles era roteirizado: provavam o enc
 ### 8. Latência (`dbedb9c`)
 
 - Prompt do turno de 15 967 para 17 994 caracteres (4 703 → 5 329 tokens e5, +626), medido em `docs/medicoes/prompt-do-turno.md`. No turno real, o que pesa é o raciocínio escondido (~650 tokens antes do 1º token), não o prompt.
-- `MotorClaudeCli.raciocinio_escondido` / esforço `none`/`minimal` no preset → `MAX_THINKING_TOKENS=0` no modo rápido. **Desligado por padrão:** a documentação da CLI diz que nem todo modelo deixa desligar, e o ganho só se confirma com o modelo real.
+- `MotorClaudeCli.raciocinio_escondido` / `ESFORCOS_SEM_RACIOCINIO` → `MAX_THINKING_TOKENS=0` no modo rápido. **Decidido com o modelo real:** sem o raciocínio escondido, o 1º delta por chamada caiu 12% (p50) e 29% (p90), e os tokens de saída 37%, com o acerto igual (10/10). Por isso ele fica desligado no rápido de esforço baixo (o do dono); o `pensar` e esforço `medium` ou maior continuam pensando.
 
-### Prova (`e830d64`)
+### Prova (`e830d64`, `41bf752`, `2d2c68e`)
 
-`tools/avaliar_parametros.py` + `tools/corpus_parametros.toml` (40 falas, o print incluso). O cérebro de produção roda contra uma página **falsa** do WhatsApp, um livro em RAM e corpos de sistema simulados: nada real é tocado. Ele mede parâmetro certo, memória gravada e ativa, pergunta quando ambíguo, plano e latência. O motor `ideal` (falso) dá 40/40; o `copiao` (o bug do print) dá 0/40. **O motor real não foi rodado: espera o OK do dono.** O relatório vai em `docs/medicoes/parametros-do-modelo.md`.
+`tools/avaliar_parametros.py` + `tools/corpus_parametros.toml` (40 falas, o print incluso). O cérebro de produção roda contra uma página **falsa** do WhatsApp, um livro em RAM e corpos de sistema simulados: nada real é tocado. O motor `ideal` (falso) dá 40/40 e o `copiao` (o bug do print) dá 0/40. **Com modelo real** (o OK do dono; relatório em [parametros-do-modelo.md](../medicoes/parametros-do-modelo.md)): na 1ª passada, Claude 27/40 e DeepSeek 35/40; o caso do print passou nos dois. As causas achadas foram consertadas no contrato e no prompt: `alvo`+`ref` juntos (o ref vence e o alvo é conferido), o WhatsApp como app padrão de mensagem, e `NOTA_DO_PLANO_SEM_ACAO` quando o plano cita uma ferramenta e nada é proposto. Achou-se também um bug do `stream.py`. Reavaliando só os casos que falharam: Claude 39/40 e DeepSeek 38/40. Fica a frase ambígua «fala com o bruno a carla vem amanhã» (os dois leem «diga ao Bruno…», a leitura plausível; a expectativa é discutível) e, no DeepSeek, não perguntar diante do nome do print.
 
 ## Consequências
 
 - Uma rodada a mais quando o modelo propõe sem plano (~3 s), contada na trilha. O plano visível (~40–100 tokens) vem antes da 1ª palavra falada.
 - Os testes que roteirizam a 1ª ferramenta sem plano não mudam (`exigir_plano` é do app). O teste do teto do prompt sobe para 18 000.
-- **Só a máquina do dono prova:** o Haiku real escrevendo o plano, separando «salvar» de «abrir» e pondo só o nome no argumento; o `MAX_THINKING_TOKENS=0` fazendo efeito; e a latência real de 1º token e de 1ª fala. Para isso: `tools/avaliar_parametros.py --motor real` (e `--sem-raciocinio-escondido`), com o OK, e o roteiro de `docs/teste-real-dono.md`.
+- **Só a máquina do dono prova:** a página real do WhatsApp (o nome no `texto` das linhas, que o teste cobre com a forma exata do `dadosDoElemento`), o microfone e a transcrição de verdade, e a voz. O roteiro está em `docs/teste-real-dono.md`, caso (f).

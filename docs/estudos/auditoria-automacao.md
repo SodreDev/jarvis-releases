@@ -151,8 +151,8 @@ Diagnóstico com arquivo:linha em [parametros-do-modelo.md](parametros-do-modelo
 | e5 — «salve» não vira memória; memória de voz fora da tarefa | **resolvido** | `4ca7463` + `fb15a93`: `memoria.lembrar` com o trecho exato da fala; `GUARDOU` no filtro da verdade; livro consultado pelo plano ao delegar |
 | e6 — transcrição sem pontuação e sem aviso | **resolvido** | `b7112c5`: marca da voz na fala; perguntar quando há duas leituras |
 | e7 — regex `_CONTATO`/`pedido_de_envio` como fato | **resolvido (vira dica)** | `128162b`: `CABECALHO_DA_DICA`; as travas falam do contato do objetivo |
-| e8 — latência (raciocínio escondido) | **parcial** | `dbedb9c`: medido e com interruptor (`MAX_THINKING_TOKENS=0`), **desligado** até a medição com o modelo real |
-| e9 — prova com modelo real | **preparada, não rodada** | `e830d64`: `tools/avaliar_parametros.py` (fakes: ideal 40/40, copião 0/40); `--motor real` espera o OK do dono |
+| e8 — latência (raciocínio escondido) | **resolvido, com número** | `dbedb9c` + Fase 3: sem raciocínio escondido no rápido de esforço baixo (1º delta p90 −29%, saída −37%, acerto igual) |
+| e9 — prova com modelo real | **feita** | Claude 27→39/40, DeepSeek 35→38/40 ([parametros-do-modelo.md](../medicoes/parametros-do-modelo.md)); `2d2c68e`: alvo+ref, WhatsApp padrão, `NOTA_DO_PLANO_SEM_ACAO`, stream |
 
 **Fica, com motivo:** a regex do atalho e do envio continua existindo como DICA rotulada (não decide
 nem executa), e a regra da ADR-0026 de só gravar memória com palavras do dono continua (é trava

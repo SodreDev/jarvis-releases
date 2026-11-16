@@ -243,14 +243,25 @@ def test_piso_do_spawn_vem_ligado_por_padrao(tmp_path: Path) -> None:
     """Medido em docs/medicoes/f2-02-piso-do-claude.md: `--safe-mode` tira ~300–400 ms do 1º
     token; a variável de tráfego piorou o p95 e fica desligada (só para medir)."""
     from jarvis.s2.motor import Modo
-    from jarvis.s2.motor_claude_cli import VARIAVEL_SEM_TRAFEGO, MotorClaudeCli
+    from jarvis.s2.motor_claude_cli import (
+        VARIAVEL_DO_RACIOCINIO,
+        VARIAVEL_SEM_TRAFEGO,
+        MotorClaudeCli,
+    )
 
     motor = MotorClaudeCli(pasta_de_trabalho=tmp_path, ambiente={"PATH": "/usr/bin"})
     assert "--safe-mode" in motor.argumentos(Modo.RAPIDO)
     assert {"--strict-mcp-config", "--no-session-persistence"} <= set(motor.argumentos(Modo.RAPIDO))
-    assert motor.ambiente_do_filho() == {"PATH": "/usr/bin"}
+    # ADR-0071, medido com o modelo real: no rápido de esforço baixo, sem raciocínio escondido (o
+    # plano visível o substitui); no `pensar`, ele pensa.
+    sem = "0"
+    assert motor.ambiente_do_filho() == {"PATH": "/usr/bin", VARIAVEL_DO_RACIOCINIO: sem}
+    assert motor.ambiente_do_filho(Modo.PENSAR) == {"PATH": "/usr/bin"}
+    pensando = MotorClaudeCli(pasta_de_trabalho=tmp_path, ambiente={}, esforco="medium")
+    assert pensando.ambiente_do_filho() is not None
+    assert VARIAVEL_DO_RACIOCINIO not in (pensando.ambiente_do_filho() or {})
 
     medindo = MotorClaudeCli(pasta_de_trabalho=tmp_path, ambiente={}, sem_trafego_extra=True)
-    assert medindo.ambiente_do_filho() == {VARIAVEL_SEM_TRAFEGO: "1"}
+    assert medindo.ambiente_do_filho() == {VARIAVEL_SEM_TRAFEGO: "1", VARIAVEL_DO_RACIOCINIO: sem}
     antes = MotorClaudeCli(pasta_de_trabalho=tmp_path, ambiente={}, modo_seguro=False)
     assert "--safe-mode" not in antes.argumentos(Modo.RAPIDO)
