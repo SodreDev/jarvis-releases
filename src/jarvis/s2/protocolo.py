@@ -46,6 +46,9 @@ pode segurar a fala do resto da resposta para sempre."""
 _MARCA_RE: Final = re.compile(r"<<\s*(?:" + "|".join(APELIDOS_DA_MARCA) + r")\s*>>", re.I)
 _JSON_RE: Final = re.compile(r"\{\s*\"(?:" + "|".join(CHAVES_DO_JSON) + r")\"\s*:", re.I)
 _BLOCO_RE: Final = re.compile(r"<\s*(?:\w+:)?(" + "|".join(ETIQUETAS_DE_BLOCO) + r")\b[^>]*>", re.I)
+_SOLTA_RE: Final = re.compile(r"(?<!<)<\s*/?\s*(?:ferramenta|chamada)\s*>(?!>)", re.IGNORECASE)
+"""A marca com UM colchete (`<ferramenta>`, `</ferramenta>`), vista no Claude: seguida de JSON, é a
+proposta; seguida de texto, é só a etiqueta que escapou — sai, e o texto fica (nunca vai à voz)."""
 _PENSAR_RE: Final = re.compile(r"<<\s*pensar\s*>>", re.IGNORECASE)
 _FIM_DO_PENSAR_RE: Final = re.compile(r"<<\s*/\s*pensar\s*>>", re.IGNORECASE)
 _CERCA_NO_FIM: Final = re.compile(r"```(?:json)?\s*$", re.IGNORECASE)
@@ -60,6 +63,10 @@ _PARAMETRO_RE: Final = re.compile(
 )
 _INICIOS: Final = (
     *(f"<<{a}>>" for a in APELIDOS_DA_MARCA),
+    "<ferramenta>",
+    "</ferramenta>",
+    "<chamada>",
+    "</chamada>",
     MARCA_DE_RACIOCINIO,
     *(f'{{"{c}":' for c in CHAVES_DO_JSON),
     *(f"<{e}" for e in ETIQUETAS_DE_BLOCO),
@@ -205,6 +212,7 @@ class LeitorDoProtocolo:
                     ("json", _JSON_RE.search(self._texto)),
                     ("bloco", _BLOCO_RE.search(self._texto)),
                     ("pensar", _PENSAR_RE.search(self._texto)),
+                    ("solta", _SOLTA_RE.search(self._texto)),
                 )
                 if m is not None
             ]
@@ -217,6 +225,24 @@ class LeitorDoProtocolo:
                 return
             inicio, tipo = min(achados)
             antes = self._texto[:inicio]
+            if tipo == "solta":
+                achada = _SOLTA_RE.search(self._texto)
+                assert achada is not None
+                depois = self._texto[achada.end() :]
+                corpo = _CERCA_NO_COMECO.sub("", depois).lstrip()
+                if not corpo:
+                    # Ainda não dá para saber se vem um JSON: a etiqueta espera o próximo delta.
+                    self._texto = self._texto[inicio:]
+                    if antes:
+                        yield Texto(antes)
+                    return
+                if corpo.startswith("{"):
+                    tipo = "marca_solta"
+                else:
+                    # Só a etiqueta escapou: ela sai, e o texto segue como fala.
+                    self._texto = antes
+                    texto = depois
+                    continue
             if tipo == "pensar":
                 achada = _PENSAR_RE.search(self._texto)
                 assert achada is not None
@@ -237,8 +263,8 @@ class LeitorDoProtocolo:
                 if antes.strip():
                     yield Texto(antes)
                 continue
-            if tipo == "marca":
-                achada = _MARCA_RE.search(self._texto)
+            if tipo in ("marca", "marca_solta"):
+                achada = (_MARCA_RE if tipo == "marca" else _SOLTA_RE).search(self._texto)
                 assert achada is not None
                 self._proposta = self._texto[achada.end() :]
             else:  # o JSON sem a marca: a proposta é o próprio objeto
@@ -273,8 +299,10 @@ class LeitorDoProtocolo:
             if resto:
                 yield Raciocinio(resto)
         if self._texto:
-            texto, self._texto = self._texto, ""
-            yield Texto(texto)
+            # A etiqueta solta no fim, sem nada depois, não é fala.
+            texto, self._texto = _SOLTA_RE.sub("", self._texto), ""
+            if texto.strip():
+                yield Texto(texto)
 
     def _ler_proposta(self, *, final: bool) -> tuple[PedidoDeTool, str] | None:
         """O pedido e o que sobrou depois dele; `None` enquanto o JSON ainda pode fechar."""
