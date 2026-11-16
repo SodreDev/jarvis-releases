@@ -1,0 +1,163 @@
+# Conjunto de VALIDAÇÃO do avaliador de parâmetros (ADR-0071), separado do corpus de ajuste
+# (`tools/corpus_parametros.toml`). Escrito em 2026-11-16, DEPOIS do ajuste de esquemas e prompt e
+# ANTES de qualquer passada com estas falas; os alvos abaixo foram fixados antes de rodar. Regra:
+# uma passada por modelo, e nada se ajusta olhando este conjunto — se ele cair, o conserto vai na
+# causa e é medido de novo no corpus de ajuste, nunca aqui.
+#
+# Mesmo formato e mesma página falsa do corpus de ajuste (conversas: Mãe, Pai, Bruno, Carla, Ana
+# Paula, Ana Clara, Trabalho, Vó Lúcia; memórias fixas: Mãe «minha mãe», Bruno «meu irmão»).
+
+[[caso]]
+id = "v-salva-nome-irma"
+fala = "o nome da minha irmã no zap é carla salva aí"
+espera = "memoria"
+memoria_texto = "o nome da minha irmã no zap é carla"
+memoria_contem = ["carla"]
+proibido_em_argumento = ["salva ai"]
+
+[[caso]]
+id = "v-guarda-aniversario"
+fala = "guarda isso o aniversário do bruno é dia doze de março"
+espera = "memoria"
+memoria_texto = "o aniversário do bruno é dia doze de março"
+memoria_contem = ["bruno", "doze"]
+proibido_em_argumento = ["guarda isso"]
+
+[[caso]]
+id = "v-lembra-estacionamento"
+fala = "lembra que eu estaciono sempre no segundo andar"
+espera = "memoria"
+memoria_texto = "eu estaciono sempre no segundo andar"
+memoria_contem = ["segundo andar"]
+
+[[caso]]
+id = "v-anota-chefe"
+fala = "anota que a ana clara é minha chefe"
+espera = "memoria"
+memoria_texto = "a ana clara é minha chefe"
+memoria_contem = ["ana clara", "chefe"]
+
+[[caso]]
+id = "v-manda-vo-domingo"
+fala = "manda pra vó lúcia que domingo eu passo aí"
+espera = "envio"
+conversa = "Vó Lúcia"
+mensagem_contem = ["domingo"]
+proibido_em_argumento = ["manda pra vo"]
+
+[[caso]]
+id = "v-avisa-pai-carro"
+fala = "avisa o pai que o carro tá pronto"
+espera = "envio"
+conversa = "Pai"
+mensagem_contem = ["carro"]
+proibido_em_argumento = ["avisa o pai"]
+
+[[caso]]
+id = "v-abre-e-manda-carla"
+fala = "abre a conversa com a carla e manda que eu chego às oito"
+espera = "envio"
+conversa = "Carla"
+mensagem_contem = ["oito", "8"]
+proibido_em_argumento = ["abre a conversa com a carla"]
+
+[[caso]]
+id = "v-pai-sem-pontuacao"
+fala = "manda mensagem pro pai dizendo que eu te ligo amanha bjs"
+espera = "envio"
+conversa = "Pai"
+mensagem_contem = ["lig"]
+proibido_em_argumento = ["manda mensagem pro pai"]
+
+[[caso]]
+id = "v-fala-mae-comi"
+fala = "fala pra mãe que eu já comi não precisa se preocupar"
+espera = "envio"
+conversa = "Mãe"
+mensagem_contem = ["comi"]
+proibido_em_argumento = ["fala pra mae"]
+
+[[caso]]
+id = "v-grupo-falta"
+fala = "manda no grupo do trabalho que eu vou faltar hoje"
+espera = "envio"
+conversa = "Trabalho"
+mensagem_contem = ["falt"]
+proibido_em_argumento = ["manda no grupo"]
+
+[[caso]]
+id = "v-clica-grupo"
+fala = "clica no grupo trabalho"
+espera = "clique"
+conversa = "Trabalho"
+
+[[caso]]
+id = "v-chat-irmao"
+fala = "abre o chat do meu irmão"
+espera = "clique"
+conversa = "Bruno"
+proibido_em_argumento = ["chat do meu irmao"]
+
+[[caso]]
+id = "v-conversa-ana-clara"
+fala = "abre a conversa ana clara"
+espera = "clique"
+conversa = "Ana Clara"
+
+[[caso]]
+id = "v-conversa-avo"
+fala = "clica na conversa da minha avó"
+espera = "clique"
+conversa = "Vó Lúcia"
+
+[[caso]]
+id = "v-ana-ambigua"
+fala = "manda pra ana que a reunião mudou"
+espera = "pergunta"
+nota = "Ana Paula ou Ana Clara"
+
+[[caso]]
+id = "v-rodrigo-inexistente"
+fala = "manda pro rodrigo que tá tudo certo"
+espera = "pergunta"
+nota = "não há Rodrigo na lista"
+
+[[caso]]
+id = "v-endereco-desconhecido"
+fala = "manda pro bruno o endereço da festa"
+espera = "pergunta"
+nota = "o Jarvis não sabe o endereço: tem de perguntar, não inventar"
+
+[[caso]]
+id = "v-dentista-e-manda"
+fala = "salva que a carla é dentista e manda pra ela que eu marquei consulta"
+espera = "envio_e_memoria"
+conversa = "Carla"
+memoria_texto = "a carla é dentista"
+memoria_contem = ["carla", "dentista"]
+mensagem_contem = ["consult"]
+proibido_em_argumento = ["salva que", "e manda pra ela"]
+
+[[caso]]
+id = "v-spotify-e-anota"
+fala = "abre o spotify e anota que eu gosto de jazz"
+espera = "ferramenta"
+ferramenta = "apps.launch"
+argumento = "nome"
+contem = "spotify"
+memoria_texto = "eu gosto de jazz"
+memoria_contem = ["jazz"]
+proibido_em_argumento = ["e anota que"]
+
+[[caso]]
+id = "v-previsao"
+fala = "pesquisa a previsão do tempo pra amanhã em curitiba"
+espera = "ferramenta"
+ferramenta = "web.buscar"
+argumento = "consulta"
+contem = "curitiba"
+
+[[caso]]
+id = "v-conversa-solta"
+fala = "e aí jarvis beleza"
+espera = "conversa"

@@ -56,6 +56,8 @@ from typing import Any, Final
 
 RAIZ: Final = Path(__file__).resolve().parent.parent
 CORPUS: Final = RAIZ / "tools" / "corpus_parametros.toml"
+VALIDACAO: Final = RAIZ / "tools" / "corpus_validacao.toml"
+"""O conjunto separado, escrito depois do ajuste e nunca usado para ajustar (ADR-0071)."""
 WHATSAPP: Final = "https://web.whatsapp.com/"
 ABA: Final = 7
 CONVERSAS: Final = (
@@ -756,8 +758,8 @@ def relatorio(resultados: Sequence[Resultado], qual: str, extra: str) -> str:
     return "\n".join(linhas) + "\n"
 
 
-def casos(filtro: Sequence[str]) -> Iterator[Mapping[str, Any]]:
-    dados = tomllib.loads(CORPUS.read_text("utf-8"))
+def casos(filtro: Sequence[str], corpus: Path = CORPUS) -> Iterator[Mapping[str, Any]]:
+    dados = tomllib.loads(corpus.read_text("utf-8"))
     for caso in dados["caso"]:
         if not filtro or caso["id"] in filtro:
             yield caso
@@ -769,6 +771,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--motor", choices=("ideal", "copiao", "real"), default="ideal")
     parser.add_argument("--sem-raciocinio-escondido", action="store_true")
     parser.add_argument("--caso", action="append", default=[])
+    parser.add_argument(
+        "--validacao", action="store_true", help="o conjunto de validação, não o de ajuste"
+    )
     parser.add_argument("--provedor", default="", help="com --motor real: um provedor do registro")
     parser.add_argument("--modelo", default="", help="com --provedor: o id do modelo")
     parser.add_argument("--pausa", type=float, default=0.0, help="segundos entre os casos")
@@ -778,7 +783,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.motor == "real":
         print("ATENÇÃO: --motor real chama o provedor do dono e gasta crédito.", file=sys.stderr)
     resultados = []
-    for indice, caso in enumerate(casos(args.caso)):
+    corpus = VALIDACAO if args.validacao else CORPUS
+    for indice, caso in enumerate(casos(args.caso, corpus)):
         if indice and args.pausa > 0:
             time.sleep(args.pausa)  # o ritmo baixo que o dono pediu para o provedor real
         r = rodar_caso(
@@ -791,6 +797,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{'ok ' if r.passou else 'FALHOU'} {r.id}: {'; '.join(r.falhas)}", file=sys.stderr)
         resultados.append(r)
     extra = " sem raciocínio escondido" if args.sem_raciocinio_escondido else ""
+    if args.validacao:
+        extra += " — conjunto de VALIDAÇÃO"
     if args.provedor:
         extra += f" ({args.provedor}, {args.modelo or 'modelo padrão'})"
     texto = relatorio(resultados, args.motor, extra)
