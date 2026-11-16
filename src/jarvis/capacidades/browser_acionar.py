@@ -42,6 +42,7 @@ class BrowserAcionarEntrada:
 
     acao: str
     alvo: str | None = None
+    esperado: str | None = None
     ref: str | None = None
     tab_id: int | None = None
     tecla: str | None = None
@@ -56,7 +57,9 @@ class BrowserAcionarSaida:
     alvo: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("acao", "alvo", "ref", "tab_id", "tecla", "valor"))
+PERMITIDOS: Final[frozenset[str]] = frozenset(
+    ("acao", "alvo", "esperado", "ref", "tab_id", "tecla", "valor")
+)
 OBRIGATORIOS: Final[frozenset[str]] = frozenset(("acao",))
 
 

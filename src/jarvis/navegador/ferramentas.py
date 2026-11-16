@@ -18,6 +18,13 @@ from urllib.parse import urlsplit
 
 from jarvis.imagem import CHAVE_DOS_ANEXOS, ImagemInvalida, da_url_de_dados
 from jarvis.navegador import risco
+from jarvis.navegador.alvo import (
+    LIMITE_DO_ROTULO,
+    AlvoNaoConfere,
+    confere,
+    explicar,
+    parecidos,
+)
 from jarvis.navegador.cliente import (
     SEM_ABA,
     ChamadaCancelada,
@@ -977,7 +984,7 @@ class CorposDoNavegador:
             feito = self.cliente.gesto(tab_id, gesto, pixels=int(args.get("pixels", PIXELS_PADRAO)))
             return {"tab_id": tab_id, "gesto": gesto, "feito": bool(feito.get("feito"))}
         alvo, ref = _alvo_ou_ref(args)
-        dados = self.cliente.inspecionar(tab_id, alvo, ref=ref)
+        dados = self._elemento_conferido(tab_id, alvo, ref, args)
         nome = _nome(alvo, dados)
         texto = str(args.get("texto", "")) if gesto == "digitar" else ""
         if gesto == "digitar":
@@ -1006,6 +1013,34 @@ class CorposDoNavegador:
             "feito": bool(feito.get("feito")),
         }
 
+    def _elemento_conferido(
+        self, tab_id: int, alvo: str | None, ref: str | None, args: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """O elemento da ação, conferido contra a página antes de agir (ADR-0071): o `alvo` por
+        texto que não existe, ou o `ref` cujo rótulo não é o `esperado` do Jarvis, não vira ação —
+        volta ao modelo com os rótulos mais parecidos, e ele escolhe ou pergunta ao dono."""
+        try:
+            dados = self.cliente.inspecionar(tab_id, alvo, ref=ref)
+        except NavegadorFalhou as erro:
+            if alvo and erro.codigo in ("alvo_ausente", "alvo_ambiguo"):
+                opcoes = parecidos(alvo, self._elementos_da_pagina(tab_id))
+                raise AlvoNaoConfere(explicar(alvo, "", opcoes)) from erro
+            raise
+        esperado = str(args.get("esperado") or "").strip()
+        if esperado and not confere(esperado, dados):
+            achado = _curto(dados.get("rotulo") or dados.get("nome") or "", LIMITE_DO_ROTULO)
+            opcoes = parecidos(esperado, self._elementos_da_pagina(tab_id))
+            raise AlvoNaoConfere(explicar(esperado, achado or "sem rótulo", opcoes))
+        return dados
+
+    def _elementos_da_pagina(self, tab_id: int) -> list[dict[str, Any]]:
+        """Os elementos do mapa atual da aba, para achar o parecido; sem mapa, nenhum."""
+        try:
+            mapa = self.cliente.mapear(tab_id)
+        except (NavegadorFalhou, NavegadorIndisponivel):
+            return []
+        return [e for e in mapa.get("elementos", []) if isinstance(e, dict)]
+
     def _clicar(
         self,
         args: Mapping[str, Any],
@@ -1017,7 +1052,7 @@ class CorposDoNavegador:
     ) -> dict[str, Any]:
         tab_id, url, _ = self._aba(args)
         alvo, ref = _alvo_ou_ref(args)
-        dados = self.cliente.inspecionar(tab_id, alvo, ref=ref)
+        dados = self._elemento_conferido(tab_id, alvo, ref, args)
         nome = _nome(alvo, dados)
         avaliacao = risco.avaliar_clique(
             url, dados, nome, contaminado=contaminado, liberados=liberados, objetivo=objetivo
@@ -1055,7 +1090,7 @@ class CorposDoNavegador:
         acao = str(args["acao"])
         tecla = str(args.get("tecla", ""))
         valor = args.get("valor")
-        dados = self.cliente.inspecionar(tab_id, alvo, ref=ref)
+        dados = self._elemento_conferido(tab_id, alvo, ref, args)
         nome = _nome(alvo, dados)
         avaliacao = risco.avaliar_acionamento(
             url,

@@ -54,6 +54,7 @@ from jarvis.manifesto.validador import carregar_catalogo
 from jarvis.mcp.gestor import GestorMcp
 from jarvis.memoryd.ferramentas import Chamada, FerramentasDeMemoria, NaoAutorizado
 from jarvis.memoryd.livro import AlvoInexistente
+from jarvis.navegador.alvo import AlvoNaoConfere
 from jarvis.navegador.cliente import ChamadaCancelada
 from jarvis.navegador.estado import EstadoDaPonte
 from jarvis.navegador.ferramentas import (
@@ -1311,6 +1312,11 @@ class ExecutorDeFerramentas:
         except AcaoRecusada as erro:
             return ResultadoDeFerramenta(
                 tool_id, "negado", motivo=str(erro), call_id=chamada, causa="acao_recusada"
+            )
+        except AlvoNaoConfere as erro:
+            # O alvo não é o que está na página (ADR-0071): não aconteceu; o modelo decide.
+            return ResultadoDeFerramenta(
+                tool_id, "erro", motivo=str(erro), call_id=chamada, causa="alvo_nao_confere"
             )
         except DelegacaoFalhou as erro:
             return ResultadoDeFerramenta(

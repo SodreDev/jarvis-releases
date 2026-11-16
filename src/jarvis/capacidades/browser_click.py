@@ -40,6 +40,7 @@ class BrowserClickEntrada:
     """Argumentos normalizados de `browser.click` (input_schema do §4)."""
 
     alvo: str | None = None
+    esperado: str | None = None
     ref: str | None = None
     tab_id: int | None = None
 
@@ -51,7 +52,7 @@ class BrowserClickSaida:
     clicado: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("alvo", "ref", "tab_id"))
+PERMITIDOS: Final[frozenset[str]] = frozenset(("alvo", "esperado", "ref", "tab_id"))
 OBRIGATORIOS: Final[frozenset[str]] = frozenset(())
 
 

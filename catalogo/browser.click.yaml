@@ -29,6 +29,11 @@ input_schema:
       type: string
       pattern: ^[a-z0-9]{1,16}\.[0-9]{1,4}$
       maxLength: 21
+    esperado:
+      type: string
+      minLength: 1
+      maxLength: 120
+      description: "com ref: o nome que você quer (o do plano; «Mãe»); o código confere no rótulo antes de agir"
 output_schema:
   type: object
   required:

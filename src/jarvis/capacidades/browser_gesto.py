@@ -41,6 +41,7 @@ class BrowserGestoEntrada:
 
     gesto: str
     alvo: str | None = None
+    esperado: str | None = None
     pixels: int | None = None
     ref: str | None = None
     tab_id: int | None = None
@@ -55,7 +56,9 @@ class BrowserGestoSaida:
     gesto: Any
 
 
-PERMITIDOS: Final[frozenset[str]] = frozenset(("gesto", "alvo", "pixels", "ref", "tab_id", "texto"))
+PERMITIDOS: Final[frozenset[str]] = frozenset(
+    ("gesto", "alvo", "esperado", "pixels", "ref", "tab_id", "texto")
+)
 OBRIGATORIOS: Final[frozenset[str]] = frozenset(("gesto",))
 
 
