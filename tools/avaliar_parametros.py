@@ -443,12 +443,28 @@ def motor_copiao(caso: Mapping[str, Any]) -> Any:
     return MotorRoteirizado(resposta=responder)
 
 
-def motor_real(pasta: Path, *, sem_raciocinio: bool) -> Any:
-    """O provedor que o app usa, como o app o monta (sem ler chave: o ambiente é o do processo)."""
+def motor_real(pasta: Path, *, sem_raciocinio: bool, provedor: str = "", modelo: str = "") -> Any:
+    """O provedor que o app usa, como o app o monta (sem ler chave: o ambiente é o do processo).
+
+    Com `provedor`, monta esse provedor do registro com o `modelo` dado, pelo mesmo portão de
+    sempre (`Provedores.motor`): o interruptor da nuvem é ligado SÓ em memória, para esta
+    avaliação que o dono autorizou — a configuração dele não é gravada."""
+    import dataclasses
+
     from jarvis.voz.app import motor_de_conversa
     from jarvis.voz.config import ler
 
     configuracao = ler()
+    if provedor:
+        from jarvis.provedores.nucleo import Provedores
+
+        ligada = dataclasses.replace(
+            configuracao, nuvem_ligada=(*configuracao.nuvem_ligada, provedor)
+        )
+        (pasta / "conversa").mkdir(parents=True, exist_ok=True)
+        return Provedores.da_configuracao(ligada, pasta_de_trabalho=pasta / "conversa").motor(
+            provedor, modelo, "low"
+        )
     if sem_raciocinio:
         from jarvis.s2.motor_claude_cli import MotorClaudeCli
 
@@ -474,6 +490,7 @@ class Resultado:
     plano_cobrado: int
     ms_primeiro_token: float | None
     ms_primeira_fala: float | None
+    ms_total: float
     chamadas: int
     tokens_entrada: int
     tokens_saida: int
@@ -482,7 +499,14 @@ class Resultado:
     acoes: list[str]
 
 
-def rodar_caso(caso: Mapping[str, Any], qual: str, *, sem_raciocinio: bool = False) -> Resultado:
+def rodar_caso(
+    caso: Mapping[str, Any],
+    qual: str,
+    *,
+    sem_raciocinio: bool = False,
+    provedor: str = "",
+    modelo: str = "",
+) -> Resultado:
     from jarvis.memoryd.cofre import CofreFernet, nova_chave
     from jarvis.memoryd.indice import IndiceEmMemoria
     from jarvis.memoryd.livro import LivroDeMemoria
@@ -503,7 +527,7 @@ def rodar_caso(caso: Mapping[str, Any], qual: str, *, sem_raciocinio: bool = Fal
             if qual == "ideal"
             else motor_copiao(caso)
             if qual == "copiao"
-            else motor_real(pasta, sem_raciocinio=sem_raciocinio)
+            else motor_real(pasta, sem_raciocinio=sem_raciocinio, provedor=provedor, modelo=modelo)
         )
         motor = MotorMedido(base)
         cerebro = Cerebro(
@@ -544,6 +568,7 @@ def rodar_caso(caso: Mapping[str, Any], qual: str, *, sem_raciocinio: bool = Fal
             plano_cobrado=resposta.plano_cobrado,
             ms_primeiro_token=resposta.ms_ate_primeiro_token,
             ms_primeira_fala=publicados[0] if publicados else None,
+            ms_total=(time.monotonic() - comeco) * 1000.0,
             chamadas=len(chamadas),
             tokens_entrada=sum(c.tokens_entrada for c in chamadas),
             tokens_saida=sum(c.tokens_saida for c in chamadas),
@@ -637,6 +662,7 @@ def relatorio(resultados: Sequence[Resultado], qual: str, extra: str) -> str:
     primeiros = [r.ms_primeiro_token for r in resultados if r.ms_primeiro_token is not None]
     falas = [r.ms_primeira_fala for r in resultados if r.ms_primeira_fala is not None]
     por_chamada = [m for r in resultados for m in r.ms_primeiro_por_chamada]
+    totais = [r.ms_total for r in resultados]
     linhas = [
         f"## Motor `{qual}`{extra} — {passou}/{len(resultados)} casos passaram "
         f"({100 * passou / max(1, len(resultados)):.0f}%)",
@@ -650,6 +676,7 @@ def relatorio(resultados: Sequence[Resultado], qual: str, extra: str) -> str:
         f"| 1º token do turno (ms) | {_p(primeiros, 0.5)} | {_p(primeiros, 0.9)} |",
         f"| 1ª fala do turno (ms) | {_p(falas, 0.5)} | {_p(falas, 0.9)} |",
         f"| 1º delta por chamada ao motor (ms) | {_p(por_chamada, 0.5)} | {_p(por_chamada, 0.9)} |",
+        f"| total do caso, turno + tarefa (ms) | {_p(totais, 0.5)} | {_p(totais, 0.9)} |",
         "",
         f"Chamadas ao motor: {sum(r.chamadas for r in resultados)} · tokens de entrada "
         f"{sum(r.tokens_entrada for r in resultados)} · de saída "
@@ -687,17 +714,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--motor", choices=("ideal", "copiao", "real"), default="ideal")
     parser.add_argument("--sem-raciocinio-escondido", action="store_true")
     parser.add_argument("--caso", action="append", default=[])
+    parser.add_argument("--provedor", default="", help="com --motor real: um provedor do registro")
+    parser.add_argument("--modelo", default="", help="com --provedor: o id do modelo")
+    parser.add_argument("--pausa", type=float, default=0.0, help="segundos entre os casos")
     parser.add_argument("--saida", type=Path, help="acrescenta o relatório neste .md")
     parser.add_argument("--json", type=Path, help="grava os resultados por caso neste .json")
     args = parser.parse_args(argv)
     if args.motor == "real":
         print("ATENÇÃO: --motor real chama o provedor do dono e gasta crédito.", file=sys.stderr)
     resultados = []
-    for caso in casos(args.caso):
-        r = rodar_caso(caso, args.motor, sem_raciocinio=args.sem_raciocinio_escondido)
+    for indice, caso in enumerate(casos(args.caso)):
+        if indice and args.pausa > 0:
+            time.sleep(args.pausa)  # o ritmo baixo que o dono pediu para o provedor real
+        r = rodar_caso(
+            caso,
+            args.motor,
+            sem_raciocinio=args.sem_raciocinio_escondido,
+            provedor=args.provedor,
+            modelo=args.modelo,
+        )
         print(f"{'ok ' if r.passou else 'FALHOU'} {r.id}: {'; '.join(r.falhas)}", file=sys.stderr)
         resultados.append(r)
     extra = " sem raciocínio escondido" if args.sem_raciocinio_escondido else ""
+    if args.provedor:
+        extra += f" ({args.provedor}, {args.modelo or 'modelo padrão'})"
     texto = relatorio(resultados, args.motor, extra)
     print(texto)
     if args.saida is not None:
