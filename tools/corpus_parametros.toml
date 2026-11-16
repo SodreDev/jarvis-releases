@@ -1,0 +1,314 @@
+# Corpus do avaliador de parâmetros (ADR-0071): falas do dono em pt-BR, como a transcrição da voz
+# entrega (minúsculas, quase sem pontuação, às vezes com palavra trocada), e o que o Jarvis tem de
+# decidir em cada uma. `tools/avaliar_parametros.py` lê isto.
+#
+# espera:
+#   memoria     — guardar algo: memoria.lembrar (ou criar_no/criar_aresta) com `memoria_contem`;
+#                 `memoria_texto` é o trecho exato que o motor falso grava (a política da ADR-0026
+#                 só deixa ativa a memória com palavras do dono)
+#   envio       — mandar mensagem: a conversa `conversa` recebe uma mensagem com `mensagem_contem`
+#   clique      — abrir a conversa `conversa`, sem mandar nada
+#   envio_e_memoria — as duas coisas
+#   pergunta    — ambíguo ou inexistente: não manda nada, não abre a conversa errada, e pergunta
+#   ferramenta  — a 1ª ação é `ferramenta`, com o argumento `argumento` contendo `contem`
+#   conversa    — só conversa: nenhuma ação
+# proibido_em_argumento: trechos da fala que NÃO podem aparecer em nenhum argumento (a cópia).
+#
+# As conversas da página falsa do WhatsApp: Mãe, Pai, Bruno, Carla, Ana Paula, Ana Clara,
+# Trabalho, Vó Lúcia. Memórias fixas: Mãe («minha mãe»), Bruno («meu irmão»).
+
+[[caso]]
+id = "print-do-dono"
+fala = "o contato da minha mãe é literalmente mãe salve para não esquecer depois"
+espera = "memoria"
+memoria_texto = "o contato da minha mãe é literalmente mãe"
+memoria_contem = ["mae"]
+proibido_em_argumento = ["salve para nao esquecer", "esquecer depois"]
+nota = "o caso do print (2026-11-16): sem pontuação"
+
+[[caso]]
+id = "print-com-virgula"
+fala = "o contato da minha mãe é literalmente mãe, salve para não esquecer depois"
+espera = "memoria"
+memoria_texto = "o contato da minha mãe é literalmente mãe"
+memoria_contem = ["mae"]
+proibido_em_argumento = ["salve para nao esquecer"]
+
+[[caso]]
+id = "salva-contato-mae"
+fala = "salva que o contato da minha mãe é mãe"
+espera = "memoria"
+memoria_texto = "o contato da minha mãe é mãe"
+memoria_contem = ["mae"]
+
+[[caso]]
+id = "anota-irmao"
+fala = "anota aí que o bruno é meu irmão"
+espera = "memoria"
+memoria_texto = "o bruno é meu irmão"
+memoria_contem = ["bruno", "irmao"]
+
+[[caso]]
+id = "lembra-cafe"
+fala = "lembra que eu tomo café sem açúcar"
+espera = "memoria"
+memoria_texto = "eu tomo café sem açúcar"
+memoria_contem = ["cafe", "acucar"]
+
+[[caso]]
+id = "nao-esquece-reuniao"
+fala = "não esquece que a reunião com o pessoal do trabalho é toda segunda às nove"
+espera = "memoria"
+memoria_texto = "a reunião com o pessoal do trabalho é toda segunda às nove"
+memoria_contem = ["reuniao", "segunda"]
+
+[[caso]]
+id = "guarda-vo"
+fala = "guarda aí que a vó lúcia é a mãe do meu pai"
+espera = "memoria"
+memoria_texto = "a vó lúcia é a mãe do meu pai"
+memoria_contem = ["lucia"]
+
+[[caso]]
+id = "salva-ruido"
+fala = "salva aí o contato do meu pai tá como pai mesmo tá"
+espera = "memoria"
+memoria_texto = "o contato do meu pai tá como pai"
+memoria_contem = ["pai"]
+proibido_em_argumento = ["salva ai o contato"]
+
+[[caso]]
+id = "envio-mae-te-amo"
+fala = "abre o contato da minha mãe e diz eu te amo"
+espera = "envio"
+conversa = "Mãe"
+mensagem_contem = ["amo"]
+proibido_em_argumento = ["abre o contato", "minha mae e diz"]
+
+[[caso]]
+id = "manda-bruno-atraso"
+fala = "manda pro bruno que vou atrasar"
+espera = "envio"
+conversa = "Bruno"
+mensagem_contem = ["atras"]
+proibido_em_argumento = ["manda pro bruno"]
+
+[[caso]]
+id = "manda-irmao-sem-nome"
+fala = "manda uma mensagem pro meu irmão falando que eu já tô chegando"
+espera = "envio"
+conversa = "Bruno"
+mensagem_contem = ["cheg"]
+proibido_em_argumento = ["manda uma mensagem", "meu irmao falando"]
+
+[[caso]]
+id = "fala-pra-carla-sem-pontuacao"
+fala = "fala pra carla que amanhã não vai dar pra ir no cinema"
+espera = "envio"
+conversa = "Carla"
+mensagem_contem = ["cinema"]
+proibido_em_argumento = ["fala pra carla"]
+
+[[caso]]
+id = "whatsapp-pai-literal"
+fala = "manda no whatsapp do meu pai exatamente bença pai"
+espera = "envio"
+conversa = "Pai"
+mensagem_contem = ["benca"]
+
+[[caso]]
+id = "diz-vo-saudade"
+fala = "diz pra vó lúcia que eu tô com saudade"
+espera = "envio"
+conversa = "Vó Lúcia"
+mensagem_contem = ["saudade"]
+proibido_em_argumento = ["diz pra vo"]
+
+[[caso]]
+id = "envio-ruido-stt"
+fala = "manda pro bruno que o jogo foi adiado pra sexta e ele que avisa o resto do pessoal"
+espera = "envio"
+conversa = "Bruno"
+mensagem_contem = ["sexta"]
+proibido_em_argumento = ["manda pro bruno"]
+
+[[caso]]
+id = "clica-bruno"
+fala = "clica na conversa do bruno"
+espera = "clique"
+conversa = "Bruno"
+proibido_em_argumento = ["conversa do bruno"]
+
+[[caso]]
+id = "abre-conversa-mae"
+fala = "abre a conversa da minha mãe no whatsapp"
+espera = "clique"
+conversa = "Mãe"
+proibido_em_argumento = ["conversa da minha mae"]
+
+[[caso]]
+id = "abre-trabalho"
+fala = "abre o grupo do trabalho"
+espera = "clique"
+conversa = "Trabalho"
+proibido_em_argumento = ["grupo do trabalho"]
+
+[[caso]]
+id = "abre-conversa-vo"
+fala = "abre a conversa da minha vó"
+espera = "clique"
+conversa = "Vó Lúcia"
+
+[[caso]]
+id = "salva-e-manda"
+fala = "o contato da minha mãe é mãe salva isso e manda pra ela que eu ligo mais tarde"
+espera = "envio_e_memoria"
+conversa = "Mãe"
+memoria_texto = "o contato da minha mãe é mãe"
+memoria_contem = ["mae"]
+mensagem_contem = ["lig"]
+proibido_em_argumento = ["salva isso e manda"]
+
+[[caso]]
+id = "anota-e-abre"
+fala = "anota que a carla é minha prima e abre a conversa dela"
+espera = "envio_e_memoria"
+conversa = "Carla"
+memoria_texto = "a carla é minha prima"
+memoria_contem = ["carla", "prima"]
+nota = "sem mensagem: só abrir"
+so_abrir = true
+
+[[caso]]
+id = "ana-ambigua"
+fala = "manda pra ana que deu certo"
+espera = "pergunta"
+nota = "Ana Paula ou Ana Clara: tem de perguntar"
+
+[[caso]]
+id = "joao-inexistente"
+fala = "manda pro joão que eu tô saindo"
+espera = "pergunta"
+nota = "não há João na lista: não manda para ninguém"
+
+[[caso]]
+id = "clica-inexistente"
+fala = "clica na conversa do marcelo"
+espera = "pergunta"
+
+[[caso]]
+id = "ambigua-sem-pontuacao"
+fala = "fala com o bruno a carla vem amanhã"
+espera = "pergunta"
+nota = "duas leituras: mandar à Carla, ou ao Bruno dizendo que a Carla vem"
+
+[[caso]]
+id = "contato-literal-errado"
+fala = "abre a conversa mãe salve para não esquecer depois"
+espera = "pergunta"
+proibido_em_argumento = ["mae salve para nao esquecer"]
+nota = "o nome não existe: não pode abrir nem clicar com a frase"
+
+[[caso]]
+id = "abre-discord"
+fala = "abre o discord"
+espera = "ferramenta"
+ferramenta = "apps.launch"
+argumento = "nome"
+contem = "discord"
+proibido_em_argumento = ["abre o"]
+
+[[caso]]
+id = "abre-discord-e-lembra"
+fala = "abre o discord e lembra que eu tenho reunião às três"
+espera = "ferramenta"
+ferramenta = "apps.launch"
+argumento = "nome"
+contem = "discord"
+memoria_texto = "eu tenho reunião às três"
+memoria_contem = ["reuniao"]
+proibido_em_argumento = ["e lembra que"]
+
+[[caso]]
+id = "fecha-steam"
+fala = "fecha o steam todo"
+espera = "ferramenta"
+ferramenta = "apps.quit"
+argumento = "app"
+contem = "steam"
+proibido_em_argumento = ["fecha o steam todo"]
+
+[[caso]]
+id = "busca-flamengo"
+fala = "pesquisa quem ganhou o jogo do flamengo ontem"
+espera = "ferramenta"
+ferramenta = "web.buscar"
+argumento = "consulta"
+contem = "flamengo"
+proibido_em_argumento = ["pesquisa quem"]
+
+[[caso]]
+id = "youtube-gatos"
+fala = "abre um vídeo de gatos no youtube"
+espera = "ferramenta"
+ferramenta = "browser.navigate|sites.open"
+argumento = "url"
+contem = "youtube"
+
+[[caso]]
+id = "site-g1"
+fala = "vai pro g1"
+espera = "ferramenta"
+ferramenta = "browser.navigate|sites.open"
+argumento = "url"
+contem = "g1"
+
+[[caso]]
+id = "volume"
+fala = "abaixa o volume pra trinta por cento"
+espera = "ferramenta"
+ferramenta = "system.volume.set"
+
+[[caso]]
+id = "que-horas"
+fala = "que horas são"
+espera = "ferramenta"
+ferramenta = "system.clock.now"
+
+[[caso]]
+id = "lembra-o-que-eu-disse"
+fala = "qual é o contato da minha mãe que eu te falei"
+espera = "ferramenta"
+ferramenta = "memoria.buscar|memoria.buscar_historico"
+argumento = "consulta"
+contem = "mae"
+proibido_em_argumento = ["que eu te falei"]
+
+[[caso]]
+id = "bom-dia"
+fala = "bom dia jarvis tudo bem com você"
+espera = "conversa"
+
+[[caso]]
+id = "obrigado"
+fala = "valeu jarvis era isso"
+espera = "conversa"
+
+[[caso]]
+id = "piada"
+fala = "me conta uma piada curta"
+espera = "conversa"
+
+[[caso]]
+id = "pergunta-geral"
+fala = "quanto é doze vezes treze"
+espera = "conversa"
+nota = "conta de cabeça ou script; nada de navegador"
+
+[[caso]]
+id = "ruido-palavra-trocada"
+fala = "manda pro bruno que a festa é no sábado na casa da carla e ele leva o violão"
+espera = "envio"
+conversa = "Bruno"
+mensagem_contem = ["sabado"]
+proibido_em_argumento = ["manda pro bruno", "e ele leva"]
