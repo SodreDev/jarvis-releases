@@ -284,9 +284,9 @@ def executor_de_avaliacao(pasta: Path, pagina: PaginaFalsa, livro: Any) -> Any:
             return resultado
 
         def _corpo(self, tool_id: str, *a: Any, **k: Any) -> dict[str, Any]:
-            if tool_id.startswith("tarefa."):
-                # O gestor de tarefas é o de produção (com o executor de avaliação por baixo): o
-                # corpo simulado não traria o `tarefa_id` que o desfazer registra.
+            if tool_id.startswith(("tarefa.", "timer.")):
+                # Tarefas e lembretes são os de produção (numa pasta temporária): o corpo simulado
+                # não traria o `tarefa_id`/`alarme_id` que o desfazer registra.
                 return dict(super()._corpo(tool_id, *a, **k))
             return {"simulado": True, "nota": f"{tool_id} simulado pelo avaliador"}
 
@@ -313,6 +313,10 @@ def executor_de_avaliacao(pasta: Path, pagina: PaginaFalsa, livro: Any) -> Any:
     executor.registro = []
     executor.erros = []
     executor.preparar()
+    # Os lembretes do Jarvis (timer.alarm.*), como no app: uma agenda neste diretório, sem aviso.
+    from jarvis.executor.alarmes import agenda_compartilhada
+
+    executor.portas().agenda = agenda_compartilhada(pasta / "alarmes.json", lambda _alarme: None)
     executor.memoria = FerramentasDeMemoria(livro=livro)
     executor.tarefas = GestorDeTarefas(executor=executor, confirmar=lambda _p, _c: True)
     return executor
