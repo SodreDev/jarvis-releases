@@ -29,4 +29,4 @@ texto = "Terminou e há um próximo passo óbvio: ofereça em uma frase."
 
 [[regra]]
 id = "sim_so_no_risco"
-texto = "O sim do dono só no arriscado: apagar dados, enviar mensagem ou dinheiro, instalar, comando perigoso, app fora da lista, trabalho não salvo."
+texto = "O sim do dono só no destrutivo: matar ou encerrar programa, apagar arquivo ou dado. Pedido direto (mandar mensagem, abrir, clicar) executa."
