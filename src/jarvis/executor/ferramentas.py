@@ -33,6 +33,7 @@ from jarvis.delegacao.config import DELEGACOES_POR_OBJETIVO_PADRAO
 from jarvis.entrada.controle import FERRAMENTA_DE_CONFIRMACAO as CONFIRMACAO_DE_ENTRADA
 from jarvis.entrada.controle import FERRAMENTAS_DE_ENTRADA, ControleDeEntrada
 from jarvis.executor import arquivos, desktop
+from jarvis.executor import copia as copia_da_fala
 from jarvis.executor.comandos import ComandoIndisponivel
 from jarvis.executor.desfazer import LIXEIRA, Contaminacao, RegistroDeDesfazeres, aviso_falado
 from jarvis.executor.fechar import AlvoRecusado, Fechador, TabelaDoProc
@@ -444,6 +445,9 @@ class ExecutorDeFerramentas:
     delegacao: DelegadorClaudeCode | None = None
     """Quem delega ao Claude Code do dono (ADR-0054). Sem ele (o padrão: a chave em
     `~/.config/jarvis/delegar.toml` desligada), a `delegar.claude_code` não existe."""
+    copias_avisadas: set[tuple[str, str, str]] = field(default_factory=set)
+    """(ferramenta, argumento, valor) que já voltaram ao modelo como trecho da fala copiado
+    (ADR-0071): a mesma proposta de novo passa — o modelo decide, o código avisa uma vez."""
     ao_parcial_da_delegacao: Callable[[str], None] = field(default=lambda _parcial: None)
     """Cada parcial do Claude Code delegado (ADR-0070), enquanto ele roda: vai ao Jarvis como
     evento. Vazio = a delegação acabou."""
@@ -770,6 +774,20 @@ class ExecutorDeFerramentas:
         except (ValueError, CaminhoRecusado) as erro:
             return ResultadoDeFerramenta(
                 tool_id, "erro", motivo=str(erro), call_id=chamada, causa="argumento_recusado"
+            )
+        # O sentido, depois do tipo (ADR-0071): o argumento de nome que é a fala do dono copiada
+        # volta ao modelo uma vez, com o porquê; quem escolhe o valor é ele.
+        do_pedido = self.objetivo_de(marca)
+        fala = do_pedido.pedido if do_pedido is not None else ""
+        achado = copia_da_fala.copiado(self.manifestos[tool_id]["input_schema"], argumentos, fala)
+        if achado is not None and (tool_id, *achado) not in self.copias_avisadas:
+            self.copias_avisadas.add((tool_id, *achado))
+            return ResultadoDeFerramenta(
+                tool_id,
+                "erro",
+                motivo=copia_da_fala.motivo(*achado),
+                call_id=chamada,
+                causa=copia_da_fala.CAUSA,
             )
 
         if tool_id == "apps.launch":

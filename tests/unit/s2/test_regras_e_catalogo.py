@@ -42,9 +42,13 @@ from jarvis.voz.app import Aplicativo
 from jarvis.voz.config import Configuracao
 from jarvis.voz.vocabulario import RepositorioDoVocabulario
 
-TETO_DO_PROMPT = 16_000
+TETO_DO_PROMPT = 18_000
 """Caracteres do prompt de sistema de um turno com todas as ferramentas (persona, regras e
-catálogo). Antes da ADR-0047 eram 30 550; o teto segura o que cresce em todo pedido."""
+catálogo). Antes da ADR-0047 eram 30 550; o teto segura o que cresce em todo pedido. A ADR-0071
+(2026-11-16) subiu de 16 000 para 18 000: o plano antes de agir e o sentido de cada argumento
+(«o rótulo como está na página, nunca a frase do dono») custam ~1 500 caracteres (~400 tokens de
+entrada), contra os ~650 tokens de raciocínio escondido que o turno do dono gastava antes do 1º
+token (docs/estudos/parametros-do-modelo.md)."""
 
 
 # --- as regras -------------------------------------------------------------------------------

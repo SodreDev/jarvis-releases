@@ -80,7 +80,11 @@ INSTRUCAO_DE_FERRAMENTAS: Final = (
     "vai entre " + MARCA_DE_RACIOCINIO + " e " + FIM_DO_RACIOCINIO + ". Depois você recebe os "
     "resultados e, pronto o pedido, responde ao dono, em voz, curto. Use só as ferramentas e os "
     "argumentos da lista (* = obrigatório) e nunca invente resultado; caminhos, sempre a pasta "
-    "inteira (~/Documentos/...). Cada linha: nome(argumentos): quando usar. «pedidos do dono»."
+    "inteira (~/Documentos/...). ARGUMENTO é só o valor que VOCÊ decidiu (o nome como está na "
+    "tela ou na lista, o endereço, o texto a digitar), nunca a fala do dono; o que mais ele disse "
+    "é outra ação, ou nenhuma. Errado: alvo «mãe salve para não esquecer depois». Certo: "
+    "memoria.lembrar {texto: «o contato da mãe do dono se chama Mãe»} e nada a abrir. Cada linha: "
+    "nome(argumentos [o que é o valor]): quando usar. «pedidos do dono»."
 )
 """O protocolo da proposta e a legenda do catálogo: vai uma vez, antes das linhas."""
 
@@ -114,9 +118,10 @@ _TIPOS: Final[Mapping[str, str]] = {
 
 
 def assinatura(argumentos: Mapping[str, object], obrigatorios: Sequence[object]) -> str:
-    """`url*, segundo_plano:bool, acao*=tocar|pausar`: o nome de cada argumento, `*` no
-    obrigatório, o tipo quando não é texto e os valores quando são fixos — o que o motor precisa
-    para propor certo, sem o esquema JSON inteiro (que custava ~8 mil tokens em todo turno)."""
+    """`url* [o endereço], segundo_plano:bool, acao*=tocar|pausar`: o nome de cada argumento, `*`
+    no obrigatório, o tipo quando não é texto, os valores quando são fixos e, entre colchetes, o
+    que é o valor (o `description` do manifesto, ADR-0071) — o que o motor precisa para propor
+    certo, sem o esquema JSON inteiro (que custava ~8 mil tokens em todo turno)."""
     partes: list[str] = []
     for nome, esquema in argumentos.items():
         marca = "*" if nome in obrigatorios else ""
@@ -126,7 +131,9 @@ def assinatura(argumentos: Mapping[str, object], obrigatorios: Sequence[object])
                 tipo = "=" + "|".join(str(v) for v in esquema["enum"])
             else:
                 tipo = _TIPOS.get(str(esquema.get("type", "")), "")
-        partes.append(f"{nome}{marca}{tipo}")
+        descricao = esquema.get("description") if isinstance(esquema, Mapping) else None
+        sentido = f" [{' '.join(str(descricao).split())}]" if descricao else ""
+        partes.append(f"{nome}{marca}{tipo}{sentido}")
     return ", ".join(partes)
 
 

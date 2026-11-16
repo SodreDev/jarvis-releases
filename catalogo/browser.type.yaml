@@ -21,6 +21,8 @@ input_schema:
       type: integer
       minimum: 0
     alvo:
+      description: "o rótulo do campo como está na página"
+      x-nome: true
       type: string
       minLength: 1
       maxLength: 200
@@ -29,6 +31,7 @@ input_schema:
       pattern: ^[a-z0-9]{1,16}\.[0-9]{1,4}$
       maxLength: 21
     texto:
+      description: "só o que vai no campo; a mensagem já redigida por você"
       type: string
       minLength: 1
       maxLength: 2000

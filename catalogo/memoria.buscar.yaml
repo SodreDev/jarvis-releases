@@ -14,6 +14,7 @@ input_schema:
   - consulta
   properties:
     consulta:
+      description: "o que procurar em poucas palavras («contato da mãe»)"
       type: string
       minLength: 1
       maxLength: 2000

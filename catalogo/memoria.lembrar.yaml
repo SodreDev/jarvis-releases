@@ -17,11 +17,18 @@ input_schema:
       type: string
       minLength: 1
       maxLength: 2000
-    sujeito: &id001
+      description: "o fato reescrito por você; curto e em 3ª pessoa («o contato da mãe do dono no WhatsApp se chama Mãe»)"
+    sujeito:
       type: string
       minLength: 1
       maxLength: 128
-    predicado: *id001
+      description: "de quem é o fato («mãe do dono»)"
+      x-nome: true
+    predicado:
+      type: string
+      minLength: 1
+      maxLength: 128
+      description: "a relação («nome do contato no WhatsApp»)"
 output_schema:
   type: object
   required:

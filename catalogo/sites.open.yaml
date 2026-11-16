@@ -22,6 +22,7 @@ input_schema:
   - url
   properties:
     url:
+      description: "o endereço (https://…) que você montou"
       type: string
       minLength: 8
       maxLength: 2048

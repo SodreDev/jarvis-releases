@@ -28,6 +28,8 @@ input_schema:
       - digitar
       - rolar
     alvo:
+      description: "o rótulo como está na página («Mãe»; «Enviar»); nunca a frase do dono"
+      x-nome: true
       type: string
       minLength: 1
       maxLength: 200
@@ -36,6 +38,7 @@ input_schema:
       pattern: ^[a-z0-9]{1,16}\.[0-9]{1,4}$
       maxLength: 21
     texto:
+      description: "só o que digitar"
       type: string
       maxLength: 10000
     pixels:

@@ -17,6 +17,7 @@ input_schema:
   - consulta
   properties:
     consulta:
+      description: "os termos da busca; curtos"
       type: string
       minLength: 1
       maxLength: 200

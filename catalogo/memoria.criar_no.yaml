@@ -22,14 +22,19 @@ input_schema:
       - app
       - arquivo
       - coisa
-    nome: &id001
+    nome:
       type: string
       minLength: 1
       maxLength: 128
+      description: "o nome da pessoa ou coisa"
+      x-nome: true
     apelidos:
       type: array
       maxItems: 8
-      items: *id001
+      items:
+        type: string
+        minLength: 1
+        maxLength: 128
 output_schema:
   type: object
   required:
