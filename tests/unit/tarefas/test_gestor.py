@@ -335,8 +335,11 @@ def test_motor_agente_planeja_passos_e_o_resumo_final_e_marcado_de_terceiros(
 def test_passo_fora_da_allowlist_proposto_pelo_agente_nao_chega_a_rodar(
     executor: ExecutorDeFerramentas,
 ) -> None:
+    # O 1º passo é a ferramenta que o Jarvis delegou (ADR-0072); depois, o agente propõe outra
+    # tarefa — profundidade 1: essa nem chega ao PDP.
     agente, _ = _agente(
         executor,
+        ["(não usado: o 1º passo é o delegado)"],
         [PedidoDeTool("tarefa.iniciar", {"descricao": "outra", "tool": "files.list_dir"})],
         ["Não consegui."],
     )
@@ -347,10 +350,12 @@ def test_passo_fora_da_allowlist_proposto_pelo_agente_nao_chega_a_rodar(
     gestor.esperar(tarefa.id)
 
     assert tarefa.estado is EstadoDaTarefa.CONCLUIDA
-    assert list(executor.pdp.auditoria._con.execute("SELECT 1 FROM audit_log")) == [], (
-        "nem chegou ao PDP"
-    )
-    assert gestor.tarefas[tarefa.id].passo == 0
+    auditadas = [
+        linha["tool_id"]
+        for linha in executor.pdp.auditoria._con.execute("SELECT tool_id FROM audit_log")
+    ]
+    assert "tarefa.iniciar" not in auditadas, "nem chegou ao PDP"
+    assert gestor.tarefas[tarefa.id].passo == 1
 
 
 def test_passo_que_o_pdp_nega_e_auditado_com_o_id_da_tarefa(

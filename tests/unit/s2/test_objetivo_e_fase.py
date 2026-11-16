@@ -18,7 +18,7 @@ import pytest
 from jarvis.decisao.fake import ClassificadorFalso
 from jarvis.decisao.interface import Pergunta, Resposta, RespostaEscolha, RespostaNoul
 from jarvis.executor.desfazer import Contaminacao
-from jarvis.executor.ferramentas import Avaliacao, ExecutorDeFerramentas
+from jarvis.executor.ferramentas import Avaliacao, ExecutorDeFerramentas, ResultadoDeFerramenta
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
 from jarvis.politica.modos import Modo
@@ -207,9 +207,15 @@ def test_o_agente_da_tarefa_ve_o_criterio_a_fase_e_os_passos() -> None:
         contaminacao=Contaminacao(False, objetivo),
     )
 
-    agente.proximo(tarefa, [], lambda: False)
+    # O 1º passo é a ferramenta que o Jarvis propôs (a etapa delegada, ADR-0072); o modelo entra
+    # no passo seguinte, pelo mesmo laço do subagente do pedido.
+    primeiro = agente.proximo(tarefa, [], lambda: False)
+    assert primeiro == PedidoDeTool("web.canal_videos", {"canal": "@primorico"})
+    feito = ResultadoDeFerramenta("web.canal_videos", "ok", {"videos": []})
+    agente.proximo(tarefa, [feito], lambda: False)
 
-    pedido = motor.pedidos[0].mensagens[0].texto
-    assert "Critério de pronto:" in pedido and "Fase: executando" in pedido
-    assert "web.canal_videos:ok" in pedido and "até o critério estar cumprido" in pedido
+    sistema = motor.pedidos[0].sistema
+    assert "Critério de pronto:" in sistema and "Fase: executando" in sistema
+    assert "web.canal_videos:ok" in sistema
+    assert "lista os vídeos novos do canal" in motor.pedidos[0].mensagens[0].texto
     assert tarefa.para_o_modelo()["fase"] == "executando"

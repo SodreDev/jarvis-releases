@@ -303,8 +303,9 @@ def _falado(publicados: Sequence[dict[str, Any]]) -> str:
 
 # --- (a) clicar na conversa: ler antes, escolher pelo que há, conferir depois -------------------
 class SubagenteDoClique:
-    """O Jarvis/subagente: chuta o clique no turno (o código o faz ler antes), escolhe o `ref` no
-    mapa, tenta de novo depois do erro e confere a conversa aberta antes de dizer que abriu."""
+    """O Jarvis/subagente: chuta o clique no turno — a ação volta com o veredito de ler antes
+    (ADR-0072) e ELE lê —, escolhe o `ref` no mapa, tenta de novo depois do erro e confere a
+    conversa aberta antes de dizer que abriu."""
 
     def __init__(self, alvo: str) -> None:
         self.alvo = alvo
@@ -313,6 +314,8 @@ class SubagenteDoClique:
     def __call__(self, contexto: Contexto) -> Sequence[Parte]:
         feitos = _resultados(contexto)
         self.vistos.append([f"{r['tool_id']}:{r['status']}:{r.get('motivo', '')}" for r in feitos])
+        if "A SUA ÚLTIMA PROPOSTA não rodou" in contexto.sistema:
+            return [PedidoDeTool("browser.inspecionar", {})]  # o veredito: ler antes de agir
         if not feitos:
             # Sem ler nada, o palpite: clicar pelo texto. Quem não deixa é a leitura antes de agir.
             return [PedidoDeTool("browser.click", {"alvo": f"conversa do {self.alvo}"})]
@@ -324,7 +327,7 @@ class SubagenteDoClique:
         if ultimo["tool_id"] == "browser.click" and ultimo["status"] == "ok":
             return [PedidoDeTool("browser.inspecionar", {})]  # conferir antes de dizer
         if ultimo["tool_id"] == "browser.click":
-            # O clique falhou: insiste no mesmo ref — o código obriga a reler antes.
+            # O clique falhou: insiste no mesmo ref — o veredito manda reler antes.
             anterior = next(
                 r for r in reversed(feitos[:-1]) if r["tool_id"] == "browser.inspecionar"
             )
@@ -408,11 +411,11 @@ def test_b_mandar_mensagem_redige_confere_o_contato_e_o_envio(
     assert pagina.enviadas["Bruno"] == [REDIGIDA]
     assert all(not m for nome, m in pagina.enviadas.items() if nome != "Bruno")
     assert "vou atrasar uns dez minutos" not in REDIGIDA.casefold()
-    # O subagente recebeu a DICA (o que a regra achou na fala, rotulado como palpite — ADR-0071)
-    # e a ordem de redigir, não um texto pronto do código.
+    # O subagente recebeu a orientação de redigir e as travas, não um texto pronto do código nem
+    # o contato e a mensagem tirados da fala (ADR-0072).
     sistema = subagente.sistema_da_tarefa
-    assert "REDIJA a mensagem" in sistema and "para «Bruno»" in sistema
-    assert "DICA DO CÓDIGO" in sistema
+    assert "Redija a mensagem" in sistema and "para «Bruno»" not in sistema
+    assert "parece um envio direto" not in sistema, "nada tirado da fala por regex"
     assert "cabeçalho da conversa" in sistema
     # Antes de digitar, a página foi lida com a conversa do Bruno aberta (a trava do contato).
     antes_de_digitar = pagina.metodos[: pagina.metodos.index("page.type")]

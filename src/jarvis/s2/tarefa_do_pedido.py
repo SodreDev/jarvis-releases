@@ -303,10 +303,13 @@ class MotorDoObjetivo:
                 self.cobrou_conferencia = True  # uma vez: o motor lê, ou a resposta diz que não
                 continue
             return self._fim(tarefa, feitos, texto, ids, cancelado)
-        # As rodadas deste passo acabaram sem um passo válido: o motor recebe o estado e decide.
+        # As rodadas deste passo acabaram sem um passo válido: o motor recebe o estado — o que foi
+        # tentado e o erro real de cada tentativa — e decide.
+        tentou = explicacao_do_que_tentou(recuperacao)
         return LimiteDaTarefa(
             MotivoDoLimite.RODADAS,
-            f"{RODADAS_POR_PASSO} rodadas sem uma proposta que pudesse rodar",
+            f"{RODADAS_POR_PASSO} rodadas sem uma proposta que pudesse rodar"
+            + (f"; o que foi tentado: {tentou}" if tentou else ""),
         )
 
     def decidir_no_limite(

@@ -14,12 +14,12 @@ tarefa leu chega a ele como dado de terceiros (P6).
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Final
 
 from jarvis.s2.motor import Contexto, Mensagem, MotorDeConversa, PedidoDeTool
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
-from jarvis.tarefas.gestor import Passo, Tarefa
+from jarvis.tarefas.gestor import FimDaTarefa, Passo, Tarefa
 from jarvis.tarefas.limite import DecisaoNoLimite, MotivoDoLimite, NotificacaoDoLimite
 from jarvis.voz.interface import Onde
 
@@ -76,7 +76,12 @@ class MotorDeAgente:
     def proximo(
         self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
     ) -> Passo:
-        return self._do(tarefa).proximo(tarefa, feitos, cancelado)
+        passo = self._do(tarefa).proximo(tarefa, feitos, cancelado)
+        if isinstance(passo, FimDaTarefa):
+            # O resumo de uma tarefa do `tarefa.iniciar` sai do que ela leu: é de terceiros (P6),
+            # como sempre foi — a fila de avisos o trata assim.
+            return replace(passo, de_terceiros=True)
+        return passo
 
     def decidir_no_limite(
         self,
