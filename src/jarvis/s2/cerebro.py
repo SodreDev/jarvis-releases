@@ -1104,6 +1104,11 @@ class Cerebro:
         ferramentas no turno (`passos_no_turno`, ADR-0046): só existia nos testes."""
         return self._delegavel(pedido) and not fica_no_turno(pedido.tool_id)
 
+    def memoria_para(self, etapa: str) -> str:
+        """O bloco da memória do dono que serve a uma etapa delegada (o subagente do
+        `tarefa.iniciar` recebe a mesma memória do turno, ADR-0072)."""
+        return self._lembrancas_do_objetivo(etapa)
+
     def _lembrancas_do_objetivo(self, plano: str) -> str:
         """O que o dono guardou por voz (o livro) e serve ao objetivo FORMULADO (ADR-0071): a
         busca é pelo plano — «abrir a conversa da mãe» acha «o contato da mãe se chama Mãe» —, com

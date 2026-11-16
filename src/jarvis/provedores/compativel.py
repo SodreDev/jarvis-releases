@@ -112,8 +112,8 @@ class MotorCompativelOpenAI:
 
     def corpo(self, contexto: Contexto, modo: Modo) -> dict[str, Any]:
         if self.chamada_nativa and contexto.ferramentas:
-            corpo = corpo_nativo(self.modelo, contexto, aceita_imagem=self.aceita_imagem)
-            return self._com_extras(corpo, modo)
+            nativo = corpo_nativo(self.modelo, contexto, aceita_imagem=self.aceita_imagem)
+            return self._com_extras(nativo, modo)
         texto = contexto.como_texto()
         conteudo: str | list[dict[str, Any]] = texto
         if contexto.imagens and self.aceita_imagem:

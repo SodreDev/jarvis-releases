@@ -1106,8 +1106,20 @@ class Aplicativo:
             return (self.ferramentas or executor).catalogo_para_o_modelo()
 
         def fabrica() -> MotorDeTarefa:
-            if self.configuracao.tarefa_motor == "agente" and self._motor is not None:
-                return MotorDeAgente(motor=self._motor, catalogo=catalogo)
+            cerebro = self._cerebro
+            if (
+                self.configuracao.tarefa_motor == "agente"
+                and self._motor is not None
+                and cerebro is not None
+            ):
+                # O mesmo laço do subagente de um pedido (ADR-0072): a persona e as regras do
+                # dono, e a memória dele para a etapa, como no turno do Jarvis.
+                return MotorDeAgente(
+                    motor=self._motor,
+                    catalogo=catalogo,
+                    sistema=lambda: cerebro.conversa.sistema,
+                    lembrar=cerebro.memoria_para,
+                )
             return MotorDireto()
 
         return GestorDeTarefas(
