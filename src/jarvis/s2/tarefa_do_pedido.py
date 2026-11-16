@@ -31,11 +31,11 @@ from typing import TYPE_CHECKING, Any, Final
 
 from jarvis.imagem import Imagem
 from jarvis.s2.consumo import Medicao, medir, precos_do_motor
+from jarvis.s2.laco import QUEM_SUBAGENTE, mensagens_das_ferramentas, rodada_do_agente
 from jarvis.s2.leitura_da_pagina import NOTA_DA_LEITURA, leitura_antes
 from jarvis.s2.motor import (
     Contexto,
     Fim,
-    Mensagem,
     Modo,
     MotivoDoFim,
     MotorDeConversa,
@@ -44,8 +44,7 @@ from jarvis.s2.motor import (
     Texto,
     aceita_imagem,
 )
-from jarvis.s2.protocolo import LeitorDoProtocolo, sem_protocolo
-from jarvis.s2.rascunho import textos_no_contexto
+from jarvis.s2.protocolo import sem_protocolo
 from jarvis.s2.recuperacao import Recuperacao, Tentativa, assinatura
 from jarvis.s2.roteiro_do_navegador import (
     Contato,
@@ -436,7 +435,7 @@ class MotorDoObjetivo:
         recuperar: str = "",
     ) -> tuple[PedidoDeTool | None, str]:
         todos = (*self.feitos_antes, *feitos)
-        textos, _podados = textos_no_contexto(todos)
+        textos, _podados = mensagens_das_ferramentas(todos)
         notas = [NOTA_DA_TAREFA, nota_do_objetivo(self.plano, self.ja_dito)]
         if self.lembrancas:
             notas.append(f"{NOTA_DAS_LEMBRANCAS}\n{self.lembrancas}\n")
@@ -468,55 +467,57 @@ class MotorDoObjetivo:
             notas.append(recuperar)
         contexto = Contexto(
             sistema=f"{self.contexto.sistema}\n\n" + " ".join(notas),
-            mensagens=(*self.contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
+            mensagens=(*self.contexto.mensagens, *textos),
             ferramentas=catalogo,
             raciocinio=self.raciocinio,
             ja_dito=self.ja_dito,
             imagens=_imagens(todos) if aceita_imagem(self.motor) else (),
         )
-        # Todo texto passa pelo leitor (o motor que esqueceu de separar o protocolo não fala JSON
-        # por isso); o que vem antes da proposta é narração e o depois, palpite: raciocínio.
-        leitor = LeitorDoProtocolo()
+        # O laço canônico (ADR-0072): a MESMA rodada do Jarvis (`jarvis.s2.laco`); o que vem
+        # antes da proposta é narração e o depois, palpite: os dois vão ao raciocínio.
         pedido: PedidoDeTool | None = None
         texto: list[str] = []
-        deltas = self.motor.gerar(contexto, Modo.RAPIDO, cancelado)
-        if self.ao_medir is not None:
+        ao_medir = self.ao_medir
+        deltas = rodada_do_agente(
+            self.motor,
+            contexto,
+            Modo.RAPIDO,
+            cancelado,
+            quem=QUEM_SUBAGENTE,
             # O consumo de cada passo da tarefa vai à trilha (ADR-0061): só números.
-            deltas = medir(
-                deltas,
-                caracteres_entrada=lambda: len(contexto.como_texto()),
-                precos=lambda: precos_do_motor(self.motor),
-                ao_medir=self.ao_medir,
-            )
-        try:
-            for delta in deltas:
-                if isinstance(delta, Fim):
-                    if delta.motivo in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO):
-                        raise MotorFalhou(delta.detalhe or str(delta.motivo))
-                    break
-                partes = (
-                    list(leitor.alimentar(delta.texto)) if isinstance(delta, Texto) else [delta]
+            envolver=(
+                (
+                    lambda crus: medir(
+                        crus,
+                        caracteres_entrada=lambda: len(contexto.como_texto()),
+                        precos=lambda: precos_do_motor(self.motor),
+                        ao_medir=ao_medir,
+                    )
                 )
-                for parte in partes:
-                    if isinstance(parte, PedidoDeTool):
-                        if pedido is None:
-                            pedido = parte
-                            self._pensou(" ".join(texto))
-                            texto = []
-                    elif isinstance(parte, Raciocinio):
+                if ao_medir is not None
+                else None
+            ),
+        )
+        try:
+            for parte in deltas:
+                if isinstance(parte, Fim):
+                    if parte.motivo in (MotivoDoFim.ERRO, MotivoDoFim.PRAZO):
+                        raise MotorFalhou(parte.detalhe or str(parte.motivo))
+                    break
+                if isinstance(parte, PedidoDeTool):
+                    if pedido is None:
+                        pedido = parte
+                        self._pensou(" ".join(texto))
+                        texto = []
+                elif isinstance(parte, Raciocinio):
+                    self._pensou(parte.texto)
+                elif isinstance(parte, Texto):
+                    if pedido is None:
+                        texto.append(parte.texto)
+                    else:
                         self._pensou(parte.texto)
-                    elif isinstance(parte, Texto):
-                        if pedido is None:
-                            texto.append(parte.texto)
-                        else:
-                            self._pensou(parte.texto)
         finally:
             deltas.close()  # o `finally` do motor para a geração
-        for parte in leitor.fechar():
-            if isinstance(parte, PedidoDeTool) and pedido is None:
-                pedido = parte
-            elif isinstance(parte, Texto) and pedido is None:
-                texto.append(parte.texto)
         return pedido, "".join(texto)
 
     def _pensou(self, trecho: str) -> None:

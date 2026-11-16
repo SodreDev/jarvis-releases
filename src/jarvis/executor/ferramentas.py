@@ -333,6 +333,9 @@ class ResultadoDeFerramenta:
     injecao: str = ""
     """As categorias de injeção suspeita nos dados (ADR-0065), separadas por vírgula: o modelo
     recebe o aviso na frente dos dados, e a trilha, os códigos."""
+    argumentos: Mapping[str, Any] = field(default_factory=dict)
+    """Os argumentos da chamada que deu este resultado (o laço os põe, `jarvis.s2.laco`): voltam
+    ao modelo com o resultado, no par chamada → resultado (ADR-0072)."""
 
     @property
     def detalhe_de_auditoria(self) -> str:

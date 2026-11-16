@@ -601,6 +601,8 @@ class GestorDeTarefas:
             if tarefa.cancelada.is_set():
                 # Chegou depois do cancelamento: vai para a auditoria, não para o estado.
                 return self._terminar(tarefa, EstadoDaTarefa.CANCELADA)
+            # O resultado volta ao modelo com a chamada que o gerou (o laço canônico, ADR-0072).
+            resultado = replace(resultado, argumentos=dict(passo.args))
             feitos.append(resultado)
             with contextlib.suppress(Exception):  # o progresso que falha não derruba a tarefa
                 self.ao_progresso(tarefa, resultado)

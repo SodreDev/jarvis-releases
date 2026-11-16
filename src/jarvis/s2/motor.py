@@ -78,6 +78,10 @@ class Mensagem:
     da_voz: bool = False
     """A fala do dono veio da transcrição da voz (ADR-0071): sem pontuação confiável e com
     palavra trocada às vezes. O motor sabe, para pontuar antes de entender ou perguntar."""
+    chamada: PedidoDeTool | None = None
+    """De `ferramenta`: a chamada que o modelo fez e que deu este resultado (ADR-0072). O motor
+    com chamada nativa de ferramenta a devolve ao provedor como o par chamada → resultado; o de
+    texto só lê o resultado."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +211,9 @@ class PedidoDeTool:
 
     tool_id: str
     args: Mapping[str, object] = field(default_factory=dict)
+    chamada_id: str = ""
+    """O id que o provedor deu à chamada nativa (ADR-0072): o resultado volta com ele. Vazio no
+    protocolo de texto."""
 
 
 @dataclass(frozen=True, slots=True)

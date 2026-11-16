@@ -62,6 +62,12 @@ from jarvis.s2.avisos import AvisoLiberado, calado, nota_dos_eventos, pede_detal
 from jarvis.s2.consumo import ConsumoDoTurno, Medicao, campos_da_medicao, medir, precos_do_motor
 from jarvis.s2.entrega import FiltroDoJaDito
 from jarvis.s2.fluxo_de_acao import FluxoDeAcao, frase_do_feito
+from jarvis.s2.laco import (
+    QUEM_JARVIS,
+    com_a_chamada,
+    mensagens_das_ferramentas,
+    rodada_do_agente,
+)
 from jarvis.s2.leitura_da_pagina import NOTA_DA_LEITURA, leitura_antes
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
 from jarvis.s2.motor import (
@@ -82,8 +88,6 @@ from jarvis.s2.orcamento_da_fala import OrcamentoDaFala, quer_detalhe
 from jarvis.s2.pendencias import INTERVALO_DA_ESPERA_S, Espera, RegistroDePendencias
 from jarvis.s2.persona import sistema_do_jarvis
 from jarvis.s2.portao import AutorizacoesExplicitas, PortaoDeAcao
-from jarvis.s2.protocolo import LeitorDoProtocolo
-from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.s2.receitas import receitas_do_turno
 from jarvis.s2.recuperacao import nota_do_turno
 from jarvis.s2.roteiro_do_navegador import (
@@ -718,7 +722,7 @@ class Cerebro:
                 break
             # A memória de trabalho do turno (ADR-0034): o passo mais novo inteiro, os antigos
             # inteiros enquanto couberem no orçamento e, depois, podados.
-            textos, podados = textos_no_contexto(resposta.ferramentas)
+            textos, podados = mensagens_das_ferramentas(resposta.ferramentas)
             resposta.resultados_podados = max(resposta.resultados_podados, podados)
             # O passo do turno que falhou volta ao motor como erro estruturado, com a instrução de
             # replanejar por outro caminho (emenda de 2026-10-30 à ADR-0038).
@@ -729,7 +733,7 @@ class Cerebro:
             )
             da_vez = Contexto(
                 sistema=f"{contexto.sistema}\n\n{replanejar}" if replanejar else contexto.sistema,
-                mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
+                mensagens=(*contexto.mensagens, *textos),
                 ferramentas=catalogo,
                 raciocinio=resposta.raciocinio,
                 ja_dito=_ja_dito(resposta),
@@ -889,7 +893,9 @@ class Cerebro:
                 else:
                     limite = cortar_por_prazo()
                 break
-            resultado = self._chamar(pedido, cancelado_no_laco, texto_do_dono)
+            resultado = com_a_chamada(
+                self._chamar(pedido, cancelado_no_laco, texto_do_dono), pedido
+            )
             resposta.ferramentas.append(resultado)
             # O navegador fechado (ADR-0070): o código não o abre sozinho — o motor recebe o fato
             # e o caminho, e decide (sites.open já na página, ou browser.launch). Abrir pelo motor
@@ -957,10 +963,10 @@ class Cerebro:
         if falta and visto_cancelamento is None and not cancelado():
             # O relato que não se confirmou não foi dito: o motor recebe o fato como evento e diz
             # ao dono o que falta, com as palavras dele (ADR-0070), numa rodada sem ferramentas.
-            textos, _podados = textos_no_contexto(resposta.ferramentas)
+            textos, _podados = mensagens_das_ferramentas(resposta.ferramentas)
             final = Contexto(
                 sistema=f"{contexto.sistema}\n\n{NOTA_DO_EVENTO_DO_TURNO} {falta}",
-                mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
+                mensagens=(*contexto.mensagens, *textos),
                 raciocinio=resposta.raciocinio,
                 ja_dito=_ja_dito(resposta),
             )
@@ -1026,7 +1032,7 @@ class Cerebro:
             and self.delegar_em_tarefa
             and (self.ferramentas.tarefas is not None)
         )
-        textos, _podados = textos_no_contexto(resposta.ferramentas)
+        textos, _podados = mensagens_das_ferramentas(resposta.ferramentas)
         nota = f"{NOTA_DO_LIMITE_DO_TURNO} {limite}. " + (
             NOTA_DO_LIMITE_COM_SUBAGENTE if continuar else NOTA_DO_LIMITE_SEM_SUBAGENTE
         )
@@ -1037,7 +1043,7 @@ class Cerebro:
         )
         final = Contexto(
             sistema=f"{contexto.sistema}\n\n{nota}",
-            mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
+            mensagens=(*contexto.mensagens, *textos),
             ferramentas=catalogo,
             raciocinio=resposta.raciocinio,
             ja_dito=_ja_dito(resposta),
@@ -1081,11 +1087,11 @@ class Cerebro:
             if recusa is None:
                 return None
             resposta.ferramentas.append(recusa)
-            textos, _podados = textos_no_contexto(resposta.ferramentas)
+            textos, _podados = mensagens_das_ferramentas(resposta.ferramentas)
             sem_saida = Contexto(
                 sistema=f"{contexto.sistema}\n\n{NOTA_DO_EVENTO_DO_TURNO} {limite}; e o subagente "
                 f"não pôde assumir agora ({recusa.motivo}).",
-                mensagens=(*contexto.mensagens, *(Mensagem("ferramenta", t) for t in textos)),
+                mensagens=(*contexto.mensagens, *textos),
                 raciocinio=resposta.raciocinio,
                 ja_dito=_ja_dito(resposta),
             )
@@ -1565,14 +1571,20 @@ class Cerebro:
         retido = ""
         palpite = False
         pensando = False  # o delta anterior era raciocínio: o próximo continua o mesmo trecho
-        # Todo texto de **qualquer** motor passa por um leitor do protocolo (ADR-0038): o motor
-        # que esqueceu de separar a proposta (ou um JSON solto) não a faz chegar à voz.
-        leitor = LeitorDoProtocolo()
-        deltas = medir(
-            self.motor.gerar(contexto, modo, cancelado),
-            caracteres_entrada=lambda: len(contexto.como_texto()),
-            precos=lambda: precos_do_motor(self.motor),
-            ao_medir=lambda medicao: self._anotar_consumo(resposta.consumo, medicao, "turno"),
+        # O laço canônico (ADR-0072): a mesma rodada do subagente — o modelo é chamado e a
+        # resposta separada em `jarvis.s2.laco`, para todo motor (texto ou chamada nativa).
+        deltas = rodada_do_agente(
+            self.motor,
+            contexto,
+            modo,
+            cancelado,
+            quem=QUEM_JARVIS,
+            envolver=lambda crus: medir(
+                crus,
+                caracteres_entrada=lambda: len(contexto.como_texto()),
+                precos=lambda: precos_do_motor(self.motor),
+                ao_medir=lambda medicao: self._anotar_consumo(resposta.consumo, medicao, "turno"),
+            ),
         )
 
         def falar(texto: str) -> bool:
@@ -1662,20 +1674,12 @@ class Cerebro:
                     if delta.motivo is MotivoDoFim.CANCELADO:
                         visto_cancelamento = time.monotonic()
                     break
-                partes = leitor.alimentar(delta.texto) if isinstance(delta, Texto) else [delta]
-                if any(tratar(parte) for parte in partes):
+                if tratar(delta):
                     visto_cancelamento = time.monotonic()
                     break
         finally:
             # Fechar o iterador é o que faz o motor parar de gerar (o `finally` dele).
             deltas.close()
-        # O que o leitor ainda segurava (um `<` ou `{` no fim que não era protocolo).
-        if (
-            visto_cancelamento is None
-            and not cancelado()
-            and any(tratar(parte) for parte in leitor.fechar())
-        ):
-            visto_cancelamento = time.monotonic()
         # A rodada acabou sem proposta: o que estava seguro era a resposta.
         if retido.strip() and visto_cancelamento is None and not cancelado() and falar(retido):
             visto_cancelamento = time.monotonic()
@@ -1856,13 +1860,19 @@ class Cerebro:
     ) -> str | None:
         """Uma rodada do motor sem ferramentas, inteira, sem o protocolo: o texto que ele escreveu,
         ou `None` se ele caiu. O raciocínio fica com o turno (ADR-0031), nunca na voz."""
-        leitor = LeitorDoProtocolo()
         partes: list[str] = []
-        deltas = medir(
-            self.motor.gerar(contexto, Modo.RAPIDO, cancelado),
-            caracteres_entrada=lambda: len(contexto.como_texto()),
-            precos=lambda: precos_do_motor(self.motor),
-            ao_medir=lambda medicao: self._anotar_consumo(resposta.consumo, medicao, "turno"),
+        deltas = rodada_do_agente(
+            self.motor,
+            contexto,
+            Modo.RAPIDO,
+            cancelado,
+            quem=QUEM_JARVIS,
+            envolver=lambda crus: medir(
+                crus,
+                caracteres_entrada=lambda: len(contexto.como_texto()),
+                precos=lambda: precos_do_motor(self.motor),
+                ao_medir=lambda medicao: self._anotar_consumo(resposta.consumo, medicao, "turno"),
+            ),
         )
 
         def juntar(delta: Delta) -> None:
@@ -1878,18 +1888,12 @@ class Cerebro:
                         resposta.fim, resposta.detalhe = delta.motivo, delta.detalhe
                         return None
                     break
-                if isinstance(delta, Texto):
-                    for parte in leitor.alimentar(delta.texto):
-                        juntar(parte)
-                else:
-                    juntar(delta)
+                juntar(delta)
         except Exception as erro:  # o motor caiu: o aviso fica no card, a conversa não cai
             resposta.fim, resposta.detalhe = MotivoDoFim.ERRO, f"{type(erro).__name__}: {erro}"
             return None
         finally:
             deltas.close()
-        for parte in leitor.fechar():
-            juntar(parte)
         return " ".join("".join(partes).split())
 
     def ouvido(

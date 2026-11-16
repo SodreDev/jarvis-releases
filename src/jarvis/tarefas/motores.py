@@ -12,6 +12,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+from jarvis.s2.laco import QUEM_SUBAGENTE, mensagens_das_ferramentas, rodada_do_agente
 from jarvis.s2.motor import (
     Contexto,
     Fim,
@@ -22,7 +23,6 @@ from jarvis.s2.motor import (
     PedidoDeTool,
     Texto,
 )
-from jarvis.s2.rascunho import textos_no_contexto
 from jarvis.tarefas.gestor import FORA_DA_ALLOWLIST, ErroDeTarefa, FimDaTarefa, Passo, Tarefa
 from jarvis.tarefas.limite import DecisaoNoLimite, MotivoDoLimite, NotificacaoDoLimite, ler_decisao
 from jarvis.voz.interface import Onde
@@ -79,7 +79,7 @@ class MotorDeAgente:
             mensagens=(
                 Mensagem("dono", objetivo),
                 # O que a tarefa leu é dela e só dela (ADR-0034): no contexto, dentro do orçamento.
-                *(Mensagem("ferramenta", t) for t in textos_no_contexto(feitos)[0]),
+                *mensagens_das_ferramentas(feitos)[0],
             ),
             ferramentas=tuple(
                 f for f in self.catalogo() if not str(f["id"]).startswith(FORA_DA_ALLOWLIST)
@@ -87,7 +87,8 @@ class MotorDeAgente:
         )
         texto: list[str] = []
         pedido: PedidoDeTool | None = None
-        deltas = self.motor.gerar(contexto, Modo.RAPIDO, cancelado)
+        # O laço canônico (ADR-0072): a mesma rodada do Jarvis e do subagente do pedido.
+        deltas = rodada_do_agente(self.motor, contexto, Modo.RAPIDO, cancelado, quem=QUEM_SUBAGENTE)
         try:
             for delta in deltas:
                 if isinstance(delta, Texto):
@@ -117,7 +118,7 @@ class MotorDeAgente:
             sistema=f"{SISTEMA_DA_TAREFA}\n\n{aviso.para_o_motor()}",
             mensagens=(
                 Mensagem("dono", f"Objetivo: {tarefa.descricao}."),
-                *(Mensagem("ferramenta", t) for t in textos_no_contexto(feitos)[0]),
+                *mensagens_das_ferramentas(feitos)[0],
             ),
         )
         texto: list[str] = []
