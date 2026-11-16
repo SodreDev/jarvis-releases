@@ -140,13 +140,22 @@ def _curto(valor: object, limite: int) -> str:
 
 
 def _alvo_ou_ref(args: Mapping[str, Any]) -> tuple[str | None, str | None]:
-    """O elemento pelo texto visível (`alvo`) ou pela referência do mapa (`ref`): um dos dois."""
+    """O elemento pelo texto visível (`alvo`) ou pela referência do mapa (`ref`). Com os dois, o
+    `ref` vence e o `alvo` é o nome que o Jarvis quer — conferido no rótulo, como o `esperado`
+    (ADR-0071: o modelo real manda os dois, e recusar era desistir do passo certo)."""
     alvo, ref = args.get("alvo"), args.get("ref")
-    if bool(alvo) == bool(ref):
-        raise ValueError(
-            "diga o elemento pelo texto (alvo) ou pela referência do mapa (ref), um dos dois"
-        )
-    return (str(alvo) if alvo else None), (str(ref) if ref else None)
+    if not alvo and not ref:
+        raise ValueError("diga o elemento pelo texto (alvo) ou pela referência do mapa (ref)")
+    if ref:
+        return None, str(ref)
+    return str(alvo), None
+
+
+def _esperado(args: Mapping[str, Any]) -> str:
+    """O nome que o Jarvis quer no elemento do `ref`: o `esperado`, ou o `alvo` mandado junto."""
+    if not args.get("ref"):
+        return ""
+    return str(args.get("esperado") or args.get("alvo") or "").strip()
 
 
 def _nome(alvo: str | None, dados: Mapping[str, Any]) -> str:
@@ -1026,7 +1035,7 @@ class CorposDoNavegador:
                 opcoes = parecidos(alvo, self._elementos_da_pagina(tab_id))
                 raise AlvoNaoConfere(explicar(alvo, "", opcoes)) from erro
             raise
-        esperado = str(args.get("esperado") or "").strip()
+        esperado = _esperado(args)
         if esperado and not confere(esperado, dados):
             achado = _curto(
                 dados.get("rotulo") or dados.get("nome") or dados.get("texto") or "",

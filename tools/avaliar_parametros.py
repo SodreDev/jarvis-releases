@@ -69,6 +69,20 @@ CONVERSAS: Final = (
     "Vó Lúcia",
 )
 ESPERA_DA_TAREFA_S: Final = {"ideal": 20.0, "copiao": 20.0, "real": 150.0}
+
+
+def _memorias_fixas() -> tuple[Any, ...]:
+    from jarvis.social.memorias import MemoriaFixa
+
+    return (
+        MemoriaFixa("m1", "contato", "Mãe", "minha mãe"),
+        MemoriaFixa("m2", "contato", "Bruno", "meu irmão"),
+    )
+
+
+MEMORIAS_FIXAS: Final = _memorias_fixas()
+"""As da página de memórias do app, as mesmas de `contatos` (nunca telefone)."""
+BUSCAS: Final = frozenset({"memoria.buscar", "memoria.buscar_historico", "web.buscar"})
 GRAVAM: Final = frozenset({"memoria.lembrar", "memoria.criar_no", "memoria.criar_aresta"})
 SO_CONSULTAS: Final = frozenset(
     {"system.clock.now", "memoria.buscar", "memoria.buscar_historico", "script.rodar"}
@@ -138,8 +152,25 @@ class PaginaFalsa:
         match pedido.method:
             case "tabs.list":
                 return ok | {"result": {"abas": [self._aba()]}}
-            case "tabs.current" | "tabs.show" | "tabs.navigate" | "tabs.open":
+            case "tabs.current" | "tabs.show":
                 return ok | {"result": {"aba": self._aba()}}
+            case "tabs.navigate" | "tabs.open":
+                # Como a extensão confere (cliente.navegar): saiu do lugar, carregou, respondeu.
+                pagina = {"url": WHATSAPP, "titulo": "WhatsApp"}
+                return ok | {
+                    "result": {
+                        "aba": self._aba(),
+                        "comecou": True,
+                        "carregou": True,
+                        "pagina": pagina,
+                        "janela": "dono",
+                        "visivel": True,
+                    }
+                }
+            case "page.eval":
+                return ok | {"result": {"valor": None}}
+            case "page.console" | "page.network":
+                return ok | {"result": {"itens": []}}
             case "windows.focused":
                 return ok | {"result": {"janelaId": 1, "abaAtivaId": ABA}}
             case "page.map":
@@ -178,7 +209,14 @@ class PaginaFalsa:
                 achado = self._achar(p)
                 if isinstance(achado, str):
                     return erro(achado, "não achei")
-                if achado["papel"] == "listitem":
+                envia_do_campo = achado.get("campo") and (
+                    p.get("acao") == "enviar" or p.get("tecla") == "Enter"
+                )
+                if envia_do_campo and self.rascunho:
+                    # «enviar»/Enter no campo do chat manda, como no WhatsApp de verdade.
+                    self.enviadas[self.aberta].append(self.rascunho)
+                    self.rascunho = ""
+                elif achado["papel"] == "listitem":
                     self.aberta, self.rascunho = str(achado["rotulo"]), ""
                     self.abertas.append(self.aberta)
                 elif achado["rotulo"] == "Enviar" and self.rascunho:
@@ -215,11 +253,13 @@ def executor_de_avaliacao(pasta: Path, pagina: PaginaFalsa, livro: Any) -> Any:
 
         registro: list[tuple[str, dict[str, Any], str, str]]
         """Cada chamada que chegou ao executor: (ferramenta, argumentos, status, causa)."""
+        erros: list[str]
 
         def avaliar(self, tool_id: str, args: Mapping[str, Any], **kw: Any) -> Any:
             avaliacao = super().avaliar(tool_id, args, **kw)
             if isinstance(avaliacao, ResultadoDeFerramenta):  # recusada antes de rodar
                 self.registro.append((tool_id, dict(args), avaliacao.status, avaliacao.causa))
+                self.erros.append(f"{tool_id} {dict(args)} → {avaliacao.motivo[:160]}")
             return avaliacao
 
         def concluir(self, avaliacao: Any, **kw: Any) -> ResultadoDeFerramenta:
@@ -227,6 +267,10 @@ def executor_de_avaliacao(pasta: Path, pagina: PaginaFalsa, livro: Any) -> Any:
             self.registro.append(
                 (avaliacao.tool_id, dict(avaliacao.argumentos), resultado.status, resultado.causa)
             )
+            if resultado.status != "ok":
+                self.erros.append(
+                    f"{avaliacao.tool_id} {dict(avaliacao.argumentos)} → {resultado.motivo[:160]}"
+                )
             return resultado
 
         def _corpo(self, tool_id: str, *_a: Any, **_k: Any) -> dict[str, Any]:
@@ -253,6 +297,7 @@ def executor_de_avaliacao(pasta: Path, pagina: PaginaFalsa, livro: Any) -> Any:
         navegador=CorposDoNavegador(ClienteDoNavegador(pagina)),
     )
     executor.registro = []
+    executor.erros = []
     executor.preparar()
     executor.memoria = FerramentasDeMemoria(livro=livro)
     executor.tarefas = GestorDeTarefas(executor=executor, confirmar=lambda _p, _c: True)
@@ -306,8 +351,10 @@ class MotorMedido:
                 Chamada(
                     primeiro,
                     (time.monotonic() - comeco) * 1000.0,
-                    sum(int(v) for k, v in uso.items() if "input" in k),
-                    int(uso.get("output_tokens", 0)),
+                    # A CLI do Claude informa input/output_tokens; o motor compatível (OpenRouter)
+                    # já normaliza em entrada/saida (`compativel._uso`).
+                    sum(int(v) for k, v in uso.items() if "input" in k or k == "entrada"),
+                    int(uso.get("output_tokens", uso.get("saida", 0))),
                     "Você é o subagente" in contexto.sistema,
                 )
             )
@@ -497,6 +544,8 @@ class Resultado:
     ms_primeiro_por_chamada: list[float]
     falado: str
     acoes: list[str]
+    erros: list[str] = field(default_factory=list)
+    """Argumentos e motivo de cada chamada que não deu ok (para iterar no esquema/prompt)."""
 
 
 def rodar_caso(
@@ -514,6 +563,7 @@ def rodar_caso(
     from jarvis.s2.persona import sistema_do_jarvis
     from jarvis.s2.regras import bloco_padrao
     from jarvis.s2.roteiro_do_navegador import Contato
+    from jarvis.social.memorias import bloco as bloco_das_memorias
 
     with tempfile.TemporaryDirectory(prefix="avaliar-parametros-") as bruto:
         pasta = Path(bruto)
@@ -538,6 +588,8 @@ def rodar_caso(
             exigir_plano=True,
             pendencia_sem_portao=True,
             contatos=lambda: (Contato("Mãe", "minha mãe"), Contato("Bruno", "meu irmão")),
+            # As memórias fixas no turno, como o app (`_memorias_fixas_do_turno`): o mesmo bloco.
+            memorias_fixas=lambda fala: bloco_das_memorias(fala, MEMORIAS_FIXAS),
         )
         cerebro.conversa.sistema = sistema_do_jarvis(bloco_padrao())
         publicados: list[float] = []
@@ -575,6 +627,7 @@ def rodar_caso(
             ms_primeiro_por_chamada=[c.ms_primeiro for c in chamadas if c.ms_primeiro is not None],
             falado=falado[:300],
             acoes=[f"{t}:{s}{'(' + c + ')' if c else ''}" for t, _a, s, c in executor.registro],
+            erros=list(executor.erros),
         )
 
 
@@ -594,6 +647,8 @@ def conferir(
     fala = normal(caso["fala"])
     for proibido in caso.get("proibido_em_argumento", []):
         for tool_id, args, _s, _c in registro:
+            if tool_id in BUSCAS:
+                continue  # uma busca pode citar as palavras do dono: não é repassar a fala
             if normal(proibido) in normal(json.dumps(args, ensure_ascii=False)):
                 falhas.append(f"cópia da fala em {tool_id}: «{proibido}»")
                 break

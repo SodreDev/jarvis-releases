@@ -141,6 +141,11 @@ def linhas(
                     break
                 fila.put(bruta.decode("utf-8", "replace").rstrip("\r\n"))
             fila.put(_Fim())
+        except AttributeError:
+            # Quem consome já terminou (o `[DONE]` do SSE, o cancelamento) e fechou a conexão
+            # enquanto este fio estava no `readline`: o `http.client` fica sem `fp` e levanta
+            # AttributeError. Ninguém mais lê a fila — sem traceback no stderr a cada resposta.
+            fila.put(_Fim())
         except (OSError, HTTPException, ValueError) as erro:
             texto = redigir(f"não deu para falar com o serviço: {erro}", segredos)
             fila.put(_Fim(ErroDoServico(texto)))

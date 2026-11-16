@@ -925,15 +925,19 @@ def test_acionar_o_envio_de_um_formulario_pede_o_sim_e_o_nao_impede(
     assert feito.status == "ok" and feito.dados["enviado"] is True
 
 
-def test_texto_e_referencia_juntos_ou_nenhum_dos_dois_sao_recusados(
+def test_texto_e_referencia_juntos_o_ref_vence_e_o_texto_e_conferido(
     executor: ExecutorDeFerramentas, pagina: PaginaFalsa
 ) -> None:
+    """ADR-0071: o modelo real manda `alvo` e `ref` juntos; o ref vence e o alvo é o nome
+    conferido no rótulo (como o `esperado`). Nenhum dos dois continua recusado."""
     pagina.no_mapa("ab1.4", "Próxima")
     pagina.elemento("Próxima")
     juntos, _ = _rodar(executor, "browser.click", {"alvo": "Próxima", "ref": "ab1.4"})
+    assert juntos.status == "ok"
+    outro, _ = _rodar(executor, "browser.click", {"alvo": "Anterior", "ref": "ab1.4"})
+    assert outro.status == "erro" and outro.causa == "alvo_nao_confere"
     nenhum, _ = _rodar(executor, "browser.acionar", {"acao": "focar"})
-    assert juntos.status == nenhum.status == "erro"
-    assert "um dos dois" in juntos.motivo and "um dos dois" in nenhum.motivo
+    assert nenhum.status == "erro" and "(alvo) ou pela referência" in nenhum.motivo
     pela_ref, perguntas = _rodar(executor, "browser.click", {"ref": "ab1.4"})
     assert pela_ref.status == "ok" and perguntas == []
     assert pela_ref.dados["alvo"] == "Próxima"

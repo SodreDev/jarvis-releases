@@ -2529,6 +2529,7 @@ class Aplicativo:
             caracteres_de_raciocinio=len(resposta.raciocinio) if resposta else 0,
             caracteres_do_plano=len(resposta.plano) if resposta else 0,
             plano_cobrado=resposta.plano_cobrado if resposta else 0,
+            plano_sem_acao=resposta.plano_sem_acao if resposta else 0,
             raciocinio_descartado=resposta.raciocinio_descartado if resposta else 0,
             narracao_retida=resposta.narracao_retida if resposta else 0,
             # Falar menos (emenda de 2026-10-21 à ADR-0031): o tamanho do que ficou só na tela.

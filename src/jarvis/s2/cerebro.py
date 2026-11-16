@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
@@ -232,6 +232,11 @@ NOTA_DO_PLANO: Final = (
     "Depois proponha a ferramenta, se ainda for o caso."
 )
 """A notificação ao motor quando a 1ª ferramenta veio sem plano (ADR-0071): ele decide de novo."""
+NOTA_DO_PLANO_SEM_ACAO: Final = (
+    "O SEU PLANO PREVIA FERRAMENTA, e a sua resposta não propôs nenhuma: nada foi feito, e o dono "
+    "ouviu só o que você disse. Proponha agora a ferramenta do plano, ou, se mudou de ideia, diga "
+    "ao dono em uma frase por que não vai fazer."
+)
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
@@ -338,6 +343,9 @@ class Resposta:
     """O raciocínio do motor antes da 1ª ferramenta do pedido (ADR-0071): as intenções do dono e
     os valores que o Jarvis escolheu. É o objetivo da tarefa. Nunca vai à fala nem à tela."""
     plano_cobrado: int = 0
+    plano_sem_acao: int = 0
+    """Quantas vezes o plano citava ferramenta, a rodada acabou sem proposta e o motor foi
+    notificado (`NOTA_DO_PLANO_SEM_ACAO`, uma vez por turno)."""
     """Quantas vezes a 1ª ferramenta veio sem plano e voltou ao motor (`NOTA_DO_PLANO`)."""
 
     @property
@@ -771,6 +779,25 @@ class Cerebro:
                 resposta.respondida = True
             if (
                 not pedidos
+                and visto_cancelamento is None
+                and resposta.fim is MotivoDoFim.CONCLUIDO
+                and passo < self.maximo_de_passos
+                and not cancelado_no_laco()
+                and self._plano_sem_acao(resposta, catalogo)
+            ):
+                # O plano dele previa ferramenta e a rodada acabou sem nenhuma proposta (ADR-0071:
+                # «Vou abrir o WhatsApp e procurar o grupo.» e nada): o motor recebe o fato e
+                # decide — propor agora, ou dizer ao dono por que não. Uma vez por turno.
+                resposta.plano_sem_acao += 1
+                resposta.cobrancas += 1  # o filtro do já dito cala o «vou abrir» repetido
+                resposta.respondida = False
+                contexto = Contexto(
+                    sistema=f"{contexto.sistema}\n\n{NOTA_DO_PLANO_SEM_ACAO}",
+                    mensagens=contexto.mensagens,
+                )
+                continue
+            if (
+                not pedidos
                 and verdade is not None
                 and verdade.cortadas
                 and visto_cancelamento is None
@@ -1185,6 +1212,14 @@ class Cerebro:
             motor=self.motor.nome,
             alcance=self.alcance_de_memoria,
         ).bloco()
+
+    def _plano_sem_acao(self, resposta: Resposta, catalogo: Sequence[Mapping[str, object]]) -> bool:
+        """O plano do próprio motor cita uma ferramenta do catálogo e nada foi proposto no turno
+        (ADR-0071). Compara o plano com os ids do catálogo — o que ELE escreveu, nunca a fala."""
+        if not self.exigir_plano or resposta.plano_sem_acao or resposta.ferramentas:
+            return False
+        plano = resposta.plano
+        return bool(plano.strip()) and any(str(f["id"]) in plano for f in catalogo)
 
     def _falta_o_plano(self, resposta: Resposta) -> bool:
         """A 1ª ferramenta do pedido chegou sem plano e ainda cabe devolvê-la (ADR-0071)?"""
