@@ -92,7 +92,7 @@ def test_a_persona_v15_tem_as_secoes_na_ordem() -> None:
             "A dúvida se resolve primeiro pelo contexto",
         ),
         ("objetivo até o fim", "vá até o fim sem perguntar a cada passo"),
-        ("navegador fechado, o sistema abre", "Navegador fechado não é motivo para chamar o dono"),
+        ("navegador fechado, o Jarvis abre", "Navegador fechado não é motivo para chamar o dono"),
         ("fechar é a janela, todo é o app", "Fechar é a JANELA, como o X (window.close)"),
         ("encerrar o Jarvis não é desligar o PC", "não é desligar o computador"),
         ("só o destrutivo pede o sim (ADR-0066)", "O sistema pede o sim do dono só no que é"),
