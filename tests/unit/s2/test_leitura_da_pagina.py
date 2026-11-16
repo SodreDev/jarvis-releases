@@ -1,4 +1,5 @@
-"""Ler a página antes de agir, e reler depois do erro (ADR-0069 §2): a regra pura, sem navegador."""
+"""Ler a página antes de agir, e reler depois do erro (ADR-0069 §2), como VEREDITO ao modelo
+(ADR-0072): a ação sem leitura não roda e o porquê volta a ele — o código não lê no lugar dele."""
 
 from __future__ import annotations
 
@@ -10,10 +11,10 @@ import pytest
 from jarvis.politica.permissao import ModoDePermissao
 from jarvis.s2.cerebro import Cerebro
 from jarvis.s2.leitura_da_pagina import (
+    CAUSA_DA_LEITURA,
     LEITURAS_FORCADAS,
-    NOTA_DA_LEITURA,
     falta_ler,
-    leitura_antes,
+    motivo_para_ler,
 )
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
@@ -46,57 +47,65 @@ def test_quando_falta_ler(passos: tuple[tuple[str, str], ...], motivo: str) -> N
     assert falta_ler(passos) == motivo
 
 
-def test_a_acao_sem_leitura_vira_a_inspecao_da_mesma_aba() -> None:
-    leitura = leitura_antes(DIGITAR, (("browser.navigate", "ok"),), TODAS)
-    assert leitura == PedidoDeTool("browser.inspecionar", {"tab_id": 7})
+def test_a_acao_sem_leitura_ganha_o_veredito_com_a_ferramenta_e_a_aba() -> None:
+    motivo = motivo_para_ler(DIGITAR, (("browser.navigate", "ok"),), TODAS)
+    assert motivo.startswith("não rodou: browser.type")
+    assert "browser.inspecionar (tab_id 7)" in motivo
 
 
-def test_sem_inspecionar_le_o_texto_e_sem_leitura_nenhuma_segue() -> None:
-    assert leitura_antes(DIGITAR, (), ("browser.read", "browser.type")) == PedidoDeTool(
-        "browser.read", {"tab_id": 7}
-    )
-    assert leitura_antes(DIGITAR, (), ("browser.type",)) is None
+def test_depois_do_erro_o_veredito_diz_que_falhou() -> None:
+    motivo = motivo_para_ler(DIGITAR, (("browser.read", "ok"), ("browser.type", "erro")), TODAS)
+    assert "falhou" in motivo
 
 
-def test_leitura_que_vale_nao_e_repetida_e_o_que_nao_e_acao_segue() -> None:
-    assert leitura_antes(DIGITAR, (("browser.inspecionar", "ok"),), TODAS) is None
-    assert leitura_antes(PedidoDeTool("browser.read", {}), (), TODAS) is None
-    assert (
-        leitura_antes(PedidoDeTool("browser.navigate", {"url": "https://a.example"}), (), TODAS)
-        is None
-    )
+def test_sem_inspecionar_manda_ler_o_texto_e_sem_leitura_nenhuma_segue() -> None:
+    assert "browser.read" in motivo_para_ler(DIGITAR, (), ("browser.read", "browser.type"))
+    assert motivo_para_ler(DIGITAR, (), ("browser.type",)) == ""
 
 
-def test_depois_do_teto_de_leituras_forcadas_a_acao_segue() -> None:
-    assert leitura_antes(DIGITAR, (), TODAS, forcadas=LEITURAS_FORCADAS) is None
+def test_leitura_que_vale_nao_e_cobrada_e_o_que_nao_e_acao_segue() -> None:
+    assert motivo_para_ler(DIGITAR, (("browser.inspecionar", "ok"),), TODAS) == ""
+    assert motivo_para_ler(PedidoDeTool("browser.read", {}), (), TODAS) == ""
+    navegar = PedidoDeTool("browser.navigate", {"url": "https://a.example"})
+    assert motivo_para_ler(navegar, (), TODAS) == ""
 
 
-def test_no_turno_o_jarvis_le_a_pagina_antes_da_acao_que_veio_sem_leitura(tmp_path: Path) -> None:
-    """Com o WhatsApp falso: o motor manda digitar sem ter lido a página; o código inspeciona
-    antes, o motor vê o mapa (e a nota) e só então digita."""
-    vistos: list[str] = []
+def test_depois_do_teto_de_vereditos_a_acao_segue() -> None:
+    assert motivo_para_ler(DIGITAR, (), TODAS, recusadas=LEITURAS_FORCADAS) == ""
+
+
+def test_no_turno_a_acao_sem_leitura_volta_ao_modelo_que_le_e_age(tmp_path: Path) -> None:
+    """Com o WhatsApp falso: o motor manda digitar sem ter lido a página; a ação NÃO roda, o
+    veredito volta a ele, ELE pede a inspeção e só então digita. O código não lê sozinho."""
 
     def resposta(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
         feitas = sum(1 for m in contexto.mensagens if m.papel == "ferramenta")
-        vistos.append(contexto.sistema)
         if feitas == 0:
             return [PedidoDeTool("browser.type", {"alvo": "Mensagem", "texto": "Te amo, mãe!"})]
         if feitas == 1:
+            return [PedidoDeTool("browser.inspecionar", {})]
+        if feitas == 2:
             return [PedidoDeTool("browser.type", {"alvo": "Mensagem", "texto": "Te amo, mãe!"})]
         return ["Digitei a mensagem."]
 
-    for executor in _executor(tmp_path, _whatsapp(), ModoDePermissao.AUTOMATICO):
+    pagina = _whatsapp()
+    for executor in _executor(tmp_path, pagina, ModoDePermissao.AUTOMATICO):
         cerebro = Cerebro(motor=MotorRoteirizado(resposta=resposta), ferramentas=executor)
         resultado, _falado = _dizer(cerebro, "escreve te amo pra minha mãe")
-    assert [r.tool_id for r in resultado.ferramentas][:2] == ["browser.inspecionar", "browser.type"]
+    primeiro, *resto = resultado.ferramentas
+    assert (primeiro.tool_id, primeiro.status, primeiro.causa) == (
+        "browser.type",
+        "negado",
+        CAUSA_DA_LEITURA,
+    )
+    assert [r.tool_id for r in resto][:2] == ["browser.inspecionar", "browser.type"]
     assert resultado.leituras_forcadas == 1
-    assert any(NOTA_DA_LEITURA in s for s in vistos[1:])
+    digitados = [params for metodo, params in pagina.chamadas if metodo == "page.type"]
+    assert len(digitados) == 1, "a ação recusada não chegou à página"
 
 
 def test_a_orientacao_manda_ler_antes_e_depurar_no_erro() -> None:
     """ADR-0070: a orientação (não um roteiro de passos) diz ao subagente como trabalhar."""
-    texto = roteiro("abre o youtube e procura música", ("browser.inspecionar", "browser.click"))
+    texto = roteiro(("browser.inspecionar", "browser.click"))
     assert "LEIA A PÁGINA antes de agir" in texto and "browser.inspecionar" in texto
     assert "releia e depure" in texto and f"até {TENTATIVAS_POR_PASSO} vezes por passo" in texto
-    envio = roteiro("abre o contato da minha mãe e diz eu te amo", ("browser.inspecionar",))
-    assert "LEIA A PÁGINA antes de agir" in envio and "releia e depure" in envio

@@ -26,7 +26,6 @@ from jarvis.politica.permissao import ModoDePermissao
 from jarvis.s2.cerebro import Cerebro
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
-from jarvis.s2.roteiro_do_navegador import NOTA_DE_REDIGIR
 from jarvis.s2.verdade import (
     FALTA_ENVIAR,
     Afirmacao,
@@ -238,6 +237,6 @@ def test_a_mensagem_que_o_jarvis_digita_nao_e_vetada_pelo_codigo(
         resultado, _falado = _dizer(cerebro, PEDIDO)
     digitados = [r for r in resultado.ferramentas if r.tool_id == "browser.type"]
     assert len(digitados) == 1 and not resultado.cobrou_redacao
-    assert not any(NOTA_DE_REDIGIR in s for s in vistos), "sem veto nem cobrança do código"
+    assert not any("REDIJA A MENSAGEM" in s for s in vistos), "sem veto nem cobrança do código"
     digitado = [params for metodo, params in pagina.chamadas if metodo == "page.type"]
     assert len(digitado) == 1 and "eu te amo" in str(digitado[0])

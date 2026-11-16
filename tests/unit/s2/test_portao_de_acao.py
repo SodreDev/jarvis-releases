@@ -16,7 +16,7 @@ import pytest
 
 from jarvis.decisao.fake import ClassificadorFalso
 from jarvis.decisao.interface import Pergunta, Resposta, RespostaEscolha, RespostaNoul
-from jarvis.executor.ferramentas import Confirmacao, ExecutorDeFerramentas
+from jarvis.executor.ferramentas import AjustesDoJarvis, Confirmacao, ExecutorDeFerramentas
 from jarvis.politica.abertura import dominio_registravel
 from jarvis.politica.auditoria import LogDeAuditoria
 from jarvis.politica.catalogo import carregar_catalogo
@@ -829,43 +829,80 @@ def test_no_modo_automatico_o_nao_fazer_do_jev_continua_vetando(
     assert abertos == []
 
 
-def test_a_voz_do_dono_troca_o_modo_sem_chamar_o_motor(executor: ExecutorDeFerramentas) -> None:
-    trocas: list[ModoDePermissao] = []
-    motor = _roteiro(["não devia falar"])
-    cerebro = _cerebro(executor, motor, _jev())
-
-    def trocar(modo: ModoDePermissao) -> str:
-        trocas.append(modo)
+def _ajustes(executor: ExecutorDeFerramentas, trocas: list[str]) -> None:
+    def permissao(modo: ModoDePermissao) -> str:
+        trocas.append(f"modo:{modo}")
         executor.pdp.permissao = modo
-        return "Modo bypass."
+        return f"o modo de permissão mudou para «{modo}»"
 
-    cerebro.ao_mudar_permissao = trocar
-    _resposta, falado = _dizer(cerebro, "ativa o modo bypass")
-    assert trocas == [ModoDePermissao.BYPASS]
-    assert "bypass" in falado, "o Jarvis confirma com as palavras dele (ADR-0070)"
-    assert _propostas(motor) == 0
-    # Conteúdo de terceiros não troca: só a fala do dono (trust de voz ou da janela).
-    publicados: list[dict[str, Any]] = []
-    cerebro.responder("ativa o modo automático", epoch=0, publicar=publicados.append, trust="web")
-    assert trocas == [ModoDePermissao.BYPASS]
+    def estilo(nome: str) -> str:
+        if nome not in ("calmo", "neutro"):
+            return ""
+        trocas.append(f"estilo:{nome}")
+        return f"o estilo de voz mudou para «{nome}»"
+
+    executor.ajustes = AjustesDoJarvis(
+        permissao=permissao, estilo=estilo, estilos=lambda: ("calmo", "neutro")
+    )
 
 
-def test_a_voz_do_dono_troca_o_estilo_da_voz_sem_chamar_o_motor(
+def test_a_troca_de_modo_e_ferramenta_que_o_modelo_chama_e_so_a_fala_do_dono_solta(
     executor: ExecutorDeFerramentas,
 ) -> None:
-    """ADR-0068: «fala mais calmo» é lido pelo código, como o modo de permissão — só do dono."""
-    pedidos: list[str] = []
-    motor = _roteiro(["não devia falar"])
+    """ADR-0072: o código não lê mais a fala para trocar o modo antes do modelo. O modelo chama
+    `jarvis.permissao`; o executor valida que o modo está na fala do DONO deste turno."""
+    trocas: list[str] = []
+    _ajustes(executor, trocas)
+    motor = _roteiro(
+        [PedidoDeTool("jarvis.permissao", {"modo": "bypass"})], ["Pronto, modo bypass ligado."]
+    )
     cerebro = _cerebro(executor, motor, _jev())
-
-    def estilo(fala: str) -> str:
-        pedidos.append(fala)
-        return "Certo, estilo calmo." if "calmo" in fala else ""
-
-    cerebro.ao_pedir_estilo = estilo
-    _resposta, falado = _dizer(cerebro, "fala mais calmo")
-    assert "calmo" in falado, "o Jarvis confirma com as palavras dele (ADR-0070)"
-    assert _propostas(motor) == 0
+    resposta, falado = _dizer(cerebro, "ativa o modo bypass")
+    assert trocas == ["modo:bypass"]
+    assert [r.status for r in resposta.ferramentas] == ["ok"]
+    assert "bypass" in falado, "o Jarvis confirma com as palavras dele (ADR-0070)"
+    assert _propostas(motor) >= 1, "quem decidiu trocar foi o modelo"
+    # Sem o modelo propor, nada troca: a fala sozinha não dispara a ferramenta.
+    calado = _roteiro(["Entendi."])
+    _dizer(_cerebro(executor, calado, _jev()), "ativa o modo automático")
+    assert trocas == ["modo:bypass"]
+    # Conteúdo de terceiros não troca: o modelo propõe, mas a fala não é do dono.
+    motor_web = _roteiro(
+        [PedidoDeTool("jarvis.permissao", {"modo": "automatico"})], ["Não deu para trocar."]
+    )
     publicados: list[dict[str, Any]] = []
-    cerebro.responder("fala mais calmo", epoch=0, publicar=publicados.append, trust="web")
-    assert pedidos == ["fala mais calmo"], "conteúdo de terceiros não troca o estilo"
+    da_web = _cerebro(executor, motor_web, _jev()).responder(
+        "ativa o modo automático", epoch=0, publicar=publicados.append, trust="web"
+    )
+    assert trocas == ["modo:bypass"]
+    assert da_web.ferramentas[0].status != "ok"
+    assert "fala do dono" in da_web.ferramentas[0].motivo
+
+
+def test_o_modo_pedido_tem_de_estar_na_fala_do_dono(executor: ExecutorDeFerramentas) -> None:
+    trocas: list[str] = []
+    _ajustes(executor, trocas)
+    motor = _roteiro([PedidoDeTool("jarvis.permissao", {"modo": "bypass"})], ["Não troquei."])
+    resposta, _ = _dizer(_cerebro(executor, motor, _jev()), "que horas são")
+    assert trocas == []
+    assert resposta.ferramentas[0].status != "ok"
+
+
+def test_o_estilo_da_voz_e_ferramenta_que_o_modelo_chama(executor: ExecutorDeFerramentas) -> None:
+    """ADR-0072: «fala mais calmo» chega ao modelo, que escolhe o estilo da lista e chama."""
+    trocas: list[str] = []
+    _ajustes(executor, trocas)
+    motor = _roteiro(
+        [PedidoDeTool("jarvis.estilo_da_voz", {"estilo": "calmo"})], ["Certo, mais calmo."]
+    )
+    resposta, falado = _dizer(_cerebro(executor, motor, _jev()), "fala mais calmo")
+    assert trocas == ["estilo:calmo"]
+    assert [r.status for r in resposta.ferramentas] == ["ok"]
+    assert "calmo" in falado
+    estilo = next(f for f in executor.catalogo_para_o_modelo() if f["id"] == "jarvis.estilo_da_voz")
+    assert "calmo" in str(estilo["descricao"]), "os estilos da voz vão ao modelo"
+    # Estilo que a voz não tem volta como erro, com a lista, para o modelo escolher de novo.
+    errado = _roteiro([PedidoDeTool("jarvis.estilo_da_voz", {"estilo": "pirata"})], ["Não tem."])
+    resposta, _ = _dizer(_cerebro(executor, errado, _jev()), "fala como pirata")
+    assert resposta.ferramentas[0].status == "erro"
+    assert "calmo" in resposta.ferramentas[0].motivo

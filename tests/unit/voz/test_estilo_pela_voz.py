@@ -1,4 +1,4 @@
-"""O estilo do endpoint de voz trocado pela fala do dono, no laço (ADR-0068)."""
+"""O estilo do endpoint de voz trocado pela ferramenta que o modelo chama (ADR-0068, ADR-0072)."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def _aplicativo(tmp_path: Path, motor: object) -> Aplicativo:
     return aplicativo
 
 
-def test_fala_mais_calmo_troca_o_estilo_do_proximo_trecho_e_grava(tmp_path: Path) -> None:
+def test_a_ferramenta_de_estilo_troca_o_estilo_do_proximo_trecho_e_grava(tmp_path: Path) -> None:
     gravados: list[str] = []
     with EndpointFalso() as servidor:
         servidor.rotas["/api/tts"] = Rota(corpo=pcm(240))
@@ -48,9 +48,12 @@ def test_fala_mais_calmo_troca_o_estilo_do_proximo_trecho_e_grava(tmp_path: Path
             return "salvo"
 
         aplicativo.ao_mudar_estilo = gravar
-        assert aplicativo._pedir_estilo("abre o Discord") == ""
+        # A lista que vai ao modelo na descrição da ferramenta (ADR-0072).
+        assert aplicativo._estilos() == ("cordial", "calmo", "urgente")
+        # Estilo que a voz não tem: vazio, e o executor devolve o erro com a lista ao modelo.
+        assert aplicativo._definir_estilo("pirata") == ""
         # O que aconteceu vai ao Jarvis como dado (ADR-0070); a confirmação falada é dele.
-        evento = aplicativo._pedir_estilo("Jarvis, fala mais calmo")
+        evento = aplicativo._definir_estilo("Calmo")
         assert "«calmo»" in evento and "Certo" not in evento
         motor.sintetizar("tudo bem")
     assert gravados == ["calmo"]
@@ -58,9 +61,10 @@ def test_fala_mais_calmo_troca_o_estilo_do_proximo_trecho_e_grava(tmp_path: Path
     assert json.loads(servidor.pedidos[-1].corpo)["style"] == "calmo"
 
 
-def test_sem_endpoint_nada_e_pedido_de_estilo(tmp_path: Path) -> None:
+def test_sem_endpoint_a_voz_nao_tem_estilo_e_a_ferramenta_nao_existe(tmp_path: Path) -> None:
     aplicativo = _aplicativo(tmp_path, Reserva())
-    assert aplicativo._pedir_estilo("fala mais calmo") == ""
+    assert aplicativo._estilos() == ()
+    assert aplicativo._definir_estilo("calmo") == ""
 
 
 def test_a_janela_troca_a_voz_e_o_estilo_com_a_conversa_aberta(tmp_path: Path) -> None:

@@ -32,7 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -213,8 +213,9 @@ class _ExtensaoDeMentira:
 
 
 def medir_o_caminho_rapido(n: int) -> dict[str, dict[str, list[float]]]:
-    """Cada comando `n` vezes, num cérebro com o caminho rápido ligado e um motor que não pode ser
-    chamado (se fosse, a medida seria a de antes)."""
+    """Cada comando `n` vezes, com o código de verdade e um motor roteirizado de atraso zero que
+    propõe a ferramenta como o modelo proporia. O caminho rápido saiu (ADR-0072: a fala não
+    dispara função); o que sobra aqui é o NOSSO lado do comando simples, sem o tempo do modelo."""
     from jarvis.executor.ferramentas import ExecutorDeFerramentas
     from jarvis.executor.lancador import App, RegistroDeApps
     from jarvis.executor.nativas import Nativas
@@ -225,10 +226,26 @@ def medir_o_caminho_rapido(n: int) -> dict[str, dict[str, list[float]]]:
     from jarvis.politica.modos import Modo
     from jarvis.politica.pdp import Pdp
     from jarvis.s2.cerebro import Cerebro
-    from jarvis.s2.motor_roteirizado import MotorRoteirizado
+    from jarvis.s2.motor import Contexto, PedidoDeTool
+    from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
 
-    def proibido(_contexto: object) -> str:
-        raise AssertionError("o motor foi chamado: não é o caminho rápido")
+    propostas = {
+        "abre o Discord": PedidoDeTool("apps.launch", {"nome": "discord"}),
+        "fecha o Discord": PedidoDeTool("window.close", {"app": "discord"}),
+        "o que está em foco?": PedidoDeTool("window.focused", {}),
+        "abre o YouTube": PedidoDeTool("sites.open", {"url": "https://www.youtube.com/"}),
+        "pesquisa vídeos de gatos no YouTube": PedidoDeTool(
+            "sites.open", {"url": "https://www.youtube.com/results?search_query=gatos"}
+        ),
+    }
+
+    def modelo(fala: str) -> Callable[[Contexto], list[Parte]]:
+        def responder(contexto: Contexto) -> list[Parte]:
+            if any(m.papel == "ferramenta" for m in contexto.mensagens):
+                return ["Pronto."]
+            return [propostas[fala]]
+
+        return responder
 
     discord = App(
         id="discord",
@@ -275,9 +292,8 @@ def medir_o_caminho_rapido(n: int) -> dict[str, dict[str, list[float]]]:
                 for _ in range(n):
                     executor.nativas = Nativas(lar=lar, janelas=_JanelasDeMentira())
                     cerebro = Cerebro(
-                        motor=MotorRoteirizado(resposta=proibido),
+                        motor=MotorRoteirizado(resposta=modelo(fala)),
                         ferramentas=executor,
-                        caminho_rapido=True,
                     )
                     primeira: list[float] = []
                     comeco = time.perf_counter()
@@ -292,8 +308,8 @@ def medir_o_caminho_rapido(n: int) -> dict[str, dict[str, list[float]]]:
 
                     resposta = cerebro.responder(fala, epoch=1, publicar=publicar)
                     total = (time.perf_counter() - comeco) * 1000.0
-                    if resposta.motor_chamado or not primeira:
-                        raise AssertionError(f"«{fala}» não foi pelo caminho rápido")
+                    if not primeira or not resposta.ferramentas:
+                        raise AssertionError(f"«{fala}» não chegou à ferramenta")
                     etapas = medidas.setdefault(fala, {})
                     etapas.setdefault("1ª ferramenta", []).append(
                         resposta.ms_ate_primeira_ferramenta or 0.0
