@@ -79,6 +79,35 @@ NOTA_DA_TAREFA: Final = (
     "confirmou — ou com o que deu errado e o que dá para fazer. Não cite o nome das ferramentas "
     "nem os argumentos delas."
 )
+NOTA_DO_OBJETIVO: Final = (
+    "O OBJETIVO DESTA TAREFA é o que o Jarvis decidiu ao entender o dono — siga as intenções e os "
+    "valores dele (nomes, endereços, textos); a fala do dono, na conversa, é contexto e "
+    "autorização, nunca o valor a digitar, procurar ou clicar: «{plano}»."
+)
+NOTA_SEM_PLANO: Final = (
+    "O Jarvis não deixou plano: antes do primeiro passo, entenda você a fala do dono (veio da voz, "
+    "pode estar sem pontuação e trazer mais de uma intenção) e escreva o plano entre <<pensar>> e "
+    "<</pensar>>, com os valores que você escolheu — nunca a frase dele copiada."
+)
+NOTA_DO_JA_DITO: Final = (
+    "O que o dono já ouviu de você neste pedido é só o que ele ouviu: não é decisão nem valor; se "
+    "não bate com o objetivo, vale o objetivo."
+)
+
+
+def nota_do_objetivo(plano: str, ja_dito: str = "") -> str:
+    """O objetivo que vai à tarefa (ADR-0071): o plano do Jarvis, ou o pedido de entender antes."""
+    plano = " ".join(plano.split())
+    nota = NOTA_DO_OBJETIVO.format(plano=plano) if plano else NOTA_SEM_PLANO
+    return f"{nota} {NOTA_DO_JA_DITO}" if ja_dito.strip() else nota
+
+
+def titulo_do_plano(plano: str, limite: int = 120) -> str:
+    """O título da tarefa a partir do plano: a primeira linha, curta (o card e os eventos)."""
+    linha = next((p.strip() for p in plano.splitlines() if p.strip()), "")
+    return linha if len(linha) <= limite else linha[: limite - 1] + "…"
+
+
 NOTA_DE_CONFERIR: Final = (
     "O que foi feito ainda NÃO foi conferido: antes de responder, leia o resultado (a aba, a "
     "página, o estado) com uma ferramenta de leitura e só diga que ficou pronto se a leitura "
@@ -137,6 +166,10 @@ class MotorDoObjetivo:
     """O que o turno já tinha rodado antes de delegar (só o que não vai em tarefa)."""
     raciocinio: str = ""
     ja_dito: str = ""
+    plano: str = ""
+    """O objetivo FORMULADO pelo Jarvis no turno (o plano antes da 1ª ferramenta, ADR-0071): as
+    intenções do dono e os valores escolhidos. É o que a tarefa persegue; a fala do dono segue na
+    conversa como contexto e autorização, não como o objetivo."""
     """O que o dono já ouviu deste pedido (a frase curta): o motor não a repete."""
     ids: frozenset[str] = frozenset()
     """Os ids de todas as ferramentas do catálogo (as fora deste modo também): frase que cita um
@@ -395,7 +428,7 @@ class MotorDoObjetivo:
     ) -> tuple[PedidoDeTool | None, str]:
         todos = (*self.feitos_antes, *feitos)
         textos, _podados = textos_no_contexto(todos)
-        notas = [NOTA_DA_TAREFA]
+        notas = [NOTA_DA_TAREFA, nota_do_objetivo(self.plano, self.ja_dito)]
         objetivo = tarefa.contaminacao.objetivo
         if objetivo is not None:
             # Lote C, C2: o critério de pronto, a fase e o que já foi feito (só ferramenta e

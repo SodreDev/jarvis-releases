@@ -91,7 +91,7 @@ from jarvis.s2.roteiro_do_navegador import (
     PedidoDeEnvio,
     pedido_de_envio,
 )
-from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo
+from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo, titulo_do_plano
 from jarvis.s2.verdade import (
     NOTA_DE_SEGUIR,
     Afirmacao,
@@ -1234,10 +1234,14 @@ class Cerebro:
             na_tela=self.ao_raciocinio,
             ao_medir=lambda medicao: self._anotar_consumo(None, medicao, "tarefa"),
             contatos=tuple(self.contatos()) if self.contatos is not None else (),
+            # O objetivo FORMULADO (ADR-0071): o plano do Jarvis, não a fala crua do dono — essa
+            # fica na conversa e no objetivo da política (escopo, guarda), como autorização.
+            plano=resposta.plano.strip(),
         )
         try:
             tarefa = executor.tarefas.iniciar_objetivo(
-                marca.objetivo.pedido if marca.objetivo is not None else texto_do_dono,
+                titulo_do_plano(resposta.plano)
+                or (marca.objetivo.pedido if marca.objetivo is not None else texto_do_dono),
                 motor,
                 contaminacao=marca,
                 chamar=self._chamada_da_tarefa(
