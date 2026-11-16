@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any, Final
 from jarvis.imagem import Imagem
 from jarvis.s2.consumo import Medicao, medir, precos_do_motor
 from jarvis.s2.laco import QUEM_SUBAGENTE, mensagens_das_ferramentas, rodada_do_agente
-from jarvis.s2.leitura_da_pagina import NOTA_DA_LEITURA, leitura_antes
+from jarvis.s2.leitura_da_pagina import motivo_para_ler
 from jarvis.s2.motor import (
     Contexto,
     Fim,
@@ -205,7 +205,8 @@ class MotorDoObjetivo:
     «minha mãe» por eles (ADR-0066)."""
     leituras_forcadas: int = 0
     """Quantas vezes o código leu a página no lugar de uma ação proposta sem leitura (ADR-0069)."""
-    _nota_da_leitura: bool = False
+    _veredito: str = ""
+    """O veredito da última proposta que não rodou (a página sem leitura), para a próxima rodada."""
 
     @property
     def na_nuvem(self) -> bool:
@@ -215,8 +216,11 @@ class MotorDoObjetivo:
         self, tarefa: Tarefa, feitos: Sequence[ResultadoDeFerramenta], cancelado: Callable[[], bool]
     ) -> Passo:
         if not feitos and self.primeiro is not None:
+            primeiro, self.primeiro = self.primeiro, None
             no_catalogo = [str(f["id"]) for f in self.catalogo()]
-            return self._com_leitura(self.primeiro, feitos, no_catalogo)
+            if not self._veredito_da_leitura(primeiro, feitos, no_catalogo):
+                return self._propor(primeiro)
+            # Sem leitura que valha: o veredito vai ao modelo, que lê e decide (ADR-0072).
         if feitos and feitos[-1].causa == "dono_nao_confirmou":
             # O dono disse não (ou cortou a pergunta, ou ela venceu): a tarefa acaba aqui. Chamar o
             # motor de novo era a mesma ação proposta outra vez — a pergunta em laço da trilha do
@@ -264,15 +268,14 @@ class MotorDoObjetivo:
                 _esperar(self.pausa_depois_do_erro_s * recuperacao.motor_falhou, cancelado)
                 continue
             if pedido is not None:
-                if self._falta_ler(pedido, feitos, disponiveis):
+                if self._veredito_da_leitura(pedido, feitos, disponiveis):
                     # Reler vem antes de julgar a repetição (ADR-0069 §2): depois do passo que
-                    # falhou na página, a próxima ação é a releitura — com o mapa novo na mão, o
-                    # motor decide de novo. Recusar a ação como «repetida» antes disso era desistir
-                    # sem ter olhado a página outra vez.
-                    return self._com_leitura(pedido, feitos, disponiveis)
+                    # falhou na página, a ação não roda e o veredito volta ao modelo, que relê —
+                    # recusar como «repetida» antes disso era desistir sem olhar a página de novo.
+                    continue
                 repetida = recuperacao.repetida(pedido)
                 if repetida is None:
-                    return self._com_leitura(pedido, feitos, disponiveis)
+                    return self._propor(pedido)
                 # A mesma ação que já falhou: não roda de novo — volta ao motor como recusa.
                 recuperacao.registrar_falha(
                     Tentativa(
@@ -369,34 +372,22 @@ class MotorDoObjetivo:
         fala = conferir_relato(fala, todos).texto
         return FimDaTarefa(fala or evento, resposta=fala, falhou=falhou)
 
-    def _com_leitura(
-        self,
-        pedido: PedidoDeTool,
-        feitos: Sequence[ResultadoDeFerramenta],
-        disponiveis: Sequence[str],
-    ) -> PedidoDeTool:
-        """A ação na página só depois de lê-la (ADR-0069 §2): sem leitura que valha — a página
-        mudou, ou o último passo nela falhou —, o passo é a inspeção, e o motor decide de novo com
-        o mapa na mão."""
-        passos = ((r.tool_id, r.status) for r in (*self.feitos_antes, *feitos))
-        leitura = leitura_antes(pedido, passos, disponiveis, forcadas=self.leituras_forcadas)
-        if leitura is None:
-            return self._propor(pedido)
-        self.leituras_forcadas += 1
-        self._nota_da_leitura = True
-        self._mostrar("li a página antes de agir nela")
-        return self._propor(leitura)
-
-    def _falta_ler(
+    def _veredito_da_leitura(
         self,
         pedido: PedidoDeTool,
         feitos: Sequence[ResultadoDeFerramenta],
         disponiveis: Sequence[str],
     ) -> bool:
+        """A ação na página sem leitura que valha (ADR-0069 §2): não roda, e o veredito vai ao
+        modelo na próxima rodada (ADR-0072) — é ele quem lê. Devolve se houve veredito."""
         passos = ((r.tool_id, r.status) for r in (*self.feitos_antes, *feitos))
-        return (
-            leitura_antes(pedido, passos, disponiveis, forcadas=self.leituras_forcadas) is not None
-        )
+        motivo = motivo_para_ler(pedido, passos, disponiveis, recusadas=self.leituras_forcadas)
+        if not motivo:
+            return False
+        self.leituras_forcadas += 1
+        self._veredito = motivo
+        self._mostrar("a ação veio sem ler a página: devolvi ao motor para ler antes")
+        return True
 
     def _propor(self, pedido: PedidoDeTool) -> PedidoDeTool:
         self._propostos.append(assinatura(pedido.tool_id, pedido.args))
@@ -457,9 +448,9 @@ class MotorDoObjetivo:
                 notas.append(passos)
         if conferir:
             notas.append(NOTA_DE_CONFERIR)
-        if self._nota_da_leitura:
-            notas.append(NOTA_DA_LEITURA)
-            self._nota_da_leitura = False
+        if self._veredito:
+            notas.append(f"A SUA ÚLTIMA PROPOSTA {self._veredito}")
+            self._veredito = ""
         if self._cobrar_objetivo:
             notas.append(NOTA_DE_SEGUIR)
             self._cobrar_objetivo = False

@@ -349,6 +349,7 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "app_ambiguo",
         "argumento_copiado",
         "alvo_nao_confere",
+        "pagina_nao_lida",
         "dono_nao_confirmou",
         "teto_da_tarefa",
         "pdp_negou",

@@ -12,10 +12,10 @@ A leitura deixa de valer quando:
   acionamento / gesto deu certo (pode ter navegado ou aberto outra coisa) — digitar não muda;
 - um passo na página **falhou**: antes de tentar de novo, relê para achar o campo ou o botão certo.
 
-Quando falta a leitura, quem propõe é o código: a inspeção da página (o mapa com papel, rótulo,
-estado e `ref` de cada elemento) no lugar da ação, e o motor decide de novo com o mapa na mão. O
-teto de leituras forçadas por pedido evita laço; depois dele, vale o orçamento de tentativas da
-recuperação (ADR-0038) e a guarda de laço (ADR-0062).
+Quando falta a leitura, a ação não roda e o **veredito** volta ao modelo (ADR-0072): ele lê a página
+(a inspeção dá o mapa com papel, rótulo, estado e `ref` de cada elemento) e decide de novo. O código
+não troca mais a ação por uma leitura que ninguém propôs. O teto de vereditos por pedido evita laço;
+depois dele, vale o orçamento de tentativas da recuperação (ADR-0038) e a guarda de laço (ADR-0062).
 """
 
 from __future__ import annotations
@@ -35,13 +35,8 @@ MUDAM_A_PAGINA: Final = frozenset(
 NAO_MUDAM_A_PAGINA: Final = frozenset({"browser.type"})
 """Ação que, dando certo, deixa a leitura valendo: o campo recebeu o texto, a página é a mesma."""
 LEITURAS_FORCADAS: Final = 6
-"""Quantas leituras o código propõe por pedido antes de deixar a ação seguir sem ela."""
-NOTA_DA_LEITURA: Final = (
-    "LER ANTES DE AGIR: antes da ação que você propôs, o Jarvis leu a página — o mapa dos "
-    "elementos (papel, rótulo, estado e `ref` de cada um) está no último resultado. Escolha nele o "
-    "campo ou botão certo, aja pelo `ref` e, se um passo falhar, leia de novo e depure (outro "
-    "rótulo, role a página, outro elemento) em vez de desistir."
-)
+"""Quantas vezes por pedido a ação volta por falta de leitura antes de seguir sem ela."""
+CAUSA_DA_LEITURA: Final = "pagina_nao_lida"
 
 
 def falta_ler(passos: Iterable[tuple[str, str]]) -> str:
@@ -67,27 +62,35 @@ def falta_ler(passos: Iterable[tuple[str, str]]) -> str:
     return "" if lida else motivo
 
 
-def leitura_antes(
+def motivo_para_ler(
     pedido: PedidoDeTool,
     passos: Iterable[tuple[str, str]],
     disponiveis: Iterable[str],
     *,
-    forcadas: int = 0,
-) -> PedidoDeTool | None:
-    """A leitura que o código propõe no lugar da ação, ou `None` quando a ação pode seguir."""
-    if pedido.tool_id not in ACOES_NA_PAGINA or forcadas >= LEITURAS_FORCADAS:
-        return None
-    if not falta_ler(passos):
-        return None
+    recusadas: int = 0,
+) -> str:
+    """O veredito ao modelo quando a ação na página vem sem leitura que valha (ADR-0072), ou vazio
+    quando ela pode seguir. O modelo recebe o porquê e o caminho, e é ele quem lê."""
+    if pedido.tool_id not in ACOES_NA_PAGINA or recusadas >= LEITURAS_FORCADAS:
+        return ""
+    porque = falta_ler(passos)
+    if not porque:
+        return ""
     ids = set(disponiveis)
     ferramenta = next((t for t in ("browser.inspecionar", "browser.read") if t in ids), None)
     if ferramenta is None:
-        return None
-    args: dict[str, object] = {}
+        return ""
     aba = _aba(pedido.args)
-    if aba is not None:
-        args["tab_id"] = aba
-    return PedidoDeTool(ferramenta, args)
+    situacao = (
+        "o último passo na página falhou e ela não foi relida"
+        if porque == "depois_do_erro"
+        else "a página não foi lida desde que abriu ou mudou"
+    )
+    return (
+        f"não rodou: {pedido.tool_id} age na página, e {situacao}. Leia antes com {ferramenta}"
+        + (f" (tab_id {aba})" if aba is not None else "")
+        + ", escolha o alvo pelo mapa (papel, rótulo, `ref`) e proponha a ação de novo."
+    )
 
 
 def _aba(args: Mapping[str, object]) -> int | None:
@@ -97,9 +100,9 @@ def _aba(args: Mapping[str, object]) -> int | None:
 
 __all__ = [
     "ACOES_NA_PAGINA",
+    "CAUSA_DA_LEITURA",
     "LEITURAS_DA_PAGINA",
     "LEITURAS_FORCADAS",
-    "NOTA_DA_LEITURA",
     "falta_ler",
-    "leitura_antes",
+    "motivo_para_ler",
 ]

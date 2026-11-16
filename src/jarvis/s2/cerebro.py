@@ -65,7 +65,7 @@ from jarvis.s2.laco import (
     mensagens_das_ferramentas,
     rodada_do_agente,
 )
-from jarvis.s2.leitura_da_pagina import NOTA_DA_LEITURA, leitura_antes
+from jarvis.s2.leitura_da_pagina import CAUSA_DA_LEITURA, motivo_para_ler
 from jarvis.s2.memoria_do_turno import MemoriaDoTurno, consultar
 from jarvis.s2.motor import (
     Contexto,
@@ -762,21 +762,26 @@ class Cerebro:
             # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
             pedido = pedidos[0]
             # Ler a página antes de agir nela, e reler depois do erro (ADR-0069 §2): sem leitura
-            # que valha, o passo é a inspeção e o motor decide de novo com o mapa na mão.
-            ler_antes = leitura_antes(
+            # que valha, a ação não roda e o veredito volta ao modelo, que lê e decide de novo
+            # (ADR-0072). A que vai ao subagente é validada lá, no mesmo ponto do laço dele.
+            ler = motivo_para_ler(
                 pedido,
                 ((r.tool_id, r.status) for r in resposta.ferramentas),
                 (str(f["id"]) for f in catalogo),
-                forcadas=resposta.leituras_forcadas,
+                recusadas=resposta.leituras_forcadas,
             )
-            if ler_antes is not None:
+            if ler and not self._vai_para_tarefa(pedido):
                 resposta.leituras_forcadas += 1
-                pedido = ler_antes
-                if NOTA_DA_LEITURA not in contexto.sistema:
-                    contexto = Contexto(
-                        sistema=f"{contexto.sistema}\n\n{NOTA_DA_LEITURA}",
-                        mensagens=contexto.mensagens,
+                resposta.ferramentas.append(
+                    ResultadoDeFerramenta(
+                        pedido.tool_id,
+                        "negado",
+                        motivo=ler,
+                        causa=CAUSA_DA_LEITURA,
+                        argumentos=dict(pedido.args),
                     )
+                )
+                continue
             _marcar_a_primeira_ferramenta(resposta, comeco)
             if self._vai_para_tarefa(pedido) and not cancelado():
                 # Execução vai ao subagente (ADR-0070): o turno acaba, a conversa segue.
