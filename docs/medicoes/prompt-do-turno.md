@@ -99,3 +99,48 @@ pressa: breve) vai na própria nota, que só existe no turno fora do neutro:
 
 A nota vai no fim do sistema do turno (mais dois caracteres de quebra); o começo estável do
 prompt não muda.
+
+## ADR-0071 (2026-11-16): plano antes de agir e sentido dos argumentos
+
+Medido com `tools/medir_prompt.py` (executor com todas as famílias, regras padrão), antes no
+`a87156f` e depois no fim da Fase 2 (`opus-parametros`):
+
+| bloco | antes (a87156f) | depois | diferença |
+|---|---:|---:|---:|
+| persona + regras (car.) | 5 310 | 5 769 | +459 |
+| instrução do catálogo (car.) | 763 | 1 027 | +264 |
+| linhas do catálogo (car.) | 9 894 | 11 198 | +1 304 |
+| **total do prompt de sistema (car.)** | **15 967** | **17 994** | **+2 027 (+12,7%)** |
+| total em tokens (e5, aproximação) | 4 703 | 5 329 | +626 |
+
+O teto do teste (`TETO_DO_PROMPT`) subiu de 16 000 para 18 000. Onde foi o acréscimo: a seção
+ENTENDER ANTES DE AGIR (o plano e o exemplo do caso), a regra «ARGUMENTO é só o valor», o
+sentido de 18 argumentos entre colchetes, o `esperado` do clique e o aviso da voz sem pontuação.
+Para caber, saiu da persona o trecho que repetia as regras do dono (curto e direto, uma resposta
+por pedido).
+
+### O que pesa na latência (turno real do dono, 2026-11-16 11:16:39, trilha)
+
+| etapa | medido |
+|---|---:|
+| entrada da 1ª chamada | 8 440 tokens |
+| saída da 1ª chamada | 727 tokens, dos quais ~650 de raciocínio escondido (58 car. falados + 1 linha de ferramenta) |
+| 1º token | 5 067 ms |
+| piso do `claude -p` (f2-02, `--safe-mode`) | ~1 700 ms p50 |
+
+O que muda:
+
+- **+~600 tokens de entrada por chamada**: no prefill do Haiku custa dezenas de milissegundos,
+  muito menos que o raciocínio escondido.
+- **O plano visível** (~40–100 tokens) vem antes da fala. Ele não vai à voz, então atrasa a 1ª
+  palavra falada mais ou menos o que leva para ser escrito.
+- **A cobrança do plano** (o motor propôs sem plano) custa uma rodada inteira (~3 s). Ela é rara
+  se a persona for seguida, e a trilha conta (`plano_cobrado`).
+- **Raciocínio escondido**: novo interruptor no `MotorClaudeCli` (esforço `none`/`minimal` no preset,
+  ou `raciocinio_escondido=False`) põe `MAX_THINKING_TOKENS=0` no modo rápido. A documentação da CLI
+  diz que isso não faz efeito nos modelos que não deixam desligar o raciocínio. **Fica desligado
+  até medir com o modelo real** (Fase 3, `tools/avaliar_parametros.py`): se o Haiku do dono
+  obedecer, são ~650 tokens a menos antes do 1º token, o maior ganho disponível.
+
+O tempo real de 1º token e de 1ª fala, antes e depois, sai da Fase 3, com o OK do dono para gastar
+crédito: `docs/medicoes/parametros-do-modelo.md`.

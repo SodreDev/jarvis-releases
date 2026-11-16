@@ -57,6 +57,12 @@ from jarvis.voz.s2_provisorio import FERRAMENTAS_PROIBIDAS
 
 COMANDO_PADRAO: Final = ("claude",)
 VARIAVEL_SEM_TRAFEGO: Final = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+VARIAVEL_DO_RACIOCINIO: Final = "MAX_THINKING_TOKENS"
+"""`MAX_THINKING_TOKENS=0` desliga o raciocínio escondido da CLI (code.claude.com/docs/en/
+model-config, lida em 2026-11-16) — nos modelos que deixam; nos outros não faz efeito. O
+raciocínio que conta passou a ser o plano visível, obrigatório antes da 1ª ferramenta (ADR-0071)."""
+ESFORCOS_SEM_RACIOCINIO: Final = frozenset({"none", "minimal"})
+"""Os esforços do preset (ADR-0056) que a CLI não tem: viram `low` sem raciocínio escondido."""
 PRAZO_PADRAO_S: Final = 30.0
 ESFORCO_POR_MODO: Final[Mapping[Modo, str]] = {Modo.RAPIDO: "low", Modo.PENSAR: "high"}
 """Medido: o esforço pesa mais que o tamanho do modelo no tempo até a primeira fronteira
@@ -206,6 +212,19 @@ class MotorClaudeCli:
     esforco: str = ""
     """O esforço do preset do dono (ADR-0056): vale no modo rápido; o `pensar` sobe para ao menos
     `high`. Vazio = o de sempre, por modo (`ESFORCO_POR_MODO`)."""
+    raciocinio_escondido: bool | None = None
+    """O raciocínio escondido da CLI (os `thinking_delta`, que o motor descarta). `False` =
+    `MAX_THINKING_TOKENS=0` no modo rápido: no turno do dono ele gastava ~650 tokens antes do 1º
+    texto (docs/estudos/parametros-do-modelo.md), e o plano visível o substitui (ADR-0071). `None`
+    = pelo esforço do preset (`none`/`minimal` desligam); o `pensar` sempre pensa."""
+
+    def pensa_escondido(self, modo: Modo) -> bool:
+        """Este pedido deixa a CLI raciocinar escondido?"""
+        if modo is Modo.PENSAR:
+            return True
+        if self.raciocinio_escondido is not None:
+            return self.raciocinio_escondido
+        return self.esforco not in ESFORCOS_SEM_RACIOCINIO
 
     def esforco_de(self, modo: Modo) -> str:
         """O `--effort` deste pedido, entre os que a CLI aceita (`ESFORCOS_DA_CLI`)."""
@@ -283,11 +302,16 @@ class MotorClaudeCli:
         mensagem = {"type": "user", "message": {"role": "user", "content": conteudo}}
         return json.dumps(mensagem, ensure_ascii=False) + "\n"
 
-    def ambiente_do_filho(self) -> dict[str, str] | None:
-        if not self.sem_trafego_extra:
+    def ambiente_do_filho(self, modo: Modo = Modo.RAPIDO) -> dict[str, str] | None:
+        extras: dict[str, str] = {}
+        if self.sem_trafego_extra:
+            extras[VARIAVEL_SEM_TRAFEGO] = "1"
+        if not self.pensa_escondido(modo):
+            extras[VARIAVEL_DO_RACIOCINIO] = "0"
+        if not extras:
             return dict(self.ambiente) if self.ambiente is not None else None
         base = dict(os.environ if self.ambiente is None else self.ambiente)
-        return {**base, VARIAVEL_SEM_TRAFEGO: "1"}
+        return {**base, **extras}
 
     def gerar(
         self, contexto: Contexto, modo: Modo, cancelado: Cancelado
@@ -317,7 +341,7 @@ class MotorClaudeCli:
                 # calada e a rodada inteira acabava em erro.
                 errors="replace",
                 cwd=self.pasta_de_trabalho,
-                env=self.ambiente_do_filho(),
+                env=self.ambiente_do_filho(modo),
             )
         except FileNotFoundError:
             yield Fim(MotivoDoFim.ERRO, f"{self.comando[0]} não está nesta máquina")
