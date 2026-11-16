@@ -1177,6 +1177,20 @@ class Cerebro:
         ferramentas no turno (`passos_no_turno`, ADR-0046): só existia nos testes."""
         return self._delegavel(pedido) and not fica_no_turno(pedido.tool_id)
 
+    def _lembrancas_do_objetivo(self, plano: str) -> str:
+        """O que o dono guardou por voz (o livro) e serve ao objetivo FORMULADO (ADR-0071): a
+        busca é pelo plano — «abrir a conversa da mãe» acha «o contato da mãe se chama Mãe» —, com
+        a mesma regra da memória do turno (D20). A memória degrada; a delegação não cai junto."""
+        if self.livro is None or not plano.strip():
+            return ""
+        return consultar(
+            self.livro,
+            plano,
+            onde=self.motor.onde,
+            motor=self.motor.nome,
+            alcance=self.alcance_de_memoria,
+        ).bloco()
+
     def _falta_o_plano(self, resposta: Resposta) -> bool:
         """A 1ª ferramenta do pedido chegou sem plano e ainda cabe devolvê-la (ADR-0071)?"""
         return (
@@ -1237,6 +1251,7 @@ class Cerebro:
             # O objetivo FORMULADO (ADR-0071): o plano do Jarvis, não a fala crua do dono — essa
             # fica na conversa e no objetivo da política (escopo, guarda), como autorização.
             plano=resposta.plano.strip(),
+            lembrancas=self._lembrancas_do_objetivo(resposta.plano),
         )
         try:
             tarefa = executor.tarefas.iniciar_objetivo(

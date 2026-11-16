@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 class Afirmacao(StrEnum):
     ABRIU = "abriu"
     ENVIOU = "enviou"
+    GUARDOU = "guardou"
     PEDE_PERMISSAO = "pede_permissao"
 
 
@@ -56,6 +57,11 @@ _ENVIOU: Final = re.compile(
 _ABRIU: Final = re.compile(
     r"\b(?:abri|ja abri|entrei n[ao]s?|cliquei|esta abert[ao]|ja esta abert[ao]|"
     r"deixei abert[ao]|ficou abert[ao]|(?:foi|ja foi) abert[ao])\b"
+)
+_GUARDOU: Final = re.compile(
+    r"\b(?:guardei|anotei|salvei|gravei|memorizei|registrei|ja guardei|ja anotei|ja salvei|"
+    r"(?:esta|ta|fica|ficou|foi) (?:guardad[ao]|anotad[ao]|salv[ao]|gravad[ao])|"
+    r"vou lembrar|vou me lembrar|nao vou esquecer)\b"
 )
 _PEDE: Final = re.compile(
     r"\b(?:quer que eu|posso|devo|deseja que eu|gostaria que eu|prefere que eu|"
@@ -79,6 +85,16 @@ ABREM: Final[frozenset[str]] = frozenset(
     }
 )
 """O que pode ter aberto alguma coisa: uma delas com `ok` confirma «abri»."""
+GRAVAM: Final[frozenset[str]] = frozenset(
+    {
+        "memoria.lembrar",
+        "memoria.atualizar",
+        "memoria.criar_no",
+        "memoria.criar_aresta",
+        "vocabulario.aprender",
+    }
+)
+"""O que grava na memória do dono: uma delas com `ok` confirma «guardei», «anotei»."""
 LEITURAS: Final[frozenset[str]] = frozenset(
     {"browser.read", "browser.tela", "browser.inspecionar", "browser.tabs"}
 )
@@ -95,6 +111,8 @@ def afirmacoes(frase: str) -> frozenset[Afirmacao]:
         achadas.add(Afirmacao.ENVIOU)
     if _afirma(_ABRIU, texto):
         achadas.add(Afirmacao.ABRIU)
+    if _afirma(_GUARDOU, texto):
+        achadas.add(Afirmacao.GUARDOU)
     return frozenset(achadas)
 
 
@@ -127,6 +145,10 @@ def confirmada(afirmacao: Afirmacao, resultados: Sequence[ResultadoDeFerramenta]
         return True  # perguntar não afirma nada: quem decide perguntar é o Jarvis (ADR-0070)
     if afirmacao is Afirmacao.ENVIOU:
         return envio_conferido(resultados)
+    if afirmacao is Afirmacao.GUARDOU:
+        # «Guardei» só com a memória gravada neste pedido (ADR-0071): o dono mandou «salva» e o
+        # Jarvis dizia que salvou sem nenhuma ferramenta de memória rodar.
+        return any(r.status == "ok" and r.tool_id in GRAVAM for r in resultados)
     return any(r.status == "ok" and r.tool_id in ABREM for r in resultados)
 
 
@@ -203,6 +225,7 @@ def _fala_de_envio(cortadas: Iterable[str]) -> bool:
 __all__ = [
     "ABREM",
     "FALTA_ENVIAR",
+    "GRAVAM",
     "LEITURAS",
     "NOTA_DE_SEGUIR",
     "SEM_CONFIRMACAO",
