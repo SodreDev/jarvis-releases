@@ -27,8 +27,14 @@ def normal(texto: object) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", sem_acento).split())
 
 
+CAMPOS_DO_NOME: Final = ("rotulo", "nome", "texto")
+"""Onde o nome do elemento pode estar na resposta da extensão (`dadosDoElemento` e o mapa do
+`content.js`): o `rotulo` (aria-label, placeholder, label) costuma vir vazio numa linha de
+conversa do WhatsApp, e o nome do contato está no `texto` visível."""
+
+
 def _rotulos(elemento: Mapping[str, Any]) -> list[str]:
-    return [str(elemento[c]) for c in ("rotulo", "nome") if elemento.get(c)]
+    return [str(elemento[c]) for c in CAMPOS_DO_NOME if elemento.get(c)]
 
 
 def confere(esperado: str, elemento: Mapping[str, Any]) -> bool:

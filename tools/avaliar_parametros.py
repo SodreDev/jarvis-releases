@@ -213,6 +213,9 @@ def executor_de_avaliacao(pasta: Path, pagina: PaginaFalsa, livro: Any) -> Any:
     class ExecutorDeAvaliacao(ExecutorDeFerramentas):
         """O de produção; só os corpos que tocariam a máquina do dono viram simulação."""
 
+        registro: list[tuple[str, dict[str, Any], str, str]]
+        """Cada chamada que chegou ao executor: (ferramenta, argumentos, status, causa)."""
+
         def avaliar(self, tool_id: str, args: Mapping[str, Any], **kw: Any) -> Any:
             avaliacao = super().avaliar(tool_id, args, **kw)
             if isinstance(avaliacao, ResultadoDeFerramenta):  # recusada antes de rodar

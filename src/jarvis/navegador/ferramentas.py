@@ -1028,7 +1028,10 @@ class CorposDoNavegador:
             raise
         esperado = str(args.get("esperado") or "").strip()
         if esperado and not confere(esperado, dados):
-            achado = _curto(dados.get("rotulo") or dados.get("nome") or "", LIMITE_DO_ROTULO)
+            achado = _curto(
+                dados.get("rotulo") or dados.get("nome") or dados.get("texto") or "",
+                LIMITE_DO_ROTULO,
+            )
             opcoes = parecidos(esperado, self._elementos_da_pagina(tab_id))
             raise AlvoNaoConfere(explicar(esperado, achado or "sem rótulo", opcoes))
         return dados
