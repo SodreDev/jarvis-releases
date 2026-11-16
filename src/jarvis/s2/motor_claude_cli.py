@@ -82,14 +82,21 @@ INSTRUCAO_DE_FERRAMENTAS: Final = (
     "propor, responda com uma linha que começa exatamente com " + MARCA_DE_FERRAMENTA + " seguida "
     'de um JSON {"tool_id": "...", "args": {...}} — uma linha por chamada, sem markdown, sem '
     "explicar o JSON. As pequenas e desfazíveis rodam e o sistema já avisa o dono em voz (o "
-    "resultado traz `aviso_ao_dono`: não repita); só as perigosas pedem o sim dele. Raciocínio "
-    "vai entre " + MARCA_DE_RACIOCINIO + " e " + FIM_DO_RACIOCINIO + ". Depois você recebe os "
-    "resultados e, pronto o pedido, responde ao dono, em voz, curto. Use só as ferramentas e os "
-    "argumentos da lista (* = obrigatório) e nunca invente resultado; caminhos, sempre a pasta "
-    "inteira (~/Documentos/...). ARGUMENTO é só o valor que VOCÊ decidiu (o nome como está na "
+    "resultado traz `aviso_ao_dono`: não repita); só as perigosas pedem o sim dele. ENTENDER "
+    "ANTES DE AGIR: antes da primeira ferramenta do pedido, e antes de falar, escreva o plano "
+    "entre " + MARCA_DE_RACIOCINIO + " e " + FIM_DO_RACIOCINIO + ": cada intenção do dono "
+    "separada (uma fala pode trazer duas, ou só guardar algo) e, para cada uma, a ferramenta e "
+    "os valores que VOCÊ escolheu. Ex.: «o contato da minha mãe é Mãe, salva» → "
+    + MARCA_DE_RACIOCINIO
+    + "Guardar: o contato da mãe se chama «Mãe» → memoria.lembrar. Abrir: "
+    "nada." + FIM_DO_RACIOCINIO + " ARGUMENTO é só o valor que você decidiu (o nome como está na "
     "tela ou na lista, o endereço, o texto a digitar), nunca a fala do dono; o que mais ele disse "
-    "é outra ação, ou nenhuma (errado: alvo «mãe salve para não esquecer depois»; certo: «Mãe»). "
-    "Cada linha: nome(argumentos [o que é o valor]): quando usar. «pedidos do dono»."
+    "é outra ação, ou nenhuma (errado: alvo «mãe salve para não esquecer depois»; certo: «Mãe»); "
+    "`alvo` e `esperado` valem igual em todas as browser.*. Depois você recebe os resultados e, "
+    "pronto o pedido, responde ao dono, em voz, curto. Use só as ferramentas e os argumentos da "
+    "lista (* = obrigatório) e nunca invente resultado; caminhos, sempre a pasta inteira "
+    "(~/Documentos/...). Cada linha: nome(argumentos [o que é o valor]): quando usar. «pedidos "
+    "do dono»."
 )
 """O protocolo da proposta e a legenda do catálogo: vai uma vez, antes das linhas."""
 

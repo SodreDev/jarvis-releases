@@ -27,7 +27,7 @@ from jarvis.memoryd.conversa import ConversaPersistente, abrir_conversa
 from jarvis.memoryd.indice import IndiceEmMemoria
 from jarvis.politica.memoria import Estado
 from jarvis.relogio import RelogioFalso
-from jarvis.s2.motor import Contexto, PedidoDeTool
+from jarvis.s2.motor import Contexto, PedidoDeTool, Raciocinio
 from jarvis.s2.motor_roteirizado import MotorRoteirizado
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.config import Configuracao
@@ -76,11 +76,16 @@ def _resultado(contexto: Contexto) -> dict[str, Any] | None:
     return json.loads(textos[-1].removesuffix(" …[truncado]")) if textos else None
 
 
-def _apagar_a(alvo: str) -> Callable[[Contexto], Sequence[str | PedidoDeTool]]:
-    def roteiro(contexto: Contexto) -> Sequence[str | PedidoDeTool]:
+def _apagar_a(alvo: str) -> Callable[[Contexto], Sequence[str | PedidoDeTool | Raciocinio]]:
+    def roteiro(contexto: Contexto) -> Sequence[str | PedidoDeTool | Raciocinio]:
         resultado = _resultado(contexto)
         if resultado is None:
-            return [COMECO, PedidoDeTool("memoria.apagar", {"alvo_id": alvo, "escopo": "memoria"})]
+            # O plano antes da 1ª ferramenta (ADR-0071): o app exige; sem ele, a proposta voltaria.
+            return [
+                Raciocinio(f"Apagar a memória {alvo} → memoria.apagar."),
+                COMECO,
+                PedidoDeTool("memoria.apagar", {"alvo_id": alvo, "escopo": "memoria"}),
+            ]
         return ["Apaguei."] if resultado["status"] == "ok" else ["Não apaguei."]
 
     return roteiro

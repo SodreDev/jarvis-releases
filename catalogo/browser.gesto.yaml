@@ -28,7 +28,6 @@ input_schema:
       - digitar
       - rolar
     alvo:
-      description: "o rótulo como está na página («Mãe»; «Enviar»); nunca a frase do dono"
       x-nome: true
       type: string
       minLength: 1
@@ -41,7 +40,6 @@ input_schema:
       type: string
       minLength: 1
       maxLength: 120
-      description: "com ref: o nome que você quer (o do plano; «Mãe»); o código confere no rótulo antes de agir"
     texto:
       description: "só o que digitar"
       type: string

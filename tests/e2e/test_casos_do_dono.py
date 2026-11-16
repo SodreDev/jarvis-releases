@@ -408,9 +408,11 @@ def test_b_mandar_mensagem_redige_confere_o_contato_e_o_envio(
     assert pagina.enviadas["Bruno"] == [REDIGIDA]
     assert all(not m for nome, m in pagina.enviadas.items() if nome != "Bruno")
     assert "vou atrasar uns dez minutos" not in REDIGIDA.casefold()
-    # O subagente recebeu os FATOS e a ordem de redigir, não um texto pronto do código.
+    # O subagente recebeu a DICA (o que a regra achou na fala, rotulado como palpite — ADR-0071)
+    # e a ordem de redigir, não um texto pronto do código.
     sistema = subagente.sistema_da_tarefa
-    assert "REDIJA a mensagem" in sistema and "Contato: «Bruno»" in sistema
+    assert "REDIJA a mensagem" in sistema and "para «Bruno»" in sistema
+    assert "DICA DO CÓDIGO" in sistema
     assert "cabeçalho da conversa" in sistema
     # Antes de digitar, a página foi lida com a conversa do Bruno aberta (a trava do contato).
     antes_de_digitar = pagina.metodos[: pagina.metodos.index("page.type")]

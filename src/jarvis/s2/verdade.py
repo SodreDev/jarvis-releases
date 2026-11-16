@@ -92,9 +92,15 @@ GRAVAM: Final[frozenset[str]] = frozenset(
         "memoria.criar_no",
         "memoria.criar_aresta",
         "vocabulario.aprender",
+        "files.write_draft",
+        "files.create_dir",
+        "calendar.create_draft_event",
+        "clipboard.text.write",
+        "timer.alarm.set",
     }
 )
-"""O que grava na memória do dono: uma delas com `ok` confirma «guardei», «anotei»."""
+"""O que grava (na memória, num rascunho, na agenda, na área de transferência, num alarme): uma
+delas com `ok` confirma «guardei», «anotei», «salvei»."""
 LEITURAS: Final[frozenset[str]] = frozenset(
     {"browser.read", "browser.tela", "browser.inspecionar", "browser.tabs"}
 )

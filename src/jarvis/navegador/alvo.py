@@ -79,7 +79,7 @@ def explicar(procurado: str, achado: str, opcoes: list[str]) -> str:
     if achado:
         inicio = f"o elemento que você escolheu é «{achado}», não «{procurado}»"
     else:
-        inicio = f"«{procurado}» não está nesta página (nenhum elemento com esse texto)"
+        inicio = f"não achei «{procurado}» nesta página (nenhum elemento com esse texto)"
     lista = (
         "; os mais parecidos que estão nela: " + ", ".join(f"«{o}»" for o in opcoes)
         if opcoes

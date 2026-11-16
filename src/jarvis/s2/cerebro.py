@@ -171,8 +171,8 @@ def nota_do_atalho(atalho: Atalho) -> str:
     argumentos = json.dumps(dict(atalho.args), ensure_ascii=False)
     return (
         f"DICA DO CÓDIGO (a regra «{atalho.regra}» reconheceu a fala; é sugestão, não ordem): este "
-        f"pedido parece ser {atalho.tool_id} com {argumentos}. Pode estar errado: use se for mesmo "
-        "o que o dono pediu (confira no seu plano); se não, siga o seu caminho."
+        f"pedido parece ser {atalho.tool_id} com {argumentos}. Use se for mesmo o que o dono "
+        "pediu — pode estar errado: confira no seu plano; se não, siga o seu caminho."
     )
 
 

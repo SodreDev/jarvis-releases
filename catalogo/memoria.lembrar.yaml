@@ -8,7 +8,6 @@ quando: "guardar o que o dono mandou lembrar, salvar ou anotar (ação própria,
 exemplos:
 - "lembra que eu tomo café sem açúcar"
 - "salva que o contato da minha mãe é Mãe"
-- "anota aí que o Bruno é meu irmão"
 input_schema:
   type: object
   additionalProperties: false
@@ -19,7 +18,7 @@ input_schema:
       type: string
       minLength: 1
       maxLength: 2000
-      description: "o trecho EXATO da fala do dono que diz o fato; sem a ordem («o contato da minha mãe é mãe»; sem «salva isso»)"
+      description: "o trecho EXATO da fala do dono com o fato; sem a ordem («o contato da minha mãe é mãe»)"
     sujeito:
       type: string
       minLength: 1

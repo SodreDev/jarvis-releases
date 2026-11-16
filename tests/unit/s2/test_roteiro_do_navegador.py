@@ -49,12 +49,16 @@ def test_sem_par_nas_memorias_procura_pelo_que_o_dono_disse() -> None:
 
 
 def test_o_envio_leva_fatos_e_travas_sem_passos_numerados() -> None:
-    """ADR-0070: orientação, não roteiro — os fatos resolvidos e as travas; o caminho é do motor."""
+    """ADR-0070: orientação, não roteiro — os fatos resolvidos e as travas; o caminho é do motor.
+    ADR-0071: o que a regex tirou da fala é DICA rotulada (vale o objetivo do Jarvis), e a trava
+    fala do contato do objetivo, não do nome que a regex achou."""
     texto = roteiro("abre o contato da minha mãe e diz eu te amo", FERRAMENTAS, CONTATOS)
 
     assert "https://web.whatsapp.com/" in texto
     assert "«Maria Sodré»" in texto and "«eu te amo»" in texto
-    assert "TEM de mostrar «Maria Sodré»" in texto and "nunca digite na conversa errada" in texto
+    assert "DICA DO CÓDIGO" in texto and "vale o objetivo que o Jarvis formulou" in texto
+    assert "TEM de mostrar o contato do objetivo" in texto
+    assert "nunca digite na conversa errada" in texto
     assert "sem perguntar" in texto and "modo ausente" in texto
     assert "LEIA A PÁGINA antes de agir" in texto and "não roteiro" in texto
     assert not any(f"\n{n}. " in texto for n in range(1, 7)), "sem passos numerados"

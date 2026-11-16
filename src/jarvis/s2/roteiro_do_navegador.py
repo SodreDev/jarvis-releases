@@ -235,8 +235,8 @@ def _mensagem(envio: PedidoDeEnvio, tom: Sequence[str]) -> str:
         else ""
     )
     return (
-        f"O que ele parece querer dizer: «{envio.mensagem}». A mensagem, REDIJA: você é o "
-        "assistente pessoal dele, não um repetidor — em primeira pessoa, em nome dele, no tom "
+        f"O que ele parece querer dizer: «{envio.mensagem}». Se for isso, REDIJA a mensagem: você "
+        "é o assistente pessoal dele, não um repetidor — em primeira pessoa, em nome dele, no tom "
         "dele com essa pessoa, curta, sem citar o Jarvis, sem inventar fato, horário ou promessa "
         f"e sem copiar a fala dele palavra por palavra.{sobre}{jeito}"
     )
