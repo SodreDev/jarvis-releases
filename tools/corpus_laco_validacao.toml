@@ -1,0 +1,53 @@
+# Conjunto SEPARADO para reavaliar o conserto da Fase C (ADR-0072), escrito em 2026-11-16 DEPOIS da
+# passada no conjunto do laço e ANTES do conserto: os alvos abaixo foram fixados e commitados antes
+# de qualquer passada com eles. O conserto (persona: o que outra pessoa mandou, ou um contato que a
+# memória não tem, se vê no WhatsApp) nasceu de `l-mae-mandou` e `v-avisa-pai-carro`; estas falas
+# são outras. Uma passada por modelo.
+
+[[caso]]
+id = "lv-bruno-mandou"
+fala = "o que o bruno me mandou"
+espera = "leitura"
+conversa = "Bruno"
+recebidas = { "Bruno" = "Chego aí às sete" }
+resposta_contem = ["sete", "7"]
+
+[[caso]]
+id = "lv-vo-escreveu"
+fala = "vê o que a vó lúcia escreveu"
+espera = "leitura"
+conversa = "Vó Lúcia"
+recebidas = { "Vó Lúcia" = "Faz bolo de fubá pra mim?" }
+resposta_contem = ["fuba"]
+
+[[caso]]
+id = "lv-pai-respondeu"
+fala = "o pai respondeu alguma coisa"
+espera = "leitura"
+conversa = "Pai"
+recebidas = { "Pai" = "Tudo certo, filho" }
+resposta_contem = ["tudo certo"]
+
+[[caso]]
+id = "lv-ana-clara-sai"
+fala = "manda pra ana clara que eu já saí de casa"
+espera = "envio"
+conversa = "Ana Clara"
+mensagem_contem = ["sai"]
+sem_pergunta = true
+
+[[caso]]
+id = "lv-carla-festa"
+fala = "avisa a carla que a festa mudou pra sábado"
+espera = "envio"
+conversa = "Carla"
+mensagem_contem = ["sabado"]
+sem_pergunta = true
+
+[[caso]]
+id = "lv-pai-ligo"
+fala = "fala pro pai que eu ligo mais tarde"
+espera = "envio"
+conversa = "Pai"
+mensagem_contem = ["ligo", "mais tarde"]
+sem_pergunta = true

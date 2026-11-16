@@ -60,6 +60,8 @@ VALIDACAO: Final = RAIZ / "tools" / "corpus_validacao.toml"
 """O conjunto separado, escrito depois do ajuste e nunca usado para ajustar (ADR-0071)."""
 LACO: Final = RAIZ / "tools" / "corpus_laco.toml"
 """O conjunto novo do laço canônico (ADR-0072), com alvos fixados antes de rodar."""
+LACO_VALIDACAO: Final = RAIZ / "tools" / "corpus_laco_validacao.toml"
+"""O conjunto separado que reavalia o conserto da Fase C, nunca usado para ajustar."""
 WHATSAPP: Final = "https://web.whatsapp.com/"
 ABA: Final = 7
 CONVERSAS: Final = (
@@ -876,6 +878,9 @@ def main(argv: list[str] | None = None) -> int:
         "--validacao", action="store_true", help="o conjunto de validação, não o de ajuste"
     )
     parser.add_argument("--laco", action="store_true", help="o conjunto novo do laço (ADR-0072)")
+    parser.add_argument(
+        "--laco-validacao", action="store_true", help="o conjunto separado do conserto da Fase C"
+    )
     parser.add_argument("--provedor", default="", help="com --motor real: um provedor do registro")
     parser.add_argument("--modelo", default="", help="com --provedor: o id do modelo")
     parser.add_argument("--pausa", type=float, default=0.0, help="segundos entre os casos")
@@ -885,7 +890,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.motor == "real":
         print("ATENÇÃO: --motor real chama o provedor do dono e gasta crédito.", file=sys.stderr)
     resultados = []
-    corpus = LACO if args.laco else VALIDACAO if args.validacao else CORPUS
+    corpus = (
+        LACO_VALIDACAO
+        if args.laco_validacao
+        else LACO
+        if args.laco
+        else VALIDACAO
+        if args.validacao
+        else CORPUS
+    )
     for indice, caso in enumerate(casos(args.caso, corpus)):
         if indice and args.pausa > 0:
             time.sleep(args.pausa)  # o ritmo baixo que o dono pediu para o provedor real
@@ -903,6 +916,8 @@ def main(argv: list[str] | None = None) -> int:
         extra += " — conjunto de VALIDAÇÃO"
     if args.laco:
         extra += " — conjunto NOVO do laço (ADR-0072)"
+    if args.laco_validacao:
+        extra += " — conjunto SEPARADO do conserto (ADR-0072)"
     if args.provedor:
         extra += f" ({args.provedor}, {args.modelo or 'modelo padrão'})"
     texto = relatorio(resultados, args.motor, extra)
