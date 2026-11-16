@@ -217,6 +217,21 @@ alguns segundos para carregar a extensão)."""
 INTERVALO_DA_EXTENSAO_S: Final = 0.25
 COBRANCAS_DO_OBJETIVO: Final = 2
 """Quantas vezes o turno cobra o motor que parou antes do objetivo (ADR-0066)."""
+COBRANCAS_DO_PLANO: Final = 1
+"""Quantas vezes o turno devolve a primeira ferramenta proposta sem plano (ADR-0071): depois
+disso ela segue, e a trilha conta que o plano faltou."""
+LIMITE_DO_PLANO: Final = 1200
+"""O plano que vai à tarefa como objetivo: o começo do raciocínio antes da 1ª ferramenta."""
+NOTA_DO_PLANO: Final = (
+    "ENTENDA ANTES DE AGIR: você propôs uma ferramenta sem escrever o plano, e ela não rodou. "
+    "Escreva primeiro, entre <<pensar>> e <</pensar>>, o que o dono quer (cada intenção "
+    "separada; uma fala pode trazer duas, ou só guardar algo) e, para cada uma, a ferramenta e os "
+    "valores que VOCÊ escolheu: o nome, o endereço ou o texto, nunca a frase dele copiada. A fala "
+    "vem da voz e pode estar sem pontuação: separe as frases antes. Se ela der para ler de dois "
+    "jeitos que levam a ações diferentes, não proponha nada: pergunte ao dono em uma frase. "
+    "Depois proponha a ferramenta, se ainda for o caso."
+)
+"""A notificação ao motor quando a 1ª ferramenta veio sem plano (ADR-0071): ele decide de novo."""
 
 Publicar = Callable[[dict[str, Any]], None]
 """Recebe o payload de um `ResponseChunk`. No processo, vira envelope (`envelope_do_pedaco`)."""
@@ -319,6 +334,11 @@ class Resposta:
     """Quantas vezes o código leu a página no lugar de uma ação proposta sem leitura (ADR-0069)."""
     cobrancas: int = 0
     """Quantas vezes o laço cobrou o motor a seguir até o objetivo, depois de um relato cortado."""
+    plano: str = ""
+    """O raciocínio do motor antes da 1ª ferramenta do pedido (ADR-0071): as intenções do dono e
+    os valores que o Jarvis escolheu. É o objetivo da tarefa. Nunca vai à fala nem à tela."""
+    plano_cobrado: int = 0
+    """Quantas vezes a 1ª ferramenta veio sem plano e voltou ao motor (`NOTA_DO_PLANO`)."""
 
     @property
     def cancelada(self) -> bool:
@@ -378,6 +398,10 @@ class Cerebro:
     turno acaba na pergunta, e o dono responde com o «sim»/«não» falado — o literal, lido pelo
     código — ou com o clique (dono, 2026-10-25; ADR-0048). O aplicativo liga; desligado, a janela
     bloqueia a linha do cérebro até o clique, como antes (o que os testes do laço usam)."""
+    exigir_plano: bool = False
+    """A primeira ferramenta do pedido só roda depois de um plano do motor (`<<pensar>>`, ADR-0071):
+    sem ele, a proposta volta como notificação (`NOTA_DO_PLANO`), uma vez. O plano é o objetivo
+    que vai à tarefa. O aplicativo liga; desligado, como antes (os testes do laço)."""
     delegar_em_tarefa: bool = False
     """Toda execução de um pedido vira uma **tarefa** do objetivo — o subagente — desde a primeira
     ferramenta (ADR-0038, ADR-0070): o turno acaba sem frase do código — o Jarvis segue ouvindo —,
@@ -798,6 +822,14 @@ class Cerebro:
             # Uma por vez: o próximo pedido só pode nascer depois que o modelo viu este
             # resultado. Pedidos adicionais da mesma geração são especulativos e ficam de fora.
             pedido = pedidos[0]
+            if self._falta_o_plano(resposta):
+                # Entender antes de agir (ADR-0071): a 1ª ferramenta sem plano não roda; o motor
+                # recebe a notificação e decide de novo — planejar e propor, ou perguntar.
+                resposta.plano_cobrado += 1
+                contexto = Contexto(
+                    sistema=f"{contexto.sistema}\n\n{NOTA_DO_PLANO}", mensagens=contexto.mensagens
+                )
+                continue
             # Ler a página antes de agir nela, e reler depois do erro (ADR-0069 §2): sem leitura
             # que valha, o passo é a inspeção e o motor decide de novo com o mapa na mão.
             ler_antes = leitura_antes(
@@ -1144,6 +1176,15 @@ class Cerebro:
         o estado dele (`FICAM_NO_TURNO`) e delega. Não há mais o meio-termo de rodar as primeiras
         ferramentas no turno (`passos_no_turno`, ADR-0046): só existia nos testes."""
         return self._delegavel(pedido) and not fica_no_turno(pedido.tool_id)
+
+    def _falta_o_plano(self, resposta: Resposta) -> bool:
+        """A 1ª ferramenta do pedido chegou sem plano e ainda cabe devolvê-la (ADR-0071)?"""
+        return (
+            self.exigir_plano
+            and not resposta.ferramentas
+            and not resposta.plano.strip()
+            and resposta.plano_cobrado < COBRANCAS_DO_PLANO
+        )
 
     def _continua_na_tarefa(self, resposta: Resposta) -> bool:
         """Depois do primeiro passo de um objetivo que precisa conferir (agir e depois ler: o
@@ -1532,6 +1573,10 @@ class Cerebro:
                 return False
             if isinstance(delta, Raciocinio):
                 _guardar_raciocinio(resposta, delta.texto, separado=not pensando)
+                if not pedidos and not resposta.ferramentas:
+                    # O plano: o que o motor pensou antes da 1ª proposta do pedido (ADR-0071).
+                    cabe = max(0, LIMITE_DO_PLANO - len(resposta.plano))
+                    resposta.plano += delta.texto[:cabe]
                 pensando = True
                 return False
             pensando = False

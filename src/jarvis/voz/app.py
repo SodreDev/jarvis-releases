@@ -950,6 +950,8 @@ class Aplicativo:
         # O pedido que precisa de ferramenta vira tarefa (ADR-0038): o laço fica livre para a
         # próxima fala enquanto ela trabalha.
         self._cerebro.delegar_em_tarefa = True
+        # Entender antes de agir (ADR-0071): a 1ª ferramenta do pedido espera o plano do motor.
+        self._cerebro.exigir_plano = True
         # A confirmação é uma pergunta que a voz responde, com ou sem o portão (ADR-0048).
         self._cerebro.pendencia_sem_portao = True
         # O caminho rápido (ADR-0045): comando simples vai à ferramenta pela regra, sem esperar o
@@ -2525,6 +2527,8 @@ class Aplicativo:
             caracteres_falados=len(respondeu),
             # Pensar não é falar (ADR-0031): do raciocínio, só o tamanho — o texto morre no turno.
             caracteres_de_raciocinio=len(resposta.raciocinio) if resposta else 0,
+            caracteres_do_plano=len(resposta.plano) if resposta else 0,
+            plano_cobrado=resposta.plano_cobrado if resposta else 0,
             raciocinio_descartado=resposta.raciocinio_descartado if resposta else 0,
             narracao_retida=resposta.narracao_retida if resposta else 0,
             # Falar menos (emenda de 2026-10-21 à ADR-0031): o tamanho do que ficou só na tela.
