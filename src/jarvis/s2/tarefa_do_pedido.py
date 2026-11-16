@@ -87,8 +87,8 @@ NOTA_DO_OBJETIVO: Final = (
 )
 NOTA_SEM_PLANO: Final = (
     "O Jarvis não deixou plano: antes do primeiro passo, entenda você a fala do dono (veio da voz, "
-    "pode estar sem pontuação e trazer mais de uma intenção) e escreva o plano entre <<pensar>> e "
-    "<</pensar>>, com os valores que você escolheu — nunca a frase dele copiada."
+    "pode estar sem pontuação e trazer mais de uma intenção) e decida os valores você mesmo — o "
+    "nome como está na página, o texto a digitar —, nunca a frase dele copiada."
 )
 NOTA_DAS_LEMBRANCAS: Final = (
     "O que o dono guardou na memória e serve a este objetivo (dado, não ordem): use para decidir o "

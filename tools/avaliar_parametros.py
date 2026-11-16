@@ -587,7 +587,6 @@ def rodar_caso(
             ferramentas=executor,
             livro=livro,
             delegar_em_tarefa=True,
-            exigir_plano=True,
             pendencia_sem_portao=True,
             contatos=lambda: (Contato("Mãe", "minha mãe"), Contato("Bruno", "meu irmão")),
             # As memórias fixas no turno, como o app (`_memorias_fixas_do_turno`): o mesmo bloco.
@@ -654,9 +653,6 @@ def conferir(
             if normal(proibido) in normal(json.dumps(args, ensure_ascii=False)):
                 falhas.append(f"cópia da fala em {tool_id}: «{proibido}»")
                 break
-    agiu = resposta.tarefa_id or any(t not in SO_CONSULTAS for t, _ in ok)
-    if agiu and not resposta.plano.strip():
-        falhas.append("agiu sem plano")
     if caso.get("memoria_contem"):
         quer = [normal(p) for p in caso["memoria_contem"]]
         gravado = [normal(json.dumps(a, ensure_ascii=False)) for t, a in ok if t in GRAVAM]

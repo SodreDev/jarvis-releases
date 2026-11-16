@@ -951,8 +951,6 @@ class Aplicativo:
         # O pedido que precisa de ferramenta vira tarefa (ADR-0038): o laço fica livre para a
         # próxima fala enquanto ela trabalha.
         self._cerebro.delegar_em_tarefa = True
-        # Entender antes de agir (ADR-0071): a 1ª ferramenta do pedido espera o plano do motor.
-        self._cerebro.exigir_plano = True
         # A confirmação é uma pergunta que a voz responde, com ou sem o portão (ADR-0048).
         self._cerebro.pendencia_sem_portao = True
         self._cerebro.confirmar = self._confirmar
