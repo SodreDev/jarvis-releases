@@ -41,6 +41,13 @@
 - **Deve:** a hora vem na hora (a conversa não espera o subagente); o resultado do vídeo vem **depois**, quando o subagente terminar, uma vez.
 - **Com a delegação ao Claude Code ligada:** na tela aparece «Delegando ao Claude Code…» com um **objetivo escrito pelo Jarvis**, não a sua frase copiada; a resposta só chega depois do retorno do Claude.
 
+## (f) Os parâmetros são do Jarvis (ADR-0071)
+
+- **«Jarvis, o contato da minha mãe é literalmente mãe, salve para não esquecer depois»** (fale corrido, sem pausa): ele **não** abre nada; diz que guardou só depois de gravar. Na janela de memórias aparece o trecho «o contato da minha mãe é literalmente mãe». Na trilha do turno, `caracteres_do_plano` > 0 e `ferramentas` = 1 (`memoria.lembrar`).
+- **Logo depois: «Jarvis, manda pra minha mãe que eu te amo»**: a tarefa abre a conversa **Mãe** (a memória de voz chega ao subagente) e manda uma mensagem redigida por ele, não a sua frase.
+- **«Jarvis, manda pro João que eu tô saindo»** (sem João na lista): ele não manda para ninguém e pergunta qual é.
+- **Antes, se você der o OK de gastar crédito:** `uv run --frozen python -m tools.avaliar_parametros --motor real --saida docs/medicoes/parametros-do-modelo.md`. São 40 falas contra uma página falsa (nada seu é tocado). Rode também com `--sem-raciocinio-escondido`, para medir o 1º token sem o raciocínio escondido.
+
 ## O que mandar se algo der errado
 
 O horário, o que você disse, o que ouviu, e os arquivos `turnos.jsonl` (só códigos) e `abertura.log` (sem segredos: as chaves saem redigidas).

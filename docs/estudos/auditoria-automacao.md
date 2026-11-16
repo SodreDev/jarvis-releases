@@ -134,6 +134,30 @@ O caminho de hoje: `extensao/social.js` (`lerEstado` `:300-362`, `informar` `:38
 
 **Rodada final (o que faltava):** a17 e a19 resolvidos (acima); o caminho no turno com `passos_no_turno > 0` saiu do código (só existia nos testes: com o subagente ligado, toda execução vai a ele desde o primeiro passo; sem ele, o laço inteiro roda no turno, como no harness); a varredura de frases tirou o código morto `Recuperacao.explicacao` («Não consegui…») e `frase_do_estilo` («Certo, estilo…»), e o fim cancelado pelo dono no card virou fato («(cancelada pelo dono: …)») em vez de «Parei o que você tinha pedido.». A suíte `tests/e2e/` prova os cinco casos do dono com fakes e achou dois buracos, consertados: (1) depois de um passo que falhou na página, a guarda de repetição recusava a nova tentativa **antes** da releitura obrigatória — o subagente desistia sem reler (`MotorDoObjetivo.proximo` agora relê primeiro); (2) enviar pelo botão «Enviar» não contava como envio, e o filtro da verdade não deixava o Jarvis dizer que mandou mesmo com a mensagem no chat (`browser.click` agora marca `enviado` quando o clique é o de enviar). **Fica, com motivo:** b12 (frases do cartão, só tela), c6 (ler antes de agir é guarda pedida pelo dono), c10 (política de segurança) e D (CDP na aba da rede). Nada disto foi testado no navegador, nas contas, no microfone nem no áudio reais do dono: o roteiro está em [teste-real-dono.md](../teste-real-dono.md).
 
+## ADR-0071 (2026-11-16): o Jarvis decide os parâmetros
+
+O caso do print («o contato da minha mãe é literalmente mãe salve para não esquecer depois» →
+«Vou abrir a conversa "mãe salve…"») mostrou um caminho de automação que a auditoria acima não
+cobria: **o parâmetro**. O modelo repassava a fala, e o código propagava isso (o objetivo da tarefa
+era a fala crua, o já dito servia de âncora, a regex do envio tirava o contato da fala).
+Diagnóstico com arquivo:linha em [parametros-do-modelo.md](parametros-do-modelo.md).
+
+| Item | Estado | Onde foi resolvido |
+|---|---|---|
+| e1 — agir no 1º token, sem plano visível | **resolvido** | `9229134`: ENTENDER ANTES DE AGIR e `exigir_plano` (a 1ª ferramenta sem plano volta como notificação) |
+| e2 — objetivo da tarefa = fala crua (`cerebro.py:1199`) e o já dito como âncora | **resolvido** | `c175e17`: `NOTA_DO_OBJETIVO` com o plano; a política segue autorizando pela fala |
+| e3 — catálogo sem o sentido dos argumentos | **resolvido** | `c0a1f67`: `description` e `x-nome`; cópia da fala devolvida ao modelo (`argumento_copiado`) |
+| e4 — alvo não conferido contra a página | **resolvido** | `2b5ef0f`: `alvo_nao_confere` com os parecidos; o modelo escolhe ou pergunta |
+| e5 — «salve» não vira memória; memória de voz fora da tarefa | **resolvido** | `4ca7463` + `fb15a93`: `memoria.lembrar` com o trecho exato da fala; `GUARDOU` no filtro da verdade; livro consultado pelo plano ao delegar |
+| e6 — transcrição sem pontuação e sem aviso | **resolvido** | `b7112c5`: marca da voz na fala; perguntar quando há duas leituras |
+| e7 — regex `_CONTATO`/`pedido_de_envio` como fato | **resolvido (vira dica)** | `128162b`: `CABECALHO_DA_DICA`; as travas falam do contato do objetivo |
+| e8 — latência (raciocínio escondido) | **parcial** | `dbedb9c`: medido e com interruptor (`MAX_THINKING_TOKENS=0`), **desligado** até a medição com o modelo real |
+| e9 — prova com modelo real | **preparada, não rodada** | `e830d64`: `tools/avaliar_parametros.py` (fakes: ideal 40/40, copião 0/40); `--motor real` espera o OK do dono |
+
+**Fica, com motivo:** a regex do atalho e do envio continua existindo como DICA rotulada (não decide
+nem executa), e a regra da ADR-0026 de só gravar memória com palavras do dono continua (é trava
+contra injeção, não automação).
+
 ## O que a Fase B tratou (registro original)
 
 
