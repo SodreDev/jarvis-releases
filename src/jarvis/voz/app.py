@@ -85,6 +85,7 @@ from jarvis.entrada.limite import Interruptor
 from jarvis.executor import desktop
 from jarvis.executor.alarmes import Alarme, agenda_compartilhada
 from jarvis.executor.ferramentas import (
+    AjustesDoJarvis,
     Confirmacao,
     Encerramento,
     ExecutorDeFerramentas,
@@ -954,14 +955,7 @@ class Aplicativo:
         self._cerebro.exigir_plano = True
         # A confirmação é uma pergunta que a voz responde, com ou sem o portão (ADR-0048).
         self._cerebro.pendencia_sem_portao = True
-        # O caminho rápido (ADR-0045): comando simples vai à ferramenta pela regra, sem esperar o
-        # motor — pelo mesmo PDP, Jev e pergunta da proposta do modelo.
-        self._cerebro.caminho_rapido = self.configuracao.caminho_rapido
         self._cerebro.confirmar = self._confirmar
-        # Trocar o modo de permissão pela voz (ADR-0066): lido pelo código na fala do dono.
-        self._cerebro.ao_mudar_permissao = self._mudar_permissao
-        # Trocar o estilo do endpoint de voz pela fala («fala mais calmo», ADR-0068).
-        self._cerebro.ao_pedir_estilo = self._pedir_estilo
         # Os contatos das memórias fixas para o roteiro da tarefa de navegador (ADR-0066).
         self._cerebro.contatos = self._contatos_das_memorias
         self._cerebro.ao_status = self._status_do_laco
@@ -980,6 +974,11 @@ class Aplicativo:
         # Encerrar o Jarvis pela voz (ADR-0041): o executor pergunta o que está no ar e pede o fim.
         self.ferramentas.encerramento = Encerramento(
             pendente=self._o_que_esta_no_ar, pedir=self._pedir_o_fim
+        )
+        # Trocar a permissão (ADR-0066) e o estilo da voz (ADR-0068) são ferramentas que o
+        # modelo decide chamar (ADR-0072); a troca de permissão é validada contra a fala do dono.
+        self.ferramentas.ajustes = AjustesDoJarvis(
+            permissao=self._mudar_permissao, estilo=self._definir_estilo, estilos=self._estilos
         )
         self.ferramentas.portas().ambiente = self.ambiente
         if self.ferramentas.portas().janelas is None and not em_ci(self.ambiente):
@@ -1002,29 +1001,31 @@ class Aplicativo:
         self._aquecer()
         self._conferir_a_extensao_em_segundo_plano()
 
-    def _pedir_estilo(self, fala: str) -> str:
-        """A fala inteira do dono pede outro estilo do endpoint de voz (ADR-0068)? Troca já — o
-        próximo trecho sai no estilo novo, inclusive a confirmação — e grava pela janela. Vazio =
-        não era pedido de estilo (ou a voz de agora não tem estilo): o turno segue como sempre."""
-        from jarvis.voz.endpoint import comando_de_estilo
-
+    def _estilos(self) -> tuple[str, ...]:
+        """Os estilos que a voz de agora tem (vazio = ela não tem estilo, ADR-0068)."""
         motor = self._tts
-        estilos: tuple[str, ...] = tuple(getattr(motor, "estilos", ()) or ())
-        definir = getattr(motor, "definir_estilo", None)
-        principal = getattr(motor, "principal", None)
-        if not estilos or not callable(definir) or principal is None:
+        if not callable(getattr(motor, "definir_estilo", None)):
+            return ()
+        if getattr(motor, "principal", None) is None:
+            return ()
+        return tuple(getattr(motor, "estilos", ()) or ())
+
+    def _definir_estilo(self, estilo: str) -> str:
+        """O modelo pediu outro estilo do endpoint de voz (`jarvis.estilo_da_voz`, ADR-0072): troca
+        já — o próximo trecho sai no estilo novo — e grava pela janela. Vazio = o estilo não existe
+        nesta voz (o executor devolve o erro ao modelo, com a lista)."""
+        estilos = self._estilos()
+        escolhido = next((e for e in estilos if e.casefold() == estilo.casefold()), None)
+        if escolhido is None:
             return ""
-        estilo = comando_de_estilo(fala, estilos, principal.endpoint.estilo)
-        if estilo is None:
-            return ""
-        definir(estilo)
-        self.configuracao = self.configuracao.com(estilo_endpoint=estilo)
-        # O que aconteceu vai ao Jarvis como dado (ADR-0070): ele confirma com as palavras dele.
-        evento = f"o estilo de voz mudou para «{estilo}», e já vale nesta resposta"
-        if self.ao_mudar_estilo is not None and self.ao_mudar_estilo(estilo) != "salvo":
+        self._tts.definir_estilo(escolhido)  # type: ignore[union-attr]
+        self.configuracao = self.configuracao.com(estilo_endpoint=escolhido)
+        # O que aconteceu volta ao Jarvis como dado (ADR-0070): ele confirma com as palavras dele.
+        evento = f"o estilo de voz mudou para «{escolhido}», e já vale nesta resposta"
+        if self.ao_mudar_estilo is not None and self.ao_mudar_estilo(escolhido) != "salvo":
             evento += "; não deu para salvar no arquivo, então vale só até fechar o Jarvis"
         if self.trilha is not None:
-            self.trilha.evento("voz.estilo", estilo=estilo)
+            self.trilha.evento("voz.estilo", estilo=escolhido)
         return evento + "."
 
     def atualizar_voz_do_endpoint(self, *, voz: str, estilo: str) -> None:
@@ -2153,6 +2154,7 @@ class Aplicativo:
             novo.destino_motor = antigo.destino_motor
             novo.prazo_do_foco_s = antigo.prazo_do_foco_s
             novo.encerramento = antigo.encerramento
+            novo.ajustes = antigo.ajustes
             if antigo.tarefas is not None:
                 antigo.tarefas.executor = novo
                 novo.tarefas = antigo.tarefas

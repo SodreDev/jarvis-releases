@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
@@ -85,6 +86,7 @@ from jarvis.politica.memoria import Proveniencia
 from jarvis.politica.metodo import ContextoDoMetodo, Escolha, escolher_metodo
 from jarvis.politica.objetivo import Objetivo, enderecos_do_resultado
 from jarvis.politica.pdp import Decisao, Grant, Pdp, Pedido, Veredito
+from jarvis.politica.permissao import ModoDePermissao
 from jarvis.trilha import SEM_CAUSA, TrilhaDeDiagnostico, chaves, codigo_do_motivo
 from jarvis.voz.interface import Onde
 from jarvis.voz.vocabulario import RepositorioDoVocabulario
@@ -182,6 +184,10 @@ class TrocaDePreset(Protocol):
 
 
 FERRAMENTA_DE_ENCERRAR: Final = "jarvis.encerrar"
+FERRAMENTA_DE_PERMISSAO: Final = "jarvis.permissao"
+FERRAMENTA_DE_ESTILO: Final = "jarvis.estilo_da_voz"
+"""Ajustes do próprio Jarvis que o MODELO decide chamar (ADR-0072): antes, uma regex na
+transcrição os disparava antes dele."""
 """Encerrar o próprio Jarvis (ADR-0041): o corpo é do aplicativo (`Encerramento`), e a tool só
 existe para o modelo quando há um laço que possa ser encerrado."""
 FERRAMENTA_DA_TELA: Final = "browser.tela"
@@ -396,6 +402,25 @@ class Encerramento:
 
 
 @dataclass(frozen=True, slots=True)
+class AjustesDoJarvis:
+    """Os ajustes do próprio Jarvis que o aplicativo liga (ADR-0072). Cada um devolve o que
+    aconteceu, em frase de dado, para o modelo contar ao dono com as palavras dele."""
+
+    permissao: Callable[[ModoDePermissao], str]
+    estilo: Callable[[str], str]
+    """Vazio = o estilo não existe nesta voz."""
+    estilos: Callable[[], tuple[str, ...]] = lambda: ()
+
+
+def modo_na_fala(modo: ModoDePermissao, fala: str) -> bool:
+    """O dono disse este modo na fala dele? A validação da troca de permissão (ADR-0072): só a
+    fala do dono deste turno solta — página, arquivo ou resultado de ferramenta não chegam aqui."""
+    texto = unicodedata.normalize("NFKD", fala.lower())
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    return ("bypass" if modo is ModoDePermissao.BYPASS else "automatico") in texto
+
+
+@dataclass(frozen=True, slots=True)
 class Avaliacao:
     """Uma chamada validada e julgada pelo PDP, ainda sem efeito (o que `avaliar` devolve)."""
 
@@ -460,6 +485,12 @@ class ExecutorDeFerramentas:
     promovidas entram no catálogo e no PDP em `preparar`, com o tier que o dono deu."""
     encerramento: Encerramento | None = None
     """Quem encerra o Jarvis (ADR-0041). Sem ele, a `jarvis.encerrar` não existe."""
+    ajustes: AjustesDoJarvis | None = None
+    """Permissão e estilo da voz (ADR-0072). Sem eles, `jarvis.permissao` e
+    `jarvis.estilo_da_voz` não existem."""
+    fala_do_dono: str = ""
+    """A fala do DONO neste turno (vazia se o turno não é dele): é contra ela que a troca de
+    permissão é validada. Quem põe é o cérebro, no começo do turno."""
     vocabulario: RepositorioDoVocabulario | None = None
     """O vocabulário do dono (ADR-0044). Sem ele, a `vocabulario.aprender` não existe."""
     presets: TrocaDePreset | None = None
@@ -630,6 +661,10 @@ class ExecutorDeFerramentas:
             return self.estado_do_navegador is not None
         if tool_id == FERRAMENTA_DE_ENCERRAR:
             return self.encerramento is not None
+        if tool_id == FERRAMENTA_DE_PERMISSAO:
+            return self.ajustes is not None
+        if tool_id == FERRAMENTA_DE_ESTILO:
+            return self.ajustes is not None and bool(self.ajustes.estilos())
         if tool_id == FERRAMENTA_DE_VOCABULARIO:
             return self.vocabulario is not None
         if tool_id == FERRAMENTA_DE_PRESET:
@@ -675,6 +710,8 @@ class ExecutorDeFerramentas:
                 for f in self.navegadores.familias()
             )
             return f"{texto} Configurados agora: {feitos or 'nenhum'}."
+        if tool_id == FERRAMENTA_DE_ESTILO and self.ajustes is not None:
+            return f"{texto} Estilos desta voz: {', '.join(self.ajustes.estilos()) or 'nenhum'}."
         if tool_id != "apps.launch":
             return texto
         nomes = ", ".join(a.nome for a in self.registro_de_apps.autorizados.values())
@@ -1634,6 +1671,26 @@ class ExecutorDeFerramentas:
             assert self.encerramento is not None  # _ligada filtra antes
             # Só o pedido: o laço termina o turno (a despedida toca) e então encerra, limpo.
             return {"encerrando": True, "tarefas_canceladas": self.encerramento.pedir()}
+        if tool_id == FERRAMENTA_DE_PERMISSAO:
+            assert self.ajustes is not None  # _ligada filtra antes
+            modo = ModoDePermissao(str(args["modo"]))
+            if not modo_na_fala(modo, self.fala_do_dono):
+                # O veredito volta ao modelo (ADR-0072): a troca só vale pela fala do dono.
+                raise ValueError(
+                    f"a troca para o modo {modo} não está na fala do dono deste pedido: só ele "
+                    "troca a permissão, falando"
+                )
+            return {"modo": str(modo), "evento": self.ajustes.permissao(modo)}
+        if tool_id == FERRAMENTA_DE_ESTILO:
+            assert self.ajustes is not None  # _ligada filtra antes
+            estilo = str(args["estilo"]).strip()
+            evento = self.ajustes.estilo(estilo)
+            if not evento:
+                raise ValueError(
+                    f"esta voz não tem o estilo «{estilo}»; os que tem: "
+                    f"{', '.join(self.ajustes.estilos()) or 'nenhum'}"
+                )
+            return {"estilo": estilo, "evento": evento}
         if tool_id == FERRAMENTA_DE_VOCABULARIO:
             assert self.vocabulario is not None  # _ligada filtra antes
             # O que não serve (palavra comum demais, grafia com marcação) volta como erro, com o

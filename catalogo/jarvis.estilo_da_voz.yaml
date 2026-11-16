@@ -1,0 +1,60 @@
+# Trocar o estilo da voz pela ferramenta (dono, 2026-11-16; ADR-0072): antes, uma regex na
+# transcrição trocava o estilo antes do modelo; agora o modelo decide chamar.
+id: jarvis.estilo_da_voz
+title: Trocar o estilo da voz
+description: Troca o estilo da voz do Jarvis (o endpoint de TTS do dono, ADR-0068) para um dos estilos que ele tem — o
+  próximo trecho falado já sai no estilo novo. Use quando o dono pedir outro jeito de falar ("fala mais calmo", "tom
+  urgente", "volta ao normal"); `estilo` é o nome de um estilo da lista que vem com a ferramenta. Não muda o que é dito.
+quando: "o dono pediu outro estilo de fala da voz"
+exemplos:
+- "fala mais calmo"
+- "volta ao normal"
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - estilo
+  properties:
+    estilo:
+      type: string
+      minLength: 1
+      maxLength: 40
+output_schema:
+  type: object
+  required:
+  - estilo
+  properties:
+    estilo:
+      type: string
+    evento:
+      type: string
+preconditions:
+- a voz de agora tem estilos
+postcondition: o próximo trecho falado sai no estilo novo e a configuração do dono o guarda
+capability: jarvis.estilo_da_voz
+risk_class: transitorio_reversivel
+side_effect: ephemeral
+reversible: false
+idempotent: true
+idempotency: required
+data_egress: none
+pii_touch: none
+confirmation: never
+tier: livre
+aviso_falado: Estilo da voz trocado.
+access_level_min: jarvis
+roots: []
+requires_elevation: false
+timeout_ms: 3000
+cancellable: false
+platforms:
+- linux-wayland
+- linux-x11
+- windows
+executor: local-sistema
+trust_input: untrusted
+tests:
+- contract
+- postcondition
+- denial
+version: 1

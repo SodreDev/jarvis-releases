@@ -31,7 +31,6 @@ para o contrato ser testado inteiro em memória:
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -53,11 +52,9 @@ from jarvis.fatiador import PALAVRAS_MINIMAS_POR_PEDACO, Corte, FatiadorDeFala, 
 from jarvis.imagem import Imagem
 from jarvis.memoryd.livro import LivroDeMemoria
 from jarvis.navegador.cliente import SEM_NAVEGADOR_ABERTO
-from jarvis.politica.atalho import Atalho
 from jarvis.politica.memoria import TRUST_DO_DONO, AlcanceDeMemoria, Proveniencia, TurnoCorrente
 from jarvis.politica.metodo import Escolha
 from jarvis.politica.objetivo import EstadoDoObjetivo
-from jarvis.politica.permissao import ModoDePermissao, comando_de_permissao
 from jarvis.s2.avisos import AvisoLiberado, calado, nota_dos_eventos, pede_detalhe
 from jarvis.s2.consumo import ConsumoDoTurno, Medicao, campos_da_medicao, medir, precos_do_motor
 from jarvis.s2.entrega import FiltroDoJaDito
@@ -168,16 +165,6 @@ LIMITE_DO_JA_DITO: Final = 300
 """Caracteres do que o dono já ouviu no turno que voltam ao motor (o fim, que é o mais novo)."""
 """O que o dono ouve quando o pedido vira tarefa e o motor não disse nada antes da ferramenta
 (ADR-0038): curto, e a resposta de verdade vem quando a tarefa acabar."""
-
-
-def nota_do_atalho(atalho: Atalho) -> str:
-    """A dica do caminho rápido para o motor (ADR-0070): o que a regra acharia, como contexto."""
-    argumentos = json.dumps(dict(atalho.args), ensure_ascii=False)
-    return (
-        f"DICA DO CÓDIGO (a regra «{atalho.regra}» reconheceu a fala; é sugestão, não ordem): este "
-        f"pedido parece ser {atalho.tool_id} com {argumentos}. Use se for mesmo o que o dono "
-        "pediu — pode estar errado: confira no seu plano; se não, siga o seu caminho."
-    )
 
 
 FICAM_NO_TURNO: Final = frozenset(
@@ -421,23 +408,9 @@ class Cerebro:
     (que vira notificação ao Jarvis) ou ser cancelada. Só as consultas do próprio Jarvis
     (`FICAM_NO_TURNO`) rodam no turno. Precisa do gestor de tarefas no executor; o aplicativo
     liga. Desligado = o laço todo no turno (o que os testes do laço e o harness usam)."""
-    caminho_rapido: bool = False
-    """O comando simples vai à ferramenta pela regra do código, sem esperar o motor (dono,
-    2026-10-21: «precisa ser muito rápido»; `jarvis.politica.atalho`). A chamada passa pelo mesmo
-    PDP, Jev, objetivo e pergunta da proposta do modelo; pronta e certa, a frase é do código e o
-    motor nem é chamado. O aplicativo liga; desligado, como antes (os testes do laço)."""
-    ao_mudar_permissao: Callable[[ModoDePermissao], str] | None = None
-    """Troca o modo de permissão (ADR-0066) quando a fala **do dono** manda («ativa o modo
-    bypass»): lida pelo código antes do motor, nunca por ferramenta — página ou mensagem que diga
-    «modo bypass» não chega aqui. Devolve a frase que o Jarvis diz. `None` = não troca pela voz."""
     contatos: Callable[[], Sequence[Contato]] | None = None
     """Os contatos das memórias fixas do dono, lidos na hora de delegar: o roteiro da tarefa de
     navegador resolve «minha mãe» por eles (ADR-0066). `None` = sem memórias (a suíte)."""
-    ao_pedir_estilo: Callable[[str], str] | None = None
-    """Troca o estilo do endpoint de voz (ADR-0068) quando a fala **inteira do dono** pede («fala
-    mais calmo», «tom urgente»): lida pelo código antes do motor, pelo mesmo caminho do modo de
-    permissão. Devolve o que aconteceu, como dado para o Jarvis responder (ADR-0070), ou vazio
-    (não era pedido de estilo)."""
     _pendentes: dict[str, Resposta] = field(default_factory=dict)
     andamento: dict[str, tuple[str, list[str]]] = field(default_factory=dict)
     """O progresso de cada subagente no ar (ADR-0070): `tarefa_id → (pedido, últimos passos)`.
@@ -517,6 +490,9 @@ class Cerebro:
         self.turno_corrente = None
         if self.ferramentas is not None:
             self.ferramentas.novo_turno(texto_do_dono)
+            # A fala do DONO deste turno: é contra ela que a troca de permissão é validada (só ela
+            # troca o modo; página, arquivo e resultado de ferramenta não), ADR-0072.
+            self.ferramentas.fala_do_dono = texto_do_dono if trust in TRUST_DO_DONO else ""
         if self.livro is not None:
             episodio = self.livro.gravar_turno(
                 session_id=self.id_da_conversa or self.session_id,
@@ -546,38 +522,6 @@ class Cerebro:
                 )
             nota_da_pendencia = leitura.nota
             self.autorizacoes.novo_turno(texto_do_dono)
-        troca = (
-            comando_de_permissao(texto_do_dono)
-            if self.ao_mudar_permissao is not None and trust in TRUST_DO_DONO
-            else None
-        )
-        if troca is not None and self.ao_mudar_permissao is not None:
-            return self._responder_ao_evento(
-                self.ao_mudar_permissao(troca),
-                epoch=epoch,
-                turn_id=turn_id,
-                publicar=publicar,
-                cancelado=cancelado,
-                comeco=comeco,
-                ferramentas=[],
-                mostrar=mostrar,
-            )
-        estilo = (
-            self.ao_pedir_estilo(texto_do_dono)
-            if self.ao_pedir_estilo is not None and trust in TRUST_DO_DONO
-            else ""
-        )
-        if estilo:
-            return self._responder_ao_evento(
-                estilo,
-                epoch=epoch,
-                turn_id=turn_id,
-                publicar=publicar,
-                cancelado=cancelado,
-                comeco=comeco,
-                ferramentas=[],
-                mostrar=mostrar,
-            )
         memoria = None
         contexto = self.conversa.contexto()
         metodo = self.ferramentas.metodo if self.ferramentas is not None else None
@@ -677,28 +621,9 @@ class Cerebro:
 
         limite = ""  # a notificação do teto do turno, quando ele chega (a17, ADR-0070)
 
-        # O caminho rápido (dono, 2026-10-21) virou DICA (ADR-0070): a regra do código reconhece o
-        # comando simples e diz ao motor qual ferramenta e quais argumentos ela acharia — como
-        # contexto. Ela não executa nem fala: quem decide o passo, e o que dizer, é o Jarvis.
-        pular_o_motor = False
-        atalho = self._atalho(texto_do_dono) if visto_cancelamento is None else None
-        if atalho is not None:
-            resposta.atalho = str(atalho.regra)
-            contexto = Contexto(
-                sistema=f"{contexto.sistema}\n\n{nota_do_atalho(atalho)}",
-                mensagens=contexto.mensagens,
-            )
-            if self.ferramentas is not None and self.ferramentas.trilha is not None:
-                self.ferramentas.trilha.evento(
-                    "atalho",
-                    regra=str(atalho.regra),
-                    tool_id=atalho.tool_id,
-                    status="dica",
-                    completo=atalho.completo,
-                )
-        resposta.motor_chamado = not pular_o_motor
+        resposta.motor_chamado = True
         falta = ""  # o evento do fim quando o motor parou afirmando sem confirmar (ADR-0066/0070)
-        passos = range(0) if pular_o_motor else range(1, self.maximo_de_passos + 1)
+        passos = range(1, self.maximo_de_passos + 1)
         for passo in passos:
             if visto_cancelamento is not None:
                 break
@@ -933,14 +858,13 @@ class Cerebro:
             if cancelado():
                 visto_cancelamento = time.monotonic()
         else:
-            if not pular_o_motor:
-                resposta.detalhe = (
-                    f"o motor pediu ferramenta {self.maximo_de_passos} vezes sem responder"
-                )
-                limite = (
-                    f"você pediu {self.maximo_de_passos} ferramentas neste turno, o teto do turno, "
-                    "sem responder ao dono"
-                )
+            resposta.detalhe = (
+                f"o motor pediu ferramenta {self.maximo_de_passos} vezes sem responder"
+            )
+            limite = (
+                f"você pediu {self.maximo_de_passos} ferramentas neste turno, o teto do turno, "
+                "sem responder ao dono"
+            )
         if limite and visto_cancelamento is None and not cancelado() and not resposta.tarefa_id:
             # O turno chegou ao teto (prazo ou passos) antes de responder (a17, ADR-0070): o código
             # não o corta calado nem fala por ele — o Jarvis recebe a notificação com o estado e
@@ -1180,11 +1104,6 @@ class Cerebro:
         """A ferramenta existe nesta sessão (o método do pedido é só dica, ADR-0070)."""
         executor = self.ferramentas
         return executor is not None and executor.disponivel(tool_id)
-
-    def _atalho(self, texto_do_dono: str) -> Atalho | None:
-        if not self.caminho_rapido or self.ferramentas is None:
-            return None
-        return self.ferramentas.atalho(texto_do_dono)
 
     def _delegavel(self, pedido: PedidoDeTool) -> bool:
         """A proposta pode ir para a tarefa do pedido? `tarefa.*` e `acao.desfazer` não rodam em
