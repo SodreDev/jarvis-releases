@@ -13,6 +13,10 @@ o contato no cabeçalho antes de digitar, conferir o envio depois). O caminho é
   autônomo da ADR-0060 — lista permitida, modo ausente, tetos — não se aplicam aqui).
 - **Navegação em geral**: aba atual, site citado, ler, agir, ler de novo para conferir.
 
+Desde a ADR-0071 (2026-11-16) o que a regex tira da fala (o contato, a mensagem) é só DICA,
+rotulada como palpite: quem decide os parâmetros é o Jarvis, no plano que vira o objetivo da
+tarefa; as travas do envio continuam valendo sempre.
+
 Nada aqui executa: é texto para as notas da rodada. Só a fala do dono entra (nunca o texto de uma
 página). A mensagem é **redigida** pelo Jarvis, no tom do dono com aquela pessoa (ADR-0069 §3: ele
 é assistente, não repetidor); só vai palavra por palavra quando o dono ditou o texto — entre aspas,
@@ -191,27 +195,35 @@ def roteiro(fala: str, ids: Iterable[str], contatos: Sequence[Contato] = ()) -> 
 
 
 def _fatos_do_envio(envio: PedidoDeEnvio, tom: Sequence[str] = ()) -> str:
-    """Os fatos que o código resolveu da fala e das memórias, e as travas do envio — sem passos."""
+    """A DICA do envio (ADR-0071): o que uma regra de texto acha na fala — palpite rotulado, que
+    nunca vence o objetivo que o Jarvis formulou — e as travas do envio, que valem sempre."""
     site, url = REDES[envio.rede]
     outro_nome = (
-        f" (o dono disse «{envio.contato_dito}»; nas memórias é «{envio.contato}»)"
+        f" (o dono disse «{envio.contato_dito}»; nas memórias fixas é «{envio.contato}»)"
         if _normal(envio.contato) != _normal(envio.contato_dito)
         else ""
     )
     return (
-        "O PEDIDO É UM ENVIO DIRETO do dono (execute sem perguntar; lista permitida e modo ausente "
-        f"são só da resposta autônoma). Rede: {site} ({url}). Contato: «{envio.contato}»"
-        f"{outro_nome}. {_mensagem(envio, tom)} Travas: antes de digitar, o cabeçalho da conversa "
-        f"aberta TEM de mostrar «{envio.contato}» — nunca digite na conversa errada; depois de "
-        "enviar, leia a conversa e só diga que mandou se a última mensagem for a sua."
+        f"{CABECALHO_DA_DICA} parece um envio direto pelo {site} ({url}) para «{envio.contato}»"
+        f"{outro_nome}. {_mensagem(envio, tom)} Se for mesmo um envio, é pedido do dono: execute "
+        "sem perguntar (lista permitida e modo ausente são só da resposta autônoma). TRAVAS DO "
+        "ENVIO (valem sempre): antes de digitar, o cabeçalho da conversa aberta TEM de mostrar o "
+        "contato do objetivo — nunca digite na conversa errada; depois de enviar, leia a conversa "
+        "e só diga que mandou se a última mensagem for a sua."
     )
+
+
+CABECALHO_DA_DICA: Final = (
+    "DICA DO CÓDIGO (palpite de uma regra de texto sobre a fala do dono, pode estar errado; vale "
+    "o objetivo que o Jarvis formulou e, se os dois divergem, siga o objetivo):"
+)
 
 
 def _mensagem(envio: PedidoDeEnvio, tom: Sequence[str]) -> str:
     """O texto ditado vai como está; o pedido («manda pra X que …») é redigido pelo Jarvis, no tom
-    do dono com essa pessoa (ADR-0069 §3)."""
+    do dono com essa pessoa (ADR-0069 §3) — dito como palpite (ADR-0071)."""
     if envio.literal:
-        return f"A mensagem, EXATAMENTE como o dono ditou: «{envio.mensagem}»."
+        return f"Se for isso, a mensagem vai EXATAMENTE como o dono ditou: «{envio.mensagem}»."
     sobre = (
         f" O que ele anotou sobre «{envio.contato}»: «{_curto(envio.nota)}»." if envio.nota else ""
     )
@@ -223,8 +235,8 @@ def _mensagem(envio: PedidoDeEnvio, tom: Sequence[str]) -> str:
         else ""
     )
     return (
-        f"O que ele quer dizer a «{envio.contato}»: «{envio.mensagem}». REDIJA a mensagem: você é "
-        "o assistente pessoal dele, não um repetidor — em primeira pessoa, em nome dele, no tom "
+        f"O que ele parece querer dizer: «{envio.mensagem}». A mensagem, REDIJA: você é o "
+        "assistente pessoal dele, não um repetidor — em primeira pessoa, em nome dele, no tom "
         "dele com essa pessoa, curta, sem citar o Jarvis, sem inventar fato, horário ou promessa "
         f"e sem copiar a fala dele palavra por palavra.{sobre}{jeito}"
     )

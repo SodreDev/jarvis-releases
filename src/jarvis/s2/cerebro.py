@@ -88,8 +88,6 @@ from jarvis.s2.receitas import receitas_do_turno
 from jarvis.s2.recuperacao import nota_do_turno
 from jarvis.s2.roteiro_do_navegador import (
     Contato,
-    PedidoDeEnvio,
-    pedido_de_envio,
 )
 from jarvis.s2.tarefa_do_pedido import MotorDoObjetivo, titulo_do_plano
 from jarvis.s2.verdade import (
@@ -173,8 +171,8 @@ def nota_do_atalho(atalho: Atalho) -> str:
     argumentos = json.dumps(dict(atalho.args), ensure_ascii=False)
     return (
         f"DICA DO CÓDIGO (a regra «{atalho.regra}» reconheceu a fala; é sugestão, não ordem): este "
-        f"pedido parece ser {atalho.tool_id} com {argumentos}. Use se for mesmo o que o dono "
-        "pediu; se não, siga o seu caminho."
+        f"pedido parece ser {atalho.tool_id} com {argumentos}. Pode estar errado: use se for mesmo "
+        "o que o dono pediu (confira no seu plano); se não, siga o seu caminho."
     )
 
 
@@ -1154,11 +1152,6 @@ class Cerebro:
         if not self.caminho_rapido or self.ferramentas is None:
             return None
         return self.ferramentas.atalho(texto_do_dono)
-
-    def _envio_do_pedido(self, texto_do_dono: str) -> PedidoDeEnvio | None:
-        """O pedido de envio na fala do dono («manda pra X que …»), com os contatos das memórias."""
-        contatos = tuple(self.contatos()) if self.contatos is not None else ()
-        return pedido_de_envio(texto_do_dono, contatos)
 
     def _delegavel(self, pedido: PedidoDeTool) -> bool:
         """A proposta pode ir para a tarefa do pedido? `tarefa.*` e `acao.desfazer` não rodam em
