@@ -82,9 +82,8 @@ INSTRUCAO_DE_FERRAMENTAS: Final = (
     "argumentos da lista (* = obrigatório) e nunca invente resultado; caminhos, sempre a pasta "
     "inteira (~/Documentos/...). ARGUMENTO é só o valor que VOCÊ decidiu (o nome como está na "
     "tela ou na lista, o endereço, o texto a digitar), nunca a fala do dono; o que mais ele disse "
-    "é outra ação, ou nenhuma. Errado: alvo «mãe salve para não esquecer depois». Certo: "
-    "memoria.lembrar {texto: «o contato da mãe do dono se chama Mãe»} e nada a abrir. Cada linha: "
-    "nome(argumentos [o que é o valor]): quando usar. «pedidos do dono»."
+    "é outra ação, ou nenhuma (errado: alvo «mãe salve para não esquecer depois»; certo: «Mãe»). "
+    "Cada linha: nome(argumentos [o que é o valor]): quando usar. «pedidos do dono»."
 )
 """O protocolo da proposta e a legenda do catálogo: vai uma vez, antes das linhas."""
 

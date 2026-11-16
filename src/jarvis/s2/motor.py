@@ -42,6 +42,11 @@ INTERVALO_DE_CONSULTA_S: Final = 0.005
 cancelamento. Dez vezes menor que o prazo, para o prazo sobrar para matar o processo."""
 
 
+MARCA_DA_VOZ: Final = "(pela voz; a transcrição vem sem pontuação e pode trocar palavras)"
+"""O aviso que acompanha a fala transcrita (ADR-0071): o motor pontua antes de entender e, se ela
+der para ler de dois jeitos que mudam a ação, pergunta."""
+
+
 class Modo(StrEnum):
     """ADR-0025, regra 4: todo turno começa rápido; pensar é exceção, com teto."""
 
@@ -70,6 +75,9 @@ class Mensagem:
     texto: str
     interrompida: bool = False
     """O dono falou por cima: `texto` é só o que ele chegou a ouvir."""
+    da_voz: bool = False
+    """A fala do dono veio da transcrição da voz (ADR-0071): sem pontuação confiável e com
+    palavra trocada às vezes. O motor sabe, para pontuar antes de entender ou perguntar."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +115,12 @@ class Contexto:
         ultimo = next(m for m in reversed(self.mensagens) if m.papel in ("dono", "evento"))
         return ultimo.papel == "evento"
 
+    @property
+    def turno_da_voz(self) -> bool:
+        """A última fala do dono veio da voz (e não digitada, nem evento)."""
+        ultimo = next(m for m in reversed(self.mensagens) if m.papel in ("dono", "evento"))
+        return ultimo.papel == "dono" and ultimo.da_voz
+
     def como_texto(self) -> str:
         """A conversa em texto corrido, para motor que só recebe um texto (a CLI).
 
@@ -116,6 +130,8 @@ class Contexto:
         agora = (
             f"Agora não foi o dono que falou: chegaram eventos do sistema. {self.turno}"
             if self.de_evento
+            else f"{MARCA_DA_VOZ} {self.turno}"
+            if self.turno_da_voz
             else self.turno
         )
         if len(self.mensagens) == 1 and not (self.raciocinio or self.ja_dito):
@@ -130,7 +146,13 @@ class Contexto:
             quem = "Dono" if mensagem.papel == "dono" else "Jarvis"
             marca = " [interrompido pelo dono aqui]" if mensagem.interrompida else ""
             linhas.append(f"{quem}: {mensagem.texto}{marca}")
-        linhas += ["", agora if self.de_evento else f"Agora o dono disse: {self.turno}"]
+        linhas += [
+            "",
+            agora
+            if self.de_evento
+            else f"Agora o dono disse{' ' + MARCA_DA_VOZ if self.turno_da_voz else ''}: "
+            f"{self.turno}",
+        ]
         resultados = [m.texto for m in self.mensagens[ultimo_do_dono + 1 :]]
         if resultados:
             linhas += [

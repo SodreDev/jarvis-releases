@@ -4,7 +4,7 @@ title: Gravar uma memória
 description: Grava uma memória nova sobre o dono, ligada ao turno em que ela apareceu. Use quando o dono
   pedir para o Jarvis lembrar de algo. Só nasce ativa se o texto for fala do próprio dono neste turno;
   senão fica proposta. Não grava segredo e não apaga nada.
-quando: "guardar o que o dono mandou lembrar, salvar, anotar ou não esquecer — é uma ação própria, mesmo no meio de outra fala; o fato reescrito por você"
+quando: "guardar o que o dono mandou lembrar, salvar ou anotar (ação própria, mesmo no meio de outra fala)"
 exemplos:
 - "lembra que eu tomo café sem açúcar"
 - "salva que o contato da minha mãe é Mãe"

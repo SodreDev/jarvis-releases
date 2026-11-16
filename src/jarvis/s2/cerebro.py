@@ -217,6 +217,8 @@ alguns segundos para carregar a extensão)."""
 INTERVALO_DA_EXTENSAO_S: Final = 0.25
 COBRANCAS_DO_OBJETIVO: Final = 2
 """Quantas vezes o turno cobra o motor que parou antes do objetivo (ADR-0066)."""
+TRUST_DA_VOZ: Final = "user_voice"
+"""A fala que veio do microfone, transcrita (ADR-0071): vai ao motor com o aviso de transcrição."""
 COBRANCAS_DO_PLANO: Final = 1
 """Quantas vezes o turno devolve a primeira ferramenta proposta sem plano (ADR-0071): depois
 disso ela segue, e a trilha conta que o plano faltou."""
@@ -501,7 +503,7 @@ class Cerebro:
         # Resposta anterior sem `ouvido`: ninguém confirmou que tocou, então não existe (P4).
         self._pendentes.clear()
         anteriores = tuple(self.conversa.turnos)
-        self.conversa.turnos.append(Mensagem("dono", texto_do_dono))
+        self.conversa.turnos.append(Mensagem("dono", texto_do_dono, da_voz=trust == TRUST_DA_VOZ))
         self.turno_corrente = None
         if self.ferramentas is not None:
             self.ferramentas.novo_turno(texto_do_dono)
