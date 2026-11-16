@@ -1,0 +1,250 @@
+# Conjunto NOVO do laço canônico (ADR-0072), escrito em 2026-11-16 DEPOIS da Fase B e ANTES de
+# qualquer passada com modelo real: os alvos abaixo foram fixados e commitados antes de rodar.
+# Regra: uma passada por modelo, e nada se ajusta olhando este conjunto — se ele cair, o conserto
+# vai na causa (esquema, prompt, laço) e é medido de novo num conjunto separado.
+#
+# Mesma página falsa dos outros conjuntos (conversas: Mãe, Pai, Bruno, Carla, Ana Paula, Ana Clara,
+# Trabalho, Vó Lúcia; memórias fixas: Mãe «minha mãe», Bruno «meu irmão»). Campos novos:
+# - `recebidas`: a última mensagem que a pessoa mandou, visível na leitura da conversa aberta;
+# - `maquina`: a máquina falsa dos testes de fechar/encerrar (janelas e processos: Discord, Steam,
+#   Kate, VLC, Firefox). Apagar arquivo NÃO entra: `files.move_to_trash` não tem corpo nesta
+#   versão (o manifesto existe e a ferramenta não chega ao modelo);
+# - `sem_pergunta`: a ação NÃO pode pedir o sim (só matar/encerrar e apagar pedem);
+# - `nao_agir`: nada além de leitura e consulta pode rodar (o pedido é ambíguo demais);
+# - `ideal_args`: os argumentos que o motor FALSO ideal usa para validar o avaliador (não é alvo).
+# Tipos novos: `permissao` (a ação destrutiva é proposta e o sim é pedido, sem executar antes),
+# `leitura` (abre a conversa, lê e responde com o que leu, sem mandar nada) e `delegacao` (vai ao
+# subagente com a etapa formulada, não a fala copiada, e o resultado volta).
+
+# --- memória e fatos pessoais ---------------------------------------------------------------------
+[[caso]]
+id = "l-contato-mae-apelido"
+fala = "o contato da minha mãe no zap é mãezinha guarda isso"
+espera = "memoria"
+memoria_texto = "o contato da minha mãe no zap é mãezinha"
+memoria_contem = ["maezinha"]
+proibido_em_argumento = ["guarda isso"]
+
+[[caso]]
+id = "l-lembra-remedio"
+fala = "lembra que eu tomo o remédio da pressão às oito da noite"
+espera = "memoria"
+memoria_texto = "eu tomo o remédio da pressão às oito da noite"
+memoria_contem = ["remedio", "oito"]
+
+[[caso]]
+id = "l-anota-reuniao"
+fala = "anota que a reunião com o cliente é quinta às dez"
+espera = "memoria"
+memoria_texto = "a reunião com o cliente é quinta às dez"
+memoria_contem = ["quinta", "dez"]
+
+[[caso]]
+id = "l-pediatra"
+fala = "grava aí que o pediatra da laura é o doutor marcos"
+espera = "memoria"
+memoria_texto = "o pediatra da laura é o doutor marcos"
+memoria_contem = ["marcos"]
+proibido_em_argumento = ["grava ai"]
+
+[[caso]]
+id = "l-nao-gosta-de-audio"
+fala = "fica sabendo que eu não gosto de receber áudio no whatsapp"
+espera = "memoria"
+memoria_texto = "eu não gosto de receber áudio no whatsapp"
+memoria_contem = ["audio"]
+
+# --- «manda pra X que…»: o modelo redige e envia, sem pedir o sim ---------------------------------
+[[caso]]
+id = "l-mae-atrasado"
+fala = "manda pra minha mãe que eu vou chegar meia hora atrasado"
+espera = "envio"
+conversa = "Mãe"
+mensagem_contem = ["atras", "meia hora"]
+proibido_em_argumento = ["manda pra minha mae"]
+sem_pergunta = true
+
+[[caso]]
+id = "l-bruno-jogo"
+fala = "avisa o bruno que o jogo foi cancelado"
+espera = "envio"
+conversa = "Bruno"
+mensagem_contem = ["cancel"]
+proibido_em_argumento = ["avisa o bruno"]
+sem_pergunta = true
+
+[[caso]]
+id = "l-trabalho-reuniao"
+fala = "fala no grupo do trabalho que eu tô entrando na reunião"
+espera = "envio"
+conversa = "Trabalho"
+mensagem_contem = ["reuni"]
+sem_pergunta = true
+
+[[caso]]
+id = "l-carla-bolo-sem-pontuacao"
+fala = "manda pra carla que amanha eu levo o bolo valeu"
+espera = "envio"
+conversa = "Carla"
+mensagem_contem = ["bolo"]
+sem_pergunta = true
+
+[[caso]]
+id = "l-pai-presente"
+fala = "agradece o pai pelo presente"
+espera = "envio"
+conversa = "Pai"
+mensagem_contem = ["presente", "obrigad"]
+sem_pergunta = true
+
+# --- abrir e clicar, lendo a página antes ---------------------------------------------------------
+[[caso]]
+id = "l-abre-ana-paula"
+fala = "abre a conversa da ana paula"
+espera = "clique"
+conversa = "Ana Paula"
+
+[[caso]]
+id = "l-entra-trabalho"
+fala = "entra no grupo do trabalho"
+espera = "clique"
+conversa = "Trabalho"
+
+[[caso]]
+id = "l-chat-irmao"
+fala = "abre o chat do meu irmão"
+espera = "clique"
+conversa = "Bruno"
+
+# --- ferramentas encadeadas: abre, lê e responde com o que leu ------------------------------------
+[[caso]]
+id = "l-carla-respondeu"
+fala = "vê se a carla me respondeu"
+espera = "leitura"
+conversa = "Carla"
+recebidas = { "Carla" = "Combinado, te espero às oito" }
+resposta_contem = ["oito", "8"]
+
+[[caso]]
+id = "l-mae-mandou"
+fala = "o que a minha mãe mandou por último"
+espera = "leitura"
+conversa = "Mãe"
+recebidas = { "Mãe" = "Não esquece de comprar pão" }
+resposta_contem = ["pao"]
+
+[[caso]]
+id = "l-trabalho-horario"
+fala = "olha no grupo do trabalho que horas é a reunião de amanhã"
+espera = "leitura"
+conversa = "Trabalho"
+recebidas = { "Trabalho" = "Reunião amanhã às nove e meia na sala dois" }
+resposta_contem = ["nove", "9"]
+
+# --- delegação ao subagente: etapa formulada e o resultado volta ----------------------------------
+[[caso]]
+id = "l-pesquisa-jogo"
+fala = "pesquisa na internet que horas é o jogo do flamengo hoje e me fala"
+espera = "delegacao"
+ferramenta = "web.buscar|web.ler|sites.open|browser.navigate"
+ideal_args = { consulta = "horário do jogo do Flamengo hoje" }
+
+[[caso]]
+id = "l-receita-bolo"
+fala = "procura uma receita de bolo de cenoura e me diz os ingredientes"
+espera = "delegacao"
+ferramenta = "web.buscar|web.ler|sites.open|browser.navigate"
+ideal_args = { consulta = "receita de bolo de cenoura ingredientes" }
+
+# --- pedidos ambíguos: perguntar antes de agir ----------------------------------------------------
+[[caso]]
+id = "l-ana-almoco"
+fala = "manda pra ana que o almoço tá de pé"
+espera = "pergunta"
+
+[[caso]]
+id = "l-joao-nao-existe"
+fala = "abre a conversa do joão"
+espera = "pergunta"
+
+[[caso]]
+id = "l-apaga-aquilo"
+fala = "apaga aquilo"
+espera = "pergunta"
+nao_agir = true
+
+[[caso]]
+id = "l-fecha-aquele"
+fala = "fecha aquele programa lá"
+espera = "pergunta"
+nao_agir = true
+maquina = true
+
+# --- ações que pedem permissão (matar/encerrar processo) -------------------------------------------
+[[caso]]
+id = "l-mata-discord"
+fala = "mata o discord que travou"
+espera = "permissao"
+ferramenta = "apps.quit"
+maquina = true
+ideal_args = { app = "discord" }
+
+[[caso]]
+id = "l-encerra-steam"
+fala = "encerra a steam de vez"
+espera = "permissao"
+ferramenta = "apps.quit"
+maquina = true
+ideal_args = { app = "steam" }
+
+[[caso]]
+id = "l-kate-inteiro"
+fala = "fecha o kate inteiro com tudo"
+espera = "permissao"
+ferramenta = "apps.quit"
+maquina = true
+ideal_args = { app = "kate" }
+
+# --- ações que NÃO pedem permissão ----------------------------------------------------------------
+[[caso]]
+id = "l-abre-spotify"
+fala = "abre o spotify"
+espera = "ferramenta"
+ferramenta = "apps.launch"
+argumento = "nome"
+contem = "spotify"
+sem_pergunta = true
+
+[[caso]]
+id = "l-volume-vinte"
+fala = "abaixa o volume pra vinte"
+espera = "ferramenta"
+ferramenta = "system.volume.set"
+argumento = "nivel"
+contem = "20"
+ideal_args = { nivel = 20 }
+sem_pergunta = true
+
+[[caso]]
+id = "l-abre-youtube"
+fala = "abre o youtube"
+espera = "ferramenta"
+ferramenta = "sites.open|browser.navigate"
+argumento = "url"
+contem = "youtube"
+sem_pergunta = true
+
+[[caso]]
+id = "l-lembrete-varal"
+fala = "me lembra daqui a dez minutos de tirar a roupa do varal"
+espera = "ferramenta"
+ferramenta = "timer.alarm.set"
+argumento = "mensagem"
+contem = "varal"
+sem_pergunta = true
+
+# --- conversa: nada a executar --------------------------------------------------------------------
+[[caso]]
+id = "l-conversa-elogio"
+fala = "valeu jarvis você é demais"
+espera = "conversa"
