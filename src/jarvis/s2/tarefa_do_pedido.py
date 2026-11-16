@@ -439,11 +439,9 @@ class MotorDoObjetivo:
                 f"Critério de pronto: {dados['criterio_de_pronto']}. Fase: {dados['fase']}. "
                 f"Passos feitos: {', '.join(dados['passos_feitos']) or 'nenhum'}."
             )
-            # Os passos concretos montados pelo código (dono, 2026-11-14): o que abrir, ler,
-            # digitar e conferir — não só o objetivo. Só com ferramenta de navegador no catálogo.
-            passos = roteiro(
-                objetivo.pedido, (str(m.get("id", "")) for m in catalogo), self.contatos
-            )
+            # Como trabalhar no navegador e as travas do envio (orientação, ADR-0070): nada tirado
+            # da fala do dono por regex (ADR-0072). Só com ferramenta de navegador no catálogo.
+            passos = roteiro((str(m.get("id", "")) for m in catalogo), self.contatos)
             if passos:
                 notas.append(passos)
         if conferir:
