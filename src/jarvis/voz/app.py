@@ -1014,9 +1014,10 @@ class Aplicativo:
         nesta voz (o executor devolve o erro ao modelo, com a lista)."""
         estilos = self._estilos()
         escolhido = next((e for e in estilos if e.casefold() == estilo.casefold()), None)
-        if escolhido is None:
+        definir = getattr(self._tts, "definir_estilo", None)
+        if escolhido is None or not callable(definir):
             return ""
-        self._tts.definir_estilo(escolhido)  # type: ignore[union-attr]
+        definir(escolhido)
         self.configuracao = self.configuracao.com(estilo_endpoint=escolhido)
         # O que aconteceu volta ao Jarvis como dado (ADR-0070): ele confirma com as palavras dele.
         evento = f"o estilo de voz mudou para «{escolhido}», e já vale nesta resposta"
