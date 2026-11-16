@@ -133,3 +133,72 @@ f2-02) e pensa. Escolher o provedor do cérebro é do dono (ADR-0056, presets); 
 Os relatórios brutos de cada passada (com as ações e os erros de cada caso) ficaram no scratchpad
 da sessão; para refazer: `uv run --frozen python -m tools.avaliar_parametros --motor real [--provedor
 conversa-openrouter --modelo deepseek/deepseek-v4.1-flash] [--caso ID …] --json saida.json`.
+
+## Conjunto de validação (falas que o ajuste não viu)
+
+O ajuste de esquemas e prompt olhou os 40 casos que ele mesmo mede, então o 39/40 podia ser
+sobreajuste. `tools/corpus_validacao.toml` traz 21 falas novas: nomes com instrução misturada,
+«salva/guarda/anota/lembra», ruído de STT sem pontuação, ambíguo e inexistente (devem virar
+pergunta), duas intenções, «manda/avisa/fala pro X que…» e clicar num item da lista. Elas foram
+escritas depois do ajuste, e os alvos foram fixados e **commitados antes** de qualquer passada
+(`f962ca3`). Foi UMA passada por modelo, e **nada foi ajustado depois**.
+
+| | Claude (Haiku, claude -p) | DeepSeek V4.1 Flash (OpenRouter) |
+|---|---:|---:|
+| **acerto na validação** | **21/21 (100%)** | **15/21 (71%)** |
+| acerto no corpus de ajuste (depois dos consertos) | 39/40 | 38/40 |
+| 1º token do turno, p50 / p90 (ms) | 4 020 / 8 796 | 2 607 / 20 852 |
+| 1ª fala do turno, p50 / p90 (ms) | 4 275 / 9 193 | 2 683 / 21 010 |
+| 1º delta por chamada, p50 / p90 (ms) | 2 416 / 3 419 | 484 / 4 318 |
+| total do caso, p50 / p90 (ms) | 16 823 / 45 808 | 6 923 / 39 449 |
+
+| caso | tipo | Claude | DeepSeek | o que falhou (DeepSeek) |
+|---|---|---|---|---|
+| v-salva-nome-irma | memoria | ✅ | ✅ | — |
+| v-guarda-aniversario | memoria | ✅ | ✅ | — |
+| v-lembra-estacionamento | memoria | ✅ | ✅ | — |
+| v-anota-chefe | memoria | ✅ | ✅ | — |
+| v-manda-vo-domingo | envio | ✅ | ✅ | — |
+| v-avisa-pai-carro | envio | ✅ | ❌ | não mandou nada a «Pai»; a conversa aberta é «», não «Pai» |
+| v-abre-e-manda-carla | envio | ✅ | ❌ | não mandou nada a «Carla»; a conversa aberta é «», não «Carla» |
+| v-pai-sem-pontuacao | envio | ✅ | ❌ | não mandou nada a «Pai» |
+| v-fala-mae-comi | envio | ✅ | ✅ | — |
+| v-grupo-falta | envio | ✅ | ✅ | — |
+| v-clica-grupo | clique | ✅ | ✅ | — |
+| v-chat-irmao | clique | ✅ | ✅ | — |
+| v-conversa-ana-clara | clique | ✅ | ✅ | — |
+| v-conversa-avo | clique | ✅ | ✅ | — |
+| v-ana-ambigua | pergunta | ✅ | ✅ | — |
+| v-rodrigo-inexistente | pergunta | ✅ | ❌ | não perguntou ao dono |
+| v-endereco-desconhecido | pergunta | ✅ | ❌ | não perguntou ao dono |
+| v-dentista-e-manda | envio_e_memoria | ✅ | ❌ | não mandou nada a «Carla»; a conversa aberta é «», não «Carla» |
+| v-spotify-e-anota | ferramenta | ✅ | ✅ | — |
+| v-previsao | ferramenta | ✅ | ✅ | — |
+| v-conversa-solta | conversa | ✅ | ✅ | — |
+
+**Leitura honesta:**
+
+- **Claude (o motor do dono): sem sinal de sobreajuste.** Ele acerta 21/21 em falas novas, contra
+  39/40 no ajuste.
+- **DeepSeek: caiu de 95% para 71%.** Nenhuma falha foi de parâmetro copiado (a cópia da fala não
+  apareceu em nenhum argumento). As causas:
+  1. **Resposta vazia** (`v-avisa-pai-carro`, `v-abre-e-manda-carla`, `v-rodrigo-inexistente`): o
+     turno ou a tarefa termina sem texto e sem ferramenta. É coerente com o `<</pensar>>` solto que
+     ele já tinha escrito na fala do corpus de ajuste: o protocolo de TEXTO (`<<pensar>>`,
+     `<<ferramenta>>`) que o Jarvis usa para todo motor não combina com o jeito de esse modelo
+     separar raciocínio e resposta.
+  2. **Pede confirmação para enviar** («Confirma que eu envio?», `v-dentista-e-manda`) e
+     **seleciona sem digitar** (`v-pai-sem-pontuacao`). A persona diz «pedido direto é para
+     executar», mas a regra padrão do dono põe «enviar mensagem» entre o que pede o sim, e ele
+     obedece à regra.
+  3. `v-endereco-desconhecido`: ele **perguntou** («Me passa o endereço que eu mando pro
+     Bruno.»), mas sem «?», e o verificador conta isso como falha. É rigidez do verificador; fica
+     registrado sem reajuste.
+- **Consertos propostos, na causa, para medir de novo NO CORPUS DE AJUSTE (não neste):**
+  (a) para provedores compatíveis com OpenAI (OpenRouter), usar o `tool_calls` e o campo de
+  raciocínio nativos do provedor em vez do protocolo de texto. É o que tira a resposta vazia e o
+  marcador solto. É mudança de arquitetura do motor (ADR nova), não de prompt. (b) a regra do sim
+  ao enviar é do dono e conflita com «pedido direto é para executar»: o sim já é pedido pelo
+  sistema (PDP/risco no clique de enviar), não pelo modelo. Mudar o texto da regra é decisão do
+  dono. (c) o verificador pode aceitar pergunta sem «?»; isso se decide antes da próxima passada,
+  não depois desta.
