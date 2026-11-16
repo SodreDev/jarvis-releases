@@ -19,7 +19,7 @@ input_schema:
       type: string
       minLength: 1
       maxLength: 2000
-      description: "o fato reescrito por você; curto e em 3ª pessoa («o contato da mãe do dono no WhatsApp se chama Mãe»)"
+      description: "o trecho EXATO da fala do dono que diz o fato; sem a ordem («o contato da minha mãe é mãe»; sem «salva isso»)"
     sujeito:
       type: string
       minLength: 1
