@@ -1,8 +1,7 @@
 # ADR-0072 — Laço canônico do agente e chamada nativa de ferramenta
 
-- Estado: aceita (2026-11-16)
-- Contexto: [docs/estudos/laco-canonico.md](../estudos/laco-canonico.md); dono, 2026-11-16 (memória
-  391a8b23): o Jarvis é um agente-CLI com voz; ADR-0070, ADR-0071.
+**Data:** 2026-11-16 · **Estado:** aceita (implementada; provada com modelo real — Claude pelo `claude -p` e DeepSeek V4.1 Flash pelo OpenRouter, com chamada nativa — contra ferramentas falsas; o uso real, com navegador, contas e voz, é do dono) · **Decide:** dono (o princípio: o Jarvis é um agente-CLI com voz; a fala do STT não vira parâmetro nem dispara função), orquestrador (chamada nativa para quem tem function calling; o envio sem o sim, decisão do dono de 2026-11-14)
+**Pedido:** dono e orquestrador, 2026-11-16 (memória 391a8b23). Continua a ADR-0070 e a ADR-0071. Diagnóstico com arquivo:linha: [docs/estudos/laco-canonico.md](../estudos/laco-canonico.md).
 
 ## Decisão
 

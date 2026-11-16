@@ -112,3 +112,22 @@ vazia, `<</pensar>>` solto): o provedor tem function calling nativo e não é us
 **Fica, com motivo:** A1, B8 (permissão), A4–A6 (contexto e memória, não decidem), B1, B2, C4–C6
 (verdade do relato e cobrança como notificação), B4 (eco na voz), B6 (regra do dono: execução vai
 ao subagente), B7, B9, C7 (limites e fatos como notificação).
+
+## Estado (2026-11-16, depois da Fase B)
+
+| Item | Commit | O que ficou |
+|---|---|---|
+| 1. Núcleo comum | `0b4ef4b` | `s2/laco.py`: `rodada_do_agente` é o único ponto que chama o modelo para o turno, a rodada de evento, o subagente do pedido e o do `tarefa.iniciar`; `mensagens_das_ferramentas` devolve cada resultado com a chamada |
+| 2. Chamada nativa | `5dc1d67` | ADR-0072; `tools` + par `tool_calls` → `tool` no OpenRouter, OpenAI, Groq e no servidor que declara `tools` |
+| 3. Envio sem o sim | `2ca29a5` | a regra padrão só pede o sim no destrutivo; o PDP já fazia isso no modo automático |
+| 4. Nada antes do modelo | `52fe04d` | atalho fora; `jarvis.permissao` (validada contra a fala do dono deste turno) e `jarvis.estilo_da_voz` são ferramentas que o modelo chama |
+| 5. Sem plano obrigatório | `cb68cbd` | nenhuma barreira de formato; o conselho de pensar antes fica na instrução. **B3 mudou de classe:** a nota do plano que previa ferramenta e não propôs nenhuma ficou como notificação (lê só o raciocínio do próprio modelo e não bloqueia nada). Medido: Claude 20/21 na validação, plano presente nos 21 casos, a barreira teria disparado 0 vez — a única falha não vem dela |
+| 6. Ler antes vira veredito | `c7f8426` | `motivo_para_ler`: a ação sem leitura não roda e o porquê volta ao modelo (causa `pagina_nao_lida`) |
+| 7. Sem fatos da fala no subagente | `28ff604` | a orientação do navegador nem recebe a fala; levam-se as travas e o tom das memórias |
+| 8. `MotorDeAgente` no mesmo laço | `a30eb9a` | é o `MotorDoObjetivo` com a etapa delegada (a `descricao`), a persona, as regras e a memória do turno |
+
+**Fora do escopo, com motivo:** três agentes que não são o Jarvis nem o subagente ainda chamam o
+modelo direto — o redator e o agente monitor das redes (`social/redator.py`, `social/agente.py`,
+ADR-0060) e o `acerto` (classificador). Não executam ferramenta do dono; ficam para uma rodada
+própria. `files.move_to_trash` tem manifesto e não tem corpo: o Jarvis não apaga arquivo nesta
+versão, e o caso de apagar ficou fora do conjunto novo.

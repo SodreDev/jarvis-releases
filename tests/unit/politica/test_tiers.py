@@ -84,6 +84,11 @@ TIER_ESPERADO: dict[str, str] = {
     # Trocar o preset de modelo (dono, 2026-10-29; ADR-0056): moderado — grava o arquivo de presets
     # dele, avisa e desfaz; o sim só quando o turno leu conteúdo de fora (`decidir_preset`).
     "modelo.preset": "moderado",
+    # Trocar o modo de permissão (ADR-0072): moderado — o modelo chama, e o executor só solta
+    # quando o modo está na fala do dono deste turno (`modo_na_fala`).
+    "jarvis.permissao": "moderado",
+    # Trocar o estilo da voz (ADR-0072): livre — só muda o jeito de falar, e volta pela mesma tool.
+    "jarvis.estilo_da_voz": "livre",
     "clipboard.text.read": "livre",
     "clipboard.text.write": "moderado",
     "notify.desktop.send": "livre",
@@ -348,6 +353,8 @@ def casos(pdp: Pdp) -> dict[str, Pedido]:
             pdp, "vocabulario.aprender", {"escrita": "Discord", "ouvido": ["discorde"]}
         ),
         "modelo.preset": _pedido(pdp, "modelo.preset", {"nome": "rápido"}),
+        "jarvis.permissao": _pedido(pdp, "jarvis.permissao", {"modo": "bypass"}),
+        "jarvis.estilo_da_voz": _pedido(pdp, "jarvis.estilo_da_voz", {"estilo": "calmo"}),
         "clipboard.text.read": _pedido(pdp, "clipboard.text.read", {}),
         "clipboard.text.write": _pedido(pdp, "clipboard.text.write", {"texto": "x"}),
         "notify.desktop.send": _pedido(pdp, "notify.desktop.send", {"titulo": "a", "texto": "b"}),
