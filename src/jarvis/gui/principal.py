@@ -79,6 +79,12 @@ def _analisador() -> argparse.ArgumentParser:
         "--diagnostico", action="store_true", help="o diagnóstico do terminal, sem abrir janela"
     )
     analisador.add_argument(
+        "--testar-chamada",
+        action="store_true",
+        help="prova a fonte virtual da voz na ligação (ADR-0074) nesta máquina e sai; "
+        "não grava nem toca áudio",
+    )
+    analisador.add_argument(
         "--modo", choices=MODOS, default="assistente", help="o modo em que a janela abre"
     )
     analisador.add_argument(
@@ -160,6 +166,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.versao:
         print(f"{NOME} {versao()}")
         return 0
+
+    if args.testar_chamada:
+        from jarvis.chamada.diagnostico import testar_chamada_no_sistema
+
+        return testar_chamada_no_sistema(print)
 
     if args.diagnostico:
         from jarvis.voz.cli import diagnosticar
