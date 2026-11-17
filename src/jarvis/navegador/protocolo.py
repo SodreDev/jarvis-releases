@@ -63,14 +63,16 @@ EVENTOS: Final = frozenset({"parar", "social"})
 ORIGENS_DA_PARADA: Final = frozenset({"faixa", "barra"})
 """Onde o dono apertou PARAR: na faixa desenhada na página, ou no botão da extensão na barra."""
 MAXIMO_DE_CONCESSOES: Final = 32
-VERSAO_DA_PONTE: Final = 6
+VERSAO_DA_PONTE: Final = 7
 """O contrato de métodos entre o Jarvis, o host e a extensão. Sobe a cada método novo, junto com
 `VERSAO_DA_PONTE` de extensao/background.js (o teste confere). A 2 é a do CDP (ADR-0051) mais
 `ponte.versao`: a extensão que não responde a ela, ou responde menos, é a de antes — o dono ouve
 para recarregá-la, em vez de ver as ferramentas novas falharem uma a uma (2026-10-30). A 3
 traz o monitor das redes sociais (ADR-0060): `social.abrir`, `social.estado` e o evento `social`.
 A 5 (2026-11-13) traz no estado da rede a `pista` (carregando, sem lista, contador ilegível) e a
-`amostra` sanitizada do contador que não se reconheceu: o host de antes recusaria esses campos."""
+`amostra` sanitizada do contador que não se reconheceu: o host de antes recusaria esses campos.
+A 7 (2026-11-17) traz o canal do dono (ADR-0074): `social.lista` (todas as conversas que a lista
+mostra) e `social.abrirLinha` (a linha que o agente escolheu, só se o nome ainda bater)."""
 VERSAO: Final = "ponte.versao"
 """Respondido pela extensão: a versão dela, a do manifesto e se tem as permissões do CDP."""
 VERSAO_DO_HOST: Final = "host.versao"
@@ -158,6 +160,9 @@ METODOS: Final[dict[str, dict[str, type]]] = {
     # O envio (fatia D), só no WhatsApp e só depois do guardião do código (jarvis.social.envio).
     "social.cabecalho": {"rede": str},
     "social.abrirConversa": {"rede": str, "nome": str},
+    # O canal do dono (ADR-0074): a lista inteira e a linha que o agente escolheu lendo.
+    "social.lista": {"rede": str},
+    "social.abrirLinha": {"rede": str, "indice": int, "nome": str},
     "social.digitar": {"rede": str, "texto": str, "atrasos": list},
     "social.enviar": {"rede": str},
     "social.soltar": {"rede": str},
@@ -194,6 +199,8 @@ PRAZOS_CURTOS: Final = frozenset(
         "social.estado",
         "social.cabecalho",
         "social.abrirConversa",
+        "social.lista",
+        "social.abrirLinha",
         "social.digitar",
         "social.enviar",
         "social.soltar",
@@ -224,6 +231,8 @@ OBRIGATORIOS: Final[dict[str, frozenset[str]]] = {
     "social.estado": frozenset({"rede"}),
     "social.cabecalho": frozenset({"rede"}),
     "social.abrirConversa": frozenset({"rede", "nome"}),
+    "social.lista": frozenset({"rede"}),
+    "social.abrirLinha": frozenset({"rede", "indice", "nome"}),
     "social.digitar": frozenset({"rede", "texto", "atrasos"}),
     "social.enviar": frozenset({"rede"}),
     "social.soltar": frozenset({"rede"}),
@@ -262,8 +271,16 @@ def _tamanho(nome: str, valor: str, maximo: int) -> None:
 
 
 ENVIO_SOCIAL: Final = frozenset(
-    {"social.cabecalho", "social.abrirConversa", "social.digitar", "social.enviar"}
+    {
+        "social.cabecalho",
+        "social.abrirConversa",
+        "social.lista",
+        "social.abrirLinha",
+        "social.digitar",
+        "social.enviar",
+    }
 )
+LIMITE_DO_INDICE: Final = 200
 REDES_COM_ENVIO: Final = frozenset({"whatsapp"})
 MAXIMO_DE_TECLAS: Final = 80
 MAXIMO_DO_ATRASO_MS: Final = 2_000
@@ -341,6 +358,11 @@ def validar_pedido(bruto: object) -> PedidoDaPonte:
         raise PedidoInvalido("o envio existe só no WhatsApp")
     if metodo == "social.abrirConversa" and not 0 < len(params["nome"].strip()) <= LIMITE_DO_NOME:
         raise PedidoInvalido("nome do contato vazio ou longo")
+    if metodo == "social.abrirLinha" and (
+        not 0 <= params["indice"] < LIMITE_DO_INDICE
+        or not 0 < len(params["nome"].strip()) <= LIMITE_DO_NOME
+    ):
+        raise PedidoInvalido("social.abrirLinha: índice fora da lista ou nome vazio/longo")
     if metodo == "social.digitar":
         _teclas(params["texto"], params["atrasos"])
     if "pixels" in params and abs(params["pixels"]) > LIMITE_DO_DESLOCAMENTO:

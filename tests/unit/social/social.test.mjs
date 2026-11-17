@@ -452,3 +452,34 @@ test("fatia E: página de uma rede lida com os seletores de outra não inventa c
   assert.equal(errada.formato, "desconhecido");
   assert.equal(errada.conversas.length, 0);
 });
+
+test("canal do dono: a lista traz TODAS as conversas (lidas, não lidas, grupo) e a linha confere o nome", async () => {
+  const pagina_ = await pagina("whatsapp-lista");
+  const rede = JSON.parse(
+    DADOS.split("\n").filter((l) => !l.startsWith("//")).join("\n").trim()
+      .slice("globalThis.__jarvisSeletoresSociais = ".length, -1),
+  ).redes.whatsapp;
+  const lista = JSON.parse(JSON.stringify(social.listaDeConversas(rede, pagina_)));
+  assert.equal(lista.total, 4);
+  assert.deepEqual(
+    lista.conversas.map((c) => [c.indice, c.nome, c.grupo]),
+    [
+      [0, "Carlos Mendes", false],
+      [1, "Família Souza", true],
+      [2, "Ana", false],
+      [3, "Marcos Souza (você)", false],
+    ],
+    "lidas e não lidas, na ordem da página",
+  );
+  assert.equal(lista.conversas[3].trecho, "lista do mercado");
+  assert.deepEqual(JSON.parse(JSON.stringify(social.linhaPeloIndice(rede, pagina_, 3, "marcos souza (VOCÊ)"))), {
+    achou: true,
+    x: 60,
+    y: 35,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(social.linhaPeloIndice(rede, pagina_, 2, "Marcos Souza (você)"))), {
+    achou: false,
+    mudou: true,
+  }, "a lista reordenou: não clica");
+  assert.equal(social.linhaPeloIndice(rede, pagina_, 9, "Ana").achou, false);
+});

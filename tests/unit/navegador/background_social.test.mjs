@@ -329,3 +329,63 @@ test("social.soltar desanexa o que estiver anexado", async () => {
   assert.deepEqual(soltar.result, { soltas: 1 });
   assert.deepEqual(JSON.parse(JSON.stringify(cenario.estado.cdp.at(-1))), ["detach", 3]);
 });
+
+function paginaDaLista(mensagem) {
+  if (mensagem.social === "lista") {
+    return {
+      conversas: [
+        { indice: 0, nome: "Carlos", trecho: "oi", grupo: false, extra: "não vai" },
+        { indice: 1, nome: "Você", trecho: "nota\u0007", grupo: false },
+        { indice: -3, nome: "sem índice", trecho: "" },
+        { indice: 2, nome: "", trecho: "sem nome" },
+      ],
+      total: 4,
+    };
+  }
+  if (mensagem.social === "linha") {
+    return mensagem.indice === 1 && mensagem.nome === "Você" ? { achou: true, x: 60, y: 90 } : { achou: false, mudou: true };
+  }
+  return paginaDoChat(mensagem);
+}
+
+test("canal do dono: social.lista devolve só o contrato, sem anexar nada", async () => {
+  const cenario = carregar({ abas: [DO_DONO], responderPagina: paginaDaLista, comCdp: true });
+  const lista = await pedir(cenario, { id: "l1", method: "social.lista", params: { rede: "whatsapp" } });
+  assert.deepEqual(JSON.parse(JSON.stringify(lista.result)), {
+    conversas: [
+      { indice: 0, nome: "Carlos", trecho: "oi", grupo: false },
+      { indice: 1, nome: "Você", trecho: "nota", grupo: false },
+    ],
+    total: 4,
+  });
+  assert.equal(cenario.estado.cdp.length, 0, "ler a lista não anexa o depurador");
+  const insta = await pedir(cenario, { id: "l2", method: "social.lista", params: { rede: "instagram" } });
+  assert.equal(insta.error.codigo, "rede_sem_envio");
+});
+
+test("canal do dono: social.abrirLinha clica a linha escolhida só se o nome ainda bate", async () => {
+  const cenario = carregar({ abas: [DO_DONO], responderPagina: paginaDaLista, comCdp: true });
+  const mudou = await pedir(cenario, {
+    id: "l3",
+    method: "social.abrirLinha",
+    params: { rede: "whatsapp", indice: 0, nome: "Você" },
+  });
+  assert.deepEqual(mudou.result, { mudou: true });
+  assert.equal(cenario.estado.cdp.length, 0, "linha que mudou: nem anexa");
+  const abriu = await pedir(cenario, {
+    id: "l4",
+    method: "social.abrirLinha",
+    params: { rede: "whatsapp", indice: 1, nome: "Você" },
+  });
+  assert.deepEqual(abriu.result, { mudou: false });
+  const cliques = JSON.parse(JSON.stringify(cenario.estado.cdp)).filter(
+    ([m, p]) => m === "Input.dispatchMouseEvent" && p.type === "mousePressed",
+  );
+  assert.deepEqual(cliques.map(([, p]) => [p.x, p.y]), [[60, 90]]);
+  const ruim = await pedir(cenario, {
+    id: "l5",
+    method: "social.abrirLinha",
+    params: { rede: "whatsapp", indice: -1, nome: "Você" },
+  });
+  assert.equal(ruim.error.codigo, "pedido_invalido");
+});

@@ -10,7 +10,7 @@ const NATIVE_HOST = "br.com.granafacil.jarvis";
 // número menor), diz ao dono para recarregá-la — em vez de ver as ferramentas novas falharem
 // uma a uma (dono, 2026-10-30: «o Jarvis não sabe mais usar a extensão»). Igual a
 // `VERSAO_DA_PONTE` em src/jarvis/navegador/protocolo.py (o teste confere).
-const VERSAO_DA_PONTE = 6;
+const VERSAO_DA_PONTE = 7;
 const MAX_ID = 80;
 const MAX_URL = 2_048;
 const RECONNECT_BASE_MS = 250;
@@ -1125,6 +1125,10 @@ async function executarSemControle(method, params, concessao) {
       return cabecalhoSocial(params);
     case "social.abrirConversa":
       return abrirConversaSocial(params);
+    case "social.lista":
+      return listaSocial(params);
+    case "social.abrirLinha":
+      return abrirLinhaSocial(params);
     case "social.digitar":
       return digitarSocial(params);
     case "social.enviar":
@@ -1399,6 +1403,44 @@ async function abrirConversaSocial(params) {
   await anexarSoEntrada(tab.id);
   await cliqueConfiavel(tab.id, x, y);
   return { ambiguo: false };
+}
+
+// O canal do dono (ADR-0074): a lista inteira que a página mostra, para o agente do Jarvis achar
+// o chat do dono LENDO (nada de procurar pelo nome aqui), e abrir a linha que ele escolheu.
+const MAX_LISTA_SOCIAL = 40;
+
+async function listaSocial(params) {
+  const tab = await abaDoEnvio(params);
+  const corpo = await perguntarAoSocial(tab.id, { social: "lista" });
+  const conversas = (Array.isArray(corpo.conversas) ? corpo.conversas : [])
+    .slice(0, MAX_LISTA_SOCIAL)
+    .map((c) => ({
+      indice: Number.isInteger(comoObjeto(c).indice) ? comoObjeto(c).indice : -1,
+      nome: textoSocial(comoObjeto(c).nome, MAX_NOME_SOCIAL),
+      trecho: textoSocial(comoObjeto(c).trecho, MAX_TRECHO_SOCIAL),
+      grupo: comoObjeto(c).grupo === true,
+    }))
+    .filter((c) => c.indice >= 0 && c.nome);
+  const total = Number.isInteger(corpo.total) && corpo.total >= 0 ? corpo.total : conversas.length;
+  return { conversas, total };
+}
+
+async function abrirLinhaSocial(params) {
+  const tab = await abaDoEnvio(params);
+  if (!Number.isInteger(params.indice) || params.indice < 0 || typeof params.nome !== "string" || !params.nome.trim()) {
+    throw erro("pedido_invalido", "falta a linha da conversa (índice e nome lidos da lista)");
+  }
+  const achado = await perguntarAoSocial(tab.id, { social: "linha", indice: params.indice, nome: params.nome });
+  if (achado.mudou === true) {
+    return { mudou: true };
+  }
+  if (achado.achou !== true) {
+    throw erro("sem_conversa", "a linha não está mais na lista");
+  }
+  const { x, y } = centro(achado, "sem_conversa");
+  await anexarSoEntrada(tab.id);
+  await cliqueConfiavel(tab.id, x, y);
+  return { mudou: false };
 }
 
 async function cabecalhoSocial(params) {

@@ -25,6 +25,7 @@
   const INTERVALO_MS = 15_000; // releitura de reserva: o título é observado
   const VIVO_MS = 60_000;
   const MAX_CONVERSAS = 20;
+  const MAX_LISTA = 40;
   const MAX_NOME = 80;
   const MAX_CONTAGEM = 9_999;
   const MAX_AMOSTRA = 60;
@@ -335,6 +336,46 @@
     return { quantas: achadas.length, ...(achadas.length === 1 ? centroDe(achadas[0]) : {}) };
   }
 
+  // O canal do dono (ADR-0074): TODAS as conversas que a lista mostra agora (não só as não lidas),
+  // para o AGENTE achar o chat do dono lendo. A lista do WhatsApp é virtual: só as linhas
+  // desenhadas aparecem (o dono fixa o chat dele no topo). Continua só leitura.
+  function nomeDaLinha(rede, linha) {
+    const elemento = primeiro(linha, rede.nome);
+    return limpo(elemento?.getAttribute?.("title") || elemento?.textContent, MAX_NOME);
+  }
+
+  function listaDeConversas(rede, documento) {
+    const linhas = todos(documento, rede.conversa);
+    const conversas = [];
+    for (let indice = 0; indice < linhas.length && conversas.length < MAX_LISTA; indice += 1) {
+      const linha = linhas[indice];
+      const nome = nomeDaLinha(rede, linha);
+      if (!nome) {
+        continue;
+      }
+      conversas.push({
+        indice,
+        nome,
+        trecho: trechoDaLinha(linha, nome, primeiro(linha, rede.selo)),
+        grupo: existe(linha, rede.grupo),
+      });
+    }
+    return { conversas, total: linhas.length };
+  }
+
+  // A linha que o agente escolheu, pelo índice que ele leu — e só se o nome ainda for o mesmo
+  // (a lista reordena quando chega mensagem): mudou, o fundo não clica e o agente lê de novo.
+  function linhaPeloIndice(rede, documento, indice, nome) {
+    const linha = todos(documento, rede.conversa)[indice];
+    if (!linha) {
+      return { achou: false };
+    }
+    if (normal(nomeDaLinha(rede, linha)) !== normal(nome)) {
+      return { achou: false, mudou: true };
+    }
+    return { achou: true, ...centroDe(linha) };
+  }
+
   function caixaDeTexto(rede, documento) {
     return centroDe(primeiro(documento, rede.caixa));
   }
@@ -415,6 +456,8 @@
     alertaDaPagina,
     cabecalhoDoChat,
     conversaPeloNome,
+    listaDeConversas,
+    linhaPeloIndice,
     caixaDeTexto,
     versao: SELETORES.versao,
   };
@@ -472,6 +515,12 @@
       responder(cabecalhoDoChat(rede, document));
     } else if (mensagem?.social === "conversa" && rede?.cabecalho) {
       responder(conversaPeloNome(rede, document, String(mensagem.nome ?? "")));
+    } else if (mensagem?.social === "lista" && rede?.cabecalho) {
+      responder(listaDeConversas(rede, document));
+    } else if (mensagem?.social === "linha" && rede?.cabecalho) {
+      responder(
+        linhaPeloIndice(rede, document, Number(mensagem.indice), String(mensagem.nome ?? "")),
+      );
     } else if (mensagem?.social === "caixa" && rede?.caixa) {
       responder(caixaDeTexto(rede, document));
     }
