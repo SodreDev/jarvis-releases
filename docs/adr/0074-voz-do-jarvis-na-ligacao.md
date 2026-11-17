@@ -13,11 +13,17 @@ legal.
 
 ## Decisão proposta
 
-1. **Fonte virtual no PipeWire, criada pelo Jarvis ao abrir:** um nó `Audio/Source/Virtual`
-   («Microfone (com Jarvis)») que soma o microfone real (loopback) e o fluxo de TTS da ligação.
-   Ela vira a entrada padrão (`wpctl` e `pactl`, conferidos lendo de volta) e o padrão anterior
-   volta ao fechar. O Jarvis continua ouvindo o **microfone real**. Limite aceito: app com microfone
-   escolhido à mão escolhe a fonte virtual uma vez.
+1. **Fonte virtual no PipeWire que assume o lugar do microfone, como o Soundpad** (revisto em
+   2026-11-17, a pedido do dono): um nó `Audio/Source/Virtual` que soma o microfone real (loopback)
+   e o fluxo de TTS da ligação, em três camadas — (a) vira a entrada padrão (`wpctl` e `pactl`,
+   conferidos lendo de volta); (b) o Jarvis **move** para ela, em tempo de execução, toda captura
+   de app que esteja no microfone físico (exceto ele mesmo e o loopback), e devolve ao desligar;
+   (c) opcional, modo instalado: dois arquivos em `~/.config` (sem sudo, desfazíveis) fazem a fonte
+   virtual assumir o nome e a descrição do físico, que fica renomeado só para o loopback e o Jarvis.
+   **Cobre quase tudo; exceções:** app que abre o ALSA direto (`hw:`) fora do PipeWire, e app que
+   reverte o move sozinho (o Jarvis move de novo, com teto). O padrão é o modo sessão (nada no
+   disco; se o Jarvis cair, o grafo volta ao físico). O Jarvis continua ouvindo o **microfone
+   real**.
 2. **O outro lado é o fluxo do app de chamada**, gravado sozinho (não a saída inteira), transcrito
    pelo ASR de sempre. Canal remoto × canal local = diarização mínima.
 3. **Só chamada que toca no PC:** WhatsApp Web, Meet, Discord (sem bot), softphone SIP. Ligação do

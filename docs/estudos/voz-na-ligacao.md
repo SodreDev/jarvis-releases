@@ -16,11 +16,14 @@ estão no fim.
 
 ## 0. Resumo honesto
 
-- **Dá para fazer no Linux**, com PipeWire: uma **fonte virtual** («Microfone (com Jarvis)») que
-  recebe o microfone real por um loopback e a voz do Jarvis por um fluxo próprio, e passa a ser a
-  **entrada padrão**. O app de chamada que usa «Padrão» passa a ouvir os dois, sem o dono trocar
-  nada. O limite: o app que tiver um microfone **escolhido à mão** continua no microfone real (o
-  dono escolhe a fonte virtual uma vez, e pronto).
+- **Dá para fazer no Linux, como o Soundpad faz no Windows** (revisto em 2026-11-17, a pedido do
+  dono): uma **fonte virtual** que soma o microfone real (loopback) e a voz do Jarvis, e que
+  **assume o lugar do microfone** em três camadas — (a) vira a entrada **padrão**; (b) o Jarvis
+  **move** para ela a captura de todo app que estiver no microfone físico (Discord, navegador…),
+  sem mexer na configuração do app; (c) opcionalmente, ela **assume o nome e a descrição** do
+  microfone físico, e o físico fica renomeado só para o loopback e o próprio Jarvis. **Cobre quase
+  tudo; exceções:** app que abre o ALSA direto (`hw:`), fora do PipeWire; app que reverte a troca
+  sozinho; e o que só a máquina do dono confirma (§1.2).
 - **O áudio de quem liga** sai do fluxo de reprodução do app de chamada: o Jarvis grava **só esse
   fluxo** (não a saída inteira) e transcreve. Dois canais separados (o do dono e o do outro lado)
   são a «diarização mínima» que basta — não precisa de modelo de diarização.
@@ -51,7 +54,7 @@ microfone real (alsa_input…) ──► loopback (capture: mic) ──┐
                                                             ├──► nó «jarvis_mic» (Audio/Source/Virtual)
 fluxo de TTS do Jarvis (Stream/Output/Audio, target=jarvis_mic) ┘          │
                                                                           ▼
-                                       app de chamada (navegador, Discord…) usando o microfone «Padrão»
+        app de chamada (navegador, Discord…): no «Padrão», ou movido para cá pelo Jarvis (§1.2)
 ```
 
 Duas formas conhecidas de montar:
@@ -80,28 +83,97 @@ Para o Jarvis, a forma 1 é a recomendada: o grafo é criado **em tempo de execu
 Jarvis (via `pw-cli create-node`/`pw-loopback`, ou um arquivo em `~/.config/pipewire/pipewire.conf.d/`
 que o dono aprova uma vez), e some quando o Jarvis fecha.
 
-### 1.2 Ser a entrada padrão sem o dono trocar nada
+### 1.2 Assumir o lugar do microfone sem o dono trocar nada (como o Soundpad)
 
-- `wpctl set-default <id>` define o nó **padrão para novos fluxos que se ligam sozinhos**
-  ([wpctl(1)](https://man.archlinux.org/man/wpctl.1)); o WirePlumber guarda isso na metadata
-  `default.configured.audio.source`. Relatos dizem que nó virtual às vezes não é aceito pelo
-  `wpctl set-default` e que `pactl set-default-source` funciona
-  ([NixOS discourse](https://discourse.nixos.org/t/pipewires-extraconfig-wireplumbers-extraconfig-virtual-microphone-source-confusion/68154),
-  [issue #130](https://gitlab.freedesktop.org/pipewire/wireplumber/-/issues/130)). **O Jarvis faria
-  os dois e conferiria lendo de volta** (`pactl get-default-source`).
-- **O limite honesto:** só segue o padrão o app que está em «Padrão». O Firefox tem relatos de não
-  respeitar a troca do padrão com o fluxo já aberto
-  ([fórum Arch](https://bbs.archlinux.org/viewtopic.php?id=279370),
-  [CachyOS 2025](https://discuss.cachyos.org/t/firefox-bbb-uses-alc1220-monitor-instead-of-rode-nt-usb-auto-switches-back-after-1-second/30983));
-  o Chromium mostra «Padrão» e o dispositivo nomeado como opções separadas. Então: **a fonte virtual
-  tem de existir antes de a chamada começar** (o Jarvis a cria ao abrir, não no meio da ligação), e
-  quem escolheu um microfone à mão no app escolhe «Microfone (com Jarvis)» **uma vez**.
-- **O Jarvis continua ouvindo o microfone REAL**, nunca a fonte virtual (senão ele se ouve). Isso já
-  é como a captura dele funciona (`audio_io/dispositivo.py`, `sounddevice`): o dispositivo dele é
-  escolhido por nome, não pelo padrão — conferir na fatia 1.
-- **Desfazer:** ao fechar (ou cair), o Jarvis devolve o padrão anterior. Se ele morrer sem
-  devolver, o loopback some com o processo e o WirePlumber volta ao mic real (o nó padrão
-  desaparecido cai no próximo disponível). Isso precisa de teste na máquina do dono.
+**Como o Soundpad faz (Windows).** Ele não cria microfone novo: instala uma **extensão no driver de
+áudio** do dispositivo de gravação padrão e mistura o som ali, então todo app que já usa aquele
+microfone passa a ouvir o som, sem trocar nada. Por isso pede reiniciar o PC na instalação, exige a
+validação de DRM de áudio desligada e não toca dois sons ao mesmo tempo
+([Leppsoft — sobre](https://www.leppsoft.com/soundpad/en/about/),
+[FAQ](https://www.leppsoft.com/soundpad/en/help/faq),
+[compatibilidade](https://www.leppsoft.com/soundpad/en/help/manual/compatibility/),
+[Steam, resposta do autor](https://steamcommunity.com/app/629520/discussions/0/1697175413688199439),
+[SourceForge](https://sourceforge.net/app/soundpad/)). O fabricante não descreve o mecanismo em
+detalhe; «objeto de processamento de áudio (APO) no caminho de captura» é **inferência** nossa,
+coerente com esses sintomas.
+
+**O equivalente no Linux** não precisa de driver: o PipeWire já é o servidor por onde **todo** app
+grava (PulseAudio, JACK e nativo, inclusive Flatpak), e as três camadas abaixo fazem a fonte virtual
+assumir o lugar do físico. Cada uma cobre o que a anterior não cobre.
+
+**(a) Entrada padrão.** `wpctl set-default <id>` define o nó padrão para novos fluxos que se ligam
+sozinhos ([wpctl(1)](https://man.archlinux.org/man/wpctl.1)), guardado na metadata
+`default.configured.audio.source`; há relatos de nó virtual recusado pelo `wpctl` e aceito pelo
+`pactl set-default-source`
+([NixOS](https://discourse.nixos.org/t/pipewires-extraconfig-wireplumbers-extraconfig-virtual-microphone-source-confusion/68154),
+[issue #130](https://gitlab.freedesktop.org/pipewire/wireplumber/-/issues/130)) — o Jarvis faz os
+dois e confere lendo de volta. Cobre o app em «Padrão» (o caso comum: Discord costuma seguir o
+padrão do PipeWire). Não cobre o app com microfone **fixado** — nem o Firefox, que tem relatos de
+não seguir a troca com o fluxo aberto
+([Arch](https://bbs.archlinux.org/viewtopic.php?id=279370),
+[CachyOS](https://discuss.cachyos.org/t/firefox-bbb-uses-alc1220-monitor-instead-of-rode-nt-usb-auto-switches-back-after-1-second/30983)).
+
+**(b) Mover as capturas que estão no físico** (a camada principal). Enquanto a função está ligada,
+o Jarvis observa o grafo (`pw-dump`/`pw-mon`) e, a cada fluxo `Stream/Input/Audio` ligado ao
+microfone físico que **não** seja dele mesmo nem o loopback, move-o para a fonte virtual — pela
+metadata `target.object` do fluxo (o WirePlumber, por padrão, **religa o fluxo quando o
+`target.object` muda**, [política de ligação](https://pipewire.pages.freedesktop.org/wireplumber/policies/linking.html))
+ou por `pactl move-source-output`. É o que o pavucontrol faz quando se troca o microfone de um app
+na aba «Gravação»: o app não sabe, nada na configuração dele muda. Ao desligar, o Jarvis devolve
+cada fluxo ao físico. Como complemento persistente, uma regra `stream.rules` do WirePlumber
+(casando `application.name`/`application.process.binary`) põe `target.object` = fonte virtual e
+`state.restore-target = false` na criação do fluxo
+([configuração de fluxos](https://pipewire.pages.freedesktop.org/wireplumber/daemon/configuration/stream.html),
+[settings](https://pipewire.pages.freedesktop.org/wireplumber/daemon/configuration/settings.html)).
+Atenção: se o próprio app pede um alvo, o comportamento da regra contra esse pedido **não está
+documentado de forma clara** — por isso a camada principal é mover em tempo de execução, que não
+depende disso. Fluxo com `node.dont-reconnect` não é religado pelo WirePlumber, mas o move explícito
+continua valendo (o próprio suporte a essa propriedade tem bugs relatados:
+[#207](https://gitlab.freedesktop.org/pipewire/wireplumber/-/issues/207),
+[#2842](https://gitlab.freedesktop.org/pipewire/pipewire/-/issues/2842)).
+
+**(c) Trocar de identidade com o físico** (opcional, o mais parecido com o Soundpad). Numa regra
+`monitor.alsa.rules` com `update-props` (`~/.config/wireplumber/wireplumber.conf.d/`), o nó físico
+ganha outro `node.name` e outra descrição («… (direto, só o Jarvis)»), e a fonte virtual nasce com o
+`node.name` e a `node.description` **originais** do físico. O app que guardou o microfone pelo nome
+(o PulseAudio guarda pelo nome do dispositivo; o Chromium deriva o id do dispositivo dele) passa a
+achar a fonte virtual ao abrir, sem saber que mudou. Esconder o físico de vez (`node.disabled`,
+[ALSA](https://pipewire.pages.freedesktop.org/wireplumber/daemon/configuration/alsa.html),
+[Arch](https://wiki.archlinux.org/title/WirePlumber)) **não serve**: desabilitado, o loopback
+também perde o microfone. Renomear e deixar a fonte virtual na frente é o que funciona. **Não
+verificado:** se o Chromium/Discord do dono reconhecem o dispositivo renomeado como o mesmo — teste
+na máquina do dono.
+
+**O que cobre e o que não (honesto).**
+
+| Caso | (a) | (b) | (c) |
+|---|---|---|---|
+| App em «Padrão» (Discord, Meet, WhatsApp Web no padrão) | sim | sim | sim |
+| App com o microfone físico escolhido à mão | não | **sim** (move o fluxo) | sim, ao abrir |
+| App Flatpak/Snap (grava pelo socket do PulseAudio/PipeWire) | sim | sim | sim — o portal de microfone ainda não existe; o sandbox só dá ou nega acesso ao áudio ([discussão do portal](https://github.com/flatpak/xdg-desktop-portal/discussions/1142)) |
+| App que **reverte** o move (volta ao dispositivo dele) | — | o Jarvis move de novo (laço com teto, e anota na trilha) | sim, se o reverte for pelo nome |
+| App que abre o ALSA direto (`hw:X`, acesso exclusivo), fora do PipeWire | **não** | **não** | **não** — raro em app de chamada; só um módulo no kernel (como o driver do Soundpad) pegaria |
+| App que identifica o hardware por id USB/serial (software do fabricante do mic) | não importa: não é ele que grava a chamada | | |
+
+**O Jarvis continua ouvindo o microfone REAL**, nunca a fonte virtual (senão ele se ouve): ele é
+excluído das camadas (b) e (c) pelo `application.process.id` dele, e a captura dele escolhe o
+dispositivo pelo nome (`audio_io/dispositivo.py`) — conferir na fatia 1 (com (c), pelo nome novo do
+físico).
+
+**Instalar e desfazer com segurança, sem sudo.**
+
+- **Modo sessão (padrão):** só comandos em tempo de execução (`pw-cli`/`pw-loopback`/`pactl`/
+  `pw-metadata`). Nada vai para o disco. O Jarvis guarda o estado anterior (padrão, onde estava cada
+  fluxo) e devolve ao desligar; se ele cair, o loopback e o nó virtual morrem com o processo e o
+  WirePlumber religa os fluxos ao próximo disponível (o físico). Cobre (a) e (b).
+- **Modo instalado (opcional, para (c)):** dois arquivos do usuário —
+  `~/.config/pipewire/pipewire.conf.d/50-jarvis-microfone.conf` (o nó virtual + o loopback, que
+  existem **mesmo com o Jarvis fechado**: o microfone continua funcionando, só sem a voz dele) e
+  `~/.config/wireplumber/wireplumber.conf.d/50-jarvis-microfone.conf` (a troca de identidade e a
+  regra de fluxos). O Jarvis mostra o conteúdo ao dono, grava só com o sim, guarda cópia do que
+  substituir e reinicia `pipewire`/`wireplumber`/`pipewire-pulse` com `systemctl --user`. **Desfazer**
+  = apagar os dois arquivos e reiniciar os mesmos serviços (um botão, e o comando escrito no guia
+  para quando o Jarvis não abrir). Nada em `/etc`, nada de driver.
 
 ### 1.3 Eco e latência
 
@@ -123,11 +195,13 @@ que o dono aprova uma vez), e some quando o Jarvis fecha.
 
 ### 1.4 Windows (nota)
 
-O equivalente é um cabo virtual: o [VB-CABLE](https://vb-audio.com) cria «CABLE Input» (alto-falante
-virtual) e «CABLE Output» (microfone virtual); o [Voicemeeter](https://voicemeeter.com/voicemeeter-mix-everything-with-anything)
-mistura o mic real e o TTS e expõe «VoiceMeeter Output» como microfone. Diferença para o Linux:
-exige **instalar um driver** e, em geral, **escolher o dispositivo** no app de chamada (ou trocar o
-padrão do Windows). Fica fora da primeira fase.
+Dois caminhos. (1) **O do Soundpad:** uma extensão no driver do microfone padrão — o app não troca
+nada, mas é software de driver (assinatura, reinício, DRM de áudio desligado); fazer o nosso é um
+projeto à parte. (2) **Cabo virtual:** o [VB-CABLE](https://vb-audio.com) cria «CABLE Input»
+(alto-falante virtual) e «CABLE Output» (microfone virtual); o [Voicemeeter](https://voicemeeter.com/voicemeeter-mix-everything-with-anything)
+mistura o mic real e o TTS e expõe «VoiceMeeter Output» como microfone, que se põe como padrão do
+Windows; o app com microfone fixado precisa ser trocado uma vez (o Windows não tem o «mover fluxo»
+do PipeWire para apps de terceiros). Fica fora da primeira fase.
 
 ---
 
@@ -293,7 +367,8 @@ principal, que decide no laço dele com as permissões de sempre.
 
 | # | Fatia | Prova com fakes (sem áudio real) | Só a máquina do dono prova |
 |---|---|---|---|
-| 1 | **Misturador virtual** (`audio_io/misturador.py`): cria/desfaz o nó virtual + loopback, guarda e devolve o padrão; executor de comandos injetável | o executor falso recebe os comandos certos e na ordem; desfazer devolve o padrão anterior; falha no meio desfaz o que criou; nada roda em CI (`proibir_dispositivo_em_ci`) | se o PipeWire/WirePlumber dele aceita o nó como padrão; se o navegador segue; latência e eco reais |
+| 1a | **Misturador virtual, modo sessão** (`audio_io/misturador.py`): cria/desfaz o nó virtual + loopback, (a) vira padrão, (b) move para ele os fluxos de captura que estão no físico (exceto o Jarvis), guarda e devolve tudo; executor de comandos e leitor do grafo injetáveis | o executor falso recebe os comandos certos e na ordem; um `pw-dump` falso com Discord, navegador e o próprio Jarvis: só os dois primeiros são movidos; app que reverte é movido de novo até o teto; desligar devolve padrão e fluxos; falha no meio desfaz o que criou; nada roda em CI (`proibir_dispositivo_em_ci`) | se o PipeWire/WirePlumber dele aceita o nó como padrão e o move; Discord/navegador reais; latência e eco |
+| 1b | **Modo instalado, troca de identidade** (c): gera os dois arquivos de configuração do usuário, mostra, grava só com o sim, desfaz | os arquivos gerados para um microfone falso (nome/descrição trocados, regra de fluxos, nenhum `/etc`); desfazer apaga só os nossos e restaura a cópia | se o Chromium/Discord dele reconhecem o microfone renomeado; reiniciar os serviços sem derrubar a sessão |
 | 2 | **Canais da ligação**: `FonteDoOutroLado` (fluxo do app) e `SaidaParaALigacao` (TTS no nó virtual), nas implementações de arquivo/sintética que o `audio_io` já tem | áudio sintético entra, o ASR falso transcreve, o TTS paramétrico sai num arquivo; a voz do Jarvis nunca vai ao sumidouro do alto-falante durante a chamada | qualidade do STT na voz Opus real |
 | 3 | **Agente da ligação** (laço canônico, 4 ferramentas, delimitadores, limites) | motor roteirizado: aviso de IA na 1ª fala (veredito se faltar), ferramenta fora do catálogo recusada, injeção falada não executa nada, marcadores removidos da transcrição, teto de duração/turnos/silêncio dispara notificação e corte, recado vira evento de terceiros; avaliação com modelo real (corpus de ataques com alvos fixados antes, como `tools/avaliar_monitor.py`) | o tom, o tempo de resposta numa chamada de verdade |
 | 4 | **Estado da chamada pela extensão** (tocando, atendida aqui, atendida noutro lugar, encerrada) | extensão e ponte falsas (o mesmo banco da ADR-0060) | o DOM real do WhatsApp Web durante uma chamada |
@@ -313,8 +388,10 @@ Ordem proposta: 3 e 5 primeiro (são a segurança e não dependem de áudio), de
 2. **Atender sozinho:** aceita o risco de o Jarvis clicar «Atender» no WhatsApp Web (automação na
    conta, ADR-0060), ou prefere um **número próprio do assistente** (SIP) para o caso b, deixando o
    WhatsApp só para o caso a (o dono atende e passa)?
-3. **Trocar o microfone padrão do sistema** enquanto o Jarvis está aberto (o que faz o «sem trocar
-   nada» funcionar) — pode? Ou prefere escolher «Microfone (com Jarvis)» uma vez no app de chamada?
+3. **Como o Jarvis assume o microfone:** só no **modo sessão** (padrão + mover as capturas
+   enquanto a função está ligada; nada no disco) ou também no **modo instalado** (a fonte virtual
+   assume o nome do seu microfone, como o Soundpad; dois arquivos em `~/.config`, desfazíveis)?
+   E: ligado sempre que o Jarvis está aberto, ou só durante uma chamada em que ele vai falar?
 4. **Reconhecer o dono:** topa **TOTP** num app autenticador (o mais forte) ou um cartão de
    desafio-resposta? O código de 4 dígitos + palavra fica só como fator fraco — de acordo?
 5. **O que o dono reconhecido pode fazer na chamada?** A proposta é só «recado do dono» (deixar
