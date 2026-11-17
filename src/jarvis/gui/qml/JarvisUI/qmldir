@@ -24,6 +24,7 @@ VistaConversa 1.0 VistaConversa.qml
 VistaConfiguracao 1.0 VistaConfiguracao.qml
 VistaAcesso 1.0 VistaAcesso.qml
 VistaRedes 1.0 VistaRedes.qml
+VistaChamada 1.0 VistaChamada.qml
 LinhaDeProvedor 1.0 LinhaDeProvedor.qml
 PainelDeModelos 1.0 PainelDeModelos.qml
 VistaDiagnostico 1.0 VistaDiagnostico.qml

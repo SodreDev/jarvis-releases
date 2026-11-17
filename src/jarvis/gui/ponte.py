@@ -39,11 +39,14 @@ from PySide6.QtCore import (
     Slot,
 )
 
+from jarvis.chamada.config import ARQUIVO as ARQUIVO_DA_CHAMADA
+from jarvis.chamada.totp import GuardaDoSegredo, GuardaNoChaveiro
 from jarvis.executor.navegadores import familia_de_navegador, navegador_em_execucao
 from jarvis.gui import chaveiro, recursos, sistema
 from jarvis.gui.abertura import registrar_na_abertura
 from jarvis.gui.acesso import PonteDeAcesso
 from jarvis.gui.acoes import Acao, Area, Modo, Tipo
+from jarvis.gui.chamada import PonteDaChamada
 from jarvis.gui.componentes import CATALOGO
 from jarvis.gui.controlador import Controlador, RoteiroDeDemonstracao
 from jarvis.gui.modelos import PonteDeModelos
@@ -261,6 +264,7 @@ class Ponte(QObject):
         lar: Path | None = None,
         sondar_navegador: Callable[[Configuracao], EstadoDaPonte] | None = None,
         ponte_das_redes: PonteSocial | None = None,
+        guarda_do_totp: GuardaDoSegredo | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -363,6 +367,12 @@ class Ponte(QObject):
             caminho=self._caminho.parent / ARQUIVO_DAS_REDES,
             navegadores=self._acesso.familias,
             principal=lambda: self._configuracao.navegador_principal,
+            parent=self,
+        )
+        self._chamada = PonteDaChamada(
+            # Ao lado do `jarvis-voz.toml` (ADR-0074); o segredo do TOTP mora no chaveiro.
+            caminho=self._caminho.parent / ARQUIVO_DA_CHAMADA,
+            guarda=guarda_do_totp or GuardaNoChaveiro(ambiente=self._ambiente_base),
             parent=self,
         )
         self._monitor_das_redes: MonitorSocial | None = None
@@ -598,6 +608,11 @@ class Ponte(QObject):
     def redes(self) -> QObject:
         """A aba «redes sociais» (`PonteDasRedes`, ADR-0060): grava `redes.toml` na hora."""
         return self._redes
+
+    @Property(QObject, constant=True)
+    def chamada(self) -> QObject:
+        """A aba «chamadas» (`PonteDaChamada`, ADR-0074): o TOTP do dono e os limites."""
+        return self._chamada
 
     def _ligar_o_monitor_das_redes(self, ponte: PonteSocial) -> None:
         def familia() -> str:

@@ -12,9 +12,9 @@ import JarvisUI
 Item {
     id: vista
     property var dados: ({})
-    // Cinco folhas, cada uma cabe numa tela e nenhuma rola dentro de outra: o que o Jarvis ouve
-    // e fala, o que ele pode tocar (pastas, programas, navegadores) e as redes sociais que ele
-    // monitora (ADR-0060). Toda troca de ajuste grava na hora: não há botão de salvar.
+    // Seis folhas, cada uma cabe numa tela e nenhuma rola dentro de outra: o que o Jarvis ouve
+    // e fala, o que ele pode tocar (pastas, programas, navegadores), as redes sociais que ele
+    // monitora (ADR-0060) e o que ele faz numa ligação (ADR-0074). Toda troca de ajuste grava na hora: não há botão de salvar.
     property string aba: "voz"
 
     Flow {
@@ -53,6 +53,21 @@ Item {
             ativo: vista.aba === "redes"
             onApertado: vista.aba = "redes"
         }
+        Botao {
+            objectName: "abaChamadas"
+            texto: "chamadas"
+            ativo: vista.aba === "chamadas"
+            onApertado: vista.aba = "chamadas"
+        }
+    }
+
+    VistaChamada {
+        objectName: "vistaChamada"
+        anchors.top: abas.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: vista.aba === "chamadas"
     }
 
     VistaRedes {
@@ -71,7 +86,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        visible: vista.aba !== "voz" && vista.aba !== "redes"
+        visible: vista.aba !== "voz" && vista.aba !== "redes" && vista.aba !== "chamadas"
     }
 
     // --- as caixas -----------------------------------------------------------------------
