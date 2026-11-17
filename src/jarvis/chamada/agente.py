@@ -533,7 +533,10 @@ class Chamada:
         for token in self.delimitadores.tokens:
             if token in texto.casefold():
                 return Feito(FALAR, "recusada: a fala contém um marcador secreto", False)
-        self.agente.saida.falar(texto)
+        try:
+            self.agente.saida.falar(texto)
+        except Exception as erro:  # a voz não chegou à chamada: o agente sabe, não acha que falou
+            return Feito(FALAR, f"recusada: a voz não saiu na chamada ({erro})"[:300], False)
         self.falas += 1
         resultado.falas.append(texto)
         # O texto volta no veredito: o motor de protocolo de texto não remonta a chamada.
