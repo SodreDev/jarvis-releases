@@ -24,6 +24,8 @@ Uso:
     uv run --frozen python -m tools.avaliar_monitor
     uv run --frozen python -m tools.avaliar_monitor --motor real \
         --saida docs/medicoes/monitor-das-redes.md
+    uv run --frozen python -m tools.avaliar_monitor --motor real \
+        --corpus tools/corpus_monitor_memoria.toml   # a memória das decisões recentes
 """
 
 from __future__ import annotations
@@ -122,7 +124,7 @@ def motor_real(pasta: Path) -> Any:
     return montar(pasta, sem_raciocinio=False)
 
 
-def avaliar(qual: str) -> list[Resultado]:
+def avaliar(qual: str, corpus: Path = CORPUS) -> list[Resultado]:
     from jarvis.agentd.fila_de_avisos import ORIGEM_DO_MONITOR
     from jarvis.s2.avisos import AvisoLiberado
     from jarvis.s2.cerebro import Cerebro
@@ -133,7 +135,7 @@ def avaliar(qual: str) -> list[Resultado]:
     from jarvis.social.config import ConfiguracaoSocial
     from jarvis.social.monitor import EstadoDoMonitor
 
-    lista = casos()
+    lista = casos(corpus)
     atual: dict[str, str] = {"id": ""}
     with tempfile.TemporaryDirectory(prefix="avaliar-monitor-") as bruto:
         if qual == "ideal":
@@ -215,7 +217,7 @@ def conferir(caso: Mapping[str, Any], r: Resultado) -> list[str]:
     return falhas
 
 
-def relatorio(resultados: Sequence[Resultado], qual: str) -> str:
+def relatorio(resultados: Sequence[Resultado], qual: str, corpus: Path = CORPUS) -> str:
     monitor = [r for r in resultados if r.monitor_alvo != "livre" or r.monitor == "sem_decisao"]
     monitor_ok = [r for r in monitor if not any("monitor" in f or "urg" in f for f in r.falhas)]
     jarvis = [r for r in resultados if r.jarvis != "-" and r.jarvis_alvo != "livre"]
@@ -223,7 +225,7 @@ def relatorio(resultados: Sequence[Resultado], qual: str) -> str:
     linhas = [
         f"# Agente monitor das redes — motor {qual}",
         "",
-        f"Corpus `tools/corpus_monitor.toml` ({len(resultados)} eventos, alvos fixados antes).",
+        f"Corpus `{_relativo(corpus)}` ({len(resultados)} eventos, alvos fixados antes).",
         "",
         f"- casos que passaram: {sum(r.passou for r in resultados)}/{len(resultados)}",
         f"- decisão do monitor no alvo: {len(monitor_ok)}/{len(monitor)}",
@@ -243,13 +245,21 @@ def relatorio(resultados: Sequence[Resultado], qual: str) -> str:
     return "\n".join(linhas) + "\n"
 
 
+def _relativo(caminho: Path) -> str:
+    try:
+        return str(caminho.resolve().relative_to(RAIZ))
+    except ValueError:
+        return caminho.name
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--motor", choices=("ideal", "real"), default="ideal")
     parser.add_argument("--saida", type=Path)
+    parser.add_argument("--corpus", type=Path, default=CORPUS)
     args = parser.parse_args(argv)
-    resultados = avaliar(args.motor)
-    texto = relatorio(resultados, args.motor)
+    resultados = avaliar(args.motor, args.corpus)
+    texto = relatorio(resultados, args.motor, args.corpus)
     if args.saida:
         args.saida.write_text(texto, encoding="utf-8")
     print(texto)

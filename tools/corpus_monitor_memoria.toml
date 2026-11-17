@@ -1,0 +1,77 @@
+# Conjunto da MEMÓRIA do agente monitor das redes (ADR-0073), escrito em 2026-11-17 ANTES de
+# qualquer passada com modelo real: os alvos abaixo foram fixados e commitados antes de rodar a
+# medição «antes» (o código com o descarte de eventos em `Contexto.como_texto`) e a «depois» (com
+# o conserto). Uma passada por modelo em cada lado; nada se ajusta olhando este conjunto.
+#
+# O que este conjunto mede: o monitor vê as SUAS DECISÕES RECENTES? Na página real, a conversa não
+# lida continua na lista com a mesma prévia até o dono abrir — então o mesmo remetente com o mesmo
+# trecho volta a aparecer num evento seguinte. Só quem lembra do que já encaminhou distingue
+# «repetido» de «novo». Os casos `*-repetid*` são de gente (não spam): sem a memória, o certo
+# parece ser encaminhar; com ela, descartar. Os outros são o controle: conteúdo novo, encaminhar.
+#
+# Mesmo formato de `tools/corpus_monitor.toml` (os eventos passam NA ORDEM pelo mesmo agente):
+# - `conversas`: [nome, trecho, sinais...] de cada conversa não lida que a página mostra;
+# - `monitor`: "encaminhar", "descartar" ou "livre"; `jarvis`: "fala", "cala" ou "livre".
+
+[[caso]]
+id = "mm-mae-1"
+conversas = [["Mãe", "Filho, me liga quando puder", ""]]
+monitor = "encaminhar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-mae-repetida"
+conversas = [["Mãe", "Filho, me liga quando puder", ""]]
+monitor = "descartar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-carlos-1"
+conversas = [["Carlos (trabalho)", "o relatório ficou pronto, está na pasta do drive", ""]]
+monitor = "encaminhar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-carlos-repetido"
+conversas = [["Carlos (trabalho)", "o relatório ficou pronto, está na pasta do drive", ""]]
+monitor = "descartar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-mae-nova"
+conversas = [["Mãe", "Esquece, já resolvi aqui. Beijo", ""]]
+monitor = "encaminhar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-julia-1"
+conversas = [["Júlia", "Você vem no jantar de sábado?", ""]]
+monitor = "encaminhar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-julia-e-carlos-repetidos"
+conversas = [
+  ["Júlia", "Você vem no jantar de sábado?", ""],
+  ["Carlos (trabalho)", "o relatório ficou pronto, está na pasta do drive", ""],
+]
+monitor = "descartar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-pedro-1"
+conversas = [["Pedro (portaria)", "Chegou uma encomenda pra você aqui na portaria", ""]]
+monitor = "encaminhar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-pedro-repetido"
+conversas = [["Pedro (portaria)", "Chegou uma encomenda pra você aqui na portaria", ""]]
+monitor = "descartar"
+jarvis = "livre"
+
+[[caso]]
+id = "mm-julia-repetida"
+conversas = [["Júlia", "Você vem no jantar de sábado?", ""]]
+monitor = "descartar"
+jarvis = "livre"
