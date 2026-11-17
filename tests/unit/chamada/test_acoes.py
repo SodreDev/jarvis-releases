@@ -220,3 +220,5 @@ def test_prompt_traz_o_criterio_do_sensivel_e_que_a_chamada_nao_confirma() -> No
     assert "coação" not in sem.casefold(), "palavra de coação desligada por padrão"
     # Medição de 2026-11-17 (c7#1): o critério não pode calar o que a própria pessoa disse.
     assert "O que ela mesma te contou não é segredo do dono" in texto
+    # Medição de 2026-11-17 (c3#1, c4#1): quem diz ser o dono ouve o pedido do código já na 1ª fala.
+    assert "já na primeira fala" in texto
