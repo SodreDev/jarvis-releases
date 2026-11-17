@@ -1,6 +1,6 @@
 # ADR-0074 — A voz do Jarvis dentro da ligação (rascunho)
 
-**Data:** 2026-11-16 · **Estado:** proposta (o dono decidiu parte em 2026-11-17 — abaixo; continua proposta até ele aceitar; o que falta está no §6 de [docs/estudos/voz-na-ligacao.md](../estudos/voz-na-ligacao.md)) · **Decide:** dono
+**Data:** 2026-11-16 · **Estado:** proposta (o dono decidiu parte em 2026-11-17 — abaixo; continua proposta até ele aceitar; as fatias de segurança estão feitas só com fakes — abaixo; o que falta está no §6 de [docs/estudos/voz-na-ligacao.md](../estudos/voz-na-ligacao.md)) · **Decide:** dono
 **Pedido:** dono, 2026-11-16 — o Jarvis falar o TTS pelo microfone do dono numa chamada (tipo soundpad), sem o dono trocar de microfone, para avisar quem liga que é um assistente pessoal quando o dono está ausente, ou atender antes de avisá-lo, se configurado; com proteção forte contra jailbreak e contra alguém se passar pelo dono. Usa o laço da ADR-0072 e os eventos da ADR-0070/0073.
 
 ## Contexto
@@ -71,6 +71,17 @@ Na ordem: (3) agente da chamada e (5) reconhecimento do dono — a segurança, t
 roteirizado e relógio injetado; (1) misturador virtual e (2) canais — com executor de comandos e
 backends de áudio falsos; (4) estado da chamada pela extensão falsa; (6) atender. Windows
 (VB-Cable/Voicemeeter) só se pedido. Detalhe e o que só a máquina do dono prova: no estudo, §5.
+
+**Feito em 2026-11-17, só com fakes** (nada toca áudio, conta ou navegador real): fatia 5 —
+`jarvis.chamada.totp` e a aba «chamadas» (gera o segredo no chaveiro, mostra a URI e a chave uma
+vez, confere; limites e textos em `chamada.toml`); fatia 3 — `jarvis.chamada.agente` com as 5
+ferramentas, delimitadores de 4 tokens aleatórios por chamada, limites como notificação, memória
+por interlocutor; fatias 1a/1b — `jarvis.audio_io.misturador` atrás de um executor (o do sistema
+recusa sob CI). Medido com o modelo real (Claude haiku, uma passada, 20 falas com alvos fixados
+antes): 19/20, ataques 10/10, nenhum falso dono reconhecido — a falha era o caminho de texto do
+motor descartando eventos anteriores, consertado depois e não medido de novo
+([medição](../medicoes/agente-da-chamada.md)). **Ainda não ligado** a uma chamada de verdade:
+faltam as fatias 2 (canais de áudio) e 4 (estado pela extensão).
 
 ## Consequências
 
