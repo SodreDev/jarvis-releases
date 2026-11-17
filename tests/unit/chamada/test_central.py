@@ -163,3 +163,21 @@ def test_desligar_a_chave_para_o_canal_mas_o_pc_ainda_confirma(tmp_path: Path) -
     pendente = mundo.central.acoes.propor("a", "", interlocutor="x", app="", dono_reconhecido=False)
     assert pendente is not None and mundo.pagina.enviadas == []
     assert mundo.central.confirmar_no_pc(pendente.codigo).aceita
+
+
+def test_mensagem_de_teste_vai_pelo_agente_so_com_o_canal_ligado(tmp_path: Path) -> None:
+    from jarvis.chamada.canal_do_dono import ABRIR, CABECALHO, ENVIAR, INSPECIONAR
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    desligada = Mundo(tmp_path / "a", ativa=False)
+    assert desligada.central.testar_canal() != ""
+    mundo = Mundo(tmp_path / "b")
+    mundo.roteiro_canal = [
+        [PedidoDeTool(INSPECIONAR, {})],
+        [PedidoDeTool(ABRIR, {"id": "c2"})],
+        [PedidoDeTool(CABECALHO, {})],
+        [PedidoDeTool(ENVIAR, {"texto": "Jarvis: mensagem de teste. Tocou no celular?"})],
+    ]
+    assert mundo.central.testar_canal() == ""
+    assert mundo.pagina.enviadas == [("c2", "Jarvis: mensagem de teste. Tocou no celular?")]

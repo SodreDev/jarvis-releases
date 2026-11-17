@@ -145,6 +145,23 @@ class CentralDaChamada:
         copia = dict(evento)
         self.rodar(lambda: self._enviar(copia))
 
+    def testar_canal(self) -> str:
+        """O dono pede uma mensagem de teste ao chat de destino (para ver se o celular toca). Vai
+        pelo mesmo agente, com o mesmo teto e as mesmas travas. Vazio = pedido aceito."""
+        if not self.canal_ligado():
+            return "ligue as chamadas e preencha o chat de destino antes"
+        if self.pagina is None:
+            return "sem a aba do WhatsApp: a ponte do navegador não está ligada"
+        self.para_o_canal(
+            {
+                "tipo": "teste_do_canal",
+                "de_terceiros": False,
+                "pedido": "o dono pediu uma mensagem curta de teste, para ver se o celular dele "
+                "toca com mensagem neste chat",
+            }
+        )
+        return ""
+
     def _enviar(self, evento: dict[str, Any]) -> None:
         # `rodar` é uma linha só: o envio e a leitura da prévia nunca correm juntos.
         self.canal.enviar(evento)

@@ -223,6 +223,13 @@ Item {
                                                           vista.ajustes.chamadas_ativas
                                                           ? "false" : "true")
                     }
+                    Botao {
+                        objectName: "testarCanal"
+                        visible: vista.ajustes.chamadas_ativas === true
+                                 && vista.ajustes.canal_do_dono_ligado === true
+                        texto: "mandar mensagem de teste ao chat de destino"
+                        onApertado: vista.chamada.testarCanal()
+                    }
                     Nota {
                         width: parent.width
                         text: "Desligadas, o Jarvis não entra em chamada nem manda nada ao seu chat. "

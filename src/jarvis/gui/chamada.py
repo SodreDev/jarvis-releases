@@ -212,6 +212,18 @@ class PonteDaChamada(QObject):
         self._dizer("o Jarvis está na ligação" if not motivo else f"não deu: {motivo}")
 
     @Slot()
+    def testarCanal(self) -> None:
+        if self.central is None:
+            self._dizer("não deu: a central da chamada não está montada")
+            return
+        motivo = self.central.testar_canal()
+        self._dizer(
+            "mensagem de teste pedida: veja se o celular tocou"
+            if not motivo
+            else f"não deu: {motivo}"
+        )
+
+    @Slot()
     def encerrarChamada(self) -> None:
         if self.central is not None:
             self.central.encerrar_chamada()
