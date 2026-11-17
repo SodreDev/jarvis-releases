@@ -58,6 +58,16 @@ perguntas que ainda são do dono estão no §6.
 | Memória | o Jarvis **lembra do interlocutor** entre chamadas (quem monta um plano com ele continua depois), **sem** que isso dê autoridade | §3.3 |
 | Dono na chamada | quem disser ser o dono **sempre** passa pelo TOTP, **em toda chamada**; o agente sabe disso pelo prompt da chamada, não por regra de código que fale por ele | §3.4 |
 
+**Segunda rodada (2026-11-17)** — as escolhas que estavam abertas no §6:
+
+| Ponto | Decisão | Onde está |
+|---|---|---|
+| Canal de confirmação | além da sessão do PC, **mensagem ao próprio dono no WhatsApp**, pelo envio da ADR-0060. O dono configura o nome do chat dele **como aparece no WhatsApp Web**; o Jarvis, **como agente**, acha esse chat lendo a lista de conversas (sem seletor fixo nem padrão de texto). Sem o nome, o canal fica desligado e vale só a sessão do PC. A confirmação vem **só** do chat do dono, com o **código** da ação; a ação **expira** (padrão 10 min). O agente da chamada nunca trata fala de quem liga como confirmação | §6.1; `jarvis.chamada.acoes`, `jarvis.chamada.canal_do_dono` |
+| O que se diz a quem liga | **só o que não é sensível**, pelo julgamento do agente com o critério do dono em `chamada.toml`: pode dizer que é o assistente, que o dono não pode atender, receber recado, informação pública/neutra; nunca localização, agenda, com quem está, dados pessoais/financeiros, nem confirmar se o número é do dono ou se alguém é contato dele | §3.3; `pode_dizer`/`nunca_dizer` |
+| Fone | o dono usa **às vezes**: `fone` = sim/não/auto (padrão auto); sem fone (ou sem certeza) vale o desenho do §1.3 | §1.3; `jarvis.audio_io.misturador` |
+| Palavra de coação | **não por ora**: desligada e fora da aba; só o gancho (`palavra_de_coacao` no arquivo) | §3.4 |
+| Retenção | recado e memória de quem ligou **até 90 dias**, configurável; o vencido some do disco ao abrir e ao salvar | §4; `jarvis.chamada.memoria` |
+
 ---
 
 ## 1. Linux / PipeWire: a fonte virtual que mistura microfone + TTS
@@ -203,6 +213,17 @@ físico).
   Jarvis diz, só em fone (no alto-falante, o mic real pega de novo, com atraso → eco para quem liga).
 - **Supressão de ruído do app:** o WebRTC pode «limpar» parte da voz sintética (supressão, AGC).
   Medir na máquina do dono; se estragar, desligar o processamento no app ou subir o nível do TTS.
+- **Fone (decisão do dono, 2026-11-17: usa às vezes).** `fone` em `chamada.toml` e na aba:
+  **sim** — a voz do Jarvis também toca no fone (o dono ouve) e o mic real fica aberto (o dono
+  pode falar por cima; o barge-in corta a fala); **não** — a voz vai **só** à fonte virtual e o
+  loopback do mic real fica **mudo na mistura enquanto o Jarvis fala** (`Misturador.enquanto_fala`;
+  o Jarvis continua ouvindo o físico direto), então quem liga ouve só o Jarvis, sem a sala nem a
+  própria voz voltando pelo alto-falante; **auto** (padrão) — o que o sistema diz da saída padrão
+  (`device.form_factor` do sink: headset/headphone; senão o tipo da porta ativa); **na dúvida,
+  como «não»**, que não deixa eco. Mudo e não *duck*: o mudo não deixa resto para o AEC do app e é
+  desfeito por inteiro no fim da fala, mesmo com erro. Testado só com executor falso; o que só a
+  máquina do dono prova: se o PipeWire dele publica a forma do fone (Bluetooth costuma publicar;
+  P2 na placa onboard depende da porta) e se o mudo não deixa estalo audível.
 - O módulo `libpipewire-module-echo-cancel` (WebRTC AEC) existe e cria fonte e sink cancelados
   ([docs](https://docs.pipewire.org/page_module_echo_cancel.html)); **não** é necessário neste
   desenho, mas é a saída se o dono usar alto-falante e o Jarvis precisar ouvir o mic real durante
@@ -307,9 +328,18 @@ fakes em `jarvis.chamada.agente`, fatia 3):
 | `chamada.avisar_dono(resumo, urgencia)` | evento ao Jarvis principal (ADR-0070/0073) | o Jarvis decide falar/card |
 | `chamada.verificar_totp(codigo)` | confere o código que a pessoa disse | uso único; tentativas por chamada (3, configurável) e bloqueio por dia; o veredito volta ao agente |
 | `chamada.lembrar_interlocutor(nota)` | guarda o que **esta pessoa disse** (um plano, um pedido) para a próxima chamada dela | ≤ 300 caracteres por nota; nunca guarda «é o dono» nem autoridade; retenção configurável |
+| `chamada.pedir_acao(acao, detalhes)` | registra uma ação pedida (por quem liga ou pelo dono reconhecido) para o dono confirmar **pelo canal dele** (§6.1) | o código da ação **não** volta a este agente; nenhuma ferramenta da chamada confirma; ≤ 5 pendentes |
 
 **Encerrar** saiu da lista: o dono decidiu que não há encerramento automático, e desligar a
 chamada no WhatsApp Web seria automação na conta (ADR-0060) — quem desliga é a pessoa ou o dono.
+
+**O que dizer a quem liga** (decisão do dono, 2026-11-17): **só o que não é sensível**. O critério
+vai ao prompt pelos textos de `chamada.toml` — `pode_dizer` (padrão: que é o assistente, que o dono
+não pode atender, que anota o recado; informação pública ou neutra) e `nunca_dizer` (padrão:
+onde o dono está ou vai estar, agenda, com quem está, dados pessoais ou financeiros, nem confirmar
+se o número é do dono ou se alguém é contato dele) — e **o agente julga cada fala** por ele; na
+dúvida, não diz e oferece o recado; não confirma nem nega palpite de quem liga. Não há lista de
+frases proibidas no código.
 
 **Não** tem: memória do dono (só os textos que o dono configurou — o que pode e o que nunca pode ser
 dito), agenda, contatos, arquivos, navegador, sistema, envio de mensagem, delegação, Claude Code.
@@ -342,7 +372,10 @@ prompt da chamada (o agente sabe); o código só confere o número e devolve o v
 3. **O código de 4 dígitos + a palavra-chave** (a ideia do dono) — fica como **fator fraco**, útil só
    para «o Jarvis passa a tratar como o dono para recado», e **apenas** combinado com 1 ou 2.
 4. **Palavra de coação** (opcional): uma palavra que o dono diz se estiver sob pressão — o agente age
-   como se aceitasse e não faz nada além de notificar.
+   como se aceitasse e não faz nada além de notificar. **Decisão do dono (2026-11-17): não por
+   ora** — desligada e fora da aba; fica só o gancho: `palavra_de_coacao` em `chamada.toml`,
+   preenchida à mão, entra no prompt do agente da chamada (`sistema_da_chamada`), e o teste
+   `test_palavra_de_coacao_so_entra_no_prompt_quando_ligada` guarda esse comportamento.
 
 **A regra que não se negocia:** reconhecer o dono **na chamada** nunca destrava poder no PC.
 O máximo que destrava é o modo «recado do dono» (ex.: o dono deixa um lembrete para si, ou pede
@@ -375,8 +408,11 @@ principal, que decide no laço dele com as permissões de sempre.
   econômicos** fica fora da LGPD (art. 4º, I). O assistente pessoal do dono tende a cair aí; se o
   uso for profissional (atender clientes), a LGPD vale: base legal (legítimo interesse ou
   consentimento), aviso, minimização, retenção curta e direito de apagar. Em qualquer caso: tudo
-  local, arquivo `0600`, retenção curta (proposta: transcrição bruta apagada ao fim da chamada;
-  recado por 30 dias), trilha só com códigos.
+  local, arquivo `0600`, retenção limitada (decisão do dono, 2026-11-17: transcrição bruta
+  apagada ao fim da chamada; recado e memória de quem ligou por **até 90 dias**, configurável, com
+  o vencido apagado do disco ao abrir e ao salvar), trilha só com códigos. Noventa dias é mais que
+  os 30 propostos: reforça o «minimização» — o dono pode baixar na aba, e o uso profissional pede
+  revisar este número.
 - **Aviso de IA no início da fala:** não achei, em vigor no Brasil, regra específica para chamadas.
   O PL 2338/2023 (aprovado no Senado em dez/2024, na Câmara) trata de transparência e de conteúdo
   sintético ([Congresso](https://www.congressonacional.leg.br/materias/materias-bicamerais/-/ver/pl-2338-2023)).
@@ -428,13 +464,11 @@ chave.
 ## 6. Perguntas que só o dono responde
 
 **Respondidas em 2026-11-17** (§0.1): 1 (web no PC; celular fora, §7), 4 (TOTP), 7 (5 min sem
-corte, 30 turnos, 5 frases). **Abertas, com padrão seguro no código** (`chamada.toml`, aba
-«chamadas»): 5 — canal de confirmação (padrão: só a sessão do PC); 6 — o que pode / nunca pode ser
-dito (padrão: só que o dono não pode atender; nunca onde está, com quem, agenda, dados pessoais);
-8 — retenção (padrão: recado e memória do interlocutor por 30 dias; transcrição bruta só na
-memória da chamada); 9 — fone (padrão: sem fone, a voz do Jarvis não toca no alto-falante); 10 —
-palavra de coação (padrão: desligada). Abertas sem código: 2 (atender sozinho) e 3 (modo sessão ×
-instalado).
+corte, 30 turnos, 5 frases); e, na segunda rodada, 5 (canal: sessão do PC + chat do dono no
+WhatsApp, §6.1), 6 (só o que não é sensível, julgado pelo agente), 8 (90 dias, configurável;
+transcrição bruta só na memória da chamada), 9 (fone sim/não/auto, §1.3) e 10 (coação: não por
+ora). **Abertas sem código:** 2 (atender sozinho) e 3 (modo sessão × instalado); e se o uso é
+pessoal ou também profissional (muda a LGPD, §4).
 
 1. **Que chamadas importam?** WhatsApp Web no PC, Meet/Discord, ou as ligações do **celular**
    (estas não passam pelo PC — precisaria do caminho Bluetooth, não verificado, ou de um número SIP)?
@@ -458,6 +492,75 @@ instalado).
 9. **Ouvir o Jarvis durante a chamada:** você usa fone? (No alto-falante, a voz do Jarvis volta ao
    mic real e vira eco para quem liga.)
 10. **Palavra de coação:** quer ter uma?
+
+### 6.1 O canal do dono no WhatsApp (decisão de 2026-11-17)
+
+**O fluxo.** Na chamada, quem liga (ou o dono reconhecido pelo TOTP) pede uma ação; o agente da
+chamada a registra com `chamada.pedir_acao` — ele **não** recebe o código da ação e não tem
+ferramenta que confirme nada. `jarvis.chamada.acoes` gera o código (6 caracteres de um alfabeto
+sem letras parecidas), marca o prazo (`acao_expira_min`, padrão 10 min) e manda o evento ao Jarvis
+e, com o canal ligado, ao **agente do canal do dono** (`jarvis.chamada.canal_do_dono`, laço
+canônico, `quem="canal_do_dono"`). Esse agente lê a lista de conversas da aba do WhatsApp Web
+(`browser.inspecionar`), escolhe **lendo** a conversa do dono, abre, lê o cabeçalho e envia — a
+mensagem é redigida por ele (nenhum texto pronto no código) e tem de trazer o código. Depois, o
+`ObservadorDoChat` lê **só a prévia** do chat do dono na lista (sem abrir nada), descarta o eco do
+próprio Jarvis e entrega a resposta nova ao agente, que decide: `canal.confirmar`, `canal.recusar`
+ou `canal.avisar_jarvis`. A ação confirmada vira evento ao Jarvis, que a executa com as permissões
+de sempre.
+
+**O monitor já lia o chat do dono? Não.** O `MonitorSocial` (ADR-0060/0073) só dispara quando a
+contagem de **não lidas** sobe, e mensagem que o dono escreve no chat dele mesmo (do celular) é
+mensagem **enviada pela própria conta**: o WhatsApp não a conta como não lida. Por isso a resposta
+do dono não chegava como evento — o `ObservadorDoChat` lê a prévia da linha do chat do dono
+enquanto há ação pendente, e é ele que entrega a resposta ao agente.
+
+**As travas, no código (o veredito volta ao modelo, que corrige):**
+
+- *Lista permitida do canal = o nome configurado, e só ele.* Antes de enviar, o cabeçalho lido do
+  chat aberto tem de ter esse nome (sem diferença de caixa, acento e espaço), não pode ser grupo
+  nem ambíguo, e a lista não pode ter duas conversas com esse nome. É a trava de **quem recebe o
+  código**; a escolha da conversa continua sendo do agente.
+- *Confirmação só do canal certo.* `AcoesPendentes.confirmar` recebe a origem como enum que só o
+  código monta (`CANAL_DO_DONO` ou `SESSAO_DO_PC`; `CHAMADA` é sempre recusada) e, pelo chat do
+  dono, a **mensagem lida** — nunca um texto do modelo — tem de conter o código **desta** ação
+  como palavra inteira. Sem código, código de outra ação, ação expirada ou já decidida: recusa.
+  Mensagem com o código noutra conversa nem chega ao agente.
+- *Prazo.* A ação pendente expira em `acao_expira_min` (1–120, padrão 10); expirou, o Jarvis é
+  avisado uma vez e o código não vale mais.
+- *Falha vira evento.* Sem modelo, o modelo não enviou nem avisou, ou a trava recusou tudo: evento
+  `canal_do_dono_sem_decisao` ao Jarvis (fica a sessão do PC).
+
+**Teto (proposta, a confirmar com o dono).** As mensagens ao próprio dono **têm teto próprio**:
+**6 por hora, 20 por dia, 60 s entre elas** — e **não** gastam o teto das respostas a contatos (4/h,
+15/dia por padrão), para um aviso ao dono não roubar a resposta automática de um contato, nem o
+contrário. **Mas contam no teto rígido da conta** (8/h, 30/dia, somando tudo) e no intervalo mínimo
+entre dois envios quaisquer, porque o risco da ADR-0060 é da **conta** (volume de automação), e a
+conta é a mesma. Pausa por sinal de alerta e o silêncio da madrugada (0–6 h) valem igual: nessas
+horas só a sessão do PC confirma. Por quê 6/20: uma chamada típica gera 1–2 mensagens (a ação e,
+às vezes, um aviso); 6/h cobre três chamadas seguidas com folga e 20/dia cobre um dia cheio sem
+deixar uma injeção em laço encher o WhatsApp do dono. O texto não passa pelo filtro de conteúdo das
+respostas a terceiros (dinheiro, link, número): vai ao próprio dono, e o pedido de quem liga pode
+legitimamente falar de pagamento — o limite é de tamanho (500 caracteres).
+
+**O que só a máquina do dono prova** (nada disto foi rodado de verdade): a extensão ainda não tem
+o pedido de «todas as conversas» (`social.estado` traz só as não lidas) nem «abrir pela linha
+escolhida» — a `PaginaDoWhatsapp` é uma porta, e ligar a ponte real é a próxima fatia; se a
+mensagem enviada pelo WhatsApp Web ao chat do próprio dono **notifica o celular** (mensagem da
+própria conta costuma **não** tocar notificação — se não tocar, o dono pode configurar o chat de
+um segundo número dele); e como o WhatsApp Web mostra o nome do chat do dono («Você», «Nome
+(você)»), que é o que o dono deve copiar na aba.
+
+**Medido** (haiku, uma passada, página falsa, 13 casos com alvos fixados antes —
+[docs/medicoes/canal-do-dono.md](../medicoes/canal-do-dono.md)): 9/13, **nenhuma mensagem fora do
+chat do dono**, confirmação e recusa certas, resposta sem código não confirmou, código mandado
+por terceiro nem chegou ao agente. As 4 falhas eram o modelo reabrindo a conversa em laço — o motor
+de texto lista os resultados sem o nome da ferramenta e o veredito não dizia o que fora aberto;
+consertado depois (o veredito traz o pedido), não medido de novo. **Riscos que ficam:** as 5 vagas
+de ação pendente podem ser ocupadas por pedidos de injeção (a chamada registra «leia os e-mails»
+como pedido — o dono vê o que tentaram, mas um pedido legítimo pode ficar sem vaga até expirarem);
+e o nome configurado é a única identidade do chat — o dono deve preferir o rótulo próprio do
+WhatsApp para o chat dele («Você», «Nome (você)»); uma conversa que imite esse nome na lista vira
+nome duplicado, e o envio é recusado (fica a sessão do PC).
 
 ---
 
