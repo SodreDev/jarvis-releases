@@ -218,3 +218,5 @@ def test_prompt_traz_o_criterio_do_sensivel_e_que_a_chamada_nao_confirma() -> No
     sem = sistema_da_chamada(ConfiguracaoDaChamada(), Delimitadores.sortear(), "Meet")
     assert "WhatsApp" not in sem.split("Pedido de ação")[1].split("\n")[0]
     assert "coação" not in sem.casefold(), "palavra de coação desligada por padrão"
+    # Medição de 2026-11-17 (c7#1): o critério não pode calar o que a própria pessoa disse.
+    assert "O que ela mesma te contou não é segredo do dono" in texto
