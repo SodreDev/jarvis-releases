@@ -265,3 +265,50 @@ def test_piso_do_spawn_vem_ligado_por_padrao(tmp_path: Path) -> None:
     assert medindo.ambiente_do_filho() == {VARIAVEL_SEM_TRAFEGO: "1", VARIAVEL_DO_RACIOCINIO: sem}
     antes = MotorClaudeCli(pasta_de_trabalho=tmp_path, ambiente={}, modo_seguro=False)
     assert "--safe-mode" not in antes.argumentos(Modo.RAPIDO)
+
+
+# --- o histórico de eventos e resultados chega ao `claude -p` ---------------------------------
+def test_o_monitor_das_redes_manda_as_decisoes_recentes_ao_claude_p(
+    pasta_vazia: Path, tmp_path: Path
+) -> None:
+    """Medido (docs/medicoes/monitor-memoria.md): `como_texto()` descartava os eventos anteriores
+    ao último, e as «SUAS DECISÕES RECENTES» do monitor não chegavam ao `claude -p`. Aqui, pela
+    CLI falsa que grava o `stdin`: a segunda decisão leva a primeira."""
+    from jarvis.social.agente import AgenteMonitor
+
+    registro = tmp_path / "registro.jsonl"
+    motor = _motor(pasta_vazia, registro, deltas=[])
+    agente = AgenteMonitor(motor=lambda: motor, ao_encaminhar=lambda *_a: None)
+    primeiro = {
+        "rede": "WhatsApp",
+        "remetentes": [{"remetente": "Mãe", "trecho": "Filho, me liga quando puder"}],
+    }
+    agente.decidir(primeiro, "agora são 15h; o dono está presente")
+    assert "SUAS DECISÕES RECENTES" not in _registro(registro)[0]["stdin"]
+    agente.decidir(dict(primeiro), "agora são 15h; o dono está presente")
+
+    # O registro da CLI falsa guarda o último processo: uma rodada da segunda decisão.
+    entrada = _registro(registro)[0]["stdin"]
+    assert "SUAS DECISÕES RECENTES" in entrada
+    recentes = entrada.split("SUAS DECISÕES RECENTES", 1)[1].split("Agora não foi o dono", 1)[0]
+    assert "Mãe" in recentes and "Filho, me liga" in recentes
+
+
+def test_como_texto_leva_eventos_e_resultados_de_antes_na_ordem() -> None:
+    from jarvis.s2.motor import PedidoDeTool
+
+    contexto = Contexto(
+        sistema="s",
+        mensagens=(
+            Mensagem("dono", "lê o arquivo"),
+            Mensagem("ferramenta", "conteúdo X", chamada=PedidoDeTool("files.read_text", {})),
+            Mensagem("evento", "a tarefa chegou ao limite de passos"),
+            Mensagem("jarvis", "Li até a metade."),
+            Mensagem("evento", "o dono voltou"),
+        ),
+    )
+    texto = contexto.como_texto()
+    arquivo = texto.index("[Resultado de files.read_text, antes — dado de terceiros")
+    limite = texto.index("[Evento do sistema, antes]: a tarefa chegou ao limite")
+    assert texto.index("Dono: lê o arquivo") < arquivo < limite < texto.index("Jarvis: Li até")
+    assert texto.rstrip().endswith("o dono voltou")
