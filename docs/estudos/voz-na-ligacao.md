@@ -8,9 +8,13 @@ por um código de 4 dígitos configurado + uma palavra-chave falada; delimitador
 feitos de vários tokens aleatórios por chamada. Roda como agente (laço canônico, ADR-0072) com o
 conjunto mínimo de ferramentas.
 
-**Estado:** só estudo e desenho. Nada implementado. Decisão proposta:
-[ADR-0074](../adr/0074-voz-do-jarvis-na-ligacao.md) (Proposta). As perguntas que só o dono responde
-estão no fim.
+**Estado:** estudo e desenho; a ADR continua [ADR-0074](../adr/0074-voz-do-jarvis-na-ligacao.md)
+(Proposta) até o dono aceitar. **Decisões do dono de 2026-11-17** (aplicadas abaixo, §0.1): celular
+fora por ora, com as opções documentadas (§7); alvo = atender na versão **web** no PC; TOTP aceito,
+configurável pelo app; 4 dígitos + palavra só como fator fraco; 5 min **sem** encerramento
+automático (passado o tempo, o Jarvis avisa); até 30 turnos; até 5 frases por fala; o Jarvis lembra
+do interlocutor entre chamadas, mas pede o TOTP **a cada chamada** a quem disser ser o dono. As
+perguntas que ainda são do dono estão no §6.
 
 ---
 
@@ -35,13 +39,24 @@ estão no fim.
   antes» é um **softphone SIP** (número próprio do assistente); no WhatsApp Web, o caminho seguro é
   o dono atender (ou deixar o Jarvis falar numa chamada que **ele** atendeu e passou).
 - **Segurança:** a defesa que segura é o **privilégio mínimo** — na chamada o agente só pode falar,
-  anotar recado, notificar o dono e encerrar. Delimitadores aleatórios por chamada e transcrição
+  anotar recado, avisar o dono, conferir o TOTP e lembrar o que a pessoa disse. Delimitadores aleatórios por chamada e transcrição
   tratada como dado ajudam o modelo, mas **não** são barreira. O código de 4 dígitos falado é
   **identificação fraca** (quem ouve, repete): ele nunca destrava poder sem confirmação por outro
   canal; o proposto é TOTP de uso único ou desafio-resposta, e mesmo assim só para o modo «recado
   do dono», nunca para executar no PC.
 - **Ético e legal:** a primeira frase do Jarvis diz que é um assistente com inteligência artificial e
   não o dono; a voz é sintética e **nunca** imita a do dono; transcrição local, com retenção curta.
+
+### 0.1 O que o dono decidiu (2026-11-17)
+
+| Ponto | Decisão | Onde muda o desenho |
+|---|---|---|
+| Que chamadas | **web no PC** (WhatsApp Web, Meet, Discord); celular fora por ora | §2.3; o celular fica estudado no §7 |
+| Reconhecer o dono | **TOTP** (RFC 6238), segredo gerado e conferido pela aba «chamadas» do app; 4 dígitos + palavra só fator fraco | §3.4 |
+| Duração | **5 min sem corte automático**: passado o tempo, o agente é **notificado** e decide avisar a pessoa ou o dono | §3.5 |
+| Turnos / fala | até **30 turnos**; até **5 frases** por fala | §3.3, §3.5 |
+| Memória | o Jarvis **lembra do interlocutor** entre chamadas (quem monta um plano com ele continua depois), **sem** que isso dê autoridade | §3.3 |
+| Dono na chamada | quem disser ser o dono **sempre** passa pelo TOTP, **em toda chamada**; o agente sabe disso pelo prompt da chamada, não por regra de código que fale por ele | §3.4 |
 
 ---
 
@@ -281,21 +296,29 @@ aba aberta e logada.
 
 ### 3.3 Privilégio mínimo: o agente da ligação
 
-Um **subagente da ligação**, no laço canônico (`rodada_do_agente`, `quem="ligacao"`), com contexto
-próprio e **só** estas ferramentas:
+Um **subagente da chamada**, no laço canônico (`rodada_do_agente`, `quem="chamada"`), com contexto
+próprio e **só** estas ferramentas (revisto com as decisões do dono, 2026-11-17; a implementar com
+fakes em `jarvis.chamada.agente`, fatia 3):
 
 | Ferramenta | O que faz | Limites |
 |---|---|---|
-| `ligacao.falar(texto)` | o TTS na fonte virtual | ≤ 2 frases / ~30 palavras por vez; a 1ª fala da chamada **tem** de conter o aviso de IA (o código confere e devolve o veredito se faltar — não escreve a frase por ele) |
-| `ligacao.anotar_recado(assunto, texto, retorno)` | guarda o recado | ≤ 500 caracteres; vai ao Jarvis como evento de terceiros |
-| `ligacao.notificar_dono(resumo, urgencia)` | evento ao Jarvis principal (ADR-0070/0073) | o Jarvis decide falar/card |
-| `ligacao.encerrar(motivo)` | desliga a chamada (ou só para de falar, se não houver como desligar) | sempre disponível |
+| `chamada.falar(texto, inclui_aviso_de_ia)` | o TTS na fonte virtual | ≤ **5 frases** por fala (configurável); a 1ª fala da chamada declara `inclui_aviso_de_ia = true` — o código recusa a 1ª fala sem a declaração e devolve o veredito; **não** escreve a frase por ele |
+| `chamada.anotar_recado(assunto, texto, retorno)` | guarda o recado | ≤ 500 caracteres; vai ao Jarvis como evento de terceiros |
+| `chamada.avisar_dono(resumo, urgencia)` | evento ao Jarvis principal (ADR-0070/0073) | o Jarvis decide falar/card |
+| `chamada.verificar_totp(codigo)` | confere o código que a pessoa disse | uso único; tentativas por chamada (3, configurável) e bloqueio por dia; o veredito volta ao agente |
+| `chamada.lembrar_interlocutor(nota)` | guarda o que **esta pessoa disse** (um plano, um pedido) para a próxima chamada dela | ≤ 300 caracteres por nota; nunca guarda «é o dono» nem autoridade; retenção configurável |
 
-**Não** tem: memória do dono (só um texto curto que o dono configurou, ex.: «estou em reunião até
-as 15h»), agenda, contatos, arquivos, navegador, sistema, envio de mensagem, delegação, Claude Code.
-O executor e o PDP de sempre recusam qualquer outra ferramenta (não existem no catálogo da
-chamada). Limites rígidos do código: duração (proposta: 3 min), turnos (12), silêncio (15 s),
-uma chamada por vez, e corte imediato se o dono atender, falar no mic real ou pedir.
+**Encerrar** saiu da lista: o dono decidiu que não há encerramento automático, e desligar a
+chamada no WhatsApp Web seria automação na conta (ADR-0060) — quem desliga é a pessoa ou o dono.
+
+**Não** tem: memória do dono (só os textos que o dono configurou — o que pode e o que nunca pode ser
+dito), agenda, contatos, arquivos, navegador, sistema, envio de mensagem, delegação, Claude Code.
+Ferramenta fora do catálogo volta recusada ao modelo. **Memória por interlocutor:** a próxima
+chamada da mesma pessoa (a chave é o nome/número que o app mostra — falsificável, por isso só
+continuidade, nunca identidade) recebe as notas anteriores **como dado**, entre os delimitadores da
+chamada nova. **Limites** (configuráveis, aba «chamadas»): 5 min, 30 turnos, 5 frases — estourar
+vira **notificação** ao agente, que decide (§3.5); uma chamada por vez; corte imediato da fala se o
+dono atender, falar no mic real ou pedir.
 
 ### 3.4 Reconhecer o dono: o código de 4 dígitos e algo mais forte
 
@@ -303,9 +326,15 @@ uma chamada por vez, e corte imediato se o dono atender, falar no mic real ou pe
 perto do dono e por qualquer gravação. Depois do primeiro uso, é público. 4 dígitos também são
 10 mil possibilidades — com 3 tentativas, 0,03% por chamada, aceitável só com bloqueio.
 
-**Proposta, em ordem de força:**
+**Decisão do dono (2026-11-17): TOTP**, configurável pelo app (aba «chamadas»: gera o segredo,
+mostra uma vez a URI `otpauth://` e a chave para o autenticador, confere um código). O código de
+4 dígitos + palavra fica só como fator fraco. **A cada chamada** em que alguém disser ser o dono,
+o agente pede o TOTP — lembrar da pessoa entre chamadas nunca dispensa o código. Isso está no
+prompt da chamada (o agente sabe); o código só confere o número e devolve o veredito.
 
-1. **TOTP (RFC 6238), 6 dígitos, uso único** — o dono cadastra o segredo num app autenticador; o
+**As opções, em ordem de força:**
+
+1. **TOTP (RFC 6238), 6 dígitos, uso único** (escolhido) — o dono cadastra o segredo num app autenticador; o
    Jarvis aceita o código da janela atual (±1) **uma vez** e o marca usado. Replay não serve;
    gravação não serve. Implementável só com `hmac`/`hashlib` da biblioteca padrão.
 2. **Desafio-resposta** — o Jarvis diz um desafio aleatório (ex.: «posição 7 e 12»), o dono responde
@@ -322,11 +351,13 @@ O máximo que destrava é o modo «recado do dono» (ex.: o dono deixa um lembre
 WhatsApp dele mesmo com um código que ele devolve), e mesmo assim vai como evento ao Jarvis
 principal, que decide no laço dele com as permissões de sempre.
 
-### 3.5 Resposta limitada e corte automático
+### 3.5 Resposta limitada, sem corte automático
 
-- Teto por fala (frases/palavras), teto de duração, de turnos e de silêncio; ao estourar, o agente
-  recebe **notificação** (ADR-0070) e encerra com as palavras dele; se não encerrar, o código corta
-  o TTS e encerra (limite é limite).
+- Teto por fala (5 frases): a fala maior volta recusada ao agente, que a encurta.
+- Duração (5 min) e turnos (30): **sem encerramento automático** (decisão do dono, 2026-11-17).
+  Ao passar, o agente recebe uma **notificação** do sistema (ADR-0070) com o estado — tempo,
+  turnos — e decide: avisar a pessoa que o tempo passou, avisar o dono, anotar o recado. O código
+  não escreve a frase nem desliga.
 - O dono atendeu, falou no mic real ou apertou «parar»: o Jarvis para de falar na hora (o mesmo
   corte do barge-in, ADR-0040) e sai da chamada.
 
@@ -370,7 +401,7 @@ principal, que decide no laço dele com as permissões de sempre.
 | 1a | **Misturador virtual, modo sessão** (`audio_io/misturador.py`): cria/desfaz o nó virtual + loopback, (a) vira padrão, (b) move para ele os fluxos de captura que estão no físico (exceto o Jarvis), guarda e devolve tudo; executor de comandos e leitor do grafo injetáveis | o executor falso recebe os comandos certos e na ordem; um `pw-dump` falso com Discord, navegador e o próprio Jarvis: só os dois primeiros são movidos; app que reverte é movido de novo até o teto; desligar devolve padrão e fluxos; falha no meio desfaz o que criou; nada roda em CI (`proibir_dispositivo_em_ci`) | se o PipeWire/WirePlumber dele aceita o nó como padrão e o move; Discord/navegador reais; latência e eco |
 | 1b | **Modo instalado, troca de identidade** (c): gera os dois arquivos de configuração do usuário, mostra, grava só com o sim, desfaz | os arquivos gerados para um microfone falso (nome/descrição trocados, regra de fluxos, nenhum `/etc`); desfazer apaga só os nossos e restaura a cópia | se o Chromium/Discord dele reconhecem o microfone renomeado; reiniciar os serviços sem derrubar a sessão |
 | 2 | **Canais da ligação**: `FonteDoOutroLado` (fluxo do app) e `SaidaParaALigacao` (TTS no nó virtual), nas implementações de arquivo/sintética que o `audio_io` já tem | áudio sintético entra, o ASR falso transcreve, o TTS paramétrico sai num arquivo; a voz do Jarvis nunca vai ao sumidouro do alto-falante durante a chamada | qualidade do STT na voz Opus real |
-| 3 | **Agente da ligação** (laço canônico, 4 ferramentas, delimitadores, limites) | motor roteirizado: aviso de IA na 1ª fala (veredito se faltar), ferramenta fora do catálogo recusada, injeção falada não executa nada, marcadores removidos da transcrição, teto de duração/turnos/silêncio dispara notificação e corte, recado vira evento de terceiros; avaliação com modelo real (corpus de ataques com alvos fixados antes, como `tools/avaliar_monitor.py`) | o tom, o tempo de resposta numa chamada de verdade |
+| 3 | **Agente da chamada** (laço canônico, 5 ferramentas, delimitadores, limites, memória por interlocutor) | motor roteirizado: aviso de IA declarado na 1ª fala (veredito se faltar), ferramenta fora do catálogo recusada, injeção falada não executa nada, delimitador forjado neutralizado e avisado, teto de duração/turnos vira notificação (sem corte), recado vira evento de terceiros, chamada nova com a mesma pessoa traz as notas como dado e volta a exigir TOTP; avaliação com modelo real (corpus de ataques com alvos fixados antes, como `tools/avaliar_monitor.py`) | o tom, o tempo de resposta numa chamada de verdade |
 | 4 | **Estado da chamada pela extensão** (tocando, atendida aqui, atendida noutro lugar, encerrada) | extensão e ponte falsas (o mesmo banco da ADR-0060) | o DOM real do WhatsApp Web durante uma chamada |
 | 5 | **Reconhecer o dono** (TOTP/desafio, tentativas, bloqueio, uso único) | relógio injetado, vetores da RFC 6238, replay recusado, 3 erros bloqueiam | — |
 | 6 | **Atender** — o dono atende e passa ao Jarvis (botão/voz «atende por mim»); depois, se aprovado, softphone SIP com auto-atendimento | ponte falsa / softphone falso | tudo |
@@ -382,6 +413,15 @@ Ordem proposta: 3 e 5 primeiro (são a segurança e não dependem de áudio), de
 ---
 
 ## 6. Perguntas que só o dono responde
+
+**Respondidas em 2026-11-17** (§0.1): 1 (web no PC; celular fora, §7), 4 (TOTP), 7 (5 min sem
+corte, 30 turnos, 5 frases). **Abertas, com padrão seguro no código** (`chamada.toml`, aba
+«chamadas»): 5 — canal de confirmação (padrão: só a sessão do PC); 6 — o que pode / nunca pode ser
+dito (padrão: só que o dono não pode atender; nunca onde está, com quem, agenda, dados pessoais);
+8 — retenção (padrão: recado e memória do interlocutor por 30 dias; transcrição bruta só na
+memória da chamada); 9 — fone (padrão: sem fone, a voz do Jarvis não toca no alto-falante); 10 —
+palavra de coação (padrão: desligada). Abertas sem código: 2 (atender sozinho) e 3 (modo sessão ×
+instalado).
 
 1. **Que chamadas importam?** WhatsApp Web no PC, Meet/Discord, ou as ligações do **celular**
    (estas não passam pelo PC — precisaria do caminho Bluetooth, não verificado, ou de um número SIP)?
@@ -405,3 +445,152 @@ Ordem proposta: 3 e 5 primeiro (são a segurança e não dependem de áudio), de
 9. **Ouvir o Jarvis durante a chamada:** você usa fone? (No alto-falante, a voz do Jarvis volta ao
    mic real e vira eco para quem liga.)
 10. **Palavra de coação:** quer ter uma?
+
+---
+
+## 7. Celular (iPhone/Android), restrito a apps de loja/verificação oficial
+
+**Pedido do dono (2026-11-17):** receber no celular as mensagens e ligações que o Jarvis tratou, e
+o Jarvis atender **em nome do dono** ligações e SMS, **sem depender de estar na mesma rede**, só com
+apps de loja (App Store, Google Play) ou de verificação oficial — nada de jailbreak, root ou
+instalação por fora. O dono decidiu deixar o celular **fora por ora**; esta seção deixa as opções
+documentadas. Pesquisa feita em 2026-11-17 em fontes oficiais; o que não deu para verificar está
+marcado. Não é parecer jurídico.
+
+### 7.1 Resumo honesto
+
+- **iPhone: nenhum app de loja atende uma ligação da operadora, ouve ou injeta áudio nela, nem lê
+  SMS.** Só a Apple faz isso (Triagem de chamadas, Correio de Voz ao Vivo). O que um app de
+  terceiros consegue no iPhone é **identificar/bloquear** número, **classificar** SMS de
+  desconhecido e **receber notificações** (push) — não atender.
+- **Android: um app de loja pode atender** a ligação se o dono o puser como **discador padrão**
+  (`InCallService`), mas **não ouve nem fala** dentro dela: capturar o áudio da chamada é só para
+  app privilegiado (pré-instalado) e não há API pública para injetar áudio. Ler e responder SMS só
+  com o papel de app padrão de SMS, de discador ou de **assistente**, ou com exceção aprovada pela
+  Play.
+- **O caminho que independe do aparelho e da rede:** o **desvio condicional da operadora**
+  (se ocupado / não atende / fora de área) para um **número VoIP do assistente**, que o Jarvis (no
+  PC ou num servidor) atende — é o «softphone SIP» do §2.3, agora com o número do dono desviando
+  para ele. O celular fica com um **app companheiro mínimo** que só recebe **push** (recado,
+  ligação tratada), aprova o **TOTP**/uma ação e mostra os recados.
+- **Mesma rede não é preciso:** push (FCM/APNs) para avisar, e um túnel com cifra de ponta a ponta
+  (Tailscale/WireGuard, apps oficiais nas duas lojas) ou um relé próprio com E2E para o conteúdo.
+
+### 7.2 iPhone (iOS) — o que é possível e o que não
+
+| Recurso | Possível? | O que dá e o que não dá | Fonte |
+|---|---|---|---|
+| **CallKit** para ligação da operadora | **não** atende nem injeta áudio | serve às chamadas VoIP **do próprio app**; para a ligação da operadora, `CXCallObserver` só lista as chamadas e o estado delas — sem áudio, sem atender | [CXCallObserver](https://developer.apple.com/documentation/callkit/cxcallobserver) |
+| **Call Directory** (extensão) | sim | rótulo de identificação e bloqueio por número, numa lista estática | [CXCallDirectoryExtensionContext](https://developer.apple.com/documentation/callkit/cxcalldirectoryextensioncontext) |
+| **Live Caller ID Lookup** | sim, pesado | o sistema consulta **o nosso servidor** por PIR (consulta privada) quando a ligação chega e mostra o nome/bloqueio na tela e nos recentes; exige servidor PIR + emissor de Privacy Pass, e validação do endpoint pela Apple. Não dá áudio nem controle da chamada. **Não verificado:** o nome exato do entitlement e a versão mínima do iOS | [documentação](https://developer.apple.com/documentation/identitylookup/getting-up-to-date-calling-and-blocking-information-for-your-app) |
+| **Ler SMS recebido** | **não** | não há API pública | — |
+| **Filtro de SMS de desconhecidos** (`ILMessageFilterExtension`) | só classifica | roda só para SMS/MMS de **remetente fora dos contatos** (não para contatos nem iMessage); recebe remetente e texto e só devolve permitir/lixo/promoção/transação; pode adiar a decisão ao servidor do desenvolvedor, mas pelo sistema — a extensão não acessa a rede nem grava no contêiner compartilhado, então **não serve para repassar a mensagem** | [filtro de SMS](https://developer.apple.com/documentation/identitylookup/sms-and-mms-message-filtering), [ILMessageFilterAction](https://developer.apple.com/documentation/identitylookup/ilmessagefilteraction) |
+| **Atalhos (Shortcuts), automação «Mensagem»** | talvez | a Apple documenta automação que roda «sem perguntar» ([guia](https://support.apple.com/guide/shortcuts/apd690170742/ios)); que a de **Mensagem** rode sem confirmação (iOS 17+, com notificação) e mande o conteúdo a uma URL («Obter conteúdo do URL») só achei em fonte de terceiros — **não verificado** em página da Apple; testar no aparelho. Cobre Mensagens, **nunca** ligações | [guia da Apple](https://support.apple.com/guide/shortcuts/apd690170742/ios) |
+| **Triagem de chamadas, Correio de Voz ao Vivo, Hold Assist** | só da Apple | «Filtrar desconhecidos» com «Perguntar o motivo» é do sistema; não achei API para terceiros substituírem ou estenderem. Detalhes do Hold Assist (aparelho/região) **não verificados** em página da Apple | [suporte Apple](https://support.apple.com/111106) |
+| **Push de VoIP (PushKit)** | só para chamada | todo push de VoIP **tem** de virar uma chamada no CallKit, senão o sistema encerra o app e para de entregar — não serve de canal de dados; para avisos, APNs comum | [PushKit](https://developer.apple.com/documentation/pushkit/pkpushregistrydelegate/pushregistry(_:didreceiveincomingpushwith:for:completion:)) |
+
+**Impossível no iPhone (com app de loja):** atender uma ligação da operadora em nome do dono, ouvir
+ou falar dentro dela, ler o SMS que chega, responder SMS sozinho. **Possível:** notificar o dono
+(APNs), identificar/bloquear quem liga (Call Directory, Live Caller ID), aprovar/ver recados num
+app companheiro, e — **independente do iPhone** — o desvio da operadora para o número do
+assistente (§7.4).
+
+### 7.3 Android — o que é possível e o que não
+
+| Recurso | Possível? | O que dá e o que não dá | Fonte |
+|---|---|---|---|
+| **Triagem** (`CallScreeningService`, papel `ROLE_CALL_SCREENING`) | sim, sem áudio | bloquear, rejeitar, marcar perdida, silenciar, não notificar; responde em até 5 s; sem `READ_CONTACTS` só vê número fora dos contatos; número oculto nunca chega. `setShouldScreenCallViaAudioProcessing` **não é SDK público** (é de sistema): sem áudio | [CallScreeningService](https://developer.android.com/reference/android/telecom/CallScreeningService), [CallResponse.Builder](https://developer.android.com/reference/android/telecom/CallScreeningService.CallResponse.Builder) |
+| **Discador padrão** (`ROLE_DIALER`, `InCallService`) | atende, **não ouve nem fala** | tem de implementar o discador inteiro (teclado, tela de chamada); com isso, `Call.answer`. O áudio da chamada (`VOICE_UPLINK`/`VOICE_DOWNLINK`) só para app **privilegiado** com `CAPTURE_AUDIO_OUTPUT`; serviço de acessibilidade só pega o microfone; não há API pública para injetar áudio | [InCallService](https://developer.android.com/reference/android/telecom/InCallService), [compartilhar entrada de áudio](https://developer.android.com/media/platform/sharing-audio-input) |
+| **Atender sozinho** (`TelecomManager.acceptRingingCall`) | obsoleto | pede `ANSWER_PHONE_CALLS` e está **obsoleto desde a API 29**; o caminho é o `InCallService`. A «Filtragem de chamadas» do Pixel é do Google, sem API | [TelecomManager](https://developer.android.com/reference/android/telecom/TelecomManager) |
+| **SMS e registro de chamadas** (política da Play) | só com papel | só o app **padrão** de SMS, de discador ou de **assistente**, ou exceção aprovada por formulário. O exemplo da própria política para o assistente é um app que «recebe, traduz e responde SMS em tempo real» — um Jarvis posto como **assistente digital padrão** é um caminho plausível; **não verificado** se a revisão da Play aceitaria. Não há exceção de «resposta automática» | [política da Play](https://support.google.com/googleplay/android-developer/answer/10208820) |
+| **Ler notificações** (`NotificationListenerService`) e responder pelo `RemoteInput` | sim, com acesso especial | o dono concede o acesso; lê a notificação do WhatsApp/SMS e responde pela ação «responder». Não achei declaração específica da Play (vale a política de dados do usuário — **não verificado** que não exista formulário). No Android 15, notificação «sensível» (código de verificação) fica escondida de ouvinte não confiável — fonte de imprensa, **não verificado** no developer.android.com | [Android Authority](https://www.androidauthority.com/android-15-sensitive-notifications-3416414) |
+
+**Possível no Android (com app de loja):** atender (como discador padrão), filtrar, ler e responder
+SMS (como app de SMS ou assistente padrão), ler notificações. **Não possível:** o Jarvis **falar ou
+ouvir** dentro da ligação da operadora — então «atender por voz em nome do dono» no celular, mesmo
+no Android, só pelo caminho da operadora (§7.4).
+
+### 7.4 O caminho que independe do aparelho: desvio da operadora para um número VoIP
+
+- **Como:** o dono liga no celular o desvio **condicional** (ocupado `**67*`, não atende `**61*`,
+  fora de área `**62*`, todos os condicionais `**004*` — os códigos GSM padrão; **não verificados**
+  nas páginas da Vivo, Claro e TIM, que documentam sobretudo o «siga-me» incondicional) para um
+  **número do assistente** num provedor de VoIP/SIP. O Jarvis atende esse número como softphone
+  (no PC, ou num servidor dele se o PC estiver desligado). Funciona com **qualquer** celular, em
+  qualquer rede, sem app no celular.
+- **Número no Brasil:** a Twilio só dá número **local/nacional** a quem tem **CNPJ**; pessoa física
+  consegue número **móvel** com documento e comprovante de endereço, e todo número precisa de um
+  «regulatory bundle» aprovado ([Twilio, regras do Brasil](https://www.twilio.com/en-us/guidelines/br/regulatory),
+  [atualizações de 2025](https://www.twilio.com/en-us/blog/2025-regulatory-updates)); **não
+  verificado** se esse número móvel tem voz. A Telnyx dá número local e móvel a pessoa física com
+  CPF, documento e comprovante de endereço de até 3 meses, em até 3 dias úteis
+  ([Telnyx](https://support.telnyx.com/en/articles/5464041-brazil-did-requirements)). Operadoras
+  de VoIP (STFC) brasileiras: **não pesquisadas**.
+- **Custo:** a perna desviada costuma ser cobrada do assinante como ligação originada para o número
+  de destino — **não verificado** em tarifário oficial; conferir no plano do dono. Mais o aluguel
+  do número e o minuto de entrada no provedor de VoIP.
+- **SMS:** a operadora não repassa SMS para outro número (nenhuma fonte brasileira achada; **não
+  verificado**). O encaminhamento de SMS do iPhone vai só para aparelhos Apple.
+- **WhatsApp:** a API do WhatsApp Business **não** aceita o número pessoal que está no app do
+  WhatsApp (teria de apagar a conta e perder o histórico); a «coexistência» vale só para o app
+  **WhatsApp Business**, não para o pessoal
+  ([Meta](https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/migrate-existing-whatsapp-number-to-a-business-account)).
+  Ligação de WhatsApp no celular continua fora; no PC, o WhatsApp Web (§2.3).
+
+### 7.5 Sem mesma rede: push + túnel ou relé com cifra de ponta a ponta
+
+- **FCM (Android):** gratuito; carga até 4096 bytes; **não** é cifrado de ponta a ponta — dado
+  sensível tem de ir cifrado por nós ([preço](https://firebase.google.com/pricing),
+  [tipos de mensagem](https://firebase.google.com/docs/cloud-messaging/customize-messages/set-message-type)).
+- **APNs (iPhone):** exige o **Apple Developer Program** (US$ 99/ano) para publicar e usar push; a
+  conta gratuita só instala para teste, por 7 dias
+  ([o que inclui](https://developer.apple.com/programs/whats-included/),
+  [comparação](https://developer.apple.com/support/compare-memberships/)).
+- **Desenho:** o push leva **só um aviso opaco** («há algo novo», um id); o conteúdo (recado,
+  transcrição resumida) o app busca por um canal cifrado ponta a ponta com o Jarvis — o **túnel
+  Tailscale/WireGuard** (apps oficiais na App Store e na Play; plano gratuito pessoal com até 6
+  usuários, **uso não comercial** — [iOS](https://tailscale.com/kb/1020/install-ios),
+  [Android](https://tailscale.com/kb/1079/install-android), [preços](https://tailscale.com/pricing))
+  ou um **relé próprio** que só vê bytes cifrados com uma chave que nasce no pareamento (QR na
+  janela do Jarvis). O ntfy tem app oficial nas lojas e pode ser auto-hospedado, mas **não** é E2E
+  (o pedido está aberto) — serviria só com a carga cifrada por nós
+  ([docs](https://docs.ntfy.sh/), [issue #69](https://github.com/binwiederhier/ntfy/issues/69)).
+  Matrix/Element como canal E2E e a ausência de API de bot no Signal: **não verificados** nesta
+  pesquisa.
+
+### 7.6 O app companheiro mínimo
+
+Só três coisas, sem poder nenhum sobre o PC: (1) **notificar** o dono (recado, ligação tratada,
+pedido de confirmação); (2) **aprovar** — mostrar o TOTP do próprio dono não é preciso (o
+autenticador já faz), mas aprovar/negar uma ação pedida numa chamada **é** o «outro canal» do §3.4,
+se o dono quiser além da sessão do PC; (3) **ver os recados**. Sem ler SMS, sem atender, sem
+microfone. Publicar exige conta de desenvolvedor (Apple, paga; Google, taxa única) e a revisão das
+lojas — **ou** dispensar o app: o aviso vem por um app que já existe (ntfy, Tailscale + página
+local), com menos polimento.
+
+### 7.7 Riscos legais e de operadora (Brasil; não é parecer jurídico)
+
+- **Gravação:** a de um dos interlocutores é prova lícita (STF, [Tema 237](https://portal.stf.jus.br/jurisprudenciaRepercussao/tema.asp?num=237)),
+  salvo dever legal de sigilo; exceção em casos eleitorais (RE 1040515, 2024). O desenho continua
+  sem gravar áudio.
+- **LGPD:** fica fora o tratamento «por pessoa natural para fins exclusivamente particulares e não
+  econômicos» (art. 4º, I, [Lei 13.709](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm));
+  a exceção acaba se virar produto ou serviço. Número VoIP e push passam por terceiros (provedor,
+  Google/Apple): o conteúdo vai cifrado, o metadado (que houve uma ligação) não.
+- **Operadora/Anatel:** não achei regra específica sobre desvio para VoIP ou atendimento por IA
+  (**não verificado**). Aviso de IA: sem lei em vigor confirmada; o PL 2338/2023 passou no Senado
+  (dez/2024) e seguia na Câmara em mai/2026 — situação depois disso **não verificada**
+  ([Congresso](https://www.congressonacional.leg.br/web/atividade/materias/-/materia/157233)). O
+  desenho mantém o aviso de IA na primeira fala.
+
+### 7.8 Recomendação em fatias (quando o dono quiser o celular)
+
+| # | Fatia | Celular | Esforço / custo | O que prova |
+|---|---|---|---|---|
+| C1 | **Aviso ao celular sem app nosso**: o Jarvis manda um aviso opaco (ntfy auto-hospedado ou Tailscale + página local) quando trata uma ligação/mensagem | iPhone e Android | baixo, sem loja | o dono recebe fora de casa, sem mesma rede |
+| C2 | **Desvio condicional para o número do assistente** (VoIP), atendido pelo agente da chamada (o mesmo do PC, com TOTP e limites) | qualquer | número VoIP (pessoa física: móvel na Twilio, ou Telnyx) + minutos + o desvio da operadora | o Jarvis atende ligação do celular, sem depender do aparelho nem da rede |
+| C3 | **App companheiro mínimo** (notificar, aprovar, recados) com push FCM/APNs + conteúdo cifrado E2E | Android primeiro (FCM grátis); iPhone com conta paga | médio/alto (duas lojas) | o «outro canal» de confirmação fora do PC |
+| C4 | **Android, SMS**: app como assistente/SMS padrão que lê e responde SMS pelo agente | só Android | alto, revisão da Play incerta | SMS respondido em nome do dono |
+| — | Atender/falar dentro da ligação da operadora pelo app; ler SMS no iPhone | — | **impossível com app de loja** | — |
+
+Ordem sugerida: C1 → C2 → C3; C4 só se o dono quiser SMS e aceitar a incerteza da Play.

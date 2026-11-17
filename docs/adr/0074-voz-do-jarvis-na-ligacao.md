@@ -1,6 +1,6 @@
 # ADR-0074 — A voz do Jarvis dentro da ligação (rascunho)
 
-**Data:** 2026-11-16 · **Estado:** proposta (só estudo e desenho; nada implementado; espera as respostas do dono no fim de [docs/estudos/voz-na-ligacao.md](../estudos/voz-na-ligacao.md)) · **Decide:** dono
+**Data:** 2026-11-16 · **Estado:** proposta (o dono decidiu parte em 2026-11-17 — abaixo; continua proposta até ele aceitar; o que falta está no §6 de [docs/estudos/voz-na-ligacao.md](../estudos/voz-na-ligacao.md)) · **Decide:** dono
 **Pedido:** dono, 2026-11-16 — o Jarvis falar o TTS pelo microfone do dono numa chamada (tipo soundpad), sem o dono trocar de microfone, para avisar quem liga que é um assistente pessoal quando o dono está ausente, ou atender antes de avisá-lo, se configurado; com proteção forte contra jailbreak e contra alguém se passar pelo dono. Usa o laço da ADR-0072 e os eventos da ADR-0070/0073.
 
 ## Contexto
@@ -10,6 +10,18 @@ ouve o microfone. Para o Jarvis falar com quem liga, a voz dele tem de entrar na
 app de chamada usa — e o que vem de quem liga é texto de terceiros, com risco de injeção e de
 engenharia social. O estudo mapeia o áudio (PipeWire), que chamadas passam pelo PC, as ameaças e o
 legal.
+
+## Decisões do dono (2026-11-17)
+
+- **Celular fora por ora** (as opções ficam no §7 do estudo: no iPhone nenhum app de loja atende
+  ou fala numa ligação da operadora; o caminho comum é o desvio da operadora para um número VoIP do
+  assistente). **Alvo:** atender chamada na versão **web** no PC (WhatsApp Web, Meet, Discord).
+- **TOTP** aceito, configurável pelo app (aba «chamadas»); 4 dígitos + palavra só fator fraco.
+- **5 min sem encerramento automático**: passado o tempo, o agente é notificado e avisa a pessoa
+  ou o dono. **Até 30 turnos; até 5 frases por fala.**
+- O Jarvis **lembra do interlocutor** entre chamadas (quem monta um plano continua), mas pede o
+  **TOTP a cada chamada** a quem disser ser o dono — instrução no prompt da chamada, não regra de
+  código que fale por ele.
 
 ## Decisão proposta
 
@@ -27,20 +39,23 @@ legal.
 2. **O outro lado é o fluxo do app de chamada**, gravado sozinho (não a saída inteira), transcrito
    pelo ASR de sempre. Canal remoto × canal local = diarização mínima.
 3. **Só chamada que toca no PC:** WhatsApp Web, Meet, Discord (sem bot), softphone SIP. Ligação do
-   celular e WhatsApp do app do celular **não** passam pelo PC (hipótese Bluetooth HFP fica para
-   estudo à parte).
-4. **Um subagente da ligação, no laço canônico, com 4 ferramentas** — `ligacao.falar`,
-   `ligacao.anotar_recado`, `ligacao.notificar_dono`, `ligacao.encerrar` — e nada mais (sem
-   memória, arquivos, navegador, sistema, envio, delegação). A primeira fala tem de conter o aviso de
-   que é um assistente com IA e não o dono (o código confere e devolve o veredito; não escreve a
-   frase). Resposta curta, teto de duração, turnos e silêncio; o dono atendendo ou falando corta na
-   hora.
+   celular e WhatsApp do app do celular **não** passam pelo PC (o celular está estudado no §7 do
+   estudo e fica para depois, por decisão do dono).
+4. **Um subagente da chamada, no laço canônico (`quem="chamada"`), com 5 ferramentas** —
+   `chamada.falar`, `chamada.anotar_recado`, `chamada.avisar_dono`, `chamada.verificar_totp`,
+   `chamada.lembrar_interlocutor` — e nada mais (sem memória do dono, arquivos, navegador, sistema,
+   envio, delegação; ferramenta fora do catálogo volta recusada). A primeira fala declara que traz
+   o aviso de que é um assistente com IA e não o dono (o código recusa a 1ª fala sem a declaração e
+   devolve o veredito; não escreve a frase). Até 5 frases por fala; 5 min e 30 turnos viram
+   **notificação** ao agente, que decide — sem corte automático; o dono atendendo ou falando corta
+   a fala na hora. **Memória por interlocutor**: só o que a pessoa disse, entregue à chamada
+   seguinte como dado, nunca como autoridade.
 5. **A fala de quem liga é dado:** entra entre **marcadores aleatórios de vários tokens sorteados
    por chamada** (≥ 96 bits, nunca falados nem gravados), com os marcadores e os caracteres de
    delimitação removidos do texto e o scanner de injeção (ADR-0065) aplicado. É a segunda linha; a
    primeira é o privilégio mínimo.
-6. **Reconhecer o dono não destrava poder.** Código de uso único (TOTP RFC 6238, ou
-   desafio-resposta) com tentativas limitadas e bloqueio; o código fixo de 4 dígitos + palavra-chave
+6. **Reconhecer o dono não destrava poder.** TOTP RFC 6238 (decisão do dono), janela ±1, uso
+   único também entre chamadas, pedido **a cada chamada**, com tentativas limitadas e bloqueio; o código fixo de 4 dígitos + palavra-chave
    é fator fraco (é ouvido e repetível). Reconhecido, o dono só ganha o modo «recado do dono»;
    leitura ou ação exigem confirmação por outro canal já autenticado e seguem pelo Jarvis principal,
    com as permissões de sempre. Voz nunca autentica.
@@ -52,7 +67,7 @@ legal.
 
 ## Fatias
 
-Na ordem: (3) agente da ligação e (5) reconhecimento do dono — a segurança, testável só com motor
+Na ordem: (3) agente da chamada e (5) reconhecimento do dono — a segurança, testável só com motor
 roteirizado e relógio injetado; (1) misturador virtual e (2) canais — com executor de comandos e
 backends de áudio falsos; (4) estado da chamada pela extensão falsa; (6) atender. Windows
 (VB-Cable/Voicemeeter) só se pedido. Detalhe e o que só a máquina do dono prova: no estudo, §5.
@@ -62,5 +77,5 @@ backends de áudio falsos; (4) estado da chamada pela extensão falsa; (6) atend
 - Se aceita: o Jarvis passa a mexer no grafo de áudio do sistema (precisa desfazer limpo, inclusive
   quando cai) e a ter um segundo laço de ASR durante a chamada (CPU/GPU).
 - O risco de conta (WhatsApp/Discord) só existe se o dono escolher atender por automação.
-- Fica aberto: chamadas do celular (Bluetooth HFP), Windows, chamadas em grupo (sem diarização por
-  modelo).
+- Fica aberto: chamadas do celular (§7 do estudo: desvio da operadora para número VoIP + app
+  companheiro), Windows, chamadas em grupo (sem diarização por modelo).
