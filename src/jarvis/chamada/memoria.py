@@ -7,9 +7,11 @@ seguinte **como dado**, entre os delimitadores dela. Nunca é autoridade: a chav
 que o app de chamada mostra (falsificável) e nada aqui marca alguém como o dono — o TOTP é pedido
 de novo a cada chamada.
 
-Arquivos 0600 ao lado da configuração; retenção configurável (`chamada.toml`); o que passou do
-prazo some na leitura seguinte. A transcrição bruta da chamada **não** vem para cá: ela vive só na
-memória do agente durante a chamada."""
+Arquivos 0600 ao lado da configuração; retenção configurável (`chamada.toml`, padrão 90 dias —
+decisão do dono, 2026-11-17). O vencido é **apagado do disco** ao abrir (cada objeto, ao nascer,
+regrava o arquivo sem ele) e a cada gravação (só o que vale é regravado); na leitura, o vencido
+nunca é devolvido, mesmo antes de a faxina rodar. A transcrição bruta da chamada **não** vem para
+cá: ela vive só na memória do agente durante a chamada."""
 
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ NOTAS_POR_INTERLOCUTOR: Final = 20
 CARACTERES_DA_NOTA: Final = 300
 CARACTERES_DO_RECADO: Final = 500
 DIA_S: Final = 24 * 3600
+RETENCAO_PADRAO_DIAS: Final = 90
 
 
 def chave(interlocutor: str) -> str:
@@ -64,12 +67,23 @@ class MemoriaDosInterlocutores:
     """As notas por interlocutor. `caminho=None` = só em memória (testes)."""
 
     caminho: Path | None = None
-    retencao_dias: Callable[[], int] = lambda: 30
+    retencao_dias: Callable[[], int] = lambda: RETENCAO_PADRAO_DIAS
     relogio: Callable[[], float] = time.time
     _arquivo: _ArquivoJson = field(init=False)
 
     def __post_init__(self) -> None:
         self._arquivo = _ArquivoJson(self.caminho)
+        self.apagar_vencidas()
+
+    def apagar_vencidas(self) -> int:
+        """Regrava o arquivo sem as notas vencidas. Devolve quantas saíram (0: nada regravado)."""
+        dados = self._arquivo.ler()
+        antes = sum(len(n) for n in dados.values() if isinstance(n, list))
+        vivas = self._vivas()
+        saiu = antes - sum(len(n) for n in vivas.values())
+        if saiu or len(vivas) != len(dados):
+            self._arquivo.gravar(vivas)
+        return saiu
 
     def _vivas(self) -> dict[str, list[dict[str, Any]]]:
         limite = self.relogio() - self.retencao_dias() * DIA_S
@@ -116,12 +130,22 @@ class Recados:
     """Os recados das chamadas, com retenção. O Jarvis principal recebe cada um como evento."""
 
     caminho: Path | None = None
-    retencao_dias: Callable[[], int] = lambda: 30
+    retencao_dias: Callable[[], int] = lambda: RETENCAO_PADRAO_DIAS
     relogio: Callable[[], float] = time.time
     _arquivo: _ArquivoJson = field(init=False)
 
     def __post_init__(self) -> None:
         self._arquivo = _ArquivoJson(self.caminho)
+        self.apagar_vencidos()
+
+    def apagar_vencidos(self) -> int:
+        """Regrava o arquivo sem os recados vencidos. Devolve quantos saíram."""
+        lista = self._arquivo.ler().get("recados", [])
+        antes = len(lista) if isinstance(lista, list) else 0
+        vivos = self.todos()
+        if antes != len(vivos):
+            self._arquivo.gravar({"recados": vivos})
+        return antes - len(vivos)
 
     def todos(self) -> list[dict[str, Any]]:
         limite = self.relogio() - self.retencao_dias() * DIA_S
@@ -140,6 +164,7 @@ __all__ = [
     "ARQUIVO_DAS_NOTAS",
     "ARQUIVO_DOS_RECADOS",
     "CARACTERES_DO_RECADO",
+    "RETENCAO_PADRAO_DIAS",
     "MemoriaDosInterlocutores",
     "Recados",
     "chave",
