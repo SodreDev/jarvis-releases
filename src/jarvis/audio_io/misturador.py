@@ -19,6 +19,18 @@ para provar com um executor falso, e a geração dos arquivos da terceira:
   renomeado. Grava só com `confirmado=True` (o dono viu o conteúdo), guarda cópia do que
   substituir e desfaz restaurando a cópia. Reiniciar os serviços passa pelo executor.
 
+**Eco e fone** (decisão do dono, 2026-11-17: ele usa fone às vezes; `fone` = sim/não/auto em
+`chamada.toml`): `politica_de_eco` decide, a partir do ajuste e do que o sistema diz da saída
+padrão (`fone_na_saida`: o `device.form_factor` do sink, senão o tipo da porta ativa), se a voz
+do Jarvis também toca no fone do dono e se o microfone real é **abafado** enquanto o Jarvis fala.
+Sem fone (ou «auto» sem certeza), vale o desenho do §1.3 do estudo: a voz vai **só** à fonte
+virtual (nunca ao alto-falante, que o mic real captaria) e, durante cada fala, o loopback do
+microfone real fica mudo (`Misturador.enquanto_fala`) — quem liga ouve só o Jarvis, sem o som da
+sala nem a própria voz voltando pelo alto-falante. Escolhemos mudo, e não «duck» (baixar o
+volume), porque o mudo não deixa resto de eco para o AEC do app tratar e é desfeito por inteiro
+no fim da fala, mesmo com erro. Com fone, nada é abafado: o dono pode falar por cima (o barge-in
+corta a fala).
+
 **Nada aqui toca o áudio real nos testes**: o executor é uma interface. O do sistema
 (`ExecutorDoSistema`) recusa rodar sob `CI=1` (`proibir_dispositivo_em_ci`), e as pastas de
 configuração são parâmetros. O que só a máquina do dono prova (se o PipeWire/WirePlumber dele
@@ -33,7 +45,7 @@ import json
 import os
 import shutil
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Protocol
@@ -47,6 +59,10 @@ LATENCIA_MS: Final = 5
 TETO_DE_MOVIMENTOS: Final = 3
 """Quantas vezes o mesmo fluxo é movido de novo se o app o devolver ao físico."""
 ARQUIVO_DE_CONFIGURACAO: Final = "50-jarvis-microfone.conf"
+FORMAS_DE_FONE: Final = frozenset({"headphone", "headset", "hands-free", "handset"})
+"""`device.form_factor` de sink que é fone (o que o PipeWire/PulseAudio publica)."""
+PORTAS_DE_FONE: Final = frozenset({"headphones", "headset"})
+"""O `type` da porta ativa, quando o sink não diz a forma (placa onboard com P2)."""
 SUFIXO_DO_FISICO: Final = ".jarvis-direto"
 
 
@@ -99,6 +115,9 @@ class Misturador:
     _movidos: dict[int, str] = field(default_factory=dict)
     """índice do fluxo → nome da fonte em que ele estava."""
     _movimentos: dict[int, int] = field(default_factory=dict)
+    _loopback: str = ""
+    """O módulo que leva o microfone real à mistura: é o fluxo dele que `abafar` silencia."""
+    abafado: bool = False
     avisos: list[str] = field(default_factory=list)
     """O que não deu certo sem ser fatal (padrão não aceito, app que reverte além do teto)."""
 
@@ -130,7 +149,7 @@ class Misturador:
                 f"sink_name={NOME_DO_MIX}",
                 "sink_properties=device.description=Jarvis-mistura",
             )
-            self._carregar(
+            self._loopback = self._carregar(
                 "module-loopback",
                 f"source={self.fisico}",
                 f"sink={NOME_DO_MIX}",
@@ -153,11 +172,48 @@ class Misturador:
             self.desligar()
             raise
 
-    def _carregar(self, modulo: str, *argumentos: str) -> None:
+    def _carregar(self, modulo: str, *argumentos: str) -> str:
         indice = self._pactl("load-module", modulo, *argumentos)
         if not indice.isdigit():
             raise ErroDoMisturador(f"{modulo}: o servidor não devolveu o índice")
         self._modulos.append(indice)
+        return indice
+
+    def _fluxo_do_microfone(self) -> int | None:
+        for fluxo in self._json("list", "sink-inputs"):
+            if str(fluxo.get("owner_module", "")) == self._loopback and isinstance(
+                fluxo.get("index"), int
+            ):
+                return int(fluxo["index"])
+        return None
+
+    def abafar(self, sim: bool) -> None:
+        """Silencia (ou devolve) o microfone real DENTRO da mistura — o Jarvis continua ouvindo
+        o físico direto. Sem o fluxo do loopback, avisa e segue (não derruba a fala)."""
+        if not self.ligado or not self._loopback or self.abafado == sim:
+            return
+        fluxo = self._fluxo_do_microfone()
+        if fluxo is None:
+            aviso = "não achei o fluxo do microfone na mistura para abafar"
+            if aviso not in self.avisos:
+                self.avisos.append(aviso)
+            return
+        self._pactl("set-sink-input-mute", str(fluxo), "1" if sim else "0")
+        self.abafado = sim
+
+    @contextlib.contextmanager
+    def enquanto_fala(self, politica: PoliticaDeEco) -> Iterator[None]:
+        """Em volta de cada fala do Jarvis na chamada: abafa o mic real se a política mandar, e
+        devolve no fim — sempre, mesmo se a fala falhar."""
+        abafar = politica.abafar_microfone and self.ligado
+        if abafar:
+            self.abafar(True)
+        try:
+            yield
+        finally:
+            if abafar:
+                with contextlib.suppress(ErroDoMisturador):
+                    self.abafar(False)
 
     def _indice_da_fonte(self, nome: str) -> int | None:
         for fonte in self._json("list", "sources"):
@@ -218,7 +274,62 @@ class Misturador:
         for modulo in reversed(self._modulos):
             self.executor.rodar(("pactl", "unload-module", modulo))
         self._modulos.clear()
+        self._loopback = ""
+        self.abafado = False
         self.ligado = False
+
+
+# --- eco e fone ----------------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class PoliticaDeEco:
+    voz_no_fone: bool
+    """A voz do Jarvis na chamada também toca na saída do dono (só com fone)."""
+    abafar_microfone: bool
+    """O microfone real fica mudo na mistura enquanto o Jarvis fala (sem fone)."""
+    fone: bool | None
+    """O que se concluiu: com fone, sem fone, ou não se sabe («auto» sem resposta)."""
+
+
+def fone_na_saida(executor: Executor) -> bool | None:
+    """A saída padrão é fone? `None` = o sistema não diz (sem forma nem tipo de porta)."""
+    try:
+        padrao = executor.rodar(("pactl", "get-default-sink"))
+        lista = executor.rodar(("pactl", "-f", "json", "list", "sinks"))
+        if padrao.codigo != 0 or lista.codigo != 0:
+            return None
+        sinks = json.loads(lista.texto or "[]")
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return None
+    nome = padrao.texto.strip()
+    for sink in sinks if isinstance(sinks, list) else []:
+        if not isinstance(sink, dict) or sink.get("name") != nome:
+            continue
+        props = sink.get("properties") or {}
+        forma = (
+            str(props.get("device.form_factor", "")).casefold() if isinstance(props, dict) else ""
+        )
+        if forma:
+            return forma in FORMAS_DE_FONE
+        ativa = sink.get("active_port")
+        for porta in sink.get("ports") or []:
+            if isinstance(porta, dict) and porta.get("name") == ativa:
+                tipo = str(porta.get("type", "")).casefold()
+                return tipo in PORTAS_DE_FONE if tipo and tipo != "unknown" else None
+    return None
+
+
+def politica_de_eco(fone: str, detectado: bool | None) -> PoliticaDeEco:
+    """`fone` é o ajuste (`sim`, `nao`, `auto`). Em «auto», só a certeza de fone conta como fone:
+    na dúvida, o desenho sem fone (que não deixa eco)."""
+    if fone == "sim":
+        com_fone: bool | None = True
+    elif fone == "nao":
+        com_fone = False
+    else:
+        com_fone = detectado
+    return PoliticaDeEco(
+        voz_no_fone=com_fone is True, abafar_microfone=com_fone is not True, fone=com_fone
+    )
 
 
 # --- modo instalado ------------------------------------------------------------------------
@@ -371,7 +482,10 @@ __all__ = [
     "ExecutorDoSistema",
     "Instalacao",
     "Misturador",
+    "PoliticaDeEco",
     "Saida",
     "config_pipewire",
     "config_wireplumber",
+    "fone_na_saida",
+    "politica_de_eco",
 ]
