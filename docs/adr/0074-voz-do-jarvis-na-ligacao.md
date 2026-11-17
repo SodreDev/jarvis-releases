@@ -1,6 +1,6 @@
 # ADR-0074 — A voz do Jarvis dentro da ligação (rascunho)
 
-**Data:** 2026-11-16 · **Estado:** **Proposta** (só estudo e desenho; nada implementado; espera as respostas do dono no fim de [docs/estudos/voz-na-ligacao.md](../estudos/voz-na-ligacao.md)) · **Decide:** dono
+**Data:** 2026-11-16 · **Estado:** proposta (só estudo e desenho; nada implementado; espera as respostas do dono no fim de [docs/estudos/voz-na-ligacao.md](../estudos/voz-na-ligacao.md)) · **Decide:** dono
 **Pedido:** dono, 2026-11-16 — o Jarvis falar o TTS pelo microfone do dono numa chamada (tipo soundpad), sem o dono trocar de microfone, para avisar quem liga que é um assistente pessoal quando o dono está ausente, ou atender antes de avisá-lo, se configurado; com proteção forte contra jailbreak e contra alguém se passar pelo dono. Usa o laço da ADR-0072 e os eventos da ADR-0070/0073.
 
 ## Contexto
