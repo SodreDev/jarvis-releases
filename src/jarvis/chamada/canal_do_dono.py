@@ -468,7 +468,10 @@ class _Rodada:
 
     def _terminou(self) -> bool:
         if self.para_enviar:
-            return self.resultado.enviou
+            # Enviou, ou decidiu não enviar e avisou o Jarvis: a vez dele acabou.
+            return self.resultado.enviou or any(
+                f.aceita and f.ferramenta == AVISAR_JARVIS for f in self.resultado.feitos
+            )
         return any(
             f.aceita and f.ferramenta in (CONFIRMAR, RECUSAR, AVISAR_JARVIS)
             for f in self.resultado.feitos
@@ -495,6 +498,15 @@ class _Rodada:
 
     # --- as ferramentas ------------------------------------------------------------------
     def _executar(self, pedido: PedidoDeTool, ids: set[str]) -> Feito:
+        """O veredito volta com o que foi pedido na frente: o motor de texto (`claude -p`)
+        lista os resultados da rodada sem o nome da ferramenta, e sem isto o modelo perde o fio
+        (reabria a mesma conversa em laço — docs/medicoes/canal-do-dono.md)."""
+        feito = self._executar_cru(pedido, ids)
+        args = json.dumps(dict(pedido.args), ensure_ascii=False)
+        pedido_em_texto = f"{pedido.tool_id}({args[:120]}{'…' if len(args) > 120 else ''})"
+        return Feito(feito.ferramenta, f"{pedido_em_texto} → {feito.veredito}", feito.aceita)
+
+    def _executar_cru(self, pedido: PedidoDeTool, ids: set[str]) -> Feito:
         nome = pedido.tool_id
         if nome not in ids:
             return Feito(
@@ -534,7 +546,12 @@ class _Rodada:
         self.agente.pagina.abrir(identificador)
         self._aberta = identificador
         self._cabecalho = None
-        return Feito(ABRIR, "aberta; leia o cabeçalho antes de enviar", True)
+        return Feito(
+            ABRIR,
+            f"aberta a conversa {identificador}; próximo passo: social.ler_cabecalho, antes de "
+            "enviar",
+            True,
+        )
 
     def _ler_cabecalho(self) -> Feito:
         if not self._aberta:

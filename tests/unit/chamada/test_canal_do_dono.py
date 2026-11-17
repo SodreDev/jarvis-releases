@@ -525,3 +525,23 @@ def test_resposta_curta_do_dono_nao_e_tomada_por_eco(tmp_path: Path) -> None:
     canal, _, _ = _enviado(tmp_path)
     assert not canal.agente.do_jarvis("Jarvis")
     assert not canal.agente.do_jarvis("ok")
+
+
+def test_veredito_diz_o_que_foi_pedido_e_avisar_encerra_a_vez(tmp_path: Path) -> None:
+    """O motor de texto lista os resultados sem o nome da ferramenta: o veredito traz o pedido
+    na frente. E, avisado o Jarvis, o agente não roda mais rodadas (antes repetia o aviso)."""
+    canal = Canal(
+        tmp_path,
+        passos(
+            [PedidoDeTool(INSPECIONAR, {})],
+            [PedidoDeTool(ABRIR, {"id": "c1"})],
+            [PedidoDeTool(AVISAR_JARVIS, {"resumo": "não achei"})],
+            [PedidoDeTool(AVISAR_JARVIS, {"resumo": "de novo"})],
+        ),
+    )
+    canal.propor()
+    resultado = canal.agente.enviar(canal.evento_da_acao())
+    abrir = next(f for f in resultado.feitos if f.ferramenta == ABRIR)
+    assert abrir.veredito.startswith('social.abrir_conversa({"id": "c1"}) → aberta a conversa c1')
+    assert [f.ferramenta for f in resultado.feitos].count(AVISAR_JARVIS) == 1
+    assert resultado.rodadas == 3
