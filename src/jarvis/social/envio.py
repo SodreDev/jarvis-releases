@@ -41,6 +41,10 @@ PAUSA_DE_ALERTA_S: Final = 24 * 3600.0
 LIMITE_DO_TEXTO: Final = 300
 """Resposta de quem está ausente é curta; acima disto o Jarvis só notifica."""
 REDES_COM_ENVIO: Final = frozenset({"whatsapp"})
+CONTATO_DO_CANAL: Final = "canal_do_dono"
+"""Como o log marca a mensagem ao PRÓPRIO dono (ADR-0074, canal de confirmação): ela tem teto
+próprio (`jarvis.chamada.canal_do_dono`), não gasta o teto das respostas a contatos, mas conta no
+teto RÍGIDO total da conta (8/h, 30/dia) e no intervalo entre dois envios quaisquer."""
 ARQUIVO_DOS_ENVIOS: Final = "envios.jsonl"
 """O log 0600 de cada envio ou recusa, ao lado do `redes.toml` (nunca no repositório)."""
 ALERTAS: Final = frozenset(
@@ -181,6 +185,9 @@ class HistoricoDeEnvios:
         return self._cache
 
     def anotar(self, registro: Registro) -> None:
+        # Carrega o que já está no disco ANTES de anexar: com o cache vazio, ler depois traria a
+        # linha nova e o append a contaria de novo (o 1º envio após abrir valia dois no teto).
+        registros = self.registros()
         anexar_privado(
             self.caminho,
             json.dumps(
@@ -195,7 +202,7 @@ class HistoricoDeEnvios:
                 ensure_ascii=False,
             ),
         )
-        self.registros().append(registro)
+        registros.append(registro)
 
     def enviados(self, rede: str) -> list[Registro]:
         return [r for r in self.registros() if r.rede == rede and r.resultado == "enviado"]
@@ -332,16 +339,22 @@ class Guardiao:
         if na_madrugada(datetime.fromtimestamp(agora).hour, ajuste.silencio):
             raise EnvioRecusado("madrugada", FRASES["madrugada"])
         enviados = self.historico.enviados(pedido.rede)
-        if sum(1 for r in enviados if agora - r.momento < 3600) >= ajuste.por_hora:
+        aos_contatos = [r for r in enviados if r.contato != CONTATO_DO_CANAL]
+        if sum(1 for r in aos_contatos if agora - r.momento < 3600) >= ajuste.por_hora:
             raise EnvioRecusado("teto_hora", FRASES["teto_hora"])
-        if sum(1 for r in enviados if agora - r.momento < 86_400) >= ajuste.por_dia:
+        if sum(1 for r in aos_contatos if agora - r.momento < 86_400) >= ajuste.por_dia:
+            raise EnvioRecusado("teto_dia", FRASES["teto_dia"])
+        # O teto rígido é da conta: conta também as mensagens ao próprio dono.
+        if sum(1 for r in enviados if agora - r.momento < 3600) >= TETO_RIGIDO_POR_HORA:
+            raise EnvioRecusado("teto_hora", FRASES["teto_hora"])
+        if sum(1 for r in enviados if agora - r.momento < 86_400) >= TETO_RIGIDO_POR_DIA:
             raise EnvioRecusado("teto_dia", FRASES["teto_dia"])
         if enviados and agora - enviados[-1].momento < ajuste.intervalo_s:
             raise EnvioRecusado("intervalo", FRASES["intervalo"])
         if (
-            enviados
-            and enviados[-1].hash == hash_do_texto(pedido.texto)
-            and not mesmo_telefone(enviados[-1].contato, contato.telefone)
+            aos_contatos
+            and aos_contatos[-1].hash == hash_do_texto(pedido.texto)
+            and not mesmo_telefone(aos_contatos[-1].contato, contato.telefone)
         ):
             raise EnvioRecusado("repetido", FRASES["repetido"])
         return contato
@@ -451,6 +464,7 @@ def permitidos_de(linhas: Iterable[tuple[str, str]]) -> tuple[Permitido, ...]:
 __all__ = [
     "ALERTAS",
     "ARQUIVO_DOS_ENVIOS",
+    "CONTATO_DO_CANAL",
     "INTERVALO_MINIMO_S",
     "PADRAO_POR_DIA",
     "PADRAO_POR_HORA",

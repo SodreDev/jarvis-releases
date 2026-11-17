@@ -49,6 +49,9 @@ QUEM_MONITOR: Final = "monitor"
 """O agente monitor das redes (ADR-0073): o mesmo laço, com as ferramentas dele."""
 QUEM_CHAMADA: Final = "chamada"
 """O agente da chamada (ADR-0074): o mesmo laço, com as 6 ferramentas da ligação e nada mais."""
+QUEM_CANAL_DO_DONO: Final = "canal_do_dono"
+"""O agente do canal do dono (ADR-0074): acha o chat do dono no WhatsApp Web lendo a lista,
+manda a ação pendente e lê a resposta dele."""
 
 ObservadorDaRodada = Callable[[str, Contexto], None]
 """Recebe `quem` e o contexto de cada rodada, antes de o motor gerar (a suíte do laço)."""
@@ -135,6 +138,7 @@ def mensagens_das_ferramentas(
 
 
 __all__ = [
+    "QUEM_CANAL_DO_DONO",
     "QUEM_CHAMADA",
     "QUEM_JARVIS",
     "QUEM_MONITOR",
