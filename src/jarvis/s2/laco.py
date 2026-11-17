@@ -47,6 +47,8 @@ QUEM_JARVIS: Final = "jarvis"
 QUEM_SUBAGENTE: Final = "subagente"
 QUEM_MONITOR: Final = "monitor"
 """O agente monitor das redes (ADR-0073): o mesmo laço, com as ferramentas dele."""
+QUEM_CHAMADA: Final = "chamada"
+"""O agente da chamada (ADR-0074): o mesmo laço, com as 5 ferramentas da ligação e nada mais."""
 
 ObservadorDaRodada = Callable[[str, Contexto], None]
 """Recebe `quem` e o contexto de cada rodada, antes de o motor gerar (a suíte do laço)."""
@@ -133,6 +135,7 @@ def mensagens_das_ferramentas(
 
 
 __all__ = [
+    "QUEM_CHAMADA",
     "QUEM_JARVIS",
     "QUEM_MONITOR",
     "QUEM_SUBAGENTE",
