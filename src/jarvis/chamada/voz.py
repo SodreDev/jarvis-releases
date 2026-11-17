@@ -276,7 +276,7 @@ class AudioDeVerdade:
 
 def montar_audio(
     *,
-    executor: Executor,
+    executor: Executor | None = None,
     sintetizador: Sintetizador,
     transcritor: Transcritor,
     trava: threading.Lock,
@@ -289,11 +289,13 @@ def montar_audio(
 ) -> AudioDeVerdade:
     """O áudio de uma chamada com as peças de verdade (ou as falsas, nos testes): a política de eco
     sai do ajuste `fone` e, em «auto», do que o sistema diz da saída padrão — na hora de atender."""
-    from jarvis.audio_io.misturador import fone_na_saida, politica_de_eco
+    from jarvis.audio_io.misturador import ExecutorDoSistema, fone_na_saida, politica_de_eco
     from jarvis.audio_io.outro_lado import por_app
     from jarvis.audio_io.pulse import GravadorPorParec, TocadorPorPacat
     from jarvis.audio_io.vad import VadDeEnergia
 
+    # Sem executor, o do sistema (recusa sob CI): a janela não importa o áudio (ADR-0019).
+    executor = executor or ExecutorDoSistema()
     novo_gravador = gravador or GravadorPorParec
     novo_vad = vad or VadDeEnergia
     politica = politica_de_eco(fone, fone_na_saida(executor) if fone == "auto" else None)

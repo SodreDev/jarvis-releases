@@ -40,7 +40,6 @@ from PySide6.QtCore import (
     Slot,
 )
 
-from jarvis.audio_io.misturador import ExecutorDoSistema
 from jarvis.chamada.canal_do_dono import GuardaDoCanal
 from jarvis.chamada.central import TIQUE_S as TIQUE_DA_CHAMADA_S
 from jarvis.chamada.central import AudioDaChamada, CentralDaChamada
@@ -790,7 +789,6 @@ class Ponte(QObject):
             raise RuntimeError("abra a conversa com voz antes: a chamada usa os motores dela")
         sintetizador, transcritor, trava = voz
         return montar_audio(
-            executor=ExecutorDoSistema(),
             sintetizador=sintetizador,
             transcritor=transcritor,
             trava=trava,
