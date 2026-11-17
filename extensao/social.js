@@ -376,6 +376,28 @@
     return { achou: true, ...centroDe(linha) };
   }
 
+  // ADR-0074, fatia C: a ligação no WhatsApp Web — tocando, em andamento ou nenhuma — e o nome que o
+  // quadro da ligação mostra (de terceiros, curto). Só leitura; seletores NÃO provados no DOM real.
+  function chamadaDaPagina(rede, documento) {
+    const dados = rede.chamada;
+    if (!dados) {
+      return { estado: "nenhuma", quem: "" };
+    }
+    const estado = existe(documento, dados.emAndamento)
+      ? "em_andamento"
+      : existe(documento, dados.tocando)
+        ? "tocando"
+        : "nenhuma";
+    if (estado === "nenhuma") {
+      return { estado, quem: "" };
+    }
+    const elemento = primeiro(documento, dados.quem);
+    return {
+      estado,
+      quem: limpo(elemento?.getAttribute?.("title") || elemento?.textContent, MAX_NOME),
+    };
+  }
+
   function caixaDeTexto(rede, documento) {
     return centroDe(primeiro(documento, rede.caixa));
   }
@@ -433,6 +455,7 @@
       };
     }
     const { conversas, ilegivel } = conversasNaoLidas(documento, rede);
+    const chamada = chamadaDaPagina(rede, documento);
     const somadas = conversas.reduce((total, conversa) => total + conversa.naoLidas, 0);
     const brutoIlegivel = ilegivel || (titulo.tipo === "ilegivel" ? documento.title : "");
     return {
@@ -444,6 +467,7 @@
       alerta,
       pista: brutoIlegivel ? "contador_ilegivel" : "",
       amostra: brutoIlegivel ? amostraSegura(brutoIlegivel) : "",
+      ...(rede.chamada ? { chamada } : {}),
     };
   }
 
@@ -458,6 +482,7 @@
     conversaPeloNome,
     listaDeConversas,
     linhaPeloIndice,
+    chamadaDaPagina,
     caixaDeTexto,
     versao: SELETORES.versao,
   };

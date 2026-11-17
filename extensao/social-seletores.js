@@ -8,9 +8,11 @@
 // deles e sem login, o formato é «desconhecido» e a rede só notifica. `carregando` (opcional): só
 // existe na tela de carga — separa a página que ainda carrega da que mudou. `vocabularioDaAmostra`:
 // as únicas palavras que a amostra de um contador ilegível guarda (sem acento, minúsculas); o
-// resto vira «x». Interface em pt, en e es: os aria-label dos três idiomas.
+// resto vira «x». Interface em pt, en e es: os aria-label dos três idiomas. `chamada` (só WhatsApp,
+// ADR-0074, NÃO PROVADO no DOM real): `tocando` (a ligação chegando), `emAndamento` (o botão de
+// encerrar de uma ligação em curso) e `quem` (o nome no quadro da ligação).
 globalThis.__jarvisSeletoresSociais = {
-  "versao": 4,
+  "versao": 5,
   "vocabularioDaAmostra": ["whatsapp", "instagram", "facebook", "messenger", "tiktok", "discord", "mensagem", "mensagens", "nao", "lida", "lidas", "lido", "lidos", "marcada", "como", "conversa", "conversas", "unread", "message", "messages", "marked", "as", "chat", "chats", "mensaje", "mensajes", "no", "leido", "leidos", "leida", "leidas", "sin", "leer", "mil", "k", "mais", "more", "mas", "de", "e", "y", "and"],
   "alertas": {
     "captcha": ["iframe[src*='captcha']", "iframe[title*='captcha']", "iframe[title*='CAPTCHA']", "[aria-label*='captcha']"],
@@ -34,7 +36,12 @@ globalThis.__jarvisSeletoresSociais = {
       "cabecalho": ["#main header", "[role='main'] header"],
       "nomeDoCabecalho": ["span[title]", "[dir='auto']"],
       "grupo": ["[data-icon='default-group']", "[data-icon='group']"],
-      "caixa": ["footer [contenteditable='true'][role='textbox']", "footer [contenteditable='true']"]
+      "caixa": ["footer [contenteditable='true'][role='textbox']", "footer [contenteditable='true']"],
+      "chamada": {
+        "tocando": ["[aria-label='Aceitar chamada']", "[aria-label='Accept call']", "[aria-label='Aceptar llamada']", "[data-icon='call-accept']"],
+        "emAndamento": ["[aria-label='Encerrar chamada']", "[aria-label='End call']", "[aria-label='Finalizar llamada']", "[data-icon='end-call']"],
+        "quem": ["[role='dialog'] span[title]", "[role='dialog'] [dir='auto'][title]"]
+      }
     },
     "instagram": {
       "hosts": ["www.instagram.com", "instagram.com"],

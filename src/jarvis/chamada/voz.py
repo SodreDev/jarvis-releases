@@ -31,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
-from jarvis.audio_io.misturador import NOME_DO_MIX, Misturador, PoliticaDeEco
+from jarvis.audio_io.misturador import NOME_DO_MIX, Executor, Misturador, PoliticaDeEco
 from jarvis.audio_io.outro_lado import CapturaDoOutroLado
 from jarvis.audio_io.pulse import Gravador, Tocador
 from jarvis.audio_io.quadro import BYTES_POR_QUADRO, MS_POR_QUADRO, Quadro
@@ -241,13 +241,117 @@ class SessaoDeAudio:
         self.misturador.desligar()
 
 
+NAVEGADORES: Final = (
+    "chromium",
+    "chromium-browser",
+    "chrome",
+    "google-chrome",
+    "brave",
+    "brave-browser",
+    "vivaldi",
+    "opera",
+    "msedge",
+    "firefox",
+)
+"""O WhatsApp Web toca a ligação pelo navegador: o fluxo dele é o do outro lado. Outra aba do mesmo
+navegador tocando ao mesmo tempo também casa — a captura usa o fluxo mais recente e avisa."""
+
+
+@dataclass(slots=True)
+class AudioDeVerdade:
+    """O `AudioDaChamada` que o app monta: a voz na fonte virtual e os ouvidos nos dois canais,
+    ligados à central (fala de quem liga → agente; começo da fala do dono → corta a voz)."""
+
+    saida: SaidaNaFonteVirtual
+    sessao: SessaoDeAudio
+    escolher_app: Callable[[Mapping[str, Any]], bool]
+
+    def comecar(self) -> None:
+        self.sessao.comecar(self.escolher_app)
+
+    def encerrar(self) -> None:
+        self.saida.interromper()
+        self.sessao.encerrar()
+
+
+def montar_audio(
+    *,
+    executor: Executor,
+    sintetizador: Sintetizador,
+    transcritor: Transcritor,
+    trava: threading.Lock,
+    fone: str,
+    ao_ouvir_quem_liga: Callable[[str], None],
+    ao_dono_falou: Callable[[str], None],
+    gravador: Callable[[], Gravador] | None = None,
+    tocador: Tocador | None = None,
+    vad: Callable[[], Vad] | None = None,
+) -> AudioDeVerdade:
+    """O áudio de uma chamada com as peças de verdade (ou as falsas, nos testes): a política de eco
+    sai do ajuste `fone` e, em «auto», do que o sistema diz da saída padrão — na hora de atender."""
+    from jarvis.audio_io.misturador import fone_na_saida, politica_de_eco
+    from jarvis.audio_io.outro_lado import por_app
+    from jarvis.audio_io.pulse import GravadorPorParec, TocadorPorPacat
+    from jarvis.audio_io.vad import VadDeEnergia
+
+    novo_gravador = gravador or GravadorPorParec
+    novo_vad = vad or VadDeEnergia
+    politica = politica_de_eco(fone, fone_na_saida(executor) if fone == "auto" else None)
+    misturador = Misturador(executor=executor)
+
+    def saida_do_dono() -> str:
+        resposta = executor.rodar(("pactl", "get-default-sink"))
+        return resposta.texto.strip() if resposta.codigo == 0 else ""
+
+    saida = SaidaNaFonteVirtual(
+        sintetizador=sintetizador,
+        tocador=tocador or TocadorPorPacat(),
+        misturador=misturador,
+        politica=lambda: politica,
+        saida_do_dono=saida_do_dono,
+    )
+    escuta = EscutaDaChamada(
+        transcritor=TranscritorComTrava(transcritor, trava),
+        vad_de_quem_liga=novo_vad(),
+        vad_do_dono=novo_vad(),
+        ao_ouvir_quem_liga=ao_ouvir_quem_liga,
+        ao_dono_comecou=saida.interromper,
+        ao_dono_falou=ao_dono_falou,
+        com_fone=lambda: politica.fone is True,
+    )
+    sessao = SessaoDeAudio(
+        misturador=misturador,
+        captura=CapturaDoOutroLado(executor),
+        gravador_de_quem_liga=novo_gravador(),
+        gravador_do_dono=novo_gravador(),
+        escuta=escuta,
+    )
+    return AudioDeVerdade(saida=saida, sessao=sessao, escolher_app=por_app(*NAVEGADORES))
+
+
+@dataclass(slots=True)
+class TranscritorComTrava:
+    """O ASR do app é um só: a chamada o usa com a mesma trava do laço do Jarvis."""
+
+    transcritor: Transcritor
+    trava: threading.Lock
+
+    def transcrever(self, amostras: bytes) -> Hipotese:
+        with self.trava:
+            return self.transcritor.transcrever(amostras)
+
+
 __all__ = [
     "DONO",
+    "NAVEGADORES",
     "QUEM_LIGA",
+    "AudioDeVerdade",
     "EscutaDaChamada",
     "SaidaNaFonteVirtual",
     "SessaoDeAudio",
     "Sintetizador",
     "Transcritor",
+    "TranscritorComTrava",
     "VozNaoSaiu",
+    "montar_audio",
 ]

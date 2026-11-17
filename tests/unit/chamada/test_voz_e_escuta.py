@@ -4,6 +4,7 @@ gravador e transcritor falsos: nenhum áudio, microfone ou servidor de som de ve
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import Executor, Future
 from dataclasses import dataclass, field
@@ -217,12 +218,11 @@ class GrafoComApps(GrafoComSaida):
         }
 
     def rodar(self, argv: Sequence[str]) -> Saida:
-        import json
-
         args = tuple(argv)[1:]
-        if args == ("-f", "json", "list", "sink-inputs") and NOME_DO_SINK not in str(self.modulos):
-            self.comandos.append(tuple(argv))
-            return Saida(0, json.dumps(list(self.tocando.values())))
+        if args == ("-f", "json", "list", "sink-inputs"):
+            # Os fluxos dos apps e, com o misturador ligado, o do loopback do microfone.
+            do_misturador = json.loads(super().rodar(argv).texto or "[]")
+            return Saida(0, json.dumps([*self.tocando.values(), *do_misturador]))
         if args == ("-f", "json", "list", "sinks"):
             self.comandos.append(tuple(argv))
             return Saida(0, json.dumps([{"index": 1, "name": "alsa_output.pci"}]))

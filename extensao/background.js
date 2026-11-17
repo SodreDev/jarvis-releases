@@ -1162,6 +1162,7 @@ const REDES_SOCIAIS = {
 };
 const ALERTAS_SOCIAIS = ["captcha", "verificacao", "limitada", "atividade_incomum"];
 const PISTAS_SOCIAIS = ["carregando", "sem_lista", "contador_ilegivel"];
+const ESTADOS_DA_CHAMADA = ["nenhuma", "tocando", "em_andamento"];
 const MAX_AMOSTRA_SOCIAL = 60;
 const MAX_CONVERSAS_SOCIAIS = 20;
 const MAX_NOME_SOCIAL = 80;
@@ -1261,6 +1262,17 @@ function estadoSocialLimpo(id, bruto) {
       .replace(/\s+/gu, " ")
       .trim()
       .slice(0, MAX_AMOSTRA_SOCIAL),
+    // A ligação (ADR-0074, fatia C): só o estado da lista e o nome curto, limpo.
+    ...(corpo.chamada !== undefined
+      ? {
+          chamada: {
+            estado: ESTADOS_DA_CHAMADA.includes(comoObjeto(corpo.chamada).estado)
+              ? comoObjeto(corpo.chamada).estado
+              : "nenhuma",
+            quem: textoSocial(comoObjeto(corpo.chamada).quem, MAX_NOME_SOCIAL),
+          },
+        }
+      : {}),
   };
 }
 

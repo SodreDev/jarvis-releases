@@ -824,6 +824,13 @@ class Aplicativo:
         """O motor da conversa aberta, para os subagentes que a janela monta (ADR-0074)."""
         return self._motor
 
+    def voz_para_a_chamada(self) -> tuple[Any, Any, threading.Lock] | None:
+        """O TTS, o ASR e a trava do ASR desta sessão, para a voz na ligação (ADR-0074, fatia B):
+        a chamada usa os mesmos motores, com a mesma trava. `None` antes de a voz abrir."""
+        if self._tts is None or self._asr is None:
+            return None
+        return self._tts, self._asr, self._trava_do_asr
+
     def evento_da_chamada(self, evento: Mapping[str, Any]) -> None:
         """Um evento da ligação (ADR-0074): ação à espera do dono, confirmada, recusada ou
         expirada, aviso do agente da chamada, falha do canal do dono. Vai à fila de avisos como

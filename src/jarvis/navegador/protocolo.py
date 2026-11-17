@@ -415,8 +415,21 @@ MAXIMO_DE_NAO_LIDAS: Final = 9_999
 ALERTAS_SOCIAIS: Final = frozenset({"", "captcha", "verificacao", "limitada", "atividade_incomum"})
 """Os sinais de alerta que a página mostra (docs/redes-sociais-riscos.md §6); vazio = nenhum."""
 _CHAVES_DO_SOCIAL: Final = frozenset(
-    {"evento", "rede", "logado", "naoLidas", "conversas", "formato", "alerta", "pista", "amostra"}
+    {
+        "evento",
+        "rede",
+        "logado",
+        "naoLidas",
+        "conversas",
+        "formato",
+        "alerta",
+        "pista",
+        "amostra",
+        "chamada",
+    }
 )
+ESTADOS_DA_CHAMADA: Final = frozenset({"nenhuma", "tocando", "em_andamento"})
+"""A ligação no WhatsApp Web (ADR-0074, fatia C): o que o `social.js` lê da página."""
 _INVISIVEIS: Final = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
 """Controle, largura zero e inversão de direção: o `social.js` já tira; quem traz é recusado."""
 
@@ -510,6 +523,16 @@ def validar_estado_social(bruto: object) -> dict[str, Any]:
                 "sinais": list(sinais),
             }
         )
+    chamada = bruto.get("chamada", {"estado": "nenhuma", "quem": ""})
+    if (
+        not isinstance(chamada, dict)
+        or set(chamada) != {"estado", "quem"}
+        or chamada["estado"] not in ESTADOS_DA_CHAMADA
+        or not isinstance(chamada["quem"], str)
+        or len(chamada["quem"]) > LIMITE_DO_NOME
+        or _INVISIVEIS.search(chamada["quem"])
+    ):
+        raise PedidoInvalido("chamada fora do contrato {estado, quem}")
     return {
         "evento": "social",
         "rede": str(rede),
@@ -520,6 +543,7 @@ def validar_estado_social(bruto: object) -> dict[str, Any]:
         "alerta": str(alerta),
         "pista": str(pista),
         "amostra": amostra,
+        "chamada": {"estado": str(chamada["estado"]), "quem": str(chamada["quem"])},
     }
 
 

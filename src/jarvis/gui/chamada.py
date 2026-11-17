@@ -188,6 +188,36 @@ class PonteDaChamada(QObject):
             for a in self.central.pendentes()
         ]
 
+    @Property(dict, notify=acoesMudaram)
+    def ligacao(self) -> dict[str, Any]:
+        """A ligação que a extensão leu (estado, quem) e se o Jarvis está nela."""
+        central = self.central
+        if central is None:
+            return {"estado": "nenhuma", "quem": "", "jarvis": False, "pode_atender": False}
+        return {
+            "estado": central.ligacao.get("estado", "nenhuma"),
+            "quem": central.ligacao.get("quem", ""),
+            "jarvis": central.chamada is not None,
+            "pode_atender": central.pode_atender(),
+        }
+
+    @Slot()
+    def atender(self) -> None:
+        """O dono passa a ligação ao Jarvis (o padrão: o dono atende e passa)."""
+        if self.central is None:
+            self._dizer("não deu: a central da chamada não está montada")
+            return
+        motivo = self.central.atender()
+        self.acoesMudaram.emit()
+        self._dizer("o Jarvis está na ligação" if not motivo else f"não deu: {motivo}")
+
+    @Slot()
+    def encerrarChamada(self) -> None:
+        if self.central is not None:
+            self.central.encerrar_chamada()
+        self.acoesMudaram.emit()
+        self._dizer("o Jarvis saiu da ligação; o áudio voltou ao normal")
+
     @Slot(str)
     def confirmarAcao(self, codigo: str) -> None:
         self._decidir_acao(codigo, confirmar=True)

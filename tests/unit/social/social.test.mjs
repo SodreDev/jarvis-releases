@@ -483,3 +483,14 @@ test("canal do dono: a lista traz TODAS as conversas (lidas, não lidas, grupo) 
   }, "a lista reordenou: não clica");
   assert.equal(social.linhaPeloIndice(rede, pagina_, 9, "Ana").achou, false);
 });
+
+test("a ligação na página (ADR-0074, fatia C): chegando, em curso e nenhuma, com o nome do quadro", async () => {
+  const chegando = social.lerEstado("whatsapp", await pagina("whatsapp-ligacao-chegando"));
+  assert.deepEqual(JSON.parse(JSON.stringify(chegando.chamada)), { estado: "tocando", quem: "Bruno Lima" });
+  const emCurso = social.lerEstado("whatsapp", await pagina("whatsapp-ligacao-em-curso"));
+  assert.deepEqual(JSON.parse(JSON.stringify(emCurso.chamada)), { estado: "em_andamento", quem: "Bruno Lima" });
+  const nenhuma = social.lerEstado("whatsapp", await pagina("whatsapp-logado"));
+  assert.deepEqual(JSON.parse(JSON.stringify(nenhuma.chamada)), { estado: "nenhuma", quem: "" });
+  const insta = social.lerEstado("instagram", await pagina("instagram-logado"));
+  assert.equal("chamada" in insta, false, "só o WhatsApp tem ligação lida");
+});

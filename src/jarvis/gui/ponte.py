@@ -40,9 +40,10 @@ from PySide6.QtCore import (
     Slot,
 )
 
+from jarvis.audio_io.misturador import ExecutorDoSistema
 from jarvis.chamada.canal_do_dono import GuardaDoCanal
 from jarvis.chamada.central import TIQUE_S as TIQUE_DA_CHAMADA_S
-from jarvis.chamada.central import CentralDaChamada
+from jarvis.chamada.central import AudioDaChamada, CentralDaChamada
 from jarvis.chamada.config import ARQUIVO as ARQUIVO_DA_CHAMADA
 from jarvis.chamada.memoria import (
     ARQUIVO_DAS_NOTAS,
@@ -52,6 +53,7 @@ from jarvis.chamada.memoria import (
 )
 from jarvis.chamada.pagina_real import PaginaPelaPonte
 from jarvis.chamada.totp import GuardaDoSegredo, GuardaNoChaveiro
+from jarvis.chamada.voz import montar_audio
 from jarvis.executor.navegadores import familia_de_navegador, navegador_em_execucao
 from jarvis.gui import chaveiro, recursos, sistema
 from jarvis.gui.abertura import registrar_na_abertura
@@ -249,6 +251,8 @@ class Ponte(QObject):
     chamadaNotificou = Signal(str)
     """O JSON de um evento da chamada (ADR-0074), vindo da linha da central: vai ao Jarvis."""
     acoesDaChamadaMudaram = Signal()
+    ligacaoMudou = Signal(str, str, str)
+    """(rede, estado, quem): a ligação que a extensão leu (fio do monitor → thread da janela)."""
     conteudoMostrado = Signal(str, str, str, str)
     """(id, título, documento, fundo) de uma exibição que o Jarvis montou (ADR-0055): vem da linha
     do cérebro; o Qt entrega aqui, na da janela."""
@@ -716,6 +720,8 @@ class Ponte(QObject):
             ao_resultado=resultado,
         )
         monitor.ao_estado = ausente.ao_estado
+        # A ligação lida da página (ADR-0074, fatia C): o sinal leva à thread da janela.
+        monitor.ao_chamada = self.ligacaoMudou.emit
         self._resposta_ausente = ausente
         self._redes.ao_parar_envios = self.redesMudaram.emit
         self._monitor_das_redes = monitor
@@ -760,10 +766,38 @@ class Ponte(QObject):
             rodar=rodar,
             ao_mudar=self.acoesDaChamadaMudaram.emit,
         )
+        central.abrir_audio = self._abrir_audio_da_chamada
         chamada.central = central
         self.acoesDaChamadaMudaram.connect(chamada.acoesMudaram.emit)
+        # Função, não o método: a central é dataclass com slots e o Qt quer referência fraca.
+        self.ligacaoMudou.connect(
+            lambda rede, estado, quem: central.estado_da_chamada(rede, estado, quem)
+        )
         self.chamadaNotificou.connect(self._avisar_da_chamada)
         return central
+
+    def _abrir_audio_da_chamada(self, central: CentralDaChamada) -> AudioDaChamada:
+        """O áudio de verdade da chamada (fatia B): os motores de voz da conversa aberta, a fonte
+        virtual e a captura do outro lado por `pactl`/`parec`/`pacat`. Sem conversa com voz
+        aberta, não há como atender (o erro volta à aba e vira evento ao Jarvis)."""
+        sessao = self._sessao
+        voz = (
+            sessao.aplicativo.voz_para_a_chamada()
+            if sessao is not None and sessao.viva and sessao.aplicativo is not None
+            else None
+        )
+        if voz is None:
+            raise RuntimeError("abra a conversa com voz antes: a chamada usa os motores dela")
+        sintetizador, transcritor, trava = voz
+        return montar_audio(
+            executor=ExecutorDoSistema(),
+            sintetizador=sintetizador,
+            transcritor=transcritor,
+            trava=trava,
+            fone=self._chamada.configuracao.fone,
+            ao_ouvir_quem_liga=central.ouviu_quem_liga,
+            ao_dono_falou=central.dono_falou,
+        )
 
     def _avisar_da_chamada(self, evento_json: str) -> None:
         """Um evento da chamada vai ao Jarvis da conversa aberta (ADR-0070); sem conversa, fica
@@ -779,7 +813,10 @@ class Ponte(QObject):
             sessao.aplicativo.evento_da_chamada(evento)
 
     def parar_a_chamada(self) -> None:
-        """Ao fechar a janela: o tique para e a linha da central não aceita mais nada."""
+        """Ao fechar a janela: a chamada em curso é desfeita (áudio devolvido), o tique para e a
+        linha da central não aceita mais nada."""
+        with contextlib.suppress(Exception):
+            self._central.encerrar_chamada()
         self._tique_da_chamada.stop()
         self._linha_da_chamada.shutdown(wait=False, cancel_futures=True)
 

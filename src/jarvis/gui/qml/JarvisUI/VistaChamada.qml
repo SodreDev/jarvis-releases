@@ -64,69 +64,6 @@ Item {
 
             Painel {
                 width: parent.width
-                titulo: "chamadas"
-                dica: vista.ajustes.chamadas_ativas ? "ativas" : "desligadas"
-                Column {
-                    width: parent.width
-                    spacing: 8
-                    Botao {
-                        objectName: "chamadasAtivas"
-                        texto: vista.ajustes.chamadas_ativas
-                               ? "chamadas ativas — desligar" : "chamadas desligadas — ligar"
-                        ativo: vista.ajustes.chamadas_ativas === true
-                        onApertado: vista.chamada.definir("chamadas_ativas",
-                                                          vista.ajustes.chamadas_ativas
-                                                          ? "false" : "true")
-                    }
-                    Nota {
-                        width: parent.width
-                        text: "Desligadas, o Jarvis não entra em chamada nem manda nada ao seu chat. "
-                              + "Ligue depois de testar (jarvis --testar-chamada)."
-                        color: Tema.textoFraco
-                    }
-                }
-            }
-
-            Painel {
-                width: parent.width
-                titulo: "ações à espera de você"
-                dica: vista.chamada && vista.chamada.pendentes.length > 0
-                      ? String(vista.chamada.pendentes.length) : "nenhuma"
-                Column {
-                    width: parent.width
-                    spacing: 8
-                    Repeater {
-                        model: vista.chamada ? vista.chamada.pendentes : []
-                        Column {
-                            width: coluna.width - 24
-                            spacing: 4
-                            Nota {
-                                width: parent.width
-                                text: modelData.codigo + " · " + modelData.acao
-                                      + (modelData.detalhes ? " (" + modelData.detalhes + ")" : "")
-                                      + " — pedida por " + modelData.interlocutor
-                                      + "; expira em " + modelData.minutos + " min"
-                            }
-                            Row {
-                                spacing: 8
-                                Botao {
-                                    objectName: "confirmar-" + modelData.codigo
-                                    texto: "confirmar"
-                                    onApertado: vista.chamada.confirmarAcao(modelData.codigo)
-                                }
-                                Botao {
-                                    objectName: "recusar-" + modelData.codigo
-                                    texto: "recusar"
-                                    onApertado: vista.chamada.recusarAcao(modelData.codigo)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Painel {
-                width: parent.width
                 titulo: "código do dono (TOTP)"
                 dica: vista.chamada && vista.chamada.configurado
                       ? (vista.chamada.bloqueado ? "bloqueado por erros" : "configurado")
@@ -264,6 +201,110 @@ Item {
                             onApertado: {
                                 vista.chamada.conferirCodigo(campoCodigo.text)
                                 campoCodigo.text = ""
+                            }
+                        }
+                    }
+                }
+            }
+
+            Painel {
+                width: parent.width
+                titulo: "chamadas"
+                dica: vista.ajustes.chamadas_ativas ? "ativas" : "desligadas"
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Botao {
+                        objectName: "chamadasAtivas"
+                        texto: vista.ajustes.chamadas_ativas
+                               ? "chamadas ativas — desligar" : "chamadas desligadas — ligar"
+                        ativo: vista.ajustes.chamadas_ativas === true
+                        onApertado: vista.chamada.definir("chamadas_ativas",
+                                                          vista.ajustes.chamadas_ativas
+                                                          ? "false" : "true")
+                    }
+                    Nota {
+                        width: parent.width
+                        text: "Desligadas, o Jarvis não entra em chamada nem manda nada ao seu chat. "
+                              + "Ligue depois de testar (jarvis --testar-chamada)."
+                        color: Tema.textoFraco
+                    }
+                }
+            }
+
+            Painel {
+                width: parent.width
+                titulo: "ligação agora"
+                dica: vista.chamada ? ({ "nenhuma": "nenhuma", "tocando": "tocando",
+                                         "em_andamento": "em andamento" })[vista.chamada.ligacao.estado]
+                                    : "nenhuma"
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Nota {
+                        width: parent.width
+                        visible: vista.chamada !== null && vista.chamada.ligacao.estado !== "nenhuma"
+                        text: vista.chamada ? ("WhatsApp Web: " + (vista.chamada.ligacao.quem || "?")
+                                               + (vista.chamada.ligacao.jarvis
+                                                  ? " — o Jarvis está atendendo" : ""))
+                                            : ""
+                    }
+                    Row {
+                        spacing: 8
+                        Botao {
+                            objectName: "jarvisAtende"
+                            visible: vista.chamada !== null && vista.chamada.ligacao.pode_atender === true
+                            texto: "Jarvis atende"
+                            onApertado: vista.chamada.atender()
+                        }
+                        Botao {
+                            objectName: "encerrarChamada"
+                            visible: vista.chamada !== null && vista.chamada.ligacao.jarvis === true
+                            texto: "tirar o Jarvis da ligação"
+                            onApertado: vista.chamada.encerrarChamada()
+                        }
+                    }
+                    Nota {
+                        width: parent.width
+                        text: "Você atende no WhatsApp Web e passa ao Jarvis aqui. Ele nunca atende "
+                              + "sozinho. Lido da página — ainda não provado no WhatsApp de verdade."
+                        color: Tema.textoFraco
+                    }
+                }
+            }
+
+            Painel {
+                width: parent.width
+                titulo: "ações à espera de você"
+                dica: vista.chamada && vista.chamada.pendentes.length > 0
+                      ? String(vista.chamada.pendentes.length) : "nenhuma"
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Repeater {
+                        model: vista.chamada ? vista.chamada.pendentes : []
+                        Column {
+                            width: coluna.width - 24
+                            spacing: 4
+                            Nota {
+                                width: parent.width
+                                text: modelData.codigo + " · " + modelData.acao
+                                      + (modelData.detalhes ? " (" + modelData.detalhes + ")" : "")
+                                      + " — pedida por " + modelData.interlocutor
+                                      + "; expira em " + modelData.minutos + " min"
+                            }
+                            Row {
+                                spacing: 8
+                                Botao {
+                                    objectName: "confirmar-" + modelData.codigo
+                                    texto: "confirmar"
+                                    onApertado: vista.chamada.confirmarAcao(modelData.codigo)
+                                }
+                                Botao {
+                                    objectName: "recusar-" + modelData.codigo
+                                    texto: "recusar"
+                                    onApertado: vista.chamada.recusarAcao(modelData.codigo)
+                                }
                             }
                         }
                     }

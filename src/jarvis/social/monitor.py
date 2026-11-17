@@ -84,6 +84,10 @@ class EstadoDaPagina:
     """Por que o contador não saiu limpo: `carregando`, `sem_lista` ou `contador_ilegivel`."""
     amostra: str = ""
     """O texto do contador que não se reconheceu, sanitizado (`jarvis.social.contador`)."""
+    chamada: str = "nenhuma"
+    """A ligação na página (ADR-0074, fatia C): `nenhuma`, `tocando` ou `em_andamento`."""
+    quem_liga: str = ""
+    """O nome que o quadro da ligação mostra (de terceiros, curto)."""
 
     @classmethod
     def do_evento(cls, evento: Mapping[str, Any]) -> EstadoDaPagina:
@@ -106,6 +110,8 @@ class EstadoDaPagina:
                 alerta=str(evento.get("alerta", "")),
                 pista=str(evento.get("pista", "")),
                 amostra=amostra_segura(evento.get("amostra", "")),
+                chamada=str((evento.get("chamada") or {}).get("estado", "nenhuma")),
+                quem_liga=str((evento.get("chamada") or {}).get("quem", "")),
             )
         except (KeyError, TypeError, ValueError) as erro:
             raise EventoInvalido(f"evento social fora do contrato: {erro}") from None
@@ -507,6 +513,9 @@ class MonitorSocial:
         self._ao_alerta = ao_alerta
         self.ao_estado = ao_estado
         """Cada estado de página recebido (a resposta no modo ausente, fatia D, ouve aqui)."""
+        self.ao_chamada: Callable[[str, str, str], None] | None = None
+        """(rede, estado, quem): a ligação na página mudou de estado (ADR-0074, fatia C)."""
+        self._chamadas: dict[str, str] = {}
         """(rede, alerta): o envio pausa a rede por 24 h (fatia D)."""
         self.estado = estado or EstadoDoMonitor()
         self._intervalo_s = intervalo_s
@@ -708,6 +717,12 @@ class MonitorSocial:
         if self.ao_estado is not None:
             with contextlib.suppress(Exception):
                 self.ao_estado(pagina)
+        anterior = self._chamadas.get(pagina.rede, "nenhuma")
+        if pagina.chamada != anterior:
+            self._chamadas[pagina.rede] = pagina.chamada
+            if self.ao_chamada is not None:
+                with contextlib.suppress(Exception):
+                    self.ao_chamada(pagina.rede, pagina.chamada, pagina.quem_liga)
 
     def _entregar(self, identificador: str, aviso: Notificacao | None) -> None:
         if aviso is None:

@@ -18,7 +18,13 @@ Junta as peças que já existiam soltas e as liga ao Jarvis:
   origem `SESSAO_DO_PC`. Por clique, e não por voz: a voz de quem liga pode sair no alto-falante e
   chegar ao microfone do Jarvis;
 - **a chamada** (`nova_chamada`): o `AgenteDaChamada` com a `Saida` que o app der (a fonte
-  virtual, fatia B). Só com a chave ligada.
+  virtual, fatia B). Só com a chave ligada;
+- **o estado da ligação** (fatia C, `estado_da_chamada`): o que a extensão leu do WhatsApp Web
+  (tocando, em andamento, nenhuma). Com a chave ligada, cada mudança vira evento ao Jarvis (ele
+  decide avisar o dono); a ligação que termina encerra o agente e o áudio. **Atender** é do dono
+  (padrão do estudo: o dono atende e passa): com a ligação em andamento, o botão «Jarvis atende»
+  da aba chama `atender`, que liga o áudio da chamada (`abrir_audio`, a `SessaoDeAudio` da fatia
+  B) e o agente; `encerrar_chamada` desfaz tudo. O Jarvis nunca clica «Atender» sozinho.
 
 O Jarvis recebe a ação confirmada como **evento** (ADR-0070): o turno de eventos não tem
 ferramentas, então ele conta ao dono e a execução fica com o pedido do dono — executar sozinho uma
@@ -29,7 +35,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from jarvis.chamada.acoes import AcoesPendentes, Decisao, Origem
 from jarvis.chamada.agente import AgenteDaChamada, Chamada, Saida
@@ -69,6 +75,13 @@ class CentralDaChamada:
     relogio: Callable[[], float] = time.time
     ao_mudar: Callable[[], None] = lambda: None
     """A tela: as pendentes mudaram (a aba redesenha a lista)."""
+    abrir_audio: Callable[[CentralDaChamada], AudioDaChamada] | None = None
+    """Monta o áudio de uma chamada (a `SessaoDeAudio` da fatia B com a voz e os ouvidos ligados
+    a esta central). `None`: não há como atender (testes sem áudio, ou a máquina sem pactl)."""
+    ligacao: dict[str, str] = field(default_factory=dict)
+    """O que a extensão leu por último: `{rede, estado, quem}`."""
+    chamada: Chamada | None = None
+    _audio: AudioDaChamada | None = None
     acoes: AcoesPendentes = field(init=False)
     canal: AgenteDoCanalDoDono = field(init=False)
     observador: ObservadorDoChat = field(init=False)
@@ -170,11 +183,96 @@ class CentralDaChamada:
         self.acoes.ao_mudar = self._mudou_acao
         return agente
 
+    # --- a ligação, pela extensão (fatia C) --------------------------------------------------
+    def estado_da_chamada(self, rede: str, estado: str, quem: str) -> None:
+        anterior = self.ligacao.get("estado", "nenhuma")
+        self.ligacao = {"rede": rede, "estado": estado, "quem": quem}
+        self.ao_mudar()
+        if estado == "nenhuma" and self.chamada is not None:
+            self.encerrar_chamada()
+        if self.ativa() and estado != anterior:
+            self._ao_jarvis(
+                {
+                    "tipo": f"ligacao_{estado}",
+                    "de_terceiros": True,
+                    "rede": rede,
+                    "quem_o_app_mostra": quem,
+                    "jarvis_na_chamada": self.chamada is not None,
+                }
+            )
+
+    def pode_atender(self) -> bool:
+        return (
+            self.ativa()
+            and self.chamada is None
+            and self.abrir_audio is not None
+            and self.ligacao.get("estado") == "em_andamento"
+        )
+
+    def atender(self) -> str:
+        """O dono passou a ligação ao Jarvis. Devolve vazio (deu) ou o porquê de não dar."""
+        if not self.pode_atender() or self.abrir_audio is None:
+            return "sem ligação em andamento, chave desligada ou sem áudio"
+        try:
+            audio = self.abrir_audio(self)
+            self.chamada = self.agente_da_chamada(audio.saida).nova_chamada(
+                self.ligacao.get("quem", ""), app=self.ligacao.get("rede", "")
+            )
+            audio.comecar()
+        except Exception as erro:
+            self.chamada = None
+            self._ao_jarvis(
+                {
+                    "tipo": "chamada_sem_audio",
+                    "de_terceiros": True,
+                    "motivo": f"{type(erro).__name__}: {erro}"[:200],
+                }
+            )
+            self.ao_mudar()
+            return f"o áudio da chamada não ligou ({type(erro).__name__})"
+        self._audio = audio
+        self.ao_mudar()
+        return ""
+
+    def ouviu_quem_liga(self, texto: str) -> None:
+        """Uma fala transcrita do outro lado: o agente decide, numa linha só."""
+        chamada = self.chamada
+        if chamada is not None:
+
+            def ouvir() -> None:
+                chamada.ouvir(texto)
+
+            self.rodar(ouvir)
+
+    def dono_falou(self, texto: str) -> None:
+        """O dono falou no microfone durante a chamada: o Jarvis sabe (ele pode ter assumido)."""
+        self._ao_jarvis({"tipo": "dono_falou_na_ligacao", "de_terceiros": False, "texto": texto})
+
+    def encerrar_chamada(self) -> None:
+        audio, self._audio = self._audio, None
+        chamada, self.chamada = self.chamada, None
+        if audio is not None:
+            audio.encerrar()
+        if chamada is not None:
+            chamada.encerrar()
+        self.ao_mudar()
+
     def nova_chamada(self, interlocutor: str, app: str = "") -> Chamada | None:
         """Uma chamada nova, só com a chave ligada e uma saída de voz."""
         if not self.ativa() or self.saida is None:
             return None
         return self.agente_da_chamada(self.saida).nova_chamada(interlocutor, app)
+
+
+class AudioDaChamada(Protocol):
+    """O áudio de uma chamada já montado: a voz (`saida`) e quando começar e acabar."""
+
+    @property
+    def saida(self) -> Saida: ...
+
+    def comecar(self) -> None: ...
+
+    def encerrar(self) -> None: ...
 
 
 @dataclass(slots=True)
@@ -194,4 +292,4 @@ class _PaginaAusente:
         raise LookupError("sem a aba do WhatsApp")
 
 
-__all__ = ["TIQUE_S", "CentralDaChamada", "rodar_ja"]
+__all__ = ["TIQUE_S", "AudioDaChamada", "CentralDaChamada", "rodar_ja"]

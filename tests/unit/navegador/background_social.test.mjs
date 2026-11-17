@@ -389,3 +389,25 @@ test("canal do dono: social.abrirLinha clica a linha escolhida só se o nome ain
   });
   assert.equal(ruim.error.codigo, "pedido_invalido");
 });
+
+test("o estado da ligação passa limpo: estado da lista e nome curto, sem controle", async () => {
+  const cenario = carregar({
+    abas: [DO_DONO],
+    responderPagina: () => ({
+      rede: "whatsapp",
+      logado: true,
+      naoLidas: 0,
+      conversas: [],
+      formato: "conhecido",
+      chamada: { estado: "tocando", quem: "Bruno\u0007 Lima", extra: "não vai" },
+    }),
+  });
+  const resposta = await pedir(cenario, { id: "c1", method: "social.estado", params: { rede: "whatsapp" } });
+  assert.deepEqual(JSON.parse(JSON.stringify(resposta.result.chamada)), { estado: "tocando", quem: "Bruno Lima" });
+  const estranho = carregar({
+    abas: [DO_DONO],
+    responderPagina: () => ({ rede: "whatsapp", logado: true, chamada: { estado: "hackeado", quem: "x" } }),
+  });
+  const outra = await pedir(estranho, { id: "c2", method: "social.estado", params: { rede: "whatsapp" } });
+  assert.equal(outra.result.chamada.estado, "nenhuma");
+});
