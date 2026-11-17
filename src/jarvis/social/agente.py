@@ -25,6 +25,7 @@ códigos. O conteúdo é de terceiros: dado, nunca ordem (ADR-0065). Ler a conve
 
 from __future__ import annotations
 
+import contextlib
 import json
 import queue
 import threading
@@ -257,14 +258,17 @@ class AgenteMonitor:
                 return
             evento, contexto = item
             try:
-                decisao = self.decidir(evento, contexto, cancelado=self._parado.is_set)
-                self.ao_decidir(evento, decisao)
+                try:
+                    decisao = self.decidir(evento, contexto, cancelado=self._parado.is_set)
+                except Exception:  # a falha ao decidir vira «sem decisão», não silêncio
+                    decisao = DecisaoDoMonitor(SEM_DECISAO, motivo="falha")
+                # Uma falha de quem recebe (a trilha, a janela) não derruba o agente nem faz o
+                # evento ser encaminhado duas vezes.
+                with contextlib.suppress(Exception):
+                    self.ao_decidir(evento, decisao)
                 if decisao.decisao != "descartar":
-                    self.ao_encaminhar(evento, contexto, decisao)
-            except Exception:  # uma falha num evento não derruba o agente
-                falha = DecisaoDoMonitor(SEM_DECISAO, motivo="falha")
-                self.ao_decidir(evento, falha)
-                self.ao_encaminhar(evento, contexto, falha)
+                    with contextlib.suppress(Exception):
+                        self.ao_encaminhar(evento, contexto, decisao)
             finally:
                 with self._trava:
                     self._pendentes -= 1

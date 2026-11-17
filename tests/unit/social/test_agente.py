@@ -179,3 +179,22 @@ def test_o_modo_do_dono_vira_contexto_nunca_frase() -> None:
     assert "madrugada" in texto and "ausente" in texto and "não perturbe" in texto
     assert "desligou os avisos" in texto
     assert "madrugada" not in contexto_do_dono(ausente=False, hora=14)
+
+
+def test_falha_de_quem_recebe_nao_duplica_nem_derruba_o_agente() -> None:
+    motor, _ = _roteiro([LIGACAO])
+    encaminhados: list[str] = []
+
+    def encaminhar(_e: Mapping[str, Any], _c: str, d: DecisaoDoMonitor) -> None:
+        encaminhados.append(d.decisao)
+        raise RuntimeError("a janela caiu depois de pôr na fila")
+
+    def decidir(_e: Mapping[str, Any], _d: DecisaoDoMonitor) -> None:
+        raise OSError("disco cheio")
+
+    agente = AgenteMonitor(motor=lambda: motor, ao_encaminhar=encaminhar, ao_decidir=decidir)
+    agente.receber(EVENTO, "")
+    agente.receber(EVENTO, "")
+    assert agente.esperar(5.0)
+    agente.parar()
+    assert encaminhados == ["encaminhar", "encaminhar"], "um por evento, e o agente seguiu vivo"
