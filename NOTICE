@@ -42,6 +42,9 @@ de citar um item que o produto distribui.
   (MIT) — guardam a chave de API no chaveiro do sistema. Vão no pacote como instalados, com o
   `.dist-info` e o aviso de copyright; o texto da BSD-3 do SecretStorage está em
   `licenses/texto/SecretStorage-BSD-3-Clause.txt`, porque a roda dele não o traz.
+- **`segno` 1.6.6** (BSD License; o texto é a BSD-3-Clause, copyright Lars Heuer) — desenha o QR
+  do código do dono (TOTP) na aba «chamadas». Vai no pacote como instalado, com o `.dist-info`,
+  que traz o `LICENSE`.
 
 ## Uso pessoal, não distribuído (ADR-0039)
 

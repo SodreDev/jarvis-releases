@@ -132,3 +132,25 @@ data_de_acesso = "2026-10-16"
 arquivos_no_pacote = ["jeepney-0.9.0.dist-info/licenses/LICENSE"]
 obrigacoes = ["manter o aviso de copyright e a licença junto da distribuição"]
 como_cumprimos = """Vai dentro do artefato com o `.dist-info` e o texto da licença."""
+
+[[biblioteca]]
+id = "segno"
+versao = "1.6.6"
+papel = "desenha o QR da URI otpauth:// do TOTP do dono na aba «chamadas» (ADR-0074) — puro Python, sem dependências"
+licenca = "BSD License"
+licenca_escolhida = "BSD License"
+estado = "em_uso"
+ligacao = "python"
+modificada = false
+distribuida = true
+fonte = "https://pypi.org/pypi/segno/1.6.6/json"
+data_de_acesso = "2026-11-17"
+arquivos_no_pacote = ["segno-1.6.6.dist-info/licenses/LICENSE"]
+obrigacoes = ["manter o aviso de copyright, a lista de condições e o aviso de isenção"]
+nota_de_verificacao = """Os metadados da roda 1.6.6 não trazem `License-Expression`, só o \
+classificador «BSD License» — é essa expressão que a porta compara com a instalada. O \
+`LICENSE` que vem no `.dist-info` (conferido nesta máquina em 2026-11-17) é o texto da \
+BSD-3-Clause (as três condições: aviso na fonte, aviso na distribuição binária, sem uso do \
+nome para endossar), copyright Lars Heuer. Permissiva, sem copyleft."""
+como_cumprimos = """Vai dentro do artefato com o `.dist-info`, que contém o `LICENSE` — nada é \
+recompilado nem reempacotado."""

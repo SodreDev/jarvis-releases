@@ -74,7 +74,7 @@ backends de áudio falsos; (4) estado da chamada pela extensão falsa; (6) atend
 
 **Feito em 2026-11-17, só com fakes** (nada toca áudio, conta ou navegador real): fatia 5 —
 `jarvis.chamada.totp` e a aba «chamadas» (gera o segredo no chaveiro, mostra a URI e a chave uma
-vez, confere; limites e textos em `chamada.toml`); fatia 3 — `jarvis.chamada.agente` com as 5
+vez com o QR, confere; limites e textos em `chamada.toml`); fatia 3 — `jarvis.chamada.agente` com as 5
 ferramentas, delimitadores de 4 tokens aleatórios por chamada, limites como notificação, memória
 por interlocutor; fatias 1a/1b — `jarvis.audio_io.misturador` atrás de um executor (o do sistema
 recusa sob CI). Medido com o modelo real (Claude haiku, uma passada, 20 falas com alvos fixados

@@ -63,6 +63,7 @@ das obrigações (ligação dinâmica, direito de re-ligar, texto junto, aviso n
 | `keyring 25.7.0` | MIT | permissiva | python | não | em_uso | <https://pypi.org/pypi/keyring/25.7.0/json> | 2026-10-16 |
 | `PySide6-Essentials 6.9.3` | LGPL-3.0-only | permissiva | dinamica | não | em_uso | <https://pypi.org/pypi/PySide6-Essentials/6.9.3/json> | 2026-10-16 |
 | `SecretStorage 3.5.0` | BSD-3-Clause | permissiva | python | não | em_uso | <https://pypi.org/pypi/SecretStorage/3.5.0/json> | 2026-10-16 |
+| `segno 1.6.6` | BSD License | permissiva | python | não | em_uso | <https://pypi.org/pypi/segno/1.6.6/json> | 2026-11-17 |
 | `shiboken6 6.9.3` | LGPL-3.0-only | permissiva | dinamica | não | em_uso | <https://pypi.org/pypi/shiboken6/6.9.3/json> | 2026-10-16 |
 
 ## Motores de voz

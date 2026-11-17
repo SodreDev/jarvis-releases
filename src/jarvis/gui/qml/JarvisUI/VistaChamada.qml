@@ -110,8 +110,27 @@ Item {
                             width: parent.width
                             alerta: true
                             text: "Cadastre agora no autenticador (Aegis, Google Authenticator, "
-                                  + "2FAS…): «inserir chave» com a chave abaixo, ou cole a URI. "
-                                  + "Não tire foto nem guarde em nota: isto não volta a aparecer."
+                                  + "2FAS…): leia o QR, ou «inserir chave» com a chave abaixo, ou "
+                                  + "cole a URI. Não tire foto nem guarde em nota: isto não volta "
+                                  + "a aparecer."
+                        }
+                        // O QR da URI (segno): o autenticador lê da tela. Fundo branco fixo, para a
+                        // câmera achar o contraste em qualquer tema.
+                        Rectangle {
+                            visible: vista.chamada !== null && vista.chamada.qr !== ""
+                            width: qrDoSegredo.width + 16
+                            height: qrDoSegredo.height + 16
+                            color: "white"
+                            Image {
+                                id: qrDoSegredo
+                                objectName: "qrDoSegredo"
+                                anchors.centerIn: parent
+                                width: 220
+                                height: 220
+                                smooth: false
+                                fillMode: Image.PreserveAspectFit
+                                source: vista.chamada ? vista.chamada.qr : ""
+                            }
                         }
                         TextEdit {
                             objectName: "chaveDoSegredo"

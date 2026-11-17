@@ -4,9 +4,9 @@ Decisão do dono (2026-11-17): TOTP configurável pelo app. A aba:
 
 - **gera** o segredo (160 bits) e o guarda onde moram as chaves do app (o chaveiro do sistema;
   a variável `JARVIS_TOTP_DA_CHAMADA`, se exportada, ganha);
-- **mostra uma vez** a URI `otpauth://` e a chave em grupos, para o dono cadastrar no app
-  autenticador; ao tocar «já cadastrei» (ou ao sair da aba), some e não volta — o segredo nunca é
-  lido de novo para desenhar a tela;
+- **mostra uma vez** o QR (desenhado pelo `segno`, BSD, puro Python), a URI `otpauth://` e a
+  chave em grupos, para o dono cadastrar no app autenticador; ao tocar «já cadastrei» (ou ao
+  sair da aba), some e não volta — o segredo nunca é lido de novo para desenhar a tela;
 - **confere** um código (RFC 6238, janela ±1, anti-reuso): o código conferido aqui fica gasto,
   como numa chamada;
 - grava os limites e os textos em `chamada.toml` (0600) a cada mudança.
@@ -48,6 +48,16 @@ FRASES_DO_VEREDITO = {
 }
 
 
+def qr_da_uri(uri: str) -> str:
+    """O QR da URI em PNG (data URI), em memória: nunca vai ao disco. Sem o `segno` (o grupo
+    `gui` não instalado), vazio — a URI e a chave continuam servindo."""
+    try:
+        import segno
+    except ImportError:  # pragma: no cover — o grupo `gui` traz o segno
+        return ""
+    return str(segno.make(uri, error="m").png_data_uri(scale=6, border=4))
+
+
 def _em_grupos(segredo: str) -> str:
     return " ".join(segredo[i : i + 4] for i in range(0, len(segredo), 4))
 
@@ -71,6 +81,7 @@ class PonteDaChamada(QObject):
         self._frase = ""
         self._uri = ""
         self._chave = ""
+        self._qr = ""
         estado = EstadoDoTotp.ler(caminho.parent / ARQUIVO_DO_ESTADO)
         extras: dict[str, Any] = {} if relogio is None else {"relogio": relogio}
         self.verificador = Verificador(guarda=guarda, estado=estado, **extras)
@@ -106,6 +117,11 @@ class PonteDaChamada(QObject):
     def chave(self) -> str:
         return self._chave
 
+    @Property(str, notify=mudou)
+    def qr(self) -> str:
+        """O QR da URI como `data:image/png;base64,…` — só enquanto a URI aparece."""
+        return self._qr
+
     @Property(dict, notify=mudou)
     def ajustes(self) -> dict[str, Any]:
         c = self._configuracao
@@ -135,7 +151,7 @@ class PonteDaChamada(QObject):
         try:
             self._guarda.gravar(segredo)
         except Exception as erro:  # sem chaveiro: diz, não grava noutro lugar
-            self._uri = self._chave = ""
+            self._uri = self._chave = self._qr = ""
             self._dizer(f"não deu: o segredo não foi guardado ({erro})")
             return
         # O passo usado e os erros eram do segredo antigo: começam do zero.
@@ -144,6 +160,7 @@ class PonteDaChamada(QObject):
         self.verificador.estado.gravar()
         self._uri = uri_otpauth(segredo)
         self._chave = _em_grupos(segredo)
+        self._qr = qr_da_uri(self._uri)
         self._dizer(
             "segredo novo guardado: cadastre agora no autenticador — ele não será mostrado de novo"
         )
@@ -151,7 +168,7 @@ class PonteDaChamada(QObject):
     @Slot()
     def esconderSegredo(self) -> None:
         if self._uri or self._chave:
-            self._uri = self._chave = ""
+            self._uri = self._chave = self._qr = ""
             self._dizer("pronto: confira com um código do autenticador")
 
     @Slot(str)
@@ -165,7 +182,7 @@ class PonteDaChamada(QObject):
         except Exception as erro:
             self._dizer(f"não deu: {erro}")
             return
-        self._uri = self._chave = ""
+        self._uri = self._chave = self._qr = ""
         self._dizer("segredo apagado: ninguém é reconhecido como o dono numa chamada")
 
     @Slot()

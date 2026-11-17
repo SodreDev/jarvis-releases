@@ -156,3 +156,24 @@ def test_sem_chaveiro_diz_e_nao_grava_noutro_lugar(
     assert ponte.chamada.frase.startswith("não deu")
     assert ponte.chamada.uri == "" and not ponte.chamada.configurado
     assert not list(maquina["config"].parent.glob("*totp*")), "nada vai ao disco"
+
+
+def test_o_qr_aparece_com_a_uri_e_some_junto(
+    tela: tuple[QQuickView, Any, GuardaEmMemoria], aplicativo: QGuiApplication
+) -> None:
+    import base64
+
+    janela, vista, guarda = tela
+    _aba(janela, aplicativo, "Chamadas")
+    _clicar(janela, aplicativo, _item(janela, "gerarSegredo"))
+    qr = vista.chamada.qr
+    assert qr.startswith("data:image/png;base64,")
+    assert base64.b64decode(qr.split(",", 1)[1])[:8] == b"\x89PNG\r\n\x1a\n"
+    segredo = guarda.ler()
+    assert segredo and segredo not in qr, "o segredo não aparece cru: está no desenho"
+    imagem = _item(janela, "qrDoSegredo")
+    _esperar(aplicativo, 1.0, ate=lambda: float(imagem.property("implicitWidth")) > 0)
+    assert float(imagem.property("implicitWidth")) > 0, "o Qt decodificou o PNG"
+    assert imagem.isVisible()
+    _clicar(janela, aplicativo, _item(janela, "jaCadastrei"))
+    assert vista.chamada.qr == ""

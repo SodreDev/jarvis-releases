@@ -408,7 +408,7 @@ principal, que decide no laço dele com as permissões de sempre.
 | 7 | **Windows** (VB-Cable) | — | tudo; só se o dono pedir |
 
 Ordem proposta: 3 e 5 primeiro (são a segurança e não dependem de áudio), depois 1–2 (o encanamento),
-4 e 6 por último.
+4 e 6 por último. Cada fatia com o seu teste, sem microfone, alto-falante, navegador ou conta real.
 
 **Feito em 2026-11-17, só com fakes (nada toca áudio, conta ou navegador real):** fatia 5 —
 `jarvis.chamada.totp` (RFC 6238, janela ±1, uso único gravado, bloqueio por erros) e a aba
@@ -419,7 +419,9 @@ por interlocutor em `jarvis.chamada.memoria`); fatias 1a/1b — `jarvis.audio_io
 de um executor (o do sistema recusa sob CI). Avaliação com modelo real em
 [docs/medicoes/agente-da-chamada.md](../medicoes/agente-da-chamada.md). **Não ligado ainda** à
 chamada de verdade: falta a fatia 2 (canais: ouvir o fluxo do app e falar na fonte virtual) e a 4
-(estado da chamada pela extensão). O QR do segredo ficou de fora (precisa de dependência nova). Cada fatia com o seu teste, sem microfone, alto-falante, navegador ou conta real.
+(estado da chamada pela extensão). O QR do segredo é desenhado pelo `segno` (BSD, puro Python;
+decisão de 2026-11-17, registrado em `licenses/bibliotecas-distribuidas.toml`), junto da URI e da
+chave.
 
 ---
 
