@@ -1,4 +1,4 @@
-"""ADR-0074: o agente da chamada — o laço canônico com as 5 ferramentas da ligação e nada mais.
+"""ADR-0074: o agente da chamada — o laço canônico com as 6 ferramentas da ligação e nada mais.
 
 Só motores roteirizados, relógio injetado, saída em lista, guarda do TOTP em memória: nenhum
 modelo, áudio, microfone, navegador ou conta. O que se prova aqui é o que o CÓDIGO garante,
@@ -20,6 +20,7 @@ from jarvis.chamada.agente import (
     FALAR,
     FERRAMENTAS_DA_CHAMADA,
     LEMBRAR_INTERLOCUTOR,
+    PEDIR_ACAO,
     VERIFICAR_TOTP,
     AgenteDaChamada,
     Chamada,
@@ -103,7 +104,7 @@ def _fala_de_quem_liga(contexto: Contexto) -> str:
 
 
 # --- laço canônico, catálogo mínimo, dado entre marcadores ------------------------------------
-def test_o_agente_passa_pelo_laco_canonico_com_so_as_5_ferramentas(tmp_path: Path) -> None:
+def test_o_agente_passa_pelo_laco_canonico_com_so_as_6_ferramentas(tmp_path: Path) -> None:
     mundo = Mundo(tmp_path, por_rodada([AVISO]))
     quem: list[str] = []
     desligar = observar(lambda q, _c: quem.append(q))
@@ -121,6 +122,7 @@ def test_o_agente_passa_pelo_laco_canonico_com_so_as_5_ferramentas(tmp_path: Pat
         AVISAR_DONO,
         VERIFICAR_TOTP,
         LEMBRAR_INTERLOCUTOR,
+        PEDIR_ACAO,
     }
     d = chamada.delimitadores
     assert d.abre in contexto.sistema and d.fecha in contexto.sistema
