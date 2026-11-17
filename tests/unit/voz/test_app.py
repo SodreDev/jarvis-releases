@@ -501,3 +501,30 @@ def test_evento_de_rede_entra_na_fila_como_terceiros_com_o_modo_como_contexto(
         (liberado,) = app._liberados(app.avisos.mensagem_do_dono("t-1", app.relogio_dos_avisos()))
     assert '"decisao_do_monitor": "sem_decisao"' in liberado.resumo, "sem motor, segue marcado"
     assert "ausente" in liberado.contexto and liberado.de_terceiros
+
+
+def test_evento_da_chamada_entra_na_fila_como_terceiros_sem_esperar_o_teto(
+    tmp_path: Path,
+) -> None:
+    """ADR-0074, fatia A: a ação pedida numa chamada (e a confirmada, a expirada) chega ao Jarvis
+    como evento de terceiros, com origem «chamada · <tipo>», e não espera o teto de fala (tem
+    prazo). Quem decide falar é o Jarvis; nenhuma frase pronta."""
+    from jarvis.agentd.fila_de_avisos import ORIGEM_DA_CHAMADA, SEM_TETO
+
+    assert ORIGEM_DA_CHAMADA in SEM_TETO
+    app = aplicativo_de(tmp_path)
+    app.evento_da_chamada(
+        {
+            "tipo": "acao_da_chamada_pendente",
+            "de_terceiros": True,
+            "origem": "chamada",
+            "acao_pendente": {"codigo": "K7QX4M", "acao": "mandar a planilha"},
+        }
+    )
+    (aviso,) = app.dados_dos_avisos()["avisos"]
+    assert aviso["origem"] == "chamada · acao_da_chamada_pendente"
+    assert aviso["confianca"] == "terceiros"
+    with app._trava_dos_avisos:
+        (liberado,) = app._liberados(app.avisos.mensagem_do_dono("t-1", app.relogio_dos_avisos()))
+    assert "K7QX4M" in liberado.resumo and liberado.de_terceiros
+    assert app.motor_atual is app._motor

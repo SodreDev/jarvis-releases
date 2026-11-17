@@ -311,6 +311,7 @@ def _abrir_a_janela(args: argparse.Namespace) -> int:
     ponte.encerramentoPedido.connect(aplicativo.quit)
     codigo = int(aplicativo.exec())
     ponte.parar_o_monitor_das_redes()
+    ponte.parar_a_chamada()
     if conversa is not None:
         conversa.fechar()
     return codigo

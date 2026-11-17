@@ -185,3 +185,33 @@ def test_o_qr_aparece_com_a_uri_e_some_junto(
     assert imagem.isVisible()
     _clicar(janela, aplicativo, _item(janela, "jaCadastrei"))
     assert vista.chamada.qr == ""
+
+
+def test_chave_desligada_por_padrao_e_acao_confirmada_por_clique(
+    tela: tuple[QQuickView, Any, GuardaEmMemoria],
+    aplicativo: QGuiApplication,
+    maquina: dict[str, Path],
+) -> None:
+    """ADR-0074, fatia A: a chave «chamadas ativas» nasce desligada e liga na aba; a ação pedida
+    numa chamada aparece em «ações à espera» e o clique em confirmar a decide pela sessão do PC."""
+    janela, vista, _ = tela
+    _aba(janela, aplicativo, "Chamadas")
+    assert vista.chamada.ajustes["chamadas_ativas"] is False
+    vista.chamada.definir("chamadas_ativas", "true")
+    assert ler_chamada(maquina["config"].parent / "chamada.toml").chamadas_ativas is True
+    central = vista.chamada.central
+    assert central is not None and central.ativa()
+    pendente = central.acoes.propor(
+        "mandar a planilha", "hoje", interlocutor="Lúcia", app="Meet", dono_reconhecido=False
+    )
+    assert pendente is not None
+    _esperar(aplicativo, 0.3)
+    (linha,) = vista.chamada.pendentes
+    assert linha["codigo"] == pendente.codigo and linha["minutos"] == 10
+    assert _item(janela, f"confirmar-{pendente.codigo}") is not None
+    vista.chamada.confirmarAcao(pendente.codigo)
+    assert vista.chamada.pendentes == []
+    assert "confirmada" in vista.chamada.frase
+    vista.chamada.recusarAcao(pendente.codigo)
+    assert vista.chamada.frase.startswith("não deu")
+    vista.parar_a_chamada()

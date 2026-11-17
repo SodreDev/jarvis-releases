@@ -54,7 +54,13 @@ monitoramento para saber: não esperam o teto de fala, como os do pedido. O piso
 nunca por cima da fala, e um por vez."""
 
 
-SEM_TETO: Final = (ORIGEM_DO_PEDIDO, ORIGEM_DO_MONITOR)
+ORIGEM_DA_CHAMADA: Final = "chamada · "
+"""A origem dos eventos de uma ligação (ADR-0074): ação pedida à espera do dono, confirmada,
+recusada ou expirada, e o aviso urgente do agente da chamada. Têm prazo (a ação expira em minutos,
+quem liga espera na linha): não esperam o teto de fala; o piso livre vale igual."""
+
+
+SEM_TETO: Final = (ORIGEM_DO_PEDIDO, ORIGEM_DO_MONITOR, ORIGEM_DA_CHAMADA)
 """As origens que não esperam o teto de fala espontânea."""
 
 

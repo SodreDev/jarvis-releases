@@ -22,9 +22,10 @@ import json
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from PySide6.QtCore import (
     Property,
@@ -39,7 +40,17 @@ from PySide6.QtCore import (
     Slot,
 )
 
+from jarvis.chamada.canal_do_dono import GuardaDoCanal
+from jarvis.chamada.central import TIQUE_S as TIQUE_DA_CHAMADA_S
+from jarvis.chamada.central import CentralDaChamada
 from jarvis.chamada.config import ARQUIVO as ARQUIVO_DA_CHAMADA
+from jarvis.chamada.memoria import (
+    ARQUIVO_DAS_NOTAS,
+    ARQUIVO_DOS_RECADOS,
+    MemoriaDosInterlocutores,
+    Recados,
+)
+from jarvis.chamada.pagina_real import PaginaPelaPonte
 from jarvis.chamada.totp import GuardaDoSegredo, GuardaNoChaveiro
 from jarvis.executor.navegadores import familia_de_navegador, navegador_em_execucao
 from jarvis.gui import chaveiro, recursos, sistema
@@ -98,6 +109,9 @@ from jarvis.voz.provedores import (
 from jarvis.voz.registro import motor_registrado, motores_de
 from jarvis.voz.s2_provisorio import nomes_de_gerador
 from jarvis.voz.vocabulario import RepositorioDoVocabulario
+
+if TYPE_CHECKING:
+    from jarvis.s2.motor import MotorDeConversa
 
 PAPEIS: Final = ("asr", "tts")
 AREA_DOS_PAINEIS: Final[dict[str, Area]] = {
@@ -232,6 +246,9 @@ class Ponte(QObject):
     """(rede, texto): uma notificação do monitor das redes (ADR-0060), vinda do fio dele."""
     redesMudaram = Signal()
     """O estado de alguma rede mudou (fio do monitor → thread da janela)."""
+    chamadaNotificou = Signal(str)
+    """O JSON de um evento da chamada (ADR-0074), vindo da linha da central: vai ao Jarvis."""
+    acoesDaChamadaMudaram = Signal()
     conteudoMostrado = Signal(str, str, str, str)
     """(id, título, documento, fundo) de uma exibição que o Jarvis montou (ADR-0055): vem da linha
     do cérebro; o Qt entrega aqui, na da janela."""
@@ -375,6 +392,14 @@ class Ponte(QObject):
             guarda=guarda_do_totp or GuardaNoChaveiro(ambiente=self._ambiente_base),
             parent=self,
         )
+        self._historico_de_envios = HistoricoDeEnvios(self._caminho.parent / ARQUIVO_DOS_ENVIOS)
+        """Um só para o envio a contatos e o canal do dono: o teto rígido da conta soma os dois."""
+        self._linha_da_chamada = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chamada")
+        self._central = self._montar_a_central()
+        self._tique_da_chamada = QTimer(self)
+        self._tique_da_chamada.setInterval(int(TIQUE_DA_CHAMADA_S * 1000))
+        self._tique_da_chamada.timeout.connect(self._central.tique)
+        self._tique_da_chamada.start()
         self._monitor_das_redes: MonitorSocial | None = None
         self._resposta_ausente: RespostaAusente | None = None
         """O monitor das redes (ADR-0060): só com a ponte do navegador de verdade, que só a
@@ -640,9 +665,11 @@ class Ponte(QObject):
 
         guardiao = Guardiao(
             ajuste=lambda: self._redes.configuracao.envio,
-            historico=HistoricoDeEnvios(self._caminho.parent / ARQUIVO_DOS_ENVIOS),
+            historico=self._historico_de_envios,
             pausas=self._redes.pausas,
         )
+        # O canal do dono (ADR-0074) usa a mesma aba do WhatsApp, pela mesma ponte.
+        self._central.ligar_pagina(PaginaPelaPonte(ponte, familia=familia))
         # O «parar envios» grava automatico/ausente desligados: o envio em curso vê na hora.
         enviador = Enviador(ponte, guardiao, familia=familia, cancelado=lambda: not envio_armado())
         monitor = MonitorSocial(
@@ -697,6 +724,64 @@ class Ponte(QObject):
         self._redes.trocar_estado(monitor.estado.para_a_tela)
         self._redes.ao_mudar = lambda _configuracao: monitor.atualizar()
         monitor.iniciar()
+
+    def _montar_a_central(self) -> CentralDaChamada:
+        """A central da chamada (ADR-0074, fatia A). Desligada pela chave da aba até o dono
+        ligar; sem a ponte do navegador (os testes), o canal do dono não tem página."""
+        pasta = self._caminho.parent
+        chamada = self._chamada
+
+        def motor() -> MotorDeConversa | None:
+            sessao = self._sessao
+            if sessao is None or not sessao.viva or sessao.aplicativo is None:
+                return None
+            return sessao.aplicativo.motor_atual
+
+        def rodar(tarefa: Callable[[], None]) -> None:
+            with contextlib.suppress(RuntimeError):  # a linha já parou (janela fechando)
+                self._linha_da_chamada.submit(tarefa)
+
+        central = CentralDaChamada(
+            configuracao=lambda: chamada.configuracao,
+            motor=motor,
+            ao_evento=lambda evento: self.chamadaNotificou.emit(
+                json.dumps(evento, ensure_ascii=False)
+            ),
+            guarda=GuardaDoCanal(self._historico_de_envios, self._redes.pausas),
+            verificador=chamada.verificador,
+            memoria=MemoriaDosInterlocutores(
+                pasta / ARQUIVO_DAS_NOTAS,
+                retencao_dias=lambda: chamada.configuracao.retencao_da_memoria_dias,
+            ),
+            recados=Recados(
+                pasta / ARQUIVO_DOS_RECADOS,
+                retencao_dias=lambda: chamada.configuracao.retencao_do_recado_dias,
+            ),
+            rodar=rodar,
+            ao_mudar=self.acoesDaChamadaMudaram.emit,
+        )
+        chamada.central = central
+        self.acoesDaChamadaMudaram.connect(chamada.acoesMudaram.emit)
+        self.chamadaNotificou.connect(self._avisar_da_chamada)
+        return central
+
+    def _avisar_da_chamada(self, evento_json: str) -> None:
+        """Um evento da chamada vai ao Jarvis da conversa aberta (ADR-0070); sem conversa, fica
+        só na aba (as pendentes continuam lá, com Confirmar e Recusar)."""
+        sessao = self._sessao
+        if sessao is None or not sessao.viva or sessao.aplicativo is None:
+            return
+        try:
+            evento = json.loads(evento_json)
+        except ValueError:
+            return
+        if isinstance(evento, dict):
+            sessao.aplicativo.evento_da_chamada(evento)
+
+    def parar_a_chamada(self) -> None:
+        """Ao fechar a janela: o tique para e a linha da central não aceita mais nada."""
+        self._tique_da_chamada.stop()
+        self._linha_da_chamada.shutdown(wait=False, cancel_futures=True)
 
     def _avisar_da_rede(self, rede: str, evento_json: str) -> None:
         """Um evento de rede (ADR-0060, ADR-0070): vai ao Jarvis da conversa aberta, estruturado,

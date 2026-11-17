@@ -64,6 +64,69 @@ Item {
 
             Painel {
                 width: parent.width
+                titulo: "chamadas"
+                dica: vista.ajustes.chamadas_ativas ? "ativas" : "desligadas"
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Botao {
+                        objectName: "chamadasAtivas"
+                        texto: vista.ajustes.chamadas_ativas
+                               ? "chamadas ativas — desligar" : "chamadas desligadas — ligar"
+                        ativo: vista.ajustes.chamadas_ativas === true
+                        onApertado: vista.chamada.definir("chamadas_ativas",
+                                                          vista.ajustes.chamadas_ativas
+                                                          ? "false" : "true")
+                    }
+                    Nota {
+                        width: parent.width
+                        text: "Desligadas, o Jarvis não entra em chamada nem manda nada ao seu chat. "
+                              + "Ligue depois de testar (jarvis --testar-chamada)."
+                        color: Tema.textoFraco
+                    }
+                }
+            }
+
+            Painel {
+                width: parent.width
+                titulo: "ações à espera de você"
+                dica: vista.chamada && vista.chamada.pendentes.length > 0
+                      ? String(vista.chamada.pendentes.length) : "nenhuma"
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Repeater {
+                        model: vista.chamada ? vista.chamada.pendentes : []
+                        Column {
+                            width: coluna.width - 24
+                            spacing: 4
+                            Nota {
+                                width: parent.width
+                                text: modelData.codigo + " · " + modelData.acao
+                                      + (modelData.detalhes ? " (" + modelData.detalhes + ")" : "")
+                                      + " — pedida por " + modelData.interlocutor
+                                      + "; expira em " + modelData.minutos + " min"
+                            }
+                            Row {
+                                spacing: 8
+                                Botao {
+                                    objectName: "confirmar-" + modelData.codigo
+                                    texto: "confirmar"
+                                    onApertado: vista.chamada.confirmarAcao(modelData.codigo)
+                                }
+                                Botao {
+                                    objectName: "recusar-" + modelData.codigo
+                                    texto: "recusar"
+                                    onApertado: vista.chamada.recusarAcao(modelData.codigo)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Painel {
+                width: parent.width
                 titulo: "código do dono (TOTP)"
                 dica: vista.chamada && vista.chamada.configurado
                       ? (vista.chamada.bloqueado ? "bloqueado por erros" : "configurado")
@@ -76,7 +139,7 @@ Item {
                         text: "Numa ligação, quem disser ser você terá de dizer o código de 6 dígitos "
                               + "do seu app autenticador — em toda chamada. Mesmo reconhecido, o "
                               + "Jarvis na ligação só anota recado: qualquer ação espera a sua "
-                              + "confirmação aqui no PC."
+                              + "confirmação — aqui no PC ou no seu chat do WhatsApp."
                     }
                     Flow {
                         width: parent.width
@@ -292,7 +355,7 @@ Item {
                             { campo: "pode_dizer", dica: "pode dizer (o que não é sensível)" },
                             { campo: "nunca_dizer", dica: "nunca dizer (o que é sensível)" },
                             { campo: "contato_do_dono_whatsapp",
-                              dica: "seu chat no WhatsApp Web, como aparece (ex.: Você) — vazio: só o PC" }
+                              dica: "chat de destino no WhatsApp Web, como aparece (o seu «Você» ou o de um 2º número) — vazio: só o PC" }
                         ]
                         Rectangle {
                             width: coluna.width - 24

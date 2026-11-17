@@ -19,7 +19,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from jarvis.agentd.fila_de_avisos import ORIGEM_DO_MONITOR, ORIGEM_DO_PEDIDO, Entrega
+from jarvis.agentd.fila_de_avisos import (
+    ORIGEM_DA_CHAMADA,
+    ORIGEM_DO_MONITOR,
+    ORIGEM_DO_PEDIDO,
+    Entrega,
+)
 
 FALAR: Final = "falar"
 """O aviso vai ao Jarvis (a um turno do motor), que decide o que fazer com ele."""
@@ -93,6 +98,8 @@ def _evento(aviso: AvisoLiberado) -> str:
         de_onde = f"pedido do dono «{origem}»"
     elif aviso.origem.startswith(ORIGEM_DO_MONITOR):
         de_onde = f"agente monitor das redes («{aviso.origem.removeprefix(ORIGEM_DO_MONITOR)}»)"
+    elif aviso.origem.startswith(ORIGEM_DA_CHAMADA):
+        de_onde = f"uma ligação («{aviso.origem.removeprefix(ORIGEM_DA_CHAMADA)}»)"
     else:
         de_onde = origem
     conteudo = " ".join(aviso.resumo.split())[:CARACTERES_POR_EVENTO]

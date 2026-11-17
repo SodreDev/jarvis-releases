@@ -48,6 +48,7 @@ from typing import TYPE_CHECKING, Any, Final
 from jarvis.agentd.asr import MotorWhisper, TranscritorIncremental
 from jarvis.agentd.fala_em_stream import trechos_do_stream
 from jarvis.agentd.fila_de_avisos import (
+    ORIGEM_DA_CHAMADA,
     ORIGEM_DO_MONITOR,
     ORIGEM_DO_PEDIDO,
     Entrega,
@@ -817,6 +818,36 @@ class Aplicativo:
         dados = dict(evento)
         dados.setdefault("rede", origem[:80])
         self.agente_monitor.receber(dados, contexto)
+
+    @property
+    def motor_atual(self) -> MotorDeConversa | None:
+        """O motor da conversa aberta, para os subagentes que a janela monta (ADR-0074)."""
+        return self._motor
+
+    def evento_da_chamada(self, evento: Mapping[str, Any]) -> None:
+        """Um evento da ligação (ADR-0074): ação à espera do dono, confirmada, recusada ou
+        expirada, aviso do agente da chamada, falha do canal do dono. Vai à fila de avisos como
+        evento de **terceiros** (o conteúdo veio de quem ligou); quem decide se e como falar é o
+        Jarvis, no turno dos avisos — nenhuma frase pronta aqui."""
+        dados = json.dumps(dict(evento), ensure_ascii=False)
+        identificador = f"chamada-{uuid7()}"
+        contexto = contexto_do_dono(
+            ausente=False,
+            hora=datetime.now().hour,
+            nao_perturbe=bool(getattr(self.avisos, "nao_perturbe", False)),
+        )
+        with self._trava_dos_avisos:
+            self._eventos_dos_avisos[identificador] = (dados, contexto)
+        self.receber_aviso(
+            notificacao(
+                self.session_id,
+                identificador,
+                tipo="evento",
+                origem=f"{ORIGEM_DA_CHAMADA}{str(evento.get('tipo', ''))[:60]}",
+                resumo=dados[:280],
+                trust=Trust.THIRD_PARTY,
+            )
+        )
 
     @property
     def agente_monitor(self) -> AgenteMonitor:

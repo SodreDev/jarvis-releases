@@ -9,6 +9,9 @@ Decisão do dono (2026-11-17): TOTP configurável pelo app. A aba:
   sair da aba), some e não volta — o segredo nunca é lido de novo para desenhar a tela;
 - **confere** um código (RFC 6238, janela ±1, anti-reuso): o código conferido aqui fica gasto,
   como numa chamada;
+- liga e desliga a chave mestra «chamadas ativas» (desligada por padrão: o dono liga depois de
+  testar) e mostra as **ações à espera** do dono, com Confirmar e Recusar — a confirmação pela
+  sessão do PC (`CentralDaChamada.confirmar_no_pc`), por clique e nunca por voz;
 - grava os limites, os textos, o fone (sim/não/auto), o contato do dono no WhatsApp e o prazo
   da ação pendente em `chamada.toml` (0600) a cada mudança. A palavra de coação fica fora da aba
   (decisão do dono, 2026-11-17): só o gancho no arquivo.
@@ -24,6 +27,7 @@ from typing import Any
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
+from jarvis.chamada.central import CentralDaChamada
 from jarvis.chamada.config import (
     WHATSAPP_DO_DONO,
     ConfiguracaoDaChamada,
@@ -53,6 +57,7 @@ FRASES_DO_VEREDITO = {
 
 AJUSTES_DA_ABA = frozenset(
     {
+        "chamadas_ativas",
         "duracao_para_aviso_min",
         "turnos",
         "frases_por_fala",
@@ -88,6 +93,7 @@ class PonteDaChamada(QObject):
     """O que o QML lê (`frase`, `configurado`, `uri`, `chave`, `ajustes`) e pede (os slots)."""
 
     mudou = Signal()
+    acoesMudaram = Signal()
 
     def __init__(
         self,
@@ -107,6 +113,8 @@ class PonteDaChamada(QObject):
         estado = EstadoDoTotp.ler(caminho.parent / ARQUIVO_DO_ESTADO)
         extras: dict[str, Any] = {} if relogio is None else {"relogio": relogio}
         self.verificador = Verificador(guarda=guarda, estado=estado, **extras)
+        self.central: CentralDaChamada | None = None
+        """A central (ADR-0074, fatia A): a ponte da janela a liga depois de montar."""
         try:
             self._configuracao = ler(caminho)
         except (ConfiguracaoDaChamadaInvalida, OSError) as erro:
@@ -161,7 +169,44 @@ class PonteDaChamada(QObject):
             "contato_do_dono_whatsapp": c.contato_do_dono_whatsapp,
             "acao_expira_min": c.acao_expira_min,
             "canal_do_dono_ligado": WHATSAPP_DO_DONO in c.canais_de_confirmacao,
+            "chamadas_ativas": c.chamadas_ativas,
         }
+
+    @Property(list, notify=acoesMudaram)
+    def pendentes(self) -> list[dict[str, Any]]:
+        """As ações pedidas em chamadas à espera do dono (código, ação, de quem, prazo)."""
+        if self.central is None:
+            return []
+        return [
+            {
+                "codigo": a["codigo"],
+                "acao": a["acao"],
+                "detalhes": a["detalhes"],
+                "interlocutor": a["interlocutor"],
+                "minutos": max(1, round(float(a["expira_em_s"]) / 60)),
+            }
+            for a in self.central.pendentes()
+        ]
+
+    @Slot(str)
+    def confirmarAcao(self, codigo: str) -> None:
+        self._decidir_acao(codigo, confirmar=True)
+
+    @Slot(str)
+    def recusarAcao(self, codigo: str) -> None:
+        self._decidir_acao(codigo, confirmar=False)
+
+    def _decidir_acao(self, codigo: str, *, confirmar: bool) -> None:
+        if self.central is None:
+            self._dizer("não deu: a central da chamada não está montada")
+            return
+        decidir = self.central.confirmar_no_pc if confirmar else self.central.recusar_no_pc
+        decisao = decidir(codigo)
+        self.acoesMudaram.emit()
+        if decisao.aceita:
+            self._dizer(f"ação {codigo} {decisao.motivo}: o Jarvis foi avisado")
+        else:
+            self._dizer(f"não deu: ação {codigo} — {decisao.motivo}")
 
     # --- o que a tela pede ---------------------------------------------------------------
     def _dizer(self, frase: str) -> None:
