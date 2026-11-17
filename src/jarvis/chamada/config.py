@@ -1,5 +1,6 @@
 """`chamada.toml`: os ajustes da voz do Jarvis na ligação (ADR-0074). Padrões seguros.
 
+    chamadas_ativas = false         # a chave mestra: desligada até o dono testar e ligar
     duracao_para_aviso_min = 5      # passou: o agente é AVISADO (não há corte automático)
     turnos = 30                     # passou: o agente é avisado e decide
     frases_por_fala = 5             # teto de cada `chamada.falar` (a fala maior volta recusada)
@@ -11,7 +12,8 @@
     retencao_da_memoria_dias = 90
     lembrar_interlocutor = true
     fone = "auto"                   # "sim", "nao" ou "auto" (o que o sistema diz da saída)
-    contato_do_dono_whatsapp = ""   # o nome do chat do dono COMO APARECE no WhatsApp Web
+    contato_do_dono_whatsapp = ""   # o chat de destino COMO APARECE no WhatsApp Web (o do dono
+                                    # ou o de um 2º número dele)
     acao_expira_min = 10            # ação pedida na chamada sem confirmação some depois disto
 
 Decisões do dono (2026-11-17): 5 min **sem** encerramento automático — passado o tempo, o
@@ -62,6 +64,9 @@ class ConfiguracaoDaChamadaInvalida(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ConfiguracaoDaChamada:
+    chamadas_ativas: bool = False
+    """A chave mestra (decisão do dono, 2026-11-17): desligada, nada da chamada roda — nem o
+    canal do dono, nem o tique, nem chamada nova. O dono liga na aba depois de testar."""
     duracao_para_aviso_min: int = 5
     turnos: int = 30
     frases_por_fala: int = 5
@@ -81,7 +86,9 @@ class ConfiguracaoDaChamada:
     vai só à fonte virtual e o microfone real é abafado enquanto o Jarvis fala (eco, §1.3 do
     estudo); «auto»: o que o sistema disser da saída padrão — na dúvida, como «nao»."""
     contato_do_dono_whatsapp: str = ""
-    """O nome do chat do dono COMO APARECE no WhatsApp Web (ex.: «Você», o nome dele). Vazio =
+    """O chat de DESTINO COMO APARECE no WhatsApp Web: o do próprio dono («Você», «Nome (você)»)
+    ou o de um 2º número dele — mensagem da própria conta pode não tocar no celular, e o dono
+    testa qual toca (decisão de 2026-11-17). Vazio =
     o canal do dono desligado: a ação pedida na chamada só se confirma na sessão do PC. O agente
     do canal acha este chat lendo a lista de conversas; o nome só confere o cabeçalho antes de
     enviar (é a lista permitida desse canal, e só por esta configuração explícita)."""
@@ -113,9 +120,10 @@ class ConfiguracaoDaChamada:
             raise ConfiguracaoDaChamadaInvalida(
                 f"contato_do_dono_whatsapp: um nome de até {NOME_MAXIMO} caracteres, numa linha"
             )
-        lembrar: object = self.lembrar_interlocutor
-        if not isinstance(lembrar, bool):
-            raise ConfiguracaoDaChamadaInvalida("lembrar_interlocutor: tem de ser true ou false")
+        for nome in ("lembrar_interlocutor", "chamadas_ativas"):
+            valor_logico: object = getattr(self, nome)
+            if not isinstance(valor_logico, bool):
+                raise ConfiguracaoDaChamadaInvalida(f"{nome}: tem de ser true ou false")
         if self.fone not in FONES:
             raise ConfiguracaoDaChamadaInvalida(f"fone: um de {', '.join(FONES)}")
 

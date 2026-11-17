@@ -23,6 +23,7 @@ app fechado perde as pendentes (expiram, de fato)."""
 from __future__ import annotations
 
 import secrets
+import threading
 import time
 import unicodedata
 from collections.abc import Callable
@@ -105,10 +106,13 @@ class AcoesPendentes:
     relogio: Callable[[], float] = time.time
     gerar_codigo: Callable[[], str] = novo_codigo
     _acoes: dict[str, AcaoPendente] = field(default_factory=dict)
+    _trava: threading.RLock = field(default_factory=threading.RLock)
+    """A chamada, o agente do canal e o clique no PC mexem aqui de linhas diferentes."""
 
     def pendentes(self) -> list[AcaoPendente]:
-        self.expirar()
-        return [a for a in self._acoes.values() if a.estado == "pendente"]
+        with self._trava:
+            self.expirar()
+            return [a for a in self._acoes.values() if a.estado == "pendente"]
 
     def acao(self, codigo: str) -> AcaoPendente | None:
         return self._acoes.get(codigo.strip().upper())
@@ -123,6 +127,12 @@ class AcoesPendentes:
         dono_reconhecido: bool,
     ) -> AcaoPendente | None:
         """Registra e avisa. `None` se já há pendentes demais (o agente recebe a recusa)."""
+        with self._trava:
+            return self._propor(acao, detalhes, interlocutor, app, dono_reconhecido)
+
+    def _propor(
+        self, acao: str, detalhes: str, interlocutor: str, app: str, dono_reconhecido: bool
+    ) -> AcaoPendente | None:
         if len(self.pendentes()) >= PENDENTES_NO_MAXIMO:
             return None
         agora = self.relogio()
@@ -155,6 +165,10 @@ class AcoesPendentes:
         )
 
     def expirar(self) -> list[AcaoPendente]:
+        with self._trava:
+            return self._expirar()
+
+    def _expirar(self) -> list[AcaoPendente]:
         agora = self.relogio()
         vencidas = [a for a in self._acoes.values() if a.estado == "pendente" and agora >= a.expira]
         for pendente in vencidas:
@@ -187,10 +201,12 @@ class AcoesPendentes:
 
     def confirmar(self, codigo: str, origem: Origem, evidencia: str = "") -> Decisao:
         """`evidencia`: pelo canal do dono, o texto da mensagem dele (tem de trazer o código)."""
-        return self._decidir(codigo, origem, evidencia, "confirmada")
+        with self._trava:
+            return self._decidir(codigo, origem, evidencia, "confirmada")
 
     def recusar(self, codigo: str, origem: Origem, evidencia: str = "") -> Decisao:
-        return self._decidir(codigo, origem, evidencia, "recusada")
+        with self._trava:
+            return self._decidir(codigo, origem, evidencia, "recusada")
 
 
 __all__ = [
