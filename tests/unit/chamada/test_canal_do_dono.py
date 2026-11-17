@@ -490,3 +490,38 @@ def test_primeiro_envio_depois_de_abrir_conta_uma_vez(tmp_path: Path) -> None:
     novo = HistoricoDeEnvios(caminho)
     novo.anotar(Registro(TARDE + 1, "whatsapp", "2", "h2", "enviado"))
     assert len(novo.registros()) == 2 and len(HistoricoDeEnvios(caminho).registros()) == 2
+
+
+@pytest.mark.parametrize(
+    "previa",
+    [
+        "Jarvis: pediram na chamada mandar o contrato",
+        "Você: Jarvis: pediram na chamada mandar o contrato à Ana. Código…",
+        "jarvis:  PEDIRAM na chamada...",
+    ],
+)
+def test_eco_do_jarvis_com_rotulo_ou_cortado_nao_vira_resposta(tmp_path: Path, previa: str) -> None:
+    canal, _codigo_da_acao, observador = _enviado(
+        tmp_path, lambda _c: [PedidoDeTool(CONFIRMAR, {"codigo": "?"})]
+    )
+    antes = canal.chamadas_ao_motor
+    canal.pagina.responder("c3", previa)
+    assert observador.conferir() is None and canal.chamadas_ao_motor == antes
+
+
+def test_eco_que_escapa_ao_observador_nao_confirma(tmp_path: Path) -> None:
+    holder: list[str] = []
+    canal, codigo, _ = _enviado(
+        tmp_path, lambda _c: [PedidoDeTool(CONFIRMAR, {"codigo": holder[0]})]
+    )
+    holder.append(codigo)
+    ((_, texto),) = canal.pagina.enviadas
+    resultado = canal.agente.resposta_do_dono(texto)  # o próprio texto do Jarvis, com o código
+    assert not resultado.feitos[0].aceita and "próprio Jarvis" in resultado.feitos[0].veredito
+    assert [a.codigo for a in canal.acoes.pendentes()] == [codigo]
+
+
+def test_resposta_curta_do_dono_nao_e_tomada_por_eco(tmp_path: Path) -> None:
+    canal, _, _ = _enviado(tmp_path)
+    assert not canal.agente.do_jarvis("Jarvis")
+    assert not canal.agente.do_jarvis("ok")

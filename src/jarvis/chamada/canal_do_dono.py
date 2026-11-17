@@ -88,6 +88,8 @@ INTERVALO_S: Final = 60.0
 CARACTERES: Final = 500
 RODADAS: Final = 8
 ENVIADAS_LEMBRADAS: Final = 20
+ECO_MINIMO: Final = 12
+ROTULO_MAXIMO: Final = 30
 
 INSPECIONAR: Final = "browser.inspecionar"
 ABRIR: Final = "social.abrir_conversa"
@@ -338,11 +340,25 @@ class AgenteDoCanalDoDono:
         return WHATSAPP_DO_DONO in self.configuracao().canais_de_confirmacao
 
     def do_jarvis(self, trecho: str) -> bool:
-        """A prévia é eco de uma mensagem que o Jarvis mandou? (O WhatsApp corta a prévia.)"""
+        """A prévia é eco de uma mensagem que o Jarvis mandou? O WhatsApp corta a prévia no fim
+        e pode pôr um rótulo antes («Você: …»): confere o começo de cada mensagem enviada, com e
+        sem o rótulo. Pedaço curto demais (< `ECO_MINIMO`) só conta se for igual — senão um
+        «ok» do dono passaria por eco de um «Ok, …» do Jarvis."""
         alvo = normal(trecho).rstrip(".… ").strip()
         if not alvo:
             return True
-        return any(normal(texto).startswith(alvo) for texto in self._enviadas)
+        candidatos = [alvo]
+        rotulo, separador, resto = alvo.partition(": ")
+        if separador and len(rotulo) <= ROTULO_MAXIMO and resto:
+            candidatos.append(resto)
+        for texto in self._enviadas:
+            enviado = normal(texto)
+            for candidato in candidatos:
+                if enviado == candidato or (
+                    len(candidato) >= ECO_MINIMO and enviado.startswith(candidato)
+                ):
+                    return True
+        return False
 
     # --- os dois tipos de evento ---------------------------------------------------------
     def enviar(self, evento: Mapping[str, Any]) -> ResultadoDoCanal:
@@ -583,7 +599,11 @@ class _Rodada:
         return Feito(ENVIAR, "enviado ao dono", True)
 
     def _decidir(self, nome: str, codigo: str) -> Feito:
-        # A evidência é a mensagem LIDA do chat do dono — nunca um texto do modelo.
+        # A evidência é a mensagem LIDA do chat do dono — nunca um texto do modelo. E nunca a
+        # própria mensagem do Jarvis (que traz o código): eco não confirma, mesmo que escape ao
+        # filtro do observador.
+        if self.agente.do_jarvis(self.resposta):
+            return Feito(nome, "recusada: esta mensagem é a do próprio Jarvis, não do dono", False)
         decidir = self.agente.acoes.confirmar if nome == CONFIRMAR else self.agente.acoes.recusar
         decisao = decidir(codigo.strip().upper(), Origem.CANAL_DO_DONO, self.resposta)
         if decisao.aceita:
