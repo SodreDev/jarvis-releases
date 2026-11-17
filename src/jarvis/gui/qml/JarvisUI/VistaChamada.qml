@@ -221,7 +221,8 @@ Item {
                             { campo: "frases_por_fala", rotulo: "frases por fala" },
                             { campo: "tentativas_de_codigo", rotulo: "códigos errados por chamada" },
                             { campo: "retencao_do_recado_dias", rotulo: "dias que o recado fica" },
-                            { campo: "retencao_da_memoria_dias", rotulo: "dias que lembra de quem ligou" }
+                            { campo: "retencao_da_memoria_dias", rotulo: "dias que lembra de quem ligou" },
+                            { campo: "acao_expira_min", rotulo: "minutos até a ação pedida expirar" }
                         ]
                         Row {
                             spacing: 8
@@ -262,13 +263,18 @@ Item {
                                                               vista.ajustes.lembrar_interlocutor
                                                               ? "false" : "true")
                         }
-                        Botao {
-                            objectName: "usaFone"
-                            texto: vista.ajustes.usa_fone ? "uso fone" : "sem fone"
-                            ativo: vista.ajustes.usa_fone === true
-                            onApertado: vista.chamada.definir("usa_fone",
-                                                              vista.ajustes.usa_fone
-                                                              ? "false" : "true")
+                        Repeater {
+                            model: [
+                                { valor: "auto", texto: "fone: o sistema diz" },
+                                { valor: "sim", texto: "uso fone" },
+                                { valor: "nao", texto: "sem fone" }
+                            ]
+                            Botao {
+                                objectName: "fone-" + modelData.valor
+                                texto: modelData.texto
+                                ativo: vista.ajustes.fone === modelData.valor
+                                onApertado: vista.chamada.definir("fone", modelData.valor)
+                            }
                         }
                     }
                 }
@@ -283,8 +289,10 @@ Item {
                     spacing: 8
                     Repeater {
                         model: [
-                            { campo: "pode_dizer", dica: "pode dizer (ex.: em reunião até as 15h)" },
-                            { campo: "nunca_dizer", dica: "nunca dizer" }
+                            { campo: "pode_dizer", dica: "pode dizer (o que não é sensível)" },
+                            { campo: "nunca_dizer", dica: "nunca dizer (o que é sensível)" },
+                            { campo: "contato_do_dono_whatsapp",
+                              dica: "seu chat no WhatsApp Web, como aparece (ex.: Você) — vazio: só o PC" }
                         ]
                         Rectangle {
                             width: coluna.width - 24
@@ -315,9 +323,12 @@ Item {
                     }
                     Nota {
                         width: parent.width
-                        text: "Ação pedida numa ligação só com a sua confirmação aqui no PC. "
-                              + "Palavra de coação: " + (vista.ajustes.coacao_ligada
-                                                          ? "ligada." : "desligada.")
+                        text: vista.ajustes.canal_do_dono_ligado
+                              ? "Ação pedida numa ligação só com a sua confirmação: aqui no PC ou "
+                                + "respondendo, no seu chat do WhatsApp, com o código que o Jarvis "
+                                + "mandar. O que quem liga disser nunca confirma nada."
+                              : "Ação pedida numa ligação só com a sua confirmação aqui no PC. "
+                                + "Preencha o seu chat do WhatsApp acima para confirmar por lá."
                         color: Tema.textoFraco
                     }
                 }

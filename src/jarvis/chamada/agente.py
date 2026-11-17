@@ -490,7 +490,7 @@ class Chamada:
             **dados,
         }
         if self.dono_reconhecido:
-            evento["confirmacao_exigida"] = self.agente.configuracao().canal_de_confirmacao
+            evento["confirmacao_exigida"] = list(self.agente.configuracao().canais_de_confirmacao)
         return evento
 
     def _anotar(self, args: Mapping[str, Any]) -> Feito:

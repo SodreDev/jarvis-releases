@@ -121,18 +121,26 @@ def test_limites_gravam_na_hora_com_0600(
     _, vista, _ = tela
     caminho = maquina["config"].parent / "chamada.toml"
     vista.chamada.definir("turnos", "12")
-    vista.chamada.definir("usa_fone", "true")
-    vista.chamada.definir("pode_dizer", "em reunião até as 15h")
+    vista.chamada.definir("fone", "sim")
+    vista.chamada.definir("pode_dizer", "que ele retorna à tarde")
+    vista.chamada.definir("contato_do_dono_whatsapp", " Você ")
+    vista.chamada.definir("acao_expira_min", "15")
     c = ler_chamada(caminho)
-    assert (c.turnos, c.usa_fone, c.pode_dizer) == (12, True, "em reunião até as 15h")
+    assert (c.turnos, c.fone, c.pode_dizer) == (12, "sim", "que ele retorna à tarde")
+    assert (c.contato_do_dono_whatsapp, c.acao_expira_min) == ("Você", 15)
+    assert vista.chamada.ajustes["canal_do_dono_ligado"] is True
+    vista.chamada.definir("fone", "talvez")
+    assert vista.chamada.frase.startswith("não deu") and ler_chamada(caminho).fone == "sim"
     if os.name != "nt":
         assert stat.S_IMODE(caminho.stat().st_mode) == 0o600
     vista.chamada.definir("turnos", "0")
     assert vista.chamada.frase.startswith("não deu")
     assert ler_chamada(caminho).turnos == 12, "valor fora da faixa não grava"
+    # A palavra de coação ficou fora da aba (decisão do dono, 2026-11-17): só o gancho no arquivo.
     vista.chamada.definir("palavra_de_coacao", "girassol")
-    assert vista.chamada.ajustes["coacao_ligada"] is True
-    assert "girassol" not in vista.chamada.frase
+    assert vista.chamada.frase.startswith("não deu")
+    assert ler_chamada(caminho).palavra_de_coacao == ""
+    assert "coacao_ligada" not in vista.chamada.ajustes
 
 
 def test_sem_chaveiro_diz_e_nao_grava_noutro_lugar(

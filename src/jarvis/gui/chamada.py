@@ -9,7 +9,9 @@ Decisão do dono (2026-11-17): TOTP configurável pelo app. A aba:
   sair da aba), some e não volta — o segredo nunca é lido de novo para desenhar a tela;
 - **confere** um código (RFC 6238, janela ±1, anti-reuso): o código conferido aqui fica gasto,
   como numa chamada;
-- grava os limites e os textos em `chamada.toml` (0600) a cada mudança.
+- grava os limites, os textos, o fone (sim/não/auto), o contato do dono no WhatsApp e o prazo
+  da ação pendente em `chamada.toml` (0600) a cada mudança. A palavra de coação fica fora da aba
+  (decisão do dono, 2026-11-17): só o gancho no arquivo.
 
 O valor do segredo não vai a log, trilha, frase de estado nem arquivo do projeto."""
 
@@ -23,6 +25,7 @@ from typing import Any
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from jarvis.chamada.config import (
+    WHATSAPP_DO_DONO,
     ConfiguracaoDaChamada,
     ConfiguracaoDaChamadaInvalida,
     gravar,
@@ -46,6 +49,25 @@ FRASES_DO_VEREDITO = {
     Veredito.SEM_SEGREDO: "não deu: gere o segredo primeiro",
     Veredito.BLOQUEADO: "não deu: bloqueado por erros demais hoje — libere abaixo",
 }
+
+
+AJUSTES_DA_ABA = frozenset(
+    {
+        "duracao_para_aviso_min",
+        "turnos",
+        "frases_por_fala",
+        "tentativas_de_codigo",
+        "pode_dizer",
+        "nunca_dizer",
+        "retencao_do_recado_dias",
+        "retencao_da_memoria_dias",
+        "lembrar_interlocutor",
+        "fone",
+        "contato_do_dono_whatsapp",
+        "acao_expira_min",
+    }
+)
+"""O que a aba grava. A palavra de coação fica de fora (decisão do dono, 2026-11-17)."""
 
 
 def qr_da_uri(uri: str) -> str:
@@ -132,12 +154,13 @@ class PonteDaChamada(QObject):
             "tentativas_de_codigo": c.tentativas_de_codigo,
             "pode_dizer": c.pode_dizer,
             "nunca_dizer": c.nunca_dizer,
-            "coacao_ligada": bool(c.palavra_de_coacao),
             "retencao_do_recado_dias": c.retencao_do_recado_dias,
             "retencao_da_memoria_dias": c.retencao_da_memoria_dias,
             "lembrar_interlocutor": c.lembrar_interlocutor,
-            "usa_fone": c.usa_fone,
-            "canal_de_confirmacao": c.canal_de_confirmacao,
+            "fone": c.fone,
+            "contato_do_dono_whatsapp": c.contato_do_dono_whatsapp,
+            "acao_expira_min": c.acao_expira_min,
+            "canal_do_dono_ligado": WHATSAPP_DO_DONO in c.canais_de_confirmacao,
         }
 
     # --- o que a tela pede ---------------------------------------------------------------
@@ -193,24 +216,21 @@ class PonteDaChamada(QObject):
     @Slot(str, str)
     def definir(self, campo: str, valor: str) -> None:
         atual = self._configuracao
-        if not hasattr(atual, campo) or campo == "palavra_de_coacao":
-            if campo == "palavra_de_coacao":
-                novo_valor: Any = valor.strip()
-            else:
-                self._dizer(f"não deu: ajuste desconhecido ({campo})")
+        if campo not in AJUSTES_DA_ABA:
+            self._dizer(f"não deu: ajuste desconhecido ({campo})")
+            return
+        antigo = getattr(atual, campo)
+        novo_valor: Any
+        if isinstance(antigo, bool):
+            novo_valor = valor.strip().lower() in ("1", "true", "sim")
+        elif isinstance(antigo, int):
+            try:
+                novo_valor = int(valor.strip())
+            except ValueError:
+                self._dizer(f"não deu: {campo} tem de ser um número")
                 return
         else:
-            antigo = getattr(atual, campo)
-            if isinstance(antigo, bool):
-                novo_valor = valor.strip().lower() in ("1", "true", "sim")
-            elif isinstance(antigo, int):
-                try:
-                    novo_valor = int(valor.strip())
-                except ValueError:
-                    self._dizer(f"não deu: {campo} tem de ser um número")
-                    return
-            else:
-                novo_valor = valor.strip()
+            novo_valor = valor.strip()
         try:
             nova = replace(atual, **{campo: novo_valor})
             gravar(nova, self._caminho)
@@ -218,8 +238,7 @@ class PonteDaChamada(QObject):
             self._dizer(f"não deu: {erro}")
             return
         self._configuracao = nova
-        nome = "palavra de coação" if campo == "palavra_de_coacao" else campo.replace("_", " ")
-        self._dizer(f"{nome}: gravado")
+        self._dizer(f"{campo.replace('_', ' ')}: gravado")
 
 
 __all__ = ["PonteDaChamada"]

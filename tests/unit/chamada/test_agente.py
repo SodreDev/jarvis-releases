@@ -265,7 +265,7 @@ def test_codigo_certo_reconhece_so_para_recado_com_confirmacao_no_pc(tmp_path: P
     assert "sessão do computador" in resultado.feitos[2].veredito
     (evento,) = mundo.eventos
     assert evento["tipo"] == "recado_do_dono"
-    assert evento["confirmacao_exigida"] == "sessao_do_pc"
+    assert evento["confirmacao_exigida"] == ["sessao_do_pc"]
     assert evento["de_terceiros"] is True, "reconhecer na chamada não dá poder no PC"
 
 
