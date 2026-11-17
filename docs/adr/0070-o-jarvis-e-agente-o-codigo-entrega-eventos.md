@@ -37,7 +37,7 @@ As correções anteriores trocavam um comportamento por outro **roteirizado**: f
 
 - A extensão manda, de cada conversa não lida, o trecho que a lista mostra e os rótulos dos ícones — evidência crua (ponte versão 6).
 - O monitor entrega `Notificacao.evento` estruturado; o nome ou trecho que tenta dar ordens vai marcado como `suspeito`, sem o texto (ADR-0065).
-- `social/agente.AgenteMonitor` classifica cada conversa (mensagem, ligação, notificação do sistema, outra) e a urgência observada, numa rodada de modelo; sem modelo, segue `nao_classificado`.
+- `social/agente.AgenteMonitor` classifica cada conversa (mensagem, ligação, notificação do sistema, outra) e a urgência observada, numa rodada de modelo; sem modelo, segue `nao_classificado`. **Substituído pela [ADR-0073](0073-agente-monitor-das-redes.md):** o agente virou um subagente de longa duração que encaminha ou descarta com ferramentas próprias (o rótulo sem decisão deixava o Jarvis calar diante de mensagem comum).
 - Ausente, madrugada, não perturbe e «não avisa» viram **contexto** do evento (`contexto_do_dono`), não filtro. As travas do envio autônomo (lista, ausente, tetos, madrugada, pausa de 24 h) ficam como estão.
 
 ### 4. Caminho rápido vira dica; roteiro vira orientação

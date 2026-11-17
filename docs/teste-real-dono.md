@@ -22,11 +22,13 @@
 - **Se você ditar entre aspas** («manda pro Bruno "chego às 8"»), vai exatamente o que você ditou.
 - **Não deve:** digitar em outra conversa; dizer «mandei» sem a mensagem aparecer no chat.
 
-## (c) Alerta de rede social
+## (c) Alerta de rede social (agente monitor, ADR-0073)
 
-1. Com o WhatsApp **monitorado** ([redes-sociais-teste-real.md](redes-sociais-teste-real.md) §1), peça a alguém para (i) mandar uma mensagem comum num grupo e (ii) te ligar pelo WhatsApp sem você atender.
-- **Deve:** a mensagem comum do grupo pode ficar só no card (ele decide calar — a trilha mostra `entrega` com `jarvis_calou`); a ligação perdida ele avisa, com as palavras dele, **uma vez**.
-- **Não deve:** a frase antiga «WhatsApp: 2 mensagens novas — Ana (1)»; o mesmo alerta dito duas vezes.
+1. Com o WhatsApp **monitorado** ([redes-sociais-teste-real.md](redes-sociais-teste-real.md) §1) e o Jarvis **calado** (sem falar nada), peça a alguém para (i) te mandar uma mensagem direta, (ii) te ligar pelo WhatsApp sem você atender e (iii) mandar uma mensagem comum num grupo.
+2. Repita (ii) **enquanto o Jarvis estiver falando** (peça algo longo antes, «me conta a história do Brasil»).
+- **Deve:** a mensagem direta e a ligação perdida ele avisa, com as palavras dele, **uma vez cada**, poucos segundos depois (ocioso, fala na hora); com ele falando, o aviso da ligação vem **depois** que a fala dele termina, sem cortar. O grupo ele pode deixar só no card. Na trilha, para cada evento, uma linha `monitor.decisao` (`encaminhar` ou `descartar`, com `urgencia` e `motivo`) e, para o encaminhado, `entrega` com `falada`/`jarvis_falou` ou `silenciosa`/`jarvis_calou`.
+- **Não deve:** a frase antiga «WhatsApp: 2 mensagens novas — Ana (1)»; o mesmo alerta dito duas vezes; `[fora_da_forma]` no motivo da `entrega` de um aviso `rede-…`.
+- **Se ele não falar:** mande as linhas `monitor.decisao` e `entrega` daquele horário — elas dizem se o monitor descartou, se o Jarvis calou ou se o motor caiu.
 
 ## (d) Limites: tentativas, passos, prazo e o Claude Code
 
