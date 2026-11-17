@@ -42,6 +42,15 @@ legal.
 - **Retenção:** recado e memória de quem ligou por até **90 dias**, configurável; o vencido some do
   disco ao abrir e ao salvar.
 
+### Terceira rodada (2026-11-17)
+
+- Seguir em fatias, **tudo desligado por padrão**: a chave «chamadas ativas» da aba; o dono liga
+  depois de testar. Onde não foi provado, está escrito «não provado na máquina real».
+- **Teto do canal do dono aprovado:** 6/h, 20/dia, dentro do rígido 8/30 da conta.
+- **Chat de destino configurável:** o do próprio dono ou o de um 2º número dele; o dono testa se
+  a mensagem toca no celular (há um botão de mensagem de teste).
+- Quem diz ser o dono ouve o pedido do código **já na primeira fala** (instrução no prompt).
+
 ## Decisão proposta
 
 1. **Fonte virtual no PipeWire que assume o lugar do microfone, como o Soundpad** (revisto em
@@ -134,6 +143,31 @@ reabrindo a conversa em laço porque o veredito não dizia o que fora feito — 
 novo, sem laço ([medição](../medicoes/canal-do-dono.md)). **Ainda não ligado** à
 extensão real (falta a lista completa de conversas e abrir pela linha escolhida) nem ao app; não
 provado: se a mensagem ao próprio chat, enviada pelo WhatsApp Web, notifica o celular do dono.
+
+**Feito na terceira rodada (2026-11-17), só com fakes:** (A) a extensão (ponte 7) lista **todas**
+as conversas (`social.lista`) e abre a linha que o agente escolheu (`social.abrirLinha`, só se o
+nome ainda bate); `PaginaPelaPonte` é a porta real; a `CentralDaChamada` é montada pela janela
+(chave, ações pendentes, agente do canal sobre a aba real, tique de 20 s numa linha própria,
+histórico de envios único para o teto da conta); cada evento vai ao Jarvis pela fila de avisos
+(`Aplicativo.evento_da_chamada`, de terceiros, origem «chamada · », sem esperar o teto de fala); a
+aba mostra «ações à espera» com confirmar/recusar — a **sessão do PC confirma por clique**, nunca por
+voz (a voz de quem liga pode chegar ao microfone pelo alto-falante). A ação confirmada chega ao
+Jarvis como **evento**: o turno de eventos não tem ferramentas, então ele conta ao dono e a
+execução fica com o pedido do dono — executar sozinho uma ação vinda de terceiro é decisão aberta.
+(B) `CapturaDoOutroLado` isola só o fluxo do app de chamada; `EscutaDaChamada` ouve os dois canais
+com VAD e ASR em paralelo (o começo da fala do dono corta a voz; sem fone, o mic que pega quem liga
+não vira o dono); `SaidaNaFonteVirtual` toca a voz na mistura com a política de eco;
+`jarvis --testar-chamada` prova na máquina do dono a fonte virtual, o move e o mudo, sem gravar nem
+tocar áudio. (C) o `social.js` lê a ligação do WhatsApp Web (tocando/em andamento/nenhuma; seletores
+**não provados**), o monitor avisa a mudança, e «Jarvis atende» (só com a ligação em andamento: o
+dono atende e passa) liga o áudio de verdade e o agente; a ligação que acaba desfaz tudo. Medido:
+agente da chamada **27/27** na terceira passada (c3#1/c4#1 consertados). Passo a passo do que o dono
+prova: [docs/chamada-teste-real.md](../chamada-teste-real.md).
+
+**Não provado na máquina real:** o PipeWire do dono aceitar a fonte virtual como padrão e o move;
+o mudo sem estalo; o fluxo do navegador separado por aba; o ASR/TTS da conversa usados em paralelo
+pela chamada; o DOM real da ligação e da lista no WhatsApp Web; clique/tecla por CDP na aba de
+fundo; se a mensagem ao próprio chat toca no celular.
 
 ## Consequências
 

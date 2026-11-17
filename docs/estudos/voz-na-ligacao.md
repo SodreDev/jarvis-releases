@@ -530,7 +530,7 @@ enquanto há ação pendente, e é ele que entrega a resposta ao agente.
 - *Falha vira evento.* Sem modelo, o modelo não enviou nem avisou, ou a trava recusou tudo: evento
   `canal_do_dono_sem_decisao` ao Jarvis (fica a sessão do PC).
 
-**Teto (proposta, a confirmar com o dono).** As mensagens ao próprio dono **têm teto próprio**:
+**Teto (aprovado pelo dono em 2026-11-17).** As mensagens ao próprio dono **têm teto próprio**:
 **6 por hora, 20 por dia, 60 s entre elas** — e **não** gastam o teto das respostas a contatos (4/h,
 15/dia por padrão), para um aviso ao dono não roubar a resposta automática de um contato, nem o
 contrário. **Mas contam no teto rígido da conta** (8/h, 30/dia, somando tudo) e no intervalo mínimo
@@ -542,9 +542,9 @@ deixar uma injeção em laço encher o WhatsApp do dono. O texto não passa pelo
 respostas a terceiros (dinheiro, link, número): vai ao próprio dono, e o pedido de quem liga pode
 legitimamente falar de pagamento — o limite é de tamanho (500 caracteres).
 
-**O que só a máquina do dono prova** (nada disto foi rodado de verdade): a extensão ainda não tem
-o pedido de «todas as conversas» (`social.estado` traz só as não lidas) nem «abrir pela linha
-escolhida» — a `PaginaDoWhatsapp` é uma porta, e ligar a ponte real é a próxima fatia; se a
+**O que só a máquina do dono prova** (nada disto foi rodado de verdade): a extensão (ponte 7) já
+lista todas as conversas desenhadas (`social.lista`) e abre a linha escolhida (`social.abrirLinha`)
+— a lista do WhatsApp é virtual, então o dono **fixa o chat de destino no topo**; se a
 mensagem enviada pelo WhatsApp Web ao chat do próprio dono **notifica o celular** (mensagem da
 própria conta costuma **não** tocar notificação — se não tocar, o dono pode configurar o chat de
 um segundo número dele); e como o WhatsApp Web mostra o nome do chat do dono («Você», «Nome
