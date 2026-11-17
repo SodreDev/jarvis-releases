@@ -398,8 +398,9 @@ class Chamada:
         """A chamada inteira numa mensagem de evento + as ferramentas deste turno.
 
         Uma mensagem só, e não um evento por bloco: o caminho de texto do motor
-        (`Contexto.como_texto`, o do `claude -p`) descarta os eventos anteriores ao último —
-        medido em docs/medicoes/agente-da-chamada.md (c7#1)."""
+        (`Contexto.como_texto`, o do `claude -p`) descartava os eventos anteriores ao último —
+        medido em docs/medicoes/agente-da-chamada.md (c7#1), consertado para todos em `a51fe4d`;
+        o registro numa mensagem continua: é a chamada inteira, em ordem, num bloco só."""
         registro = "\n\n".join([*self._registro, f"AGORA — TURNO {self.turnos}\n{atual}"])
         return Contexto(
             sistema=sistema_da_chamada(self.agente.configuracao(), self.delimitadores, self.app),

@@ -79,5 +79,6 @@ navegador ou chave real; o TOTP é de um segredo de teste.
 **Conserto depois desta medição (não medido de novo — uma passada por modelo):** o agente da
 chamada passa a entregar a chamada inteira (início, notas, falas anteriores dos dois lados) numa
 única mensagem de evento por rodada, que os dois caminhos (texto e chamada nativa) leem; e o
-veredito de `chamada.falar` diz que a vez agora é de quem liga. O descarte em `como_texto()` e o
-caso do monitor ficam registrados para decisão (mexer ali muda o prompt de todos os agentes).
+veredito de `chamada.falar` diz que a vez agora é de quem liga. O descarte em `como_texto()` foi
+consertado para todos os agentes depois, em `a51fe4d` (medição em
+[monitor-memoria.md](monitor-memoria.md)).
