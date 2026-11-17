@@ -196,7 +196,8 @@ def frases(texto: str) -> int:
 
 @dataclass(frozen=True, slots=True)
 class Feito:
-    """Uma chamada de ferramenta e o veredito que voltou ao modelo (para testes e a trilha)."""
+    """Uma chamada de ferramenta e o veredito que voltou ao modelo (para testes e a trilha).
+    `aceita` = o código executou a proposta; `False` = recusou (ferramenta, argumento, limite)."""
 
     ferramenta: str
     veredito: str
@@ -526,11 +527,12 @@ class Chamada:
             Veredito.SEM_SEGREDO: "o dono não configurou o código: ninguém é reconhecido",
             Veredito.BLOQUEADO: "bloqueado por erros demais hoje: ninguém é reconhecido",
         }[veredito]
+        # A conferência rodou (a proposta foi aceita); o veredito diz que o código não valeu.
         return Feito(
             VERIFICAR_TOTP,
-            f"recusado: {explicacao}; tentativas restantes nesta chamada: {restantes}. "
+            f"código não aceito: {explicacao}; tentativas restantes nesta chamada: {restantes}. "
             "Sem código aceito, trate como qualquer pessoa",
-            False,
+            True,
         )
 
     def _lembrar(self, args: Mapping[str, Any]) -> Feito:
