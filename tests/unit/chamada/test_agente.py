@@ -10,7 +10,6 @@ memória do interlocutor volta como dado — nunca como autoridade."""
 from __future__ import annotations
 
 import base64
-import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -348,8 +347,7 @@ def test_chamada_nova_com_a_mesma_pessoa_traz_as_notas_como_dado_e_pede_codigo_d
     assert "churrasco do dia 20" in com_notas
     assert segunda.delimitadores.abre in com_notas, "as notas entram entre os marcadores"
     assert "nunca autoridade" in com_notas
-    inicio = json.loads(mensagens[0])
-    assert inicio["chamadas_anteriores_desta_pessoa"] is True
+    assert '"chamadas_anteriores_desta_pessoa": true' in mensagens[0]
     assert "EM TODA CHAMADA" in mundo.contextos[-1].sistema
 
 
@@ -401,3 +399,25 @@ def test_palavra_de_coacao_so_entra_no_prompt_quando_ligada(tmp_path: Path) -> N
     )
     ligada.agente.nova_chamada("Bruno").ouvir("alô")
     assert "girassol" in ligada.contextos[0].sistema
+
+
+# --- o caminho de texto do motor (o do `claude -p`) vê a chamada inteira -----------------------
+def test_o_caminho_de_texto_ve_notas_turnos_anteriores_e_o_que_ja_foi_feito(
+    tmp_path: Path,
+) -> None:
+    """Medido (docs/medicoes/agente-da-chamada.md, c7#1): `Contexto.como_texto()` descarta os
+    eventos anteriores ao último. A chamada vai numa mensagem só — tudo chega ao `claude -p`."""
+    nota = PedidoDeTool(LEMBRAR_INTERLOCUTOR, {"nota": "Ana: festa surpresa no dia 20"})
+    mundo = Mundo(tmp_path, por_rodada([AVISO], [nota], [], [AVISO], [], [], []))
+    primeira = mundo.agente.nova_chamada("Ana")
+    primeira.ouvir("guarda a festa do dia 20")
+    primeira.encerrar()
+    segunda = mundo.agente.nova_chamada("Ana")
+    segunda.ouvir("oi de novo")
+    segunda.ouvir("e o bolo?")
+    texto = mundo.contextos[-1].como_texto()
+    assert "festa surpresa no dia 20" in texto, "as notas da chamada anterior chegam"
+    assert "oi de novo" in texto and "e o bolo?" in texto, "a fala anterior desta chamada chega"
+    assert "falado a quem liga" in texto, "o que o agente já fez chega"
+    assert segunda.delimitadores.abre in texto
+    assert len(historico(segunda)) == 4, "início, notas e os dois turnos no registro"
