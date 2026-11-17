@@ -47,7 +47,13 @@ from typing import TYPE_CHECKING, Any, Final
 
 from jarvis.agentd.asr import MotorWhisper, TranscritorIncremental
 from jarvis.agentd.fala_em_stream import trechos_do_stream
-from jarvis.agentd.fila_de_avisos import ORIGEM_DO_PEDIDO, Entrega, FilaDeAvisos, notificacao
+from jarvis.agentd.fila_de_avisos import (
+    ORIGEM_DO_MONITOR,
+    ORIGEM_DO_PEDIDO,
+    Entrega,
+    FilaDeAvisos,
+    notificacao,
+)
 from jarvis.agentd.tts import (
     Fala,
     MotorParametrico,
@@ -141,7 +147,12 @@ from jarvis.s2.protocolo import sem_protocolo
 from jarvis.s2.regras import Regras, na_pasta
 from jarvis.s2.regras import padrao as padrao_das_regras
 from jarvis.s2.roteiro_do_navegador import Contato as CandidatoDeContato
-from jarvis.social.agente import AgenteMonitor, contexto_do_dono
+from jarvis.social.agente import (
+    AgenteMonitor,
+    DecisaoDoMonitor,
+    contexto_do_dono,
+    evento_ao_jarvis,
+)
 from jarvis.social.memorias import ARQUIVO as ARQUIVO_DAS_MEMORIAS
 from jarvis.social.memorias import MemoriaInvalida
 from jarvis.social.memorias import bloco as bloco_das_memorias
@@ -754,6 +765,7 @@ class Aplicativo:
     _progresso_avisado: dict[str, float] = field(default_factory=dict, repr=False)
     _eventos_dos_avisos: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
     """O evento de rede inteiro e o contexto do dono de cada aviso de rede (ADR-0070)."""
+    _agente_monitor: AgenteMonitor | None = field(default=None, repr=False)
     """Quando o progresso de cada subagente foi à fila pela última vez (ADR-0070)."""
     """As tarefas cujo fim já foi entregue: o fim de uma tarefa sai uma vez só, por id."""
 
@@ -791,40 +803,54 @@ class Aplicativo:
         ausente: bool = False,
         avisos_da_rede: bool = True,
     ) -> None:
-        """Um evento do monitor das redes (ADR-0060, ADR-0070). O agente monitor classifica a
-        evidência (mensagem, ligação, notificação do sistema, outra; urgência observada) numa linha
-        própria, e o evento estruturado entra na fila com a confiança de **terceiros** e o modo do
-        dono como contexto. Quem decide se fala, quando e o quê é o Jarvis, no turno dos avisos."""
+        """Um evento do monitor das redes (ADR-0060, ADR-0073). Vai ao **agente monitor**, um
+        subagente de longa duração com fila e linha próprias, que decide (laço canônico, com as
+        ferramentas dele) se encaminha ao Jarvis ou descarta. O encaminhado entra na fila de
+        avisos como evento de **terceiros**, com o modo do dono como contexto, e quem decide se
+        fala, quando e o quê é o Jarvis, no turno dos avisos."""
         contexto = contexto_do_dono(
             ausente=ausente,
             hora=datetime.now().hour,
             nao_perturbe=bool(getattr(self.avisos, "nao_perturbe", False)),
             avisos_da_rede=avisos_da_rede,
         )
+        dados = dict(evento)
+        dados.setdefault("rede", origem[:80])
+        self.agente_monitor.receber(dados, contexto)
 
-        def entregar() -> None:
-            classificado = (
-                AgenteMonitor(lambda: self._motor).classificar(evento)
-                if evento.get("remetentes")
-                else dict(evento)
+    @property
+    def agente_monitor(self) -> AgenteMonitor:
+        """O subagente monitor das redes: nasce no primeiro evento e vive com a sessão."""
+        if self._agente_monitor is None:
+            self._agente_monitor = AgenteMonitor(
+                motor=lambda: self._motor,
+                ao_encaminhar=self._encaminhado_pelo_monitor,
+                ao_decidir=lambda evento, decisao: self.trilha.evento(
+                    "monitor.decisao", **decisao.para_a_trilha(str(evento.get("rede", "")))
+                ),
             )
-            dados = json.dumps(classificado, ensure_ascii=False)
-            identificador = f"rede-{uuid7()}"
-            with self._trava_dos_avisos:
-                self._eventos_dos_avisos[identificador] = (dados, contexto)
-            self.receber_aviso(
-                notificacao(
-                    self.session_id,
-                    identificador,
-                    tipo="evento",
-                    origem=origem[:80],
-                    resumo=dados[:280],
-                    trust=Trust.THIRD_PARTY,
-                )
-            )
+        return self._agente_monitor
 
-        # O agente chama um modelo: fora da linha de quem avisou (o monitor, a janela).
-        threading.Thread(target=entregar, name="jarvis-agente-monitor", daemon=True).start()
+    def _encaminhado_pelo_monitor(
+        self, evento: Mapping[str, Any], contexto: str, decisao: DecisaoDoMonitor
+    ) -> None:
+        """O monitor encaminhou (ou não conseguiu decidir): o evento vai à fila do Jarvis. A origem
+        marcada como do monitor deixa a fila entregá-lo assim que o piso estiver livre — a
+        triagem contra o falatório já foi feita pelo agente (ADR-0073)."""
+        dados = json.dumps(evento_ao_jarvis(evento, decisao), ensure_ascii=False)
+        identificador = f"rede-{uuid7()}"
+        with self._trava_dos_avisos:
+            self._eventos_dos_avisos[identificador] = (dados, contexto)
+        self.receber_aviso(
+            notificacao(
+                self.session_id,
+                identificador,
+                tipo="evento",
+                origem=f"{ORIGEM_DO_MONITOR}{str(evento.get('rede', ''))[:60]}",
+                resumo=decisao.resumo or dados[:280],
+                trust=Trust.THIRD_PARTY,
+            )
+        )
 
     def _status_do_laco(self, resumo: str) -> None:
         """Progresso do encadeamento vai para a fila, nunca direto à fala em andamento."""
@@ -1496,6 +1522,16 @@ class Aplicativo:
                     decisao="silenciosa",
                     motivo="cortada_pelo_dono",
                 )
+        if not cortados:
+            for identificador in identificadores:
+                if identificador.startswith("rede-"):
+                    self.trilha.evento(
+                        "entrega",
+                        turno=identificador,
+                        origem="aviso",
+                        decisao="falada",
+                        motivo="jarvis_falou",
+                    )
         if not cortados and self._cerebro is not None:
             for identificador in identificadores:
                 if identificador.startswith(PREFIXO_DA_PERGUNTA):
@@ -1569,6 +1605,9 @@ class Aplicativo:
 
     def _cancelar_tarefas(self) -> None:
         self._fechar_a_tela()
+        if self._agente_monitor is not None:
+            self._agente_monitor.parar()
+            self._agente_monitor = None
         if self._cerebro is not None:
             self._cerebro.pendencias.cancelar()
         gestor = self.ferramentas.tarefas if self.ferramentas is not None else None

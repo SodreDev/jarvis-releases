@@ -191,6 +191,10 @@ CAMPOS: Final[Mapping[str, Forma]] = {
     "estado": Forma.CODIGO,
     "pista": Forma.CODIGO,
     "amostra": Forma.AMOSTRA,
+    # O agente monitor das redes (ADR-0073): a decisão dele em códigos — nunca o resumo nem o nome.
+    "tipo_do_evento": Forma.CODIGO,
+    "urgencia": Forma.CODIGO,
+    "rodadas": Forma.NUMERO,
 }
 """A allowlist de campos: nome → forma. Mesmo nome, mesma forma em qualquer evento. Campo que
 não está aqui não é gravado, e o nome dele aparece em `campos_fora`."""
@@ -314,6 +318,10 @@ EVENTOS: Final[Mapping[str, frozenset[str]]] = {
     # (`conectando`, `sem_extensao`…) e o código do que faltou (`sem_host`, `sem_resposta`…).
     # Com o contador: a `pista` (carregando, sem lista, ilegível) e a `amostra` sanitizada.
     "rede.estado": frozenset({"rede", "estado", "codigo", "pista", "amostra"}),
+    # O agente monitor das redes (ADR-0073): encaminhou, descartou ou não decidiu, e por quê.
+    "monitor.decisao": frozenset(
+        {"rede", "decisao", "tipo_do_evento", "urgencia", "motivo", "rodadas", "ms"}
+    ),
 }
 """Que campos cada evento pode ter. Tipo de evento fora daqui grava só o cabeçalho e os nomes
 dos campos que vieram — assim um evento novo aparece na trilha sem levar valor nenhum consigo."""
@@ -432,6 +440,19 @@ CAUSAS: Final[frozenset[str]] = frozenset(
         "recusada_pelo_dono",
         # cortar é cancelar (dono, 2026-10-29): o aviso que o dono cortou não volta à voz
         "cortada_pelo_dono",
+        # o turno dos avisos (ADR-0070): o Jarvis falou, calou ou o motor caiu — antes «calou» e
+        # «motor» não estavam aqui e a trilha gravava a marca (o diagnóstico de 2026-11-16)
+        "jarvis_falou",
+        "jarvis_calou",
+        "motor",
+        # o agente monitor das redes (ADR-0073): o motivo do descarte, ou por que não decidiu
+        "repetido",
+        "spam",
+        "irrelevante",
+        "ja_avisado",
+        "outro",
+        "sem_motor",
+        "sem_ferramenta",
     }
 )
 """A allowlist do `motivo`: códigos que o nosso código escolhe pelo caminho que tomou. Código novo

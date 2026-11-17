@@ -479,9 +479,9 @@ def test_o_fim_da_tarefa_fala_o_aviso_do_codigo_e_cala_quando_ele_pede(tmp_path:
 def test_evento_de_rede_entra_na_fila_como_terceiros_com_o_modo_como_contexto(
     tmp_path: Path,
 ) -> None:
-    """ADR-0060 e ADR-0070: o evento do monitor das redes vai à fila estruturado, com a confiança de
-    terceiros e o modo do dono como contexto; o agente monitor classifica antes (sem motor, segue
-    sem classificação). Quem decide falar é o Jarvis, no turno dos avisos."""
+    """ADR-0060, ADR-0070 e ADR-0073: o evento do monitor das redes passa pelo agente monitor e vai
+    à fila estruturado, com a confiança de terceiros e o modo do dono como contexto (sem motor, o
+    agente não decide e o evento segue marcado `sem_decisao`). Quem decide falar é o Jarvis."""
     app = aplicativo_de(tmp_path)
     app._motor = None
     evento = {
@@ -495,9 +495,9 @@ def test_evento_de_rede_entra_na_fila_como_terceiros_com_o_modo_como_contexto(
     while not app.dados_dos_avisos()["avisos"] and time.monotonic() < limite:
         time.sleep(0.01)
     (aviso,) = app.dados_dos_avisos()["avisos"]
-    assert aviso["origem"] == "WhatsApp"
+    assert aviso["origem"] == "monitor · WhatsApp"
     assert aviso["confianca"] == "terceiros"
     with app._trava_dos_avisos:
         (liberado,) = app._liberados(app.avisos.mensagem_do_dono("t-1", app.relogio_dos_avisos()))
-    assert '"tipo": "nao_classificado"' in liberado.resumo, "sem motor, segue sem classificação"
+    assert '"decisao_do_monitor": "sem_decisao"' in liberado.resumo, "sem motor, segue marcado"
     assert "ausente" in liberado.contexto and liberado.de_terceiros

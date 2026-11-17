@@ -12,7 +12,8 @@ O que o código impõe, por cima do julgamento do modelo:
   TTS parado e `PISO_LIVRE_S` de silêncio depois dos dois (D22: 1,5 s);
 - **teto de fala espontânea**: no máximo um aviso falado a cada `TETO_DE_FALA_S` (D22: 2 min), e
   um por vez. O teto **não** vale para o aviso que vai junto com a mensagem do dono: ali quem
-  abriu a conversa foi ele, e esperar 2 min para contar que a tarefa terminou seria esconder;
+  abriu a conversa foi ele, e esperar 2 min para contar que a tarefa terminou seria esconder —
+  nem para o evento de rede que o agente monitor já triou (ADR-0073, `ORIGEM_DO_MONITOR`);
 - **entregue é o que tocou** (regra 15, P4): o aviso só vira `falado` quando os pedaços que o
   carregam tocaram inteiros; o que não chegou a tocar por **falha** (o cérebro caiu) volta para a
   fila;
@@ -44,6 +45,17 @@ ORIGEM_DO_PEDIDO: Final = "pedido · "
 que ela espera. Não são espontâneos — quem abriu a conversa foi o dono, ao pedir —, então não
 esperam o teto de fala (como o aviso que vai junto com a mensagem dele); o piso livre vale igual:
 nunca por cima da fala, e um por vez."""
+
+
+ORIGEM_DO_MONITOR: Final = "monitor · "
+"""A origem dos eventos de rede que o agente monitor encaminhou (ADR-0073). A triagem contra o
+falatório já foi feita por ele (descartou o repetido, o spam, o ruído), e o dono ligou o
+monitoramento para saber: não esperam o teto de fala, como os do pedido. O piso livre vale igual —
+nunca por cima da fala, e um por vez."""
+
+
+SEM_TETO: Final = (ORIGEM_DO_PEDIDO, ORIGEM_DO_MONITOR)
+"""As origens que não esperam o teto de fala espontânea."""
 
 
 class Entrega(StrEnum):
@@ -152,7 +164,7 @@ class FilaDeAvisos:
             return None  # um por vez: o liberado ainda não tocou, não foi cortado nem decidido
         pendentes = self._pendentes()
         if self._ultimo_falado is not None and agora - self._ultimo_falado < self.teto_de_fala_s:
-            pendentes = [a for a in pendentes if a.origem.startswith(ORIGEM_DO_PEDIDO)]
+            pendentes = [a for a in pendentes if a.origem.startswith(SEM_TETO)]
         if not pendentes:
             return None
         # Pedido de decisão primeiro: é o que trava alguma coisa até o dono responder.

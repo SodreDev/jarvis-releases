@@ -1,7 +1,8 @@
 """Caso (c) do dono, de ponta a ponta no aplicativo: o alerta de uma rede social (ADR-0070).
 
 O monitor detecta a mudança e entrega a evidência crua (remetente, trecho, rótulos dos ícones); o
-**agente monitor** (uma rodada do modelo) classifica; o evento estruturado vai à fila com a
+**agente monitor** (um subagente no laço canônico, ADR-0073) decide com as ferramentas dele se
+encaminha ao Jarvis ou descarta; o evento estruturado vai à fila com a
 confiança de terceiros; no piso livre, o **Jarvis** recebe os eventos e decide — fala com as
 palavras dele, ou responde `[silencio]` e o card guarda. Nenhuma frase do código chega à voz.
 
@@ -24,7 +25,7 @@ from jarvis.agentd.fila_de_avisos import Entrega
 from jarvis.s2.avisos import MARCA_DO_SILENCIO
 from jarvis.s2.motor import Contexto, PedidoDeTool
 from jarvis.s2.motor_roteirizado import MotorRoteirizado, Parte
-from jarvis.social.agente import SISTEMA_DO_AGENTE
+from jarvis.social.agente import ENCAMINHAR
 from jarvis.voz.app import Aplicativo
 from jarvis.voz.config import Configuracao
 
@@ -49,32 +50,35 @@ def app(tmp_path: Path) -> Iterator[Aplicativo]:
 
 
 class JarvisDasRedes:
-    """O modelo nos dois papéis: o agente monitor (classifica) e o Jarvis (decide falar)."""
+    """O modelo nos dois papéis: o agente monitor (encaminha) e o Jarvis (decide falar)."""
 
     def __init__(self) -> None:
         self.classificacoes = 0
         self.eventos: list[str] = []
 
     def __call__(self, contexto: Contexto) -> Sequence[Parte]:
-        if contexto.sistema == SISTEMA_DO_AGENTE:
+        if ENCAMINHAR in {str(f.get("id")) for f in contexto.ferramentas}:
             self.classificacoes += 1
             dados = json.loads(contexto.mensagens[-1].texto)
-            conversas = []
-            for conversa in dados["conversas"]:
-                ligacao = any("chamada" in s.casefold() for s in conversa["sinais"])
-                conversas.append(
+            (conversa,) = dados["evento"]["remetentes"]
+            ligacao = any("chamada" in s.casefold() for s in conversa["sinais"])
+            return [
+                PedidoDeTool(
+                    ENCAMINHAR,
                     {
-                        "remetente": conversa["remetente"],
-                        "tipo": "ligacao" if ligacao else "mensagem",
+                        "resumo": f"{conversa['remetente']}: {conversa['trecho']}",
+                        "tipo": "ligacao_perdida" if ligacao else "mensagem",
                         "urgencia": "alta" if "urgente" in conversa["trecho"] else "baixa",
-                        "motivo": "chamada de voz perdida" if ligacao else "mensagem comum",
-                    }
+                    },
                 )
-            return [json.dumps({"conversas": conversas}, ensure_ascii=False)]
+            ]
         if contexto.de_evento:
             self.eventos.append(contexto.sistema)
             # A decisão é do Jarvis: a ligação urgente merece a voz; o grupo, não.
-            if '"tipo": "ligacao"' in contexto.sistema and '"urgencia": "alta"' in contexto.sistema:
+            if (
+                '"tipo": "ligacao_perdida"' in contexto.sistema
+                and '"urgencia": "alta"' in contexto.sistema
+            ):
                 return [LIGACAO]
             return [MARCA_DO_SILENCIO]
         return ["Certo."]
@@ -122,9 +126,9 @@ def test_c_ligacao_urgente_o_agente_classifica_e_o_jarvis_decide_falar(app: Apli
 
     falas = [linha for linha in linhas if linha.startswith("Jarvis: ")]
     assert falas == [f"Jarvis: {LIGACAO}"], "uma fala só, e com as palavras do Jarvis"
-    assert jarvis.classificacoes == 1, "o agente monitor classificou antes do Jarvis decidir"
+    assert jarvis.classificacoes == 1, "o agente monitor decidiu antes do Jarvis"
     (nota,) = jarvis.eventos
-    assert '"tipo": "ligacao"' in nota and "classificado_por" in nota
+    assert '"tipo": "ligacao_perdida"' in nota and '"encaminhado_pelo_monitor": true' in nota
     assert "o dono está presente" in nota, "o modo do dono vai como contexto, não como filtro"
     _sem_frase_do_codigo(linhas)
 
