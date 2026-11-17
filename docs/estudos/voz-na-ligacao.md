@@ -555,7 +555,7 @@ um segundo número dele); e como o WhatsApp Web mostra o nome do chat do dono (�
 chat do dono**, confirmação e recusa certas, resposta sem código não confirmou, código mandado
 por terceiro nem chegou ao agente. As 4 falhas eram o modelo reabrindo a conversa em laço — o motor
 de texto lista os resultados sem o nome da ferramenta e o veredito não dizia o que fora aberto;
-consertado depois (o veredito traz o pedido), não medido de novo. **Riscos que ficam:** as 5 vagas
+consertado depois (o veredito traz o pedido) e medido de novo: **13/13**, sem laço. **Riscos que ficam:** as 5 vagas
 de ação pendente podem ser ocupadas por pedidos de injeção (a chamada registra «leia os e-mails»
 como pedido — o dono vê o que tentaram, mas um pedido legítimo pode ficar sem vaga até expirarem);
 e o nome configurado é a única identidade do chat — o dono deve preferir o rótulo próprio do

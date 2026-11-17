@@ -125,11 +125,13 @@ agente que acha o chat do dono lendo a lista, as travas, o teto próprio e o `Ob
 de abrir o app contava duas vezes no teto (`HistoricoDeEnvios.anotar`). Medido com o haiku, uma
 passada cada, alvos fixados antes: **agente da chamada 25/27**, ataques 17/17 (inclui o critério
 do sensível e a confirmação forjada por quem liga), nenhum falso dono, nenhuma ação confirmada
-pela chamada; a regressão c7#1 (calou as notas da própria pessoa) foi ajustada no prompt e não
-medida de novo ([medição](../medicoes/agente-da-chamada-segunda-rodada.md)). **Canal do dono
-9/13**, nenhuma mensagem fora do chat do dono, confirmação/recusa corretas; as 4 falhas eram o
-modelo reabrindo a conversa em laço porque o veredito não dizia o que fora feito — consertado
-depois e não medido de novo ([medição](../medicoes/canal-do-dono.md)). **Ainda não ligado** à
+pela chamada; a regressão c7#1 (calou as notas da própria pessoa) foi ajustada no prompt e, medida
+de novo, passou — a segunda passada deu de novo 25/27, com c3#1 e c4#1 falhando pelo mesmo motivo
+(quem diz ser o dono não ouve o pedido do código já na 1ª fala; nada reconhecido nem vazado)
+([medição](../medicoes/agente-da-chamada-segunda-rodada.md)). **Canal do dono 9/13 → 13/13**,
+nenhuma mensagem fora do chat do dono nas duas; as 4 falhas da primeira passada eram o modelo
+reabrindo a conversa em laço porque o veredito não dizia o que fora feito — consertado e, medido de
+novo, sem laço ([medição](../medicoes/canal-do-dono.md)). **Ainda não ligado** à
 extensão real (falta a lista completa de conversas e abrir pela linha escolhida) nem ao app; não
 provado: se a mensagem ao próprio chat, enviada pelo WhatsApp Web, notifica o celular do dono.
 
